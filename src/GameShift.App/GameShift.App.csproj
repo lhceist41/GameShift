@@ -1,0 +1,54 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\GameShift.Core\GameShift.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="WPF-UI" Version="4.*" />
+    <PackageReference Include="WPF-UI.DependencyInjection" Version="4.*" />
+    <PackageReference Include="Hardcodet.NotifyIcon.Wpf" Version="1.*" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\Icons\tray-idle.ico" />
+    <Resource Include="Assets\Icons\tray-active.ico" />
+    <Resource Include="Assets\Icons\tray-warning.ico" />
+    <Resource Include="Assets\Icons\tray-error.ico" />
+    <Resource Include="Resources\gameshift.ico" />
+    <Resource Include="Resources\gameshift-256.png" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <StartupObject>GameShift.App.Program</StartupObject>
+
+    <!-- Application icon (shown in Explorer and taskbar) -->
+    <ApplicationIcon>Assets\Icons\app-icon.ico</ApplicationIcon>
+
+    <!-- Assembly metadata (shown in exe file properties) -->
+    <AssemblyTitle>GameShift</AssemblyTitle>
+    <Product>GameShift</Product>
+    <Description>Automatic gaming performance optimizer for Windows</Description>
+    <Company>GameShift</Company>
+    <Copyright>Copyright (c) 2026 GameShift Contributors. MIT License.</Copyright>
+    <Version>2.5.1</Version>
+    <AssemblyVersion>2.5.1.0</AssemblyVersion>
+    <FileVersion>2.5.1.0</FileVersion>
+
+    <!-- Publish configuration for single-file self-contained exe -->
+    <!-- RuntimeIdentifier is NOT set here to avoid changing debug output paths. -->
+    <!-- Pass -r win-x64 to dotnet publish instead. -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <PublishTrimmed>false</PublishTrimmed>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+  </PropertyGroup>
+
+</Project>
