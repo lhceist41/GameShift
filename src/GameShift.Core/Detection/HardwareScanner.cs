@@ -1,0 +1,369 @@
+using System;
+using System.IO;
+using System.Management;
+using System.Threading;
+using System.Threading.Tasks;
+using GameShift.Core.Optimization;
+using GameShift.Core.System;
+using Microsoft.Win32;
+using Serilog;
+
+namespace GameShift.Core.Detection;
+
+/// <summary>
+/// Scans hardware capabilities to recommend optimal GameShift settings.
+/// Detects GPU (via GpuDetector), total RAM, VBS/HVCI state, and DPC baseline latency.
+/// Also builds a consolidated HardwareScanResult for conditional game optimizations.
+/// Used by the first-run wizard and Settings "Auto-Detect" button.
+/// </summary>
+public class HardwareScanner
+{
+    /// <summary>GPU name detected via WMI.</summary>
+    public string GpuName { get; private set; } = "Unknown";
+
+    /// <summary>Total physical RAM in GB.</summary>
+    public double TotalRamGb { get; private set; }
+
+    /// <summary>Whether VBS/HVCI is currently enabled.</summary>
+    public bool VbsEnabled { get; private set; }
+
+    /// <summary>Baseline DPC latency in microseconds (average over 5-second sample).</summary>
+    public double DpcBaselineUs { get; private set; }
+
+    /// <summary>Whether the scan has completed.</summary>
+    public bool IsComplete { get; private set; }
+
+    /// <summary>
+    /// Consolidated hardware scan result for conditional game optimizations.
+    /// Null until ScanAsync() completes.
+    /// </summary>
+    public HardwareScanResult? Result { get; private set; }
+
+    /// <summary>
+    /// Runs the full hardware scan. Non-blocking — runs WMI queries on a background thread.
+    /// </summary>
+    public async Task ScanAsync(IProgress<string>? progress = null)
+    {
+        await Task.Run(() =>
+        {
+            // Step 1: GPU detection (reuses GpuDetector single source of truth)
+            progress?.Report("Detecting GPU...");
+            GpuName = GpuDetector.GetGpuName();
+            Log.Information("HardwareScanner: GPU = {GpuName}", GpuName);
+
+            // Step 2: RAM detection
+            progress?.Report("Checking RAM...");
+            TotalRamGb = DetectTotalRam();
+            Log.Information("HardwareScanner: RAM = {RamGb:F1} GB", TotalRamGb);
+
+            // Step 3: VBS/HVCI check
+            progress?.Report("Checking VBS/HVCI...");
+            var vbs = new VbsHvciToggle();
+            vbs.CheckState();
+            VbsEnabled = vbs.ShouldShowBanner;
+            Log.Information("HardwareScanner: VBS enabled = {VbsEnabled}", VbsEnabled);
+
+            // Step 4: DPC baseline (quick 3-second sample)
+            progress?.Report("Measuring DPC baseline (3s)...");
+            DpcBaselineUs = MeasureDpcBaseline();
+            Log.Information("HardwareScanner: DPC baseline = {DpcUs:F0} µs", DpcBaselineUs);
+
+            // Step 5: Build consolidated HardwareScanResult
+            progress?.Report("Building hardware profile...");
+            BuildHardwareScanResult(vbs);
+            Log.Information("HardwareScanner: Result built — Vendor={Vendor}, Hybrid={Hybrid}, Laptop={Laptop}, HAGS={Hags}, RiotOnDisk={Riot}",
+                Result!.GpuVendor, Result.IsHybridCpu, Result.IsLaptop, Result.IsHagsEnabled, Result.HasRiotGamesOnDisk);
+
+            IsComplete = true;
+            progress?.Report("Scan complete.");
+        });
+    }
+
+    /// <summary>
+    /// Quick hardware detection that populates the HardwareScanResult WITHOUT
+    /// DPC baseline measurement (no 3-second delay). Used at startup for
+    /// conditional game action filtering. Call ScanAsync() later for full results.
+    /// </summary>
+    /// <param name="vbs">VbsHvciToggle instance (already checked) for Vanguard detection.</param>
+    public void DetectHardwareQuick(VbsHvciToggle vbs)
+    {
+        GpuName = GpuDetector.GetGpuName();
+        TotalRamGb = DetectTotalRam();
+        VbsEnabled = vbs.ShouldShowBanner;
+
+        BuildHardwareScanResult(vbs);
+        Log.Information(
+            "HardwareScanner: Quick detect — Vendor={Vendor}, Hybrid={Hybrid}, Laptop={Laptop}, HAGS={Hags}, RiotOnDisk={Riot}",
+            Result!.GpuVendor, Result.IsHybridCpu, Result.IsLaptop, Result.IsHagsEnabled, Result.HasRiotGamesOnDisk);
+    }
+
+    /// <summary>
+    /// Builds the consolidated HardwareScanResult from existing scan data plus
+    /// additional detection methods for conditional game optimizations.
+    /// </summary>
+    private void BuildHardwareScanResult(VbsHvciToggle vbs)
+    {
+        var gpuInfo = SystemInfoGatherer.GetGpuInfo();
+        var cpuInfo = SystemInfoGatherer.GetCpuInfo();
+        var displayInfo = SystemInfoGatherer.GetDisplayInfo();
+
+        Result = new HardwareScanResult
+        {
+            GpuVendor = DetectGpuVendor(),
+            GpuName = GpuName,
+            GpuDriverVersion = gpuInfo.DriverVersion,
+            GpuVramBytes = gpuInfo.AdapterRamBytes,
+            CpuName = cpuInfo.Name,
+            TotalCores = cpuInfo.Cores,
+            TotalLogicalProcessors = cpuInfo.LogicalProcessors,
+            IsHybridCpu = DetectIsHybridCpu(),
+            TotalRamGb = TotalRamGb,
+            IsLaptop = DetectIsLaptop(),
+            VbsEnabled = VbsEnabled,
+            IsVanguardDetected = vbs.IsVanguardInstalled(),
+            HasRiotGamesOnDisk = DetectRiotGamesOnDisk(),
+            PrimaryRefreshRate = displayInfo.RefreshRate,
+            IsHagsEnabled = DetectHagsEnabled()
+        };
+    }
+
+    // ── New detection methods for HardwareScanResult ─────────────────────
+
+    /// <summary>
+    /// Detects GPU vendor from WMI AdapterCompatibility field.
+    /// Same pattern as GpuDriverOptimizer.DetectGpuVendor().
+    /// </summary>
+    private static GpuVendor DetectGpuVendor()
+    {
+        try
+        {
+            using var searcher = new ManagementObjectSearcher(
+                "SELECT AdapterCompatibility, Name FROM Win32_VideoController");
+
+            foreach (ManagementObject obj in searcher.Get())
+            {
+                var compat = obj["AdapterCompatibility"]?.ToString() ?? "";
+                var name = obj["Name"]?.ToString() ?? "";
+
+                // Skip virtual adapters
+                if (name.Contains("Microsoft Basic Display", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                if (ContainsIgnoreCase(compat, "NVIDIA") || ContainsIgnoreCase(name, "NVIDIA"))
+                    return GpuVendor.Nvidia;
+
+                if (ContainsIgnoreCase(compat, "AMD") ||
+                    ContainsIgnoreCase(compat, "Advanced Micro Devices") ||
+                    ContainsIgnoreCase(name, "Radeon"))
+                    return GpuVendor.Amd;
+
+                if (ContainsIgnoreCase(compat, "Intel") || ContainsIgnoreCase(name, "Intel"))
+                    return GpuVendor.Intel;
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "HardwareScanner: Failed to detect GPU vendor");
+        }
+
+        return GpuVendor.Unknown;
+    }
+
+    /// <summary>
+    /// Detects hybrid CPU architecture by checking registry EfficiencyClass values.
+    /// Same approach as HybridCpuDetector — EfficiencyClass 0 = P-core, >0 = E-core.
+    /// </summary>
+    private static bool DetectIsHybridCpu()
+    {
+        try
+        {
+            const string cpuRegPath = @"HARDWARE\DESCRIPTION\System\CentralProcessor";
+            using var cpuKey = Registry.LocalMachine.OpenSubKey(cpuRegPath);
+            if (cpuKey == null) return false;
+
+            bool hasP = false, hasE = false;
+
+            foreach (var subName in cpuKey.GetSubKeyNames())
+            {
+                using var core = cpuKey.OpenSubKey(subName);
+                if (core == null) continue;
+
+                var effClass = core.GetValue("EfficiencyClass");
+                if (effClass is int eff)
+                {
+                    if (eff == 0) hasP = true;
+                    else hasE = true;
+                }
+            }
+
+            return hasP && hasE;
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "HardwareScanner: Failed to detect hybrid CPU");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Detects if the system is a laptop via WMI Win32_SystemEnclosure ChassisTypes.
+    /// Laptop chassis type values: 8,9,10,11,12,14,18,21,31,32.
+    /// </summary>
+    private static bool DetectIsLaptop()
+    {
+        try
+        {
+            // Laptop chassis type IDs per SMBIOS specification
+            var laptopTypes = new HashSet<int> { 8, 9, 10, 11, 12, 14, 18, 21, 31, 32 };
+
+            using var searcher = new ManagementObjectSearcher(
+                "SELECT ChassisTypes FROM Win32_SystemEnclosure");
+
+            foreach (ManagementObject obj in searcher.Get())
+            {
+                if (obj["ChassisTypes"] is ushort[] types)
+                {
+                    foreach (var t in types)
+                    {
+                        if (laptopTypes.Contains(t))
+                            return true;
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "HardwareScanner: Failed to detect chassis type");
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Checks if Hardware Accelerated GPU Scheduling (HAGS) is enabled.
+    /// Registry: HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers\HwSchMode
+    /// Value 2 = enabled.
+    /// </summary>
+    private static bool DetectHagsEnabled()
+    {
+        try
+        {
+            using var key = Registry.LocalMachine.OpenSubKey(
+                @"SYSTEM\CurrentControlSet\Control\GraphicsDrivers");
+            if (key == null) return false;
+
+            var val = key.GetValue("HwSchMode");
+            return val is int mode && mode == 2;
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "HardwareScanner: Failed to detect HAGS state");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Checks if Riot Games executables exist on disk at common install paths.
+    /// Stronger check than just detecting running Vanguard service.
+    /// </summary>
+    private static bool DetectRiotGamesOnDisk()
+    {
+        try
+        {
+            var riotPaths = new[]
+            {
+                @"C:\Riot Games\VALORANT\live\ShooterGame\Binaries\Win64\VALORANT-Win64-Shipping.exe",
+                @"C:\Riot Games\League of Legends\Game\League of Legends.exe",
+                @"C:\Program Files\Riot Vanguard\vgc.exe"
+            };
+
+            foreach (var path in riotPaths)
+            {
+                if (File.Exists(path))
+                    return true;
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "HardwareScanner: Failed to check Riot game paths");
+        }
+
+        return false;
+    }
+
+    // ── Existing detection methods ───────────────────────────────────────
+
+    /// <summary>
+    /// Detects total physical RAM via WMI Win32_ComputerSystem.TotalPhysicalMemory.
+    /// Returns 0 on failure.
+    /// </summary>
+    private static double DetectTotalRam()
+    {
+        try
+        {
+            using var searcher = new ManagementObjectSearcher(
+                "SELECT TotalPhysicalMemory FROM Win32_ComputerSystem");
+
+            foreach (ManagementObject obj in searcher.Get())
+            {
+                var bytes = Convert.ToDouble(obj["TotalPhysicalMemory"]);
+                return Math.Round(bytes / (1024.0 * 1024 * 1024), 1);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "HardwareScanner: Failed to detect RAM");
+        }
+
+        return 0;
+    }
+
+    /// <summary>
+    /// Takes a quick 3-second DPC latency baseline measurement.
+    /// Returns average latency in microseconds, or 0 if measurement fails.
+    /// </summary>
+    private static double MeasureDpcBaseline()
+    {
+        try
+        {
+            using var monitor = new Monitoring.DpcLatencyMonitor();
+            double sum = 0;
+            int count = 0;
+
+            monitor.LatencySampled += (_, latency) =>
+            {
+                sum += latency;
+                count++;
+            };
+
+            monitor.Start(1000); // 1000µs threshold (default)
+            Thread.Sleep(3000); // 3-second sample
+            monitor.Stop();
+
+            return count > 0 ? Math.Round(sum / count, 0) : 0;
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "HardwareScanner: DPC baseline measurement failed");
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Returns a human-readable summary of the scan results.
+    /// </summary>
+    public string GetSummary()
+    {
+        if (!IsComplete) return "Scan not yet completed.";
+
+        return $"GPU: {GpuName}\n" +
+               $"RAM: {TotalRamGb:F0} GB\n" +
+               $"VBS/HVCI: {(VbsEnabled ? "Enabled (impacts performance)" : "Disabled")}\n" +
+               $"DPC Baseline: {DpcBaselineUs:F0} µs {(DpcBaselineUs > 1000 ? "(High)" : "(Normal)")}";
+    }
+
+    private static bool ContainsIgnoreCase(string? source, string value)
+    {
+        return source != null && source.Contains(value, StringComparison.OrdinalIgnoreCase);
+    }
+}
