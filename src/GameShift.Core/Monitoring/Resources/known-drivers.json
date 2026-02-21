@@ -1,0 +1,270 @@
+{
+  "drivers": [
+    {
+      "fileName": "ndis.sys",
+      "friendlyName": "Network Driver Interface (Windows Networking)",
+      "category": "Network",
+      "knownIssue": "High DPC latency from network adapter interrupt handling. Most commonly caused by WiFi adapters.",
+      "simpleExplanation": "Your wireless network card is interrupting your CPU every few milliseconds and taking way too long to finish. While it's hogging the CPU, your game can't process the next frame.",
+      "gamingImpact": "You get micro-stutters, audio crackles, and the game feels \"choppy\" even though your FPS counter looks fine.",
+      "autoFixes": [
+        {
+          "id": "ndis_interrupt_moderation",
+          "name": "Disable Interrupt Moderation",
+          "actionType": "SetNetAdapterProperty",
+          "property": "*InterruptModeration",
+          "value": "0",
+          "impact": "High",
+          "requiresReboot": false,
+          "simpleExplanation": "Your WiFi card batches up data and dumps it all at once, which overloads the CPU. This fix tells it to send data in smaller, more frequent chunks so nothing else has to wait.",
+          "technicalExplanation": "Disables interrupt coalescing on all physical network adapters, reducing per-interrupt DPC execution time at the cost of slightly more CPU interrupts."
+        },
+        {
+          "id": "ndis_power_saving",
+          "name": "Disable Power Saving on Network Adapters",
+          "actionType": "SetNetAdapterProperty",
+          "property": "*EEE",
+          "value": "0",
+          "impact": "Medium",
+          "requiresReboot": false,
+          "simpleExplanation": "Your WiFi card goes to \"sleep\" between bursts of activity to save power. Waking up from sleep causes a CPU spike every time. This fix keeps it awake and ready.",
+          "technicalExplanation": "Disables Energy Efficient Ethernet (802.3az) on all physical adapters, preventing wake-from-idle latency spikes."
+        }
+      ],
+      "manualFixes": [
+        "Switch from WiFi to Ethernet if possible — wired connections don't have this problem.",
+        "Update your network adapter driver from the chipset manufacturer (Intel, Realtek, Killer), not the motherboard vendor.",
+        "Disable the WiFi adapter entirely in Device Manager if you're using Ethernet."
+      ]
+    },
+    {
+      "fileName": "nvlddmkm.sys",
+      "friendlyName": "NVIDIA Display Driver (GPU Kernel Mode)",
+      "category": "GPU",
+      "knownIssue": "NVIDIA GPU driver DPC spikes. Common with outdated drivers or after Windows updates.",
+      "simpleExplanation": "Your graphics card driver is taking too long to process display commands. This blocks everything else on your system while it works.",
+      "gamingImpact": "Games stutter, especially when lots of effects or particles are on screen. You might also notice the game \"hitching\" every few seconds.",
+      "autoFixes": [
+        {
+          "id": "msi_mode_nvidia",
+          "name": "Enable MSI Mode for NVIDIA GPU",
+          "actionType": "RegistrySet",
+          "registryPath": "{detected_nvidia_pci_path}\\Device Parameters\\Interrupt Management\\MessageSignaledInterruptProperties",
+          "registryKey": "MSISupported",
+          "registryValue": "1",
+          "registryType": "DWORD",
+          "impact": "High",
+          "requiresReboot": true,
+          "simpleExplanation": "Your GPU communicates with the CPU using an old method called \"line-based interrupts\" that forces the CPU to stop and listen. MSI mode is a modern method that lets the GPU send messages without interrupting everything else.",
+          "technicalExplanation": "Enables Message Signaled Interrupts (MSI) for the NVIDIA GPU PCI device, replacing legacy line-based interrupts with in-band PCIe messages for lower latency interrupt delivery."
+        }
+      ],
+      "manualFixes": [
+        "Download DDU (Display Driver Uninstaller) from guru3d.com.",
+        "Boot into Safe Mode (hold Shift while clicking Restart, then Troubleshoot > Startup Settings).",
+        "Run DDU and select \"Clean and restart\".",
+        "Install the latest Game Ready driver from nvidia.com. Choose \"Custom install\" and check \"Perform a clean installation\".",
+        "If issue persists, try the Studio Driver instead of Game Ready. Do NOT install GeForce Experience unless you need ShadowPlay."
+      ]
+    },
+    {
+      "fileName": "dxgkrnl.sys",
+      "friendlyName": "DirectX Graphics Kernel (Windows Display System)",
+      "category": "GPU",
+      "knownIssue": "Usually caused by the GPU driver underneath. Spikes in dxgkrnl.sys often correlate with nvlddmkm.sys or atikmdag.sys issues.",
+      "simpleExplanation": "The Windows display system is being slowed down by your graphics card driver. This is usually a symptom, not the root cause.",
+      "gamingImpact": "Same as GPU driver issues — stuttering, hitching, and frame drops, especially during graphically intense moments.",
+      "autoFixes": [
+        {
+          "id": "disable_hags",
+          "name": "Disable Hardware Accelerated GPU Scheduling",
+          "actionType": "RegistrySet",
+          "registryPath": "HKLM\\SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers",
+          "registryKey": "HwSchMode",
+          "registryValue": "1",
+          "registryType": "DWORD",
+          "impact": "Medium",
+          "requiresReboot": true,
+          "simpleExplanation": "Hardware GPU scheduling lets the GPU manage its own work queue, but it can cause latency spikes on some systems. This switches back to letting Windows manage the queue.",
+          "technicalExplanation": "Disables HW-accelerated GPU scheduling (WDDM 2.7+), reverting to OS-managed GPU work submission."
+        },
+        {
+          "id": "disable_mpo",
+          "name": "Disable Multi-Plane Overlay",
+          "actionType": "RegistrySet",
+          "registryPath": "HKLM\\SOFTWARE\\Microsoft\\Windows\\Dwm",
+          "registryKey": "OverlayTestMode",
+          "registryValue": "5",
+          "registryType": "DWORD",
+          "impact": "Medium",
+          "requiresReboot": true,
+          "simpleExplanation": "Multi-Plane Overlay lets Windows compose windows in hardware, but it causes stuttering on many systems. Disabling it forces software composition, which is more consistent.",
+          "technicalExplanation": "Sets DWM OverlayTestMode=5, disabling MPO hardware composition. Fixes frame pacing issues on multi-monitor and mixed refresh rate setups."
+        }
+      ],
+      "manualFixes": [
+        "This driver mirrors GPU driver issues. Fix nvlddmkm.sys or atikmdag.sys first, then retest."
+      ]
+    },
+    {
+      "fileName": "RTKVHD64.sys",
+      "friendlyName": "Realtek HD Audio Driver",
+      "category": "Audio",
+      "knownIssue": "Realtek audio drivers are notorious for DPC spikes, especially bundled motherboard versions.",
+      "simpleExplanation": "Your audio driver (Realtek — the one that came with your motherboard) is causing your CPU to stall every time it processes sound.",
+      "gamingImpact": "Audio crackling, popping sounds, and micro-stutters timed with audio events (explosions, voice chat, music).",
+      "autoFixes": [],
+      "manualFixes": [
+        "In Device Manager, go to Sound, find Realtek device, click Update Driver, Browse my computer, Let me pick, select \"High Definition Audio Device\" (Microsoft generic driver).",
+        "Or download the latest driver directly from realtek.com, not your motherboard manufacturer.",
+        "Disable unused audio endpoints (rear panel, digital out) in Sound settings."
+      ]
+    },
+    {
+      "fileName": "atikmdag.sys",
+      "friendlyName": "AMD/ATI Radeon Display Driver (GPU Kernel Mode)",
+      "category": "GPU",
+      "knownIssue": "AMD GPU driver DPC spikes. Similar to NVIDIA issues.",
+      "simpleExplanation": "Your AMD graphics card driver is stalling your CPU when processing display commands.",
+      "gamingImpact": "Games stutter and hitch, especially during scene transitions or when effects ramp up.",
+      "autoFixes": [
+        {
+          "id": "msi_mode_amd",
+          "name": "Enable MSI Mode for AMD GPU",
+          "actionType": "RegistrySet",
+          "registryPath": "{detected_amd_pci_path}\\Device Parameters\\Interrupt Management\\MessageSignaledInterruptProperties",
+          "registryKey": "MSISupported",
+          "registryValue": "1",
+          "registryType": "DWORD",
+          "impact": "High",
+          "requiresReboot": true,
+          "simpleExplanation": "Same as NVIDIA — switches your GPU from the old interrupt method to the modern MSI method, reducing CPU stalls.",
+          "technicalExplanation": "Enables MSI for the AMD GPU PCI device, replacing legacy line-based interrupts."
+        }
+      ],
+      "manualFixes": [
+        "Use AMD Cleanup Utility to fully remove drivers.",
+        "Install latest driver from amd.com (clean install).",
+        "Disable AMD Adrenalin overlay and metrics overlay."
+      ]
+    },
+    {
+      "fileName": "USBPORT.sys",
+      "friendlyName": "USB Host Controller Driver",
+      "category": "USB",
+      "knownIssue": "USB controller DPC spikes from polling or power management. Common with USB headsets and DACs.",
+      "simpleExplanation": "Your USB controller is causing CPU stalls, usually because a USB device (headset, audio interface, or controller) is being polled too aggressively or waking from sleep.",
+      "gamingImpact": "Audio dropouts on USB headsets, input lag on USB controllers, and general micro-stuttering.",
+      "autoFixes": [
+        {
+          "id": "disable_usb_selective_suspend",
+          "name": "Disable USB Selective Suspend",
+          "actionType": "PowerPlanSetting",
+          "subgroup": "2a737441-1930-4402-8d77-b2bebba308a3",
+          "setting": "48e6b7a6-50f5-4782-a5d4-53bb8f07e226",
+          "value": "0",
+          "impact": "Medium",
+          "requiresReboot": false,
+          "simpleExplanation": "Windows puts USB devices to sleep to save power. Waking them up causes a CPU spike. This keeps them awake all the time.",
+          "technicalExplanation": "Disables USB Selective Suspend in the active power plan, preventing USB hub power state transitions."
+        }
+      ],
+      "manualFixes": [
+        "In Device Manager, go to USB controllers, find each Root Hub, open Properties > Power Management, uncheck \"Allow the computer to turn off this device to save power\".",
+        "Try different USB ports (USB 2.0 vs 3.0).",
+        "If using a USB audio device, try a different port or a powered USB hub."
+      ]
+    },
+    {
+      "fileName": "ACPI.sys",
+      "friendlyName": "Windows ACPI Driver (Power Management)",
+      "category": "Other",
+      "knownIssue": "Power state transitions causing latency. Usually from aggressive CPU idle states.",
+      "simpleExplanation": "Windows is putting your CPU into deep sleep states to save power, and waking up takes too long. Think of it like your CPU taking a nap between frames and being slow to wake up.",
+      "gamingImpact": "Random stutters and frame time spikes, especially when CPU load fluctuates (e.g., entering a new area or loading assets).",
+      "autoFixes": [
+        {
+          "id": "high_perf_power_plan",
+          "name": "Set High Performance Power Plan",
+          "actionType": "PowerPlanSetting",
+          "subgroup": "",
+          "setting": "",
+          "value": "high_performance",
+          "impact": "High",
+          "requiresReboot": false,
+          "simpleExplanation": "Stops Windows from slowing down your CPU and other hardware to save power. Keeps everything running at full speed.",
+          "technicalExplanation": "Activates the High Performance power plan, disabling CPU frequency scaling and C-state transitions."
+        },
+        {
+          "id": "disable_dynamic_tick",
+          "name": "Disable Dynamic Tick",
+          "actionType": "BcdEdit",
+          "command": "bcdedit /set disabledynamictick yes",
+          "revertCommand": "bcdedit /deletevalue disabledynamictick",
+          "impact": "Medium",
+          "requiresReboot": true,
+          "simpleExplanation": "Windows normally adjusts its internal clock speed to save power. This can cause tiny delays when the clock needs to speed back up. Disabling it keeps the clock running at full speed all the time.",
+          "technicalExplanation": "Disables the Windows tickless timer, forcing a fixed 15.6ms (or custom) timer interrupt rate. Eliminates tick coalescing latency."
+        }
+      ],
+      "manualFixes": [
+        "Disable C-States in BIOS (C1E, C3, C6, C7, C10).",
+        "Disable Intel SpeedStep / AMD Cool'n'Quiet in BIOS.",
+        "Update BIOS to latest version from motherboard manufacturer."
+      ]
+    },
+    {
+      "fileName": "Wdf01000.sys",
+      "friendlyName": "Windows Driver Framework (Kernel Mode)",
+      "category": "Framework",
+      "knownIssue": "Generic framework driver. High DPC here means another driver using WDF is the real culprit.",
+      "simpleExplanation": "This isn't a specific device — it's a framework that other drivers use. High latency here means one of your hardware drivers (built on this framework) is the real problem.",
+      "gamingImpact": "Depends on which driver is actually causing the issue. Could be any symptom.",
+      "autoFixes": [],
+      "manualFixes": [
+        "This is a framework, not a specific device. Identify which device driver is built on WDF by disabling devices one at a time in Device Manager and retesting with DPC Doctor after each."
+      ]
+    },
+    {
+      "fileName": "storport.sys",
+      "friendlyName": "Windows Storage Port Driver (Disk/NVMe)",
+      "category": "Storage",
+      "knownIssue": "Storage controller DPC spikes. Common with NVMe drives using generic Microsoft driver instead of manufacturer driver.",
+      "simpleExplanation": "Your hard drive or SSD is causing CPU stalls when reading or writing data. This often happens when Windows uses a generic driver instead of one from your drive's manufacturer.",
+      "gamingImpact": "Hitching when loading new game areas, texture pop-in, and stalls during save/checkpoint operations.",
+      "autoFixes": [],
+      "manualFixes": [
+        "Update SSD/NVMe firmware from manufacturer website.",
+        "Install manufacturer's NVMe driver (Samsung NVMe, Intel RST, WD Dashboard) instead of generic Microsoft driver.",
+        "Check BIOS: ensure SATA mode is AHCI not IDE/RAID.",
+        "Disable Windows write-cache buffer flushing on the drive."
+      ]
+    },
+    {
+      "fileName": "tcpip.sys",
+      "friendlyName": "Windows TCP/IP Network Stack",
+      "category": "Network",
+      "knownIssue": "Network stack processing delays. Often correlates with ndis.sys issues from the same adapter.",
+      "simpleExplanation": "The Windows networking system is taking too long to process network packets. This is often caused by the same network adapter that shows up as ndis.sys.",
+      "gamingImpact": "Network lag spikes, rubber-banding in online games, voice chat cutting out.",
+      "autoFixes": [
+        {
+          "id": "disable_task_offload",
+          "name": "Disable TCP/IP Task Offloading",
+          "actionType": "NetshCommand",
+          "command": "netsh int ip set global taskoffload=disabled",
+          "revertCommand": "netsh int ip set global taskoffload=enabled",
+          "impact": "Medium",
+          "requiresReboot": false,
+          "simpleExplanation": "Your network card tries to handle some network processing itself, but does it slowly. This tells Windows to handle it on the CPU instead, which is usually faster for gaming.",
+          "technicalExplanation": "Disables TCP/IP task offloading globally, forcing network processing to the CPU stack instead of NIC firmware."
+        }
+      ],
+      "manualFixes": [
+        "In Device Manager > Network adapter > Properties > Advanced, disable Large Send Offload v2 (IPv4 and IPv6).",
+        "Disable Flow Control on the network adapter.",
+        "Try disabling Receive Side Scaling if on a single-core bound game."
+      ]
+    }
+  ]
+}
