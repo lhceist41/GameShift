@@ -1,0 +1,90 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:system="clr-namespace:System;assembly=mscorlib">
+
+    <!-- ============================================================
+         GameShift Design Token System
+         All GS.* resources are referenced via DynamicResource in views.
+         ============================================================ -->
+
+    <!-- Surface Colors -->
+    <SolidColorBrush x:Key="GS.Surface.Base"     Color="#0D1117" />
+    <SolidColorBrush x:Key="GS.Surface.Card"     Color="#1A1D23" />
+    <SolidColorBrush x:Key="GS.Surface.Elevated" Color="#232323" />
+    <SolidColorBrush x:Key="GS.Surface.Hover"    Color="#2C2C2C" />
+    <SolidColorBrush x:Key="GS.Surface.Border"   Color="#2D333B" />
+
+    <!-- Text Colors -->
+    <SolidColorBrush x:Key="GS.Text.Primary"   Color="#DEDEDE" />
+    <SolidColorBrush x:Key="GS.Text.Secondary"  Color="#999999" />
+    <SolidColorBrush x:Key="GS.Text.Disabled"   Color="#626262" />
+
+    <!-- Status Colors -->
+    <SolidColorBrush x:Key="GS.Status.Active"   Color="#4ADE80" />
+    <SolidColorBrush x:Key="GS.Status.Warning"  Color="#FBBF24" />
+    <SolidColorBrush x:Key="GS.Status.Error"    Color="#F87171" />
+    <SolidColorBrush x:Key="GS.Status.Info"     Color="#60A5FA" />
+    <SolidColorBrush x:Key="GS.Status.Disabled" Color="#9CA3AF" />
+
+    <!-- Badge Backgrounds (with alpha channel) -->
+    <SolidColorBrush x:Key="GS.Badge.Active.Bg"  Color="#1A4ADE80" />
+    <SolidColorBrush x:Key="GS.Badge.Warning.Bg" Color="#1AFBBF24" />
+    <SolidColorBrush x:Key="GS.Badge.Error.Bg"   Color="#1AF87171" />
+    <SolidColorBrush x:Key="GS.Badge.Info.Bg"    Color="#1A60A5FA" />
+
+    <!-- Accent Colors -->
+    <SolidColorBrush x:Key="GS.Accent.Primary" Color="#4ADE80" />
+    <SolidColorBrush x:Key="GS.Accent.Hover"   Color="#6AEE9A" />
+
+    <!-- ============================================================
+         Typography Styles
+         Apply with: Style="{DynamicResource GS.Text.Hero}"
+         ============================================================ -->
+    <Style x:Key="GS.Text.Hero" TargetType="TextBlock">
+        <Setter Property="FontFamily"  Value="Segoe UI" />
+        <Setter Property="FontSize"    Value="32" />
+        <Setter Property="FontWeight"  Value="Bold" />
+        <Setter Property="Foreground"  Value="{DynamicResource GS.Text.Primary}" />
+    </Style>
+
+    <Style x:Key="GS.Text.SectionHeader" TargetType="TextBlock">
+        <Setter Property="FontFamily"  Value="Segoe UI" />
+        <Setter Property="FontSize"    Value="15" />
+        <Setter Property="FontWeight"  Value="SemiBold" />
+        <Setter Property="Foreground"  Value="{DynamicResource GS.Text.Primary}" />
+    </Style>
+
+    <Style x:Key="GS.Text.Body" TargetType="TextBlock">
+        <Setter Property="FontFamily"  Value="Segoe UI" />
+        <Setter Property="FontSize"    Value="13" />
+        <Setter Property="FontWeight"  Value="Normal" />
+        <Setter Property="Foreground"  Value="{DynamicResource GS.Text.Primary}" />
+    </Style>
+
+    <Style x:Key="GS.Text.Badge" TargetType="TextBlock">
+        <Setter Property="FontFamily"  Value="Segoe UI" />
+        <Setter Property="FontSize"    Value="11" />
+        <Setter Property="FontWeight"  Value="SemiBold" />
+        <Setter Property="Foreground"  Value="{DynamicResource GS.Text.Primary}" />
+    </Style>
+
+    <!-- ============================================================
+         Spacing Constants (8px grid)
+         Access with: {DynamicResource GS.Spacing.CardRadius}
+         ============================================================ -->
+    <system:Double x:Key="GS.Spacing.CardRadius">8</system:Double>
+    <system:Double x:Key="GS.Spacing.CardPadding">16</system:Double>
+    <system:Double x:Key="GS.Spacing.CardGap">16</system:Double>
+    <system:Double x:Key="GS.Spacing.SectionGap">32</system:Double>
+    <system:Double x:Key="GS.Spacing.DashboardMargin">24</system:Double>
+    <system:Double x:Key="GS.Spacing.CompactRowHeight">44</system:Double>
+    <system:Double x:Key="GS.Spacing.BadgeHeight">24</system:Double>
+    <system:Double x:Key="GS.Spacing.BadgePaddingH">8</system:Double>
+    <system:Double x:Key="GS.Spacing.BadgePaddingV">4</system:Double>
+    <system:Double x:Key="GS.Spacing.BadgeRadius">12</system:Double>
+    <system:Double x:Key="GS.Spacing.IconInline">16</system:Double>
+    <system:Double x:Key="GS.Spacing.IconHero">24</system:Double>
+    <system:Double x:Key="GS.Spacing.SparklineWidth">120</system:Double>
+    <system:Double x:Key="GS.Spacing.SparklineHeight">32</system:Double>
+
+</ResourceDictionary>
