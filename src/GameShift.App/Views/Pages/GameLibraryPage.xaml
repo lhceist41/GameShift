@@ -1,0 +1,89 @@
+<Page x:Class="GameShift.App.Views.Pages.GameLibraryPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+      FontFamily="Segoe UI" FontSize="14">
+    <Page.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisConverter"/>
+    </Page.Resources>
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>  <!-- Header + buttons -->
+            <RowDefinition Height="*"/>     <!-- Game list -->
+        </Grid.RowDefinitions>
+
+        <!-- Header Row -->
+        <DockPanel Grid.Row="0" Margin="0,0,0,15">
+            <TextBlock Text="Game Library" FontSize="20" FontWeight="Bold"
+                       Foreground="{DynamicResource GS.Text.Primary}"
+                       DockPanel.Dock="Left" VerticalAlignment="Center"/>
+            <StackPanel Orientation="Horizontal" DockPanel.Dock="Right"
+                        HorizontalAlignment="Right">
+                <Button Content="Add Game..." Padding="12,6"
+                        Background="{DynamicResource GS.Accent.Primary}"
+                        Foreground="White" BorderThickness="0"
+                        FontWeight="SemiBold" Cursor="Hand"
+                        Click="OnAddGameClicked" Margin="0,0,8,0"/>
+                <Button Content="Remove" Padding="12,6"
+                        Background="{DynamicResource GS.Surface.Card}"
+                        Foreground="{DynamicResource GS.Text.Primary}"
+                        BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1"
+                        IsEnabled="{Binding CanRemove, Mode=OneWay}"
+                        Click="OnRemoveGameClicked"/>
+            </StackPanel>
+        </DockPanel>
+
+        <!-- Game List -->
+        <ListView Grid.Row="1"
+                  ItemsSource="{Binding Games}"
+                  SelectedItem="{Binding SelectedGame, Mode=TwoWay}"
+                  Background="Transparent" BorderThickness="0"
+                  ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+            <ListView.ItemContainerStyle>
+                <Style TargetType="ListViewItem">
+                    <Setter Property="Background" Value="Transparent"/>
+                    <Setter Property="Margin" Value="0,0,0,5"/>
+                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                    <Setter Property="Foreground" Value="{DynamicResource GS.Text.Primary}"/>
+                    <Style.Triggers>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter Property="Background" Value="{DynamicResource GS.Surface.Border}"/>
+                        </Trigger>
+                    </Style.Triggers>
+                </Style>
+            </ListView.ItemContainerStyle>
+            <ListView.ItemTemplate>
+                <DataTemplate>
+                    <Border Background="{DynamicResource GS.Surface.Card}"
+                            CornerRadius="6" Padding="12,10"
+                            BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Text="{Binding GameName}" FontWeight="SemiBold" FontSize="15"
+                                           Foreground="{DynamicResource GS.Text.Primary}"/>
+                                <TextBlock Text="{Binding DisplayPath}" FontSize="11"
+                                           Foreground="{DynamicResource GS.Text.Secondary}"
+                                           TextTrimming="CharacterEllipsis"/>
+                            </StackPanel>
+                            <Border Grid.Column="1" Background="{DynamicResource GS.Surface.Border}"
+                                    CornerRadius="4" Padding="8,4" VerticalAlignment="Center">
+                                <TextBlock Text="{Binding LauncherSource}" FontSize="11"
+                                           Foreground="{DynamicResource GS.Text.Secondary}"/>
+                            </Border>
+                        </Grid>
+                    </Border>
+                </DataTemplate>
+            </ListView.ItemTemplate>
+        </ListView>
+
+        <!-- Empty state -->
+        <TextBlock Grid.Row="1" Text="No games detected. Click 'Add Game' to add one manually."
+                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                   FontSize="14" Foreground="{DynamicResource GS.Text.Secondary}"
+                   Visibility="{Binding HasNoGames, Converter={StaticResource BoolToVisConverter}}"/>
+    </Grid>
+</Page>
