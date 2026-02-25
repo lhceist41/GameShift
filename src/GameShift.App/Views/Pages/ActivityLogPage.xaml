@@ -1,0 +1,122 @@
+<Page x:Class="GameShift.App.Views.Pages.ActivityLogPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+      xmlns:helpers="clr-namespace:GameShift.App.Helpers"
+      FontFamily="Segoe UI" FontSize="14">
+    <Page.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
+    </Page.Resources>
+    <ScrollViewer VerticalScrollBarVisibility="Auto"
+                  helpers:ScrollHelper.FixScrolling="True">
+        <StackPanel Margin="24">
+
+            <!-- Page Title -->
+            <TextBlock Text="Activity Log"
+                       Style="{DynamicResource GS.Text.Hero}"
+                       Margin="0,0,0,8"/>
+            <TextBlock Text="All system events and optimization actions"
+                       Style="{DynamicResource GS.Text.Body}"
+                       Foreground="{DynamicResource GS.Text.Secondary}"
+                       Margin="0,0,0,24"/>
+
+            <!-- Search + Filter Row -->
+            <Grid Margin="0,0,0,16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <TextBox Grid.Column="0"
+                         x:Name="SearchBox"
+                         Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                         Background="{DynamicResource GS.Surface.Card}"
+                         Foreground="{DynamicResource GS.Text.Primary}"
+                         BorderBrush="{DynamicResource GS.Surface.Border}"
+                         BorderThickness="1"
+                         Padding="10,8"
+                         FontSize="13"
+                         Margin="0,0,12,0"/>
+
+                <ComboBox Grid.Column="1"
+                          ItemsSource="{Binding FilterOptions}"
+                          SelectedItem="{Binding SelectedFilter}"
+                          Background="{DynamicResource GS.Surface.Card}"
+                          Foreground="{DynamicResource GS.Text.Primary}"
+                          BorderBrush="{DynamicResource GS.Surface.Border}"
+                          BorderThickness="1"
+                          Padding="8,6"
+                          FontSize="13"
+                          Width="140"/>
+            </Grid>
+
+            <!-- Activity List -->
+            <ItemsControl ItemsSource="{Binding FilteredActivities}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border Background="{DynamicResource GS.Surface.Card}"
+                                CornerRadius="8"
+                                Padding="16,12"
+                                Margin="0,0,0,8"
+                                BorderBrush="{DynamicResource GS.Surface.Border}"
+                                BorderThickness="1">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+
+                                <!-- Type icon -->
+                                <TextBlock Grid.Column="0"
+                                           Text="{Binding TypeIcon}"
+                                           FontSize="16"
+                                           Foreground="{DynamicResource GS.Text.Secondary}"
+                                           VerticalAlignment="Center"/>
+
+                                <!-- Description + type label -->
+                                <StackPanel Grid.Column="1" Margin="12,0,12,0">
+                                    <TextBlock Text="{Binding Description}"
+                                               FontSize="13"
+                                               Foreground="{DynamicResource GS.Text.Primary}"
+                                               TextWrapping="Wrap"/>
+                                    <TextBlock Text="{Binding Type}"
+                                               FontSize="11"
+                                               Foreground="{DynamicResource GS.Text.Secondary}"
+                                               Margin="0,2,0,0"/>
+                                </StackPanel>
+
+                                <!-- Timestamp -->
+                                <TextBlock Grid.Column="2"
+                                           Text="{Binding FormattedTime}"
+                                           FontSize="12"
+                                           Foreground="{DynamicResource GS.Text.Secondary}"
+                                           VerticalAlignment="Center"/>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <!-- Empty state -->
+            <TextBlock Text="No activity yet. Start a game to see events here."
+                       FontSize="13"
+                       Foreground="{DynamicResource GS.Text.Secondary}"
+                       HorizontalAlignment="Center"
+                       TextAlignment="Center"
+                       Margin="0,24,0,0">
+                <TextBlock.Style>
+                    <Style TargetType="TextBlock">
+                        <Setter Property="Visibility" Value="Collapsed"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding FilteredActivities.Count}" Value="0">
+                                <Setter Property="Visibility" Value="Visible"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </TextBlock.Style>
+            </TextBlock>
+
+        </StackPanel>
+    </ScrollViewer>
+</Page>
