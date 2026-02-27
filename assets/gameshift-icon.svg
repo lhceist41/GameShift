@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0D1117"/>
+      <stop offset="100%" style="stop-color:#161B22"/>
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#00F0FF"/>
+      <stop offset="100%" style="stop-color:#00E676"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="softGlow">
+      <feGaussianBlur stdDeviation="15" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <rect x="16" y="16" width="480" height="480" rx="96" fill="url(#bgGrad)" stroke="#21262D" stroke-width="2"/>
+  <polygon points="256,88 402,172 402,340 256,424 110,340 110,172" fill="none" stroke="url(#accentGrad)" stroke-width="2" opacity="0.15" filter="url(#softGlow)"/>
+  <polygon points="256,108 388,184 388,336 256,412 124,336 124,184" fill="none" stroke="url(#accentGrad)" stroke-width="3" opacity="0.4"/>
+  <path d="M 256 148 L 340 232 L 308 232 L 308 296 L 204 296 L 204 232 L 172 232 Z" fill="url(#accentGrad)" opacity="0.95" filter="url(#glow)"/>
+  <path d="M 256 228 L 340 312 L 308 312 L 308 376 L 204 376 L 204 312 L 172 312 Z" fill="none" stroke="url(#accentGrad)" stroke-width="2.5" opacity="0.5"/>
+  <circle cx="256" cy="108" r="4" fill="#00F0FF" opacity="0.8"/>
+  <circle cx="388" cy="184" r="4" fill="#00F0FF" opacity="0.6"/>
+  <circle cx="388" cy="336" r="4" fill="#00F0FF" opacity="0.4"/>
+  <circle cx="256" cy="412" r="4" fill="#00F0FF" opacity="0.8"/>
+  <circle cx="124" cy="336" r="4" fill="#00F0FF" opacity="0.4"/>
+  <circle cx="124" cy="184" r="4" fill="#00F0FF" opacity="0.6"/>
+</svg>
