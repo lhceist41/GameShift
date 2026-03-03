@@ -580,13 +580,18 @@ public class DpcDoctorViewModel : INotifyPropertyChanged
         if (_settings.PendingRebootFixes.Count == 0 || _settings.DpcDoctorLastRunPeaks.Count == 0)
             return;
 
-        // If there are pending reboot fixes, show the comparison section
         HasPendingRebootComparison = true;
+
+        var bootTime = DateTime.Now - TimeSpan.FromMilliseconds(Environment.TickCount64);
 
         foreach (var fixId in _settings.PendingRebootFixes)
         {
             var applied = _settings.AppliedDpcFixes.FirstOrDefault(f => f.FixId == fixId);
-            if (applied != null)
+            if (applied == null) continue;
+
+            if (bootTime > applied.AppliedAt)
+                RebootComparisonLines.Add($"Reboot complete: {applied.Description} \u2014 run scan to compare");
+            else
                 RebootComparisonLines.Add($"Pending reboot: {applied.Description}");
         }
     }
