@@ -1,6 +1,9 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using GameShift.App.ViewModels;
+using GameShift.Core.SystemTweaks;
+using GameShift.Core.GameProfiles;
 
 namespace GameShift.App.Views.Pages;
 
@@ -24,6 +27,8 @@ public partial class SettingsPage : Page
         vm.SetVbsHvciToggle(App.VbsToggle);
         DataContext = vm;
         vm.LoadSettings();
+        PopulateTweaksList();
+        PopulateProfilesList();
     }
 
     private void OnSaveClicked(object sender, RoutedEventArgs e)
@@ -61,5 +66,315 @@ public partial class SettingsPage : Page
     private void OnImportClicked(object sender, RoutedEventArgs e)
     {
         (DataContext as SettingsViewModel)?.ImportSettings();
+    }
+
+    private void PopulateTweaksList()
+    {
+        var mgr = App.TweaksMgr;
+        if (mgr == null) return;
+
+        TweaksList.Items.Clear();
+
+        string? lastCategory = null;
+        foreach (var tweak in mgr.Tweaks)
+        {
+            // Category header
+            if (tweak.Category != lastCategory)
+            {
+                lastCategory = tweak.Category;
+                var header = new TextBlock
+                {
+                    Text = tweak.Category.ToUpperInvariant(),
+                    FontSize = 10,
+                    FontWeight = FontWeights.Bold,
+                    Foreground = (Brush)FindResource("GS.Text.Secondary"),
+                    Margin = new Thickness(0, 8, 0, 4)
+                };
+                TweaksList.Items.Add(header);
+            }
+
+            var status = mgr.GetTweakStatus(tweak);
+            var isApplied = tweak.DetectIsApplied();
+            var isGameShift = status == "Applied (by GameShift)";
+
+            var card = new Border
+            {
+                Background = (Brush)FindResource("GS.Surface.Card"),
+                CornerRadius = new CornerRadius(6),
+                Padding = new Thickness(12),
+                Margin = new Thickness(0, 0, 0, 6),
+                BorderBrush = (Brush)FindResource("GS.Surface.Border"),
+                BorderThickness = new Thickness(1)
+            };
+
+            var grid = new Grid();
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            var textStack = new StackPanel();
+            var namePanel = new StackPanel { Orientation = Orientation.Horizontal };
+            namePanel.Children.Add(new TextBlock
+            {
+                Text = tweak.Name,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = (Brush)FindResource("GS.Text.Primary"),
+                FontSize = 13
+            });
+            if (tweak.RequiresReboot)
+            {
+                namePanel.Children.Add(new TextBlock
+                {
+                    Text = " \u27F3 Reboot",
+                    FontSize = 10,
+                    Foreground = (Brush)FindResource("GS.Text.Secondary"),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(6, 0, 0, 0)
+                });
+            }
+            textStack.Children.Add(namePanel);
+            textStack.Children.Add(new TextBlock
+            {
+                Text = tweak.Description,
+                FontSize = 11,
+                Foreground = (Brush)FindResource("GS.Text.Secondary"),
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 2, 12, 0)
+            });
+            textStack.Children.Add(new TextBlock
+            {
+                Text = status,
+                FontSize = 11,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = isApplied
+                    ? (Brush)new SolidColorBrush(Color.FromRgb(0x4A, 0xDE, 0x80))
+                    : (Brush)FindResource("GS.Text.Secondary"),
+                Margin = new Thickness(0, 4, 0, 0)
+            });
+
+            Grid.SetColumn(textStack, 0);
+            grid.Children.Add(textStack);
+
+            var btn = new Button
+            {
+                Content = isApplied ? (isGameShift ? "Revert" : "Applied") : "Apply",
+                Padding = new Thickness(12, 6, 12, 6),
+                VerticalAlignment = VerticalAlignment.Center,
+                Cursor = System.Windows.Input.Cursors.Hand,
+                IsEnabled = !isApplied || isGameShift,
+                Tag = tweak
+            };
+
+            if (isApplied && !isGameShift)
+            {
+                btn.Background = (Brush)FindResource("GS.Surface.Base");
+                btn.Foreground = (Brush)FindResource("GS.Text.Secondary");
+            }
+            else if (isApplied && isGameShift)
+            {
+                btn.Background = (Brush)FindResource("GS.Surface.Base");
+                btn.Foreground = (Brush)FindResource("GS.Text.Primary");
+            }
+            else
+            {
+                btn.Background = (Brush)FindResource("GS.Accent.Primary");
+                btn.Foreground = Brushes.White;
+            }
+            btn.BorderThickness = new Thickness(0);
+            btn.Click += OnTweakButtonClicked;
+
+            Grid.SetColumn(btn, 1);
+            grid.Children.Add(btn);
+
+            card.Child = grid;
+            TweaksList.Items.Add(card);
+        }
+    }
+
+    private void OnTweakButtonClicked(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button btn || btn.Tag is not ISystemTweak tweak) return;
+        var mgr = App.TweaksMgr;
+        if (mgr == null) return;
+
+        var status = mgr.GetTweakStatus(tweak);
+        if (status == "Applied (by GameShift)")
+        {
+            mgr.RevertTweak(tweak);
+        }
+        else if (tweak is GameShift.Core.SystemTweaks.Tweaks.DisableMemoryIntegrity)
+        {
+            var result = MessageBox.Show(
+                "Disabling Memory Integrity reduces system security. This removes VBS overhead which can improve FPS, but makes your system more vulnerable to kernel-level attacks.\n\nAre you sure you want to proceed?",
+                "Security Warning",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning);
+            if (result != MessageBoxResult.Yes) return;
+            mgr.ApplyTweak(tweak);
+        }
+        else
+        {
+            mgr.ApplyTweak(tweak);
+        }
+
+        // Refresh the list
+        PopulateTweaksList();
+    }
+
+    private void OnApplyAllTweaksClicked(object sender, RoutedEventArgs e)
+    {
+        var mgr = App.TweaksMgr;
+        if (mgr == null) return;
+
+        int count = mgr.ApplyAllRecommended();
+        PopulateTweaksList();
+
+        if (count > 0)
+        {
+            (DataContext as SettingsViewModel)!.StatusMessage = $"{count} tweaks applied.";
+        }
+        else
+        {
+            (DataContext as SettingsViewModel)!.StatusMessage = "All recommended tweaks already applied.";
+        }
+    }
+
+    private void PopulateProfilesList()
+    {
+        var mgr = App.GameProfileMgr;
+        if (mgr == null) return;
+
+        ProfilesList.Items.Clear();
+
+        foreach (var profile in mgr.GetAllProfiles())
+        {
+            var card = new Border
+            {
+                Background = (Brush)FindResource("GS.Surface.Card"),
+                CornerRadius = new CornerRadius(6),
+                Padding = new Thickness(12),
+                Margin = new Thickness(0, 0, 0, 6),
+                BorderBrush = (Brush)FindResource("GS.Surface.Border"),
+                BorderThickness = new Thickness(1)
+            };
+
+            var mainStack = new StackPanel();
+
+            // Header with name and priority
+            var headerPanel = new DockPanel { Margin = new Thickness(0, 0, 0, 4) };
+            headerPanel.Children.Add(new TextBlock
+            {
+                Text = profile.DisplayName,
+                FontWeight = FontWeights.SemiBold,
+                FontSize = 14,
+                Foreground = (Brush)FindResource("GS.Text.Primary")
+            });
+            var priorityText = new TextBlock
+            {
+                Text = $"Priority: {profile.GamePriority}",
+                FontSize = 11,
+                Foreground = (Brush)FindResource("GS.Text.Secondary"),
+                HorizontalAlignment = HorizontalAlignment.Right,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            DockPanel.SetDock(priorityText, Dock.Right);
+            headerPanel.Children.Add(priorityText);
+            mainStack.Children.Add(headerPanel);
+
+            // Process names
+            mainStack.Children.Add(new TextBlock
+            {
+                Text = $"Processes: {string.Join(", ", profile.ProcessNames)}",
+                FontSize = 11,
+                Foreground = (Brush)FindResource("GS.Text.Secondary"),
+                Margin = new Thickness(0, 0, 0, 2)
+            });
+
+            // Features summary
+            var features = new List<string>();
+            if (profile.IntelHybridPCoreOnly) features.Add("P-Core Only");
+            if (profile.LauncherPriority != null) features.Add($"Launcher \u2192 {profile.LauncherPriority}");
+            if (profile.GamingStandbyThresholdMB != null) features.Add($"Standby: {profile.GamingStandbyThresholdMB}MB");
+            if (features.Count > 0)
+            {
+                mainStack.Children.Add(new TextBlock
+                {
+                    Text = string.Join(" \u00B7 ", features),
+                    FontSize = 11,
+                    Foreground = (Brush)FindResource("GS.Accent.Primary"),
+                    Margin = new Thickness(0, 2, 0, 0)
+                });
+            }
+
+            // Notes (collapsible via Expander)
+            if (profile.Notes.Length > 0)
+            {
+                var expander = new Expander
+                {
+                    Header = $"{profile.Notes.Length} optimization notes",
+                    FontSize = 11,
+                    Foreground = (Brush)FindResource("GS.Text.Secondary"),
+                    Margin = new Thickness(0, 6, 0, 0),
+                    IsExpanded = false
+                };
+
+                var notesStack = new StackPanel();
+                foreach (var note in profile.Notes)
+                {
+                    notesStack.Children.Add(new TextBlock
+                    {
+                        Text = $"\u2022 {note}",
+                        FontSize = 11,
+                        Foreground = (Brush)FindResource("GS.Text.Secondary"),
+                        TextWrapping = TextWrapping.Wrap,
+                        Margin = new Thickness(0, 2, 0, 2)
+                    });
+                }
+                expander.Content = notesStack;
+                mainStack.Children.Add(expander);
+            }
+
+            // Recommended tweaks
+            if (profile.RecommendedTweaks.Length > 0)
+            {
+                var tweaksPanel = new WrapPanel { Margin = new Thickness(0, 6, 0, 0) };
+                tweaksPanel.Children.Add(new TextBlock
+                {
+                    Text = "Tweaks: ",
+                    FontSize = 10,
+                    FontWeight = FontWeights.SemiBold,
+                    Foreground = (Brush)FindResource("GS.Text.Secondary"),
+                    VerticalAlignment = VerticalAlignment.Center
+                });
+                foreach (var tweakName in profile.RecommendedTweaks)
+                {
+                    var tweakMgr = App.TweaksMgr;
+                    var tweak = tweakMgr?.GetTweakByClassName(tweakName);
+                    bool applied = tweak?.DetectIsApplied() == true;
+
+                    var badge = new Border
+                    {
+                        Background = applied
+                            ? (Brush)new SolidColorBrush(Color.FromArgb(0x30, 0x4A, 0xDE, 0x80))
+                            : (Brush)new SolidColorBrush(Color.FromArgb(0x20, 0xFF, 0xFF, 0xFF)),
+                        CornerRadius = new CornerRadius(3),
+                        Padding = new Thickness(6, 2, 6, 2),
+                        Margin = new Thickness(2)
+                    };
+                    badge.Child = new TextBlock
+                    {
+                        Text = tweakName,
+                        FontSize = 10,
+                        Foreground = applied
+                            ? (Brush)new SolidColorBrush(Color.FromRgb(0x4A, 0xDE, 0x80))
+                            : (Brush)FindResource("GS.Text.Secondary")
+                    };
+                    tweaksPanel.Children.Add(badge);
+                }
+                mainStack.Children.Add(tweaksPanel);
+            }
+
+            card.Child = mainStack;
+            ProfilesList.Items.Add(card);
+        }
     }
 }
