@@ -82,6 +82,16 @@ public class TimerResolutionManager : IOptimization
             // Record original resolution
             snapshot.RecordTimerResolution(currentResolution);
 
+            // Check if Background Mode is handling timer resolution
+            var bgSettings = SettingsManager.Load();
+            if (bgSettings.BackgroundMode?.Enabled == true && bgSettings.BackgroundMode.TimerResolutionEnabled)
+            {
+                SettingsManager.Logger.Information(
+                    "TimerResolutionManager: Background Mode active — recording snapshot but skipping set");
+                IsApplied = true;
+                return true;
+            }
+
             // TODO: Read from AppSettings.TimerResolution100ns when DI is set up
             // For now, hardcode to 5000 (0.5ms in 100-nanosecond units)
             int desiredResolution = 5000;
