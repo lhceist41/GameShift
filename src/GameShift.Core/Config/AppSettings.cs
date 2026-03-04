@@ -166,6 +166,30 @@ public class AppSettings
     /// </summary>
     public Dictionary<string, double> DpcDoctorLastRunPeaks { get; set; } = new();
 
+    // -- Background Mode ------------------------------------------------
+
+    /// <summary>
+    /// Background Mode settings for always-on system optimizations.
+    /// Null means Background Mode has never been configured (defaults used on first enable).
+    /// </summary>
+    public BackgroundModeSettings? BackgroundMode { get; set; }
+
+    // -- System Tweaks ------------------------------------------------
+
+    /// <summary>
+    /// System Tweaks settings for one-time registry optimizations.
+    /// Null means never configured.
+    /// </summary>
+    public SystemTweaksSettings? SystemTweaks { get; set; }
+
+    // -- Game Profiles ------------------------------------------------
+
+    /// <summary>
+    /// Game Profiles settings for per-game optimizations.
+    /// Null means never configured.
+    /// </summary>
+    public GameProfileSettings? GameProfiles { get; set; }
+
     // -- Window Position Persistence ----------------------------------------
 
     /// <summary>Window left position in device-independent pixels.</summary>
@@ -209,4 +233,105 @@ public class AppliedDpcFix
 
     /// <summary>Whether this fix requires a reboot to take effect.</summary>
     public bool RequiresReboot { get; set; }
+}
+
+/// <summary>
+/// Settings for Background Mode — always-on system optimizations that run 24/7.
+/// </summary>
+public class BackgroundModeSettings
+{
+    /// <summary>Master toggle for all Background Mode services.</summary>
+    public bool Enabled { get; set; } = false;
+
+    // -- StandbyListCleaner --
+    /// <summary>Enable always-on standby list cleaning.</summary>
+    public bool StandbyListCleanerEnabled { get; set; } = true;
+    /// <summary>Poll interval in seconds for memory checks.</summary>
+    public int StandbyListPollSeconds { get; set; } = 10;
+    /// <summary>Free RAM threshold in MB — purge when available RAM drops below this.</summary>
+    public int StandbyListThresholdMB { get; set; } = 1024;
+
+    // -- TimerResolutionService --
+    /// <summary>Enable always-on timer resolution lock.</summary>
+    public bool TimerResolutionEnabled { get; set; } = true;
+    /// <summary>Target timer resolution in 100ns units. 5000 = 0.5ms.</summary>
+    public int TimerResolution100ns { get; set; } = 5000;
+
+    // -- PowerPlanManager --
+    /// <summary>Enable always-on power plan management.</summary>
+    public bool PowerPlanEnabled { get; set; } = true;
+    /// <summary>Minutes of user idle before switching to balanced plan. 0 = never switch.</summary>
+    public int IdleTimeoutMinutes { get; set; } = 15;
+
+    // -- TaskDeferralService --
+    /// <summary>Enable Windows scheduled task deferral during gaming.</summary>
+    public bool TaskDeferralEnabled { get; set; } = true;
+
+    // -- ProcessPriorityPersistence --
+    /// <summary>Enable persistent process priority rules.</summary>
+    public bool ProcessPriorityEnabled { get; set; } = false;
+    /// <summary>
+    /// Process rules: executable name → priority class name (e.g., "chrome.exe" → "BelowNormal").
+    /// </summary>
+    public Dictionary<string, string> ProcessPriorityRules { get; set; } = new();
+}
+
+/// <summary>
+/// Settings for System Tweaks — one-time registry and system-level optimizations.
+/// </summary>
+public class SystemTweaksSettings
+{
+    /// <summary>
+    /// Tracks which tweaks GameShift has applied, with enough info to revert.
+    /// Key = tweak class name (e.g., "DisableGameDvr").
+    /// </summary>
+    public Dictionary<string, TweakState> AppliedTweaks { get; set; } = new();
+}
+
+/// <summary>
+/// Tracks the state of an applied system tweak for safe revert.
+/// </summary>
+public class TweakState
+{
+    /// <summary>Whether this tweak was applied by GameShift (vs. already applied by user).</summary>
+    public bool IsAppliedByGameShift { get; set; }
+
+    /// <summary>JSON-serialized original values before GameShift applied the tweak. Null if not applied by GameShift.</summary>
+    public string? OriginalValues { get; set; }
+
+    /// <summary>When the tweak was applied.</summary>
+    public DateTime AppliedAt { get; set; }
+}
+
+/// <summary>
+/// Settings for the Game Profiles system — per-game optimization profiles.
+/// </summary>
+public class GameProfileSettings
+{
+    /// <summary>Master toggle for the Game Profiles system.</summary>
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>
+    /// Per-profile user customizations (overrides built-in defaults).
+    /// Key = profile ID (e.g., "overwatch2").
+    /// </summary>
+    public Dictionary<string, GameProfileOverrides> ProfileOverrides { get; set; } = new();
+
+    /// <summary>User-created custom profiles.</summary>
+    public List<GameProfiles.GameProfile> CustomProfiles { get; set; } = new();
+}
+
+/// <summary>
+/// User overrides for a built-in or custom game profile.
+/// </summary>
+public class GameProfileOverrides
+{
+    /// <summary>Whether this profile is enabled.</summary>
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>Custom CPU affinity mask override. Null = use profile default.</summary>
+    public long? CustomAffinityMask { get; set; }
+
+    /// <summary>Custom process priority override. Null = use profile default.</summary>
+    public string? CustomPriority { get; set; }
 }

@@ -153,6 +153,155 @@
                     </StackPanel>
                 </Border>
 
+                <!-- Background Mode Section -->
+                <TextBlock Text="BACKGROUND MODE" FontSize="11" FontWeight="Bold"
+                           Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,0,0,8"/>
+
+                <Border Background="{DynamicResource GS.Surface.Card}" CornerRadius="8"
+                        Padding="15" Margin="0,0,0,15"
+                        BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1">
+                    <StackPanel>
+                        <CheckBox Content="Enable Background Mode"
+                                  IsChecked="{Binding BgEnabled, Mode=TwoWay}"
+                                  Foreground="{DynamicResource GS.Text.Primary}"
+                                  Margin="0,0,0,4"/>
+                        <TextBlock Text="Always-on system optimizations that run 24/7, independent of gaming sessions."
+                                   FontSize="11" Foreground="{DynamicResource GS.Text.Secondary}" Margin="20,0,0,12"
+                                   TextWrapping="Wrap"/>
+
+                        <!-- Standby List Cleaner -->
+                        <TextBlock Text="Standby List Cleaner" FontSize="11" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,0,0,6"/>
+                        <CheckBox Content="Enable standby list cleaner"
+                                  IsChecked="{Binding BgStandbyListEnabled, Mode=TwoWay}"
+                                  Foreground="{DynamicResource GS.Text.Primary}"
+                                  IsEnabled="{Binding BgEnabled}"
+                                  Margin="20,0,0,6"/>
+                        <StackPanel Orientation="Horizontal" Margin="20,0,0,6">
+                            <TextBlock Text="Threshold (MB):" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource GS.Text.Primary}" Margin="0,0,8,0"/>
+                            <TextBox Text="{Binding BgStandbyListThresholdMB, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                     Width="80" Background="{DynamicResource GS.Surface.Base}"
+                                     Foreground="{DynamicResource GS.Text.Primary}"
+                                     BorderBrush="{DynamicResource GS.Surface.Border}" Padding="6,4"
+                                     IsEnabled="{Binding BgEnabled}"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="20,0,0,12">
+                            <TextBlock Text="Poll interval (sec):" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource GS.Text.Primary}" Margin="0,0,8,0"/>
+                            <TextBox Text="{Binding BgStandbyListPollSeconds, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                     Width="80" Background="{DynamicResource GS.Surface.Base}"
+                                     Foreground="{DynamicResource GS.Text.Primary}"
+                                     BorderBrush="{DynamicResource GS.Surface.Border}" Padding="6,4"
+                                     IsEnabled="{Binding BgEnabled}"/>
+                        </StackPanel>
+
+                        <!-- Timer Resolution -->
+                        <TextBlock Text="Timer Resolution" FontSize="11" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,0,0,6"/>
+                        <CheckBox Content="Enable timer resolution lock"
+                                  IsChecked="{Binding BgTimerEnabled, Mode=TwoWay}"
+                                  Foreground="{DynamicResource GS.Text.Primary}"
+                                  IsEnabled="{Binding BgEnabled}"
+                                  Margin="20,0,0,6"/>
+                        <StackPanel Orientation="Horizontal" Margin="20,0,0,12">
+                            <TextBlock Text="Resolution (100ns):" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource GS.Text.Primary}" Margin="0,0,8,0"/>
+                            <TextBox Text="{Binding BgTimerResolution100ns, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                     Width="80" Background="{DynamicResource GS.Surface.Base}"
+                                     Foreground="{DynamicResource GS.Text.Primary}"
+                                     BorderBrush="{DynamicResource GS.Surface.Border}" Padding="6,4"
+                                     IsEnabled="{Binding BgEnabled}"/>
+                        </StackPanel>
+
+                        <!-- Power Plan -->
+                        <TextBlock Text="Power Plan Manager" FontSize="11" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,0,0,6"/>
+                        <CheckBox Content="Enable custom power plan"
+                                  IsChecked="{Binding BgPowerPlanEnabled, Mode=TwoWay}"
+                                  Foreground="{DynamicResource GS.Text.Primary}"
+                                  IsEnabled="{Binding BgEnabled}"
+                                  Margin="20,0,0,6"/>
+                        <StackPanel Orientation="Horizontal" Margin="20,0,0,12">
+                            <TextBlock Text="Idle timeout (min):" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource GS.Text.Primary}" Margin="0,0,8,0"/>
+                            <TextBox Text="{Binding BgIdleTimeoutMinutes, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                     Width="80" Background="{DynamicResource GS.Surface.Base}"
+                                     Foreground="{DynamicResource GS.Text.Primary}"
+                                     BorderBrush="{DynamicResource GS.Surface.Border}" Padding="6,4"
+                                     IsEnabled="{Binding BgEnabled}"/>
+                        </StackPanel>
+
+                        <!-- Task Deferral -->
+                        <TextBlock Text="Task Deferral" FontSize="11" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,0,0,6"/>
+                        <CheckBox Content="Defer Windows tasks during gaming"
+                                  IsChecked="{Binding BgTaskDeferralEnabled, Mode=TwoWay}"
+                                  Foreground="{DynamicResource GS.Text.Primary}"
+                                  IsEnabled="{Binding BgEnabled}"
+                                  Margin="20,0,0,4"/>
+                        <TextBlock Text="Temporarily disables Windows Update, Defrag, and other scheduled tasks while a game is running."
+                                   FontSize="11" Foreground="{DynamicResource GS.Text.Secondary}"
+                                   Margin="40,0,0,12" TextWrapping="Wrap"/>
+
+                        <!-- Process Priority -->
+                        <TextBlock Text="Process Priority" FontSize="11" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,0,0,6"/>
+                        <CheckBox Content="Enable persistent process priority rules"
+                                  IsChecked="{Binding BgProcessPriorityEnabled, Mode=TwoWay}"
+                                  Foreground="{DynamicResource GS.Text.Primary}"
+                                  IsEnabled="{Binding BgEnabled}"
+                                  Margin="20,0,0,4"/>
+                        <TextBlock Text="Automatically sets process priorities for configured applications. Configure rules in profiles."
+                                   FontSize="11" Foreground="{DynamicResource GS.Text.Secondary}"
+                                   Margin="40,0,0,0" TextWrapping="Wrap"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- System Tweaks Section -->
+                <TextBlock Text="SYSTEM TWEAKS" FontSize="11" FontWeight="Bold"
+                           Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,0,0,8"/>
+
+                <Border Background="{DynamicResource GS.Surface.Card}" CornerRadius="8"
+                        Padding="15" Margin="0,0,0,8"
+                        BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1">
+                    <StackPanel>
+                        <TextBlock Text="One-time registry optimizations that benefit all games. Each tweak detects current state and can be individually toggled."
+                                   FontSize="11" Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,0,0,12"
+                                   TextWrapping="Wrap"/>
+                        <Button Content="Apply All Recommended" Padding="12,6"
+                                Background="{DynamicResource GS.Accent.Primary}"
+                                Foreground="White" BorderThickness="0"
+                                FontWeight="SemiBold" Cursor="Hand"
+                                HorizontalAlignment="Left" Margin="0,0,0,12"
+                                Click="OnApplyAllTweaksClicked"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Individual tweaks rendered from code-behind -->
+                <ItemsControl x:Name="TweaksList" Margin="0,0,0,15"/>
+
+                <!-- Game Profiles Section -->
+                <TextBlock Text="GAME PROFILES" FontSize="11" FontWeight="Bold"
+                           Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,0,0,8"/>
+
+                <Border Background="{DynamicResource GS.Surface.Card}" CornerRadius="8"
+                        Padding="15" Margin="0,0,0,8"
+                        BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1">
+                    <StackPanel>
+                        <CheckBox Content="Enable Game Profiles"
+                                  IsChecked="{Binding GameProfilesEnabled, Mode=TwoWay}"
+                                  Foreground="{DynamicResource GS.Text.Primary}"
+                                  Margin="0,0,0,4"/>
+                        <TextBlock Text="Automatically applies per-game optimizations (process priority, CPU affinity, launcher demotion) when a game is detected."
+                                   FontSize="11" Foreground="{DynamicResource GS.Text.Secondary}" Margin="20,0,0,12"
+                                   TextWrapping="Wrap"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Individual profiles rendered from code-behind -->
+                <ItemsControl x:Name="ProfilesList" Margin="0,0,0,15"/>
+
                 <!-- GPU Section -->
                 <TextBlock Text="GPU" FontSize="11" FontWeight="Bold"
                            Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,0,0,8"/>

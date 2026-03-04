@@ -7,12 +7,15 @@ namespace GameShift.Core.Profiles;
 /// <summary>
 /// Static factory for game-specific preset profiles and actions.
 /// Provides pre-configured GameProfile settings and GameAction lists for
-/// known competitive games: Valorant, League of Legends, Deadlock, and osu!.
+/// known competitive games: Overwatch 2, Valorant, League of Legends, Deadlock, and osu!.
 /// Provides pre-configured settings and actions for known competitive games.
 /// </summary>
 public static class CompetitivePresets
 {
     // ── Known executable names ────────────────────────────────────────
+
+    /// <summary>Overwatch 2 main game executable name (inside _retail_ subdirectory).</summary>
+    public const string Overwatch2Exe = "Overwatch.exe";
 
     /// <summary>Valorant main game executable name.</summary>
     public const string ValorantExe = "VALORANT-Win64-Shipping.exe";
@@ -31,6 +34,12 @@ public static class CompetitivePresets
     private static readonly Dictionary<string, PresetGameMetadata> _metadata =
         new(StringComparer.OrdinalIgnoreCase)
     {
+        [Overwatch2Exe] = new()
+        {
+            DisplayName = "Overwatch 2",
+            AntiCheatName = "", // Server-side ML detection only — no kernel anti-cheat
+            VbsSafeToDisable = true
+        },
         [ValorantExe] = new()
         {
             DisplayName = "Valorant",
@@ -86,6 +95,9 @@ public static class CompetitivePresets
     /// <returns>Pre-configured GameProfile, or null if not a preset game.</returns>
     public static GameProfile? GetPresetProfile(string executableName)
     {
+        if (string.Equals(executableName, Overwatch2Exe, StringComparison.OrdinalIgnoreCase))
+            return BuildOverwatch2Profile();
+
         if (string.Equals(executableName, ValorantExe, StringComparison.OrdinalIgnoreCase))
             return BuildValorantProfile();
 
@@ -109,6 +121,9 @@ public static class CompetitivePresets
     /// <returns>List of GameAction instances to apply when this game is active.</returns>
     public static List<GameAction> GetGameActions(string executableName)
     {
+        if (string.Equals(executableName, Overwatch2Exe, StringComparison.OrdinalIgnoreCase))
+            return BuildOverwatch2Actions();
+
         if (string.Equals(executableName, ValorantExe, StringComparison.OrdinalIgnoreCase))
             return BuildValorantActions();
 
@@ -123,6 +138,86 @@ public static class CompetitivePresets
 
         return new List<GameAction>();
     }
+
+    // ── Overwatch 2 ─────────────────────────────────────────────────
+
+    private static GameProfile BuildOverwatch2Profile() => new()
+    {
+        GameName = "Overwatch 2",
+        ExecutableName = Overwatch2Exe,
+        // v1 optimizations — all on
+        SuppressServices = true,
+        SwitchPowerPlan = true,
+        SetTimerResolution = true,
+        BoostProcessPriority = true,
+        OptimizeMemory = true,
+        ReduceVisualEffects = true,
+        OptimizeNetwork = true,
+        // CPU-bound at high framerates — E-cores hurt performance on Intel hybrid CPUs
+        UsePerformanceCoresOnly = true,
+        // v2 toggles
+        EnableCompetitiveMode = true,  // Overlays can cause alt-tab freezes
+        EnableGpuOptimization = true,
+        DisableMpo = true              // MPO documented to cause frame pacing issues
+    };
+
+    private static List<GameAction> BuildOverwatch2Actions() => new()
+    {
+        new DefenderExclusionAction(
+            "OW2 Defender Exclusions",
+            new[]
+            {
+                @"C:\Program Files (x86)\Overwatch\"
+            }),
+        new FullscreenOptimizationAction(
+            "OW2 Fullscreen + DPI Override",
+            @"C:\Program Files (x86)\Overwatch\_retail_\Overwatch.exe",
+            includeDpiOverride: true),
+        new ProcessPrioritySetAction(
+            "OW2 Battle.net Priority Reduction",
+            "Battle.net",
+            ProcessPriorityClass.BelowNormal),
+        new FirewallRuleAction(
+            "OW2 Firewall Allow",
+            "GameShift_OW2_In",
+            @"C:\Program Files (x86)\Overwatch\_retail_\Overwatch.exe",
+            "Inbound"),
+        new OneTimeTipAction(
+            "ow2_reflex",
+            "OW2 TIP: Enable NVIDIA Reflex in Video settings. Set to 'On + Boost' for up to 50% lower system latency.",
+            hw => hw.GpuVendor == GpuVendor.Nvidia,
+            "NVIDIA GPU only"),
+        new OneTimeTipAction(
+            "ow2_antilag",
+            "OW2 WARNING: AMD Anti-Lag+ causes instability and crashes in Overwatch 2 (especially in Stadium mode). Use the in-game 'Reduce Buffering' setting instead for latency reduction.",
+            hw => hw.GpuVendor == GpuVendor.Amd,
+            "AMD GPU only"),
+        new OneTimeTipAction(
+            "ow2_fullscreen",
+            "OW2 TIP: Use Fullscreen (not Borderless). Borderless adds 20+ ms input lag through Windows DWM forced triple buffering. Enable 'Reduce Buffering' in Video settings."),
+        new OneTimeTipAction(
+            "ow2_render_scale",
+            "OW2 TIP: Set Render Scale to 100% (not Automatic). The 'Automatic' setting can supersample above 100%, wasting GPU headroom that could be used for higher FPS."),
+        new OneTimeTipAction(
+            "ow2_memory_leak",
+            "OW2 TIP: Overwatch 2 has a known memory leak — RAM usage climbs over extended sessions. Restart the game every 1-2 hours during long play sessions to avoid performance degradation."),
+        new OneTimeTipAction(
+            "ow2_polling_rate",
+            "OW2 TIP: Mouse polling rates above 4000 Hz cause severe FPS drops in OW2 (8000 Hz can drop FPS from 600 to 60). Use 1000 Hz for maximum stability."),
+        new OneTimeTipAction(
+            "ow2_hags",
+            "OW2 TIP: HAGS results are mixed in OW2. Some configs see slightly better FPS and input latency, but HAGS + NVIDIA Reflex together can cause frame drops. Test both on and off for your hardware.",
+            hw => hw.IsHagsEnabled,
+            "HAGS enabled"),
+        new OneTimeTipAction(
+            "ow2_hybrid_cpu",
+            "OW2 TIP: GameShift is pinning Overwatch 2 to P-cores only. Intel 13th/14th gen users: ensure you have the latest BIOS/microcode update installed — these CPUs had documented instability issues.",
+            hw => hw.IsHybridCpu,
+            "Intel hybrid CPU detected"),
+        new OneTimeTipAction(
+            "ow2_alt_tab",
+            "OW2 TIP: Alt-tabbing can cause hard freezes. GameShift's Competitive Mode suspends overlays that commonly trigger this. If freezes persist, close MSI Afterburner and similar monitoring tools.")
+    };
 
     // ── Valorant ──────────────────────────────────────────────────────
 

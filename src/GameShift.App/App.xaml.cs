@@ -2,12 +2,15 @@ using System;
 using System.IO;
 using System.Threading;
 using System.Windows;
+using GameShift.Core.BackgroundMode;
 using GameShift.Core.Config;
 using GameShift.Core.Detection;
+using GameShift.Core.GameProfiles;
 using GameShift.Core.Monitoring;
 using GameShift.Core.Optimization;
 using GameShift.Core.Profiles;
 using GameShift.Core.System;
+using GameShift.Core.SystemTweaks;
 using GameShift.App.Services;
 using GameShift.App.Views;
 using GameShift.App.Views.Pages;
@@ -81,11 +84,20 @@ public partial class App : Application
     /// <summary>Known driver database — loaded once at startup, cached.</summary>
     public static KnownDriverDatabase? DriverDb { get; private set; }
 
+    /// <summary>Background Mode service — always-on system optimizations.</summary>
+    public static BackgroundModeService? BackgroundMode { get; private set; }
+
     /// <summary>DPC trace engine — ETW per-driver DPC attribution.</summary>
     public static DpcTraceEngine? DpcTrace { get; private set; }
 
     /// <summary>DPC fix engine — applies/reverts DPC latency fixes.</summary>
     public static DpcFixEngine? DpcFix { get; private set; }
+
+    /// <summary>System Tweaks manager — one-time registry optimizations.</summary>
+    public static SystemTweaksManager? TweaksMgr { get; private set; }
+
+    /// <summary>Game Profile manager — per-game optimization profiles.</summary>
+    public static GameProfileManager? GameProfileMgr { get; private set; }
 
     /// <summary>
     /// Static constructor: registers global crash handlers as early as possible —
@@ -312,8 +324,38 @@ public partial class App : Application
             SessionStore.Load();
             SessionTrk = new SessionTracker(Detector!, DpcMon, Engine!, SessionStore);
 
+            // v3: Create and start Background Mode service
+            BackgroundMode = new BackgroundModeService();
+            BackgroundMode.Start(); // No-op if not enabled in settings
+            WriteDiag($"BackgroundMode initialized (enabled={BackgroundMode.IsEnabled})");
+
             // v2.3: Create temperature monitor
             TempMon = new TemperatureMonitor();
+
+            // Wire Background Mode gaming session hooks
+            if (Detector != null && BackgroundMode != null)
+            {
+                Detector.GameStarted += (_, _) => BackgroundMode.OnGamingStart();
+                Detector.AllGamesStopped += (_, _) => BackgroundMode.OnGamingStop();
+            }
+
+            // v4: Create System Tweaks manager (stateless — just detects and applies)
+            TweaksMgr = new SystemTweaksManager();
+            WriteDiag("SystemTweaksManager initialized");
+
+            // v4: Create and wire Game Profile manager
+            GameProfileMgr = new GameProfileManager();
+            if (Detector != null && GameProfileMgr != null)
+            {
+                Detector.GameStarted += GameProfileMgr.OnGameStarted;
+                Detector.AllGamesStopped += GameProfileMgr.OnAllGamesStopped;
+            }
+            // Wire conflict resolution: GameProfiles → ProcessPriorityPersistence
+            if (BackgroundMode?.ProcessPriority != null && GameProfileMgr != null)
+            {
+                BackgroundMode.ProcessPriority.GameProfileActiveProcesses = GameProfileMgr.ActiveSessionProcessNames;
+            }
+            WriteDiag($"GameProfileManager initialized (profiles={GameProfileMgr?.GetAllProfiles().Count})");
 
             WriteDiag("Core services wired OK");
 
@@ -513,6 +555,12 @@ public partial class App : Application
                 Log.Error(ex, "Failed to deactivate optimizations during shutdown");
             }
         }
+
+        // Dispose Game Profile manager
+        GameProfileMgr?.Dispose();
+
+        // Stop Background Mode services
+        BackgroundMode?.Dispose();
 
         // Stop game monitoring
         Detector?.StopMonitoring();

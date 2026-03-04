@@ -12,6 +12,8 @@ using GameShift.Core.Config;
 using GameShift.Core.Detection;
 using GameShift.Core.Monitoring;
 using GameShift.Core.Optimization;
+using GameShift.Core.BackgroundMode;
+using GameShift.Core.GameProfiles;
 using GameShift.Core.Updates;
 
 namespace GameShift.App.ViewModels;
@@ -86,6 +88,14 @@ public class DashboardViewModel : INotifyPropertyChanged
     // Ping monitor state
     private readonly PingMonitor? _pingMonitor;
     private readonly Queue<long> _pingSparklineSamples = new();
+
+    // Background Mode status
+    private string _bgModeStatus = "Disabled";
+    private string _bgModeDetails = "";
+
+    // Game Profile status
+    private string _activeProfileName = "No Profile";
+    private string _activeProfileDetails = "";
 
     // Session history state
     private readonly SessionHistoryStore? _sessionStore;
@@ -389,6 +399,32 @@ public class DashboardViewModel : INotifyPropertyChanged
 
     // ── Session History properties ────────────────────────────────────────
     public ObservableCollection<GameSession> RecentSessions { get; } = new();
+
+    // ── Background Mode properties ───────────────────────────────────────
+    public string BgModeStatus
+    {
+        get => _bgModeStatus;
+        private set { _bgModeStatus = value; OnPropertyChanged(); }
+    }
+
+    public string BgModeDetails
+    {
+        get => _bgModeDetails;
+        private set { _bgModeDetails = value; OnPropertyChanged(); }
+    }
+
+    // ── Game Profile properties ──────────────────────────────────────
+    public string ActiveProfileName
+    {
+        get => _activeProfileName;
+        private set { _activeProfileName = value; OnPropertyChanged(); }
+    }
+
+    public string ActiveProfileDetails
+    {
+        get => _activeProfileDetails;
+        private set { _activeProfileDetails = value; OnPropertyChanged(); }
+    }
 
     /// <summary>
     /// Creates the dashboard ViewModel.
@@ -871,6 +907,45 @@ public class DashboardViewModel : INotifyPropertyChanged
             if (!ShowDpcIndicator)
             {
                 DpcLatencyText = "";
+            }
+
+            // Background Mode status
+            var bg = App.BackgroundMode;
+            if (bg != null && bg.IsEnabled)
+            {
+                BgModeStatus = "Active";
+                var parts = new List<string>();
+                if (bg.StandbyListCleaner.IsRunning) parts.Add("Memory");
+                if (bg.TimerResolution.IsLocked) parts.Add("Timer");
+                if (bg.PowerPlan.IsRunning) parts.Add(bg.PowerPlan.IsIdle ? "Power (idle)" : "Power");
+                if (bg.TaskDeferral.IsDeferred) parts.Add($"Tasks ({bg.TaskDeferral.DeferredCount})");
+                if (bg.ProcessPriority.IsRunning) parts.Add("Priority");
+                BgModeDetails = parts.Count > 0 ? string.Join(" \u00b7 ", parts) : "No services active";
+            }
+            else
+            {
+                BgModeStatus = "Disabled";
+                BgModeDetails = "Enable in Settings \u2192 Background Mode";
+            }
+
+            // Game Profile status
+            var gpm = App.GameProfileMgr;
+            if (gpm != null && gpm.HasActiveProfile)
+            {
+                var prof = gpm.ActiveProfile!;
+                ActiveProfileName = prof.DisplayName;
+                var details = new List<string>();
+                details.Add($"Priority: {prof.GamePriority}");
+                if (prof.IntelHybridPCoreOnly && IntelHybridDetector.IsHybridCpu)
+                    details.Add("P-Core Only");
+                if (prof.LauncherPriority != null)
+                    details.Add($"Launcher: {prof.LauncherPriority}");
+                ActiveProfileDetails = string.Join(" \u00b7 ", details);
+            }
+            else
+            {
+                ActiveProfileName = "No Profile";
+                ActiveProfileDetails = "";
             }
         });
     }
