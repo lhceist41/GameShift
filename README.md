@@ -45,17 +45,61 @@ GameShift ships with 11 optimization modules. Each one is independently togglabl
 
 Every optimization is reverted automatically when your game closes. A `SystemStateSnapshot` captures the original state before any changes are made, so nothing is left behind.
 
+### Background Mode
+Keeps lightweight optimizations running even when no game is active. Each sub-service operates independently and automatically backs off during active gaming sessions to avoid conflicts with the main pipeline.
+
+| Service | What it does |
+|---------|-------------|
+| **Standby List Cleaner** | Periodic ISLC-style memory cleanup with configurable thresholds |
+| **Timer Resolution** | Maintains 0.5ms system timer for snappier desktop responsiveness |
+| **Power Plan Manager** | Keeps your preferred power plan active instead of Balanced |
+| **Process Priority Persistence** | Auto-applies priority rules to processes as they launch via WMI |
+| **Task Deferral** | Suppresses Windows Update, Defender scans, and indexing during gaming hours |
+
+### System Tweaks
+One-time registry-level optimizations that persist across reboots. Applied from the Settings page, tracked per-tweak, and fully reversible. Original values are stored so you can revert any tweak cleanly.
+
+| Tweak | What it does | Reboot? |
+|-------|-------------|---------|
+| **Disable Game DVR** | Stops background recording and overlay hooks | No |
+| **Disable HAGS** | Turns off Hardware Accelerated GPU Scheduling | Yes |
+| **Disable MPO** | Turns off Multiplane Overlay (fixes frame pacing on many setups) | Yes |
+| **Optimize MMCSS** | Tunes Multimedia Class Scheduler for gaming priority | No |
+| **Optimize Win32PrioritySeparation** | Boosts foreground process scheduling quantum | No |
+| **Disable Memory Integrity** | Turns off HVCI for ~8-15% better performance (requires confirmation) | Yes |
+| **Disable Power Throttling** | Prevents Windows from throttling background processes | No |
+
+"Apply All Recommended" applies everything except the security tweak (Memory Integrity), which always requires explicit confirmation.
+
+### Game Profiles
+Per-game process-level optimizations that activate automatically when a supported game launches and revert when it closes. Runs parallel to the main optimization pipeline.
+
+| Game | Priority | P-Core Only | Launcher Demotion | Memory Cleaning |
+|------|----------|-------------|-------------------|-----------------|
+| **Overwatch 2** | High | Yes | Battle.net, Agent | 512 MB threshold |
+| **Valorant** | High | Yes | RiotClientServices | - |
+| **League of Legends** | High | No | RiotClientServices, LeagueClient | - |
+| **Deadlock** | High | Yes | - | 1 GB threshold |
+| **osu!** | High | No | - | - |
+| **Arknights: Endfield** | High | Yes | GRYPHLINK launcher + CEF processes | 1 GB threshold |
+| **Wuthering Waves** | High | Yes | Kuro/Epic launchers | 1 GB threshold |
+| **Genshin Impact** | High | No | HoYoPlay, legacy launcher | 1 GB threshold |
+| **Soulframe** (placeholder) | High | No | Launcher | 1 GB threshold |
+
+Intel hybrid CPU detection (12th-14th gen) automatically pins game processes to P-cores when beneficial. Each profile includes detailed notes and hardware-specific tips visible in the Settings page.
+
 ### Game-Specific Presets
-GameShift includes built-in optimization presets tailored to specific games. These go beyond the generic optimization toggles with game-aware actions that activate automatically on launch.
+Built-in optimization presets tailored to specific games. These go beyond the generic optimization toggles with game-aware actions that activate automatically on launch.
 
 | Game | Presets |
 |------|---------|
-| **Valorant** | Defender exclusions, fullscreen optimization, process suspension (Riot Client), firewall allow rule |
+| **Overwatch 2** | Defender exclusions, fullscreen + DPI override, Battle.net priority reduction, firewall allow rule |
+| **Valorant** | Defender exclusions, fullscreen optimization, Riot Client priority reduction, firewall allow rule |
 | **League of Legends** | Defender exclusions, fullscreen + DPI override, Riot Client priority reduction, firewall allow rule |
-| **Deadlock** | Defender exclusions, fullscreen optimization, process suspension (Steam overlay) |
+| **Deadlock** | Defender exclusions, fullscreen optimization, firewall allow rule |
 | **osu!** | Defender exclusions, fullscreen + DPI override, P-core affinity for single-threaded performance |
 
-Each preset also includes contextual tips that appear once (e.g., "enable Raw Input in osu! settings" or "use NVIDIA Reflex in Valorant") based on your hardware configuration.
+Each preset also includes contextual tips that show once based on your hardware (e.g., "enable NVIDIA Reflex" only appears if you have an NVIDIA GPU).
 
 ### DPC Doctor
 A built-in DPC/ISR latency diagnostic tool - think LatencyMon, but integrated and with automated fixes.
@@ -98,13 +142,13 @@ Real-time hardware monitoring page showing:
 - **Global hotkey** (Ctrl+Shift+G) to pause/resume monitoring
 - **Export/import** settings and profiles across machines
 - **First-run wizard** with hardware auto-detection and DPC baseline measurement
-- **In-app auto-updater** — download and apply updates without leaving the app
+- **In-app auto-updater** --download and apply updates without leaving the app
 - **In-app log viewer** with search, auto-refresh, and quick access to log files
 - **System tray** with flyout status, quick profile switch, and session summary toasts
 - **Post-session toasts** showing game duration, optimization count, and DPC stats
 - **Single instance** enforcement (second launch brings existing window to front)
 - **Remember window position** across restarts
-- **Notification preferences** — per-type toast control, suppress during gaming option
+- **Notification preferences** --per-type toast control, suppress during gaming option
 
 ## Quick Start
 
@@ -141,7 +185,7 @@ GameShift uses WMI process creation/deletion events to detect game launches in r
 
 The optimization engine applies each enabled module in sequence. Before making any change, it captures a `SystemStateSnapshot` of the original value (registry key, service state, power plan GUID, etc.). When all games close, every change is reverted using that snapshot.
 
-DPC latency is monitored via Windows performance counters throughout the session. Spikes above your threshold trigger tray warnings so you can identify problematic drivers. For deeper analysis, DPC Doctor uses ETW kernel trace sessions with per-driver attribution — the same technique LatencyMon uses internally.
+DPC latency is monitored via Windows performance counters throughout the session. Spikes above your threshold trigger tray warnings so you can identify problematic drivers. For deeper analysis, DPC Doctor uses ETW kernel trace sessions with per-driver attribution --the same technique LatencyMon uses internally.
 
 ## Configuration
 
