@@ -35,6 +35,8 @@
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
 
@@ -77,11 +79,29 @@
                            Foreground="{DynamicResource GS.Text.Primary}"/>
             </DockPanel>
 
+            <!-- Background Mode Row -->
+            <DockPanel Grid.Row="5" Margin="0,0,0,12">
+                <TextBlock Text="Background" Foreground="{DynamicResource GS.Text.Secondary}"
+                           FontSize="12" VerticalAlignment="Center"/>
+                <TextBlock Text="{Binding BgModeText}" HorizontalAlignment="Right"
+                           FontSize="13" FontWeight="SemiBold"
+                           Foreground="{DynamicResource GS.Text.Primary}"/>
+            </DockPanel>
+
+            <!-- Profile Row -->
+            <DockPanel Grid.Row="6" Margin="0,0,0,12">
+                <TextBlock Text="Profile" Foreground="{DynamicResource GS.Text.Secondary}"
+                           FontSize="12" VerticalAlignment="Center"/>
+                <TextBlock Text="{Binding ProfileText}" HorizontalAlignment="Right"
+                           FontSize="13" FontWeight="SemiBold"
+                           Foreground="{DynamicResource GS.Text.Primary}"/>
+            </DockPanel>
+
             <!-- Separator -->
-            <Rectangle Grid.Row="5" Height="1" Fill="{DynamicResource GS.Surface.Border}" Margin="0,0,0,12"/>
+            <Rectangle Grid.Row="7" Height="1" Fill="{DynamicResource GS.Surface.Border}" Margin="0,0,0,12"/>
 
             <!-- Session Info -->
-            <StackPanel Grid.Row="6">
+            <StackPanel Grid.Row="8">
                 <TextBlock Text="Active Session" Foreground="{DynamicResource GS.Text.Secondary}"
                            FontSize="11" FontWeight="SemiBold" Margin="0,0,0,4"/>
                 <TextBlock Text="{Binding SessionInfo}" FontSize="14" FontWeight="SemiBold"

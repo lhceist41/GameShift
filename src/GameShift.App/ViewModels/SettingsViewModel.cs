@@ -6,6 +6,7 @@ using GameShift.Core.Config;
 using GameShift.Core.Optimization;
 using GameShift.Core.Profiles;
 using GameShift.Core.System;
+using GameShift.Core.SystemTweaks;
 using Serilog;
 
 namespace GameShift.App.ViewModels;
@@ -42,6 +43,21 @@ public class SettingsViewModel : INotifyPropertyChanged
 
     // v2.3 network field
     private string _pingTarget = "8.8.8.8";
+
+    // Game Profiles fields
+    private bool _gameProfilesEnabled;
+
+    // Background Mode fields
+    private bool _bgEnabled;
+    private bool _bgStandbyListEnabled;
+    private int _bgStandbyListThresholdMB;
+    private int _bgStandbyListPollSeconds;
+    private bool _bgTimerEnabled;
+    private int _bgTimerResolution100ns;
+    private bool _bgPowerPlanEnabled;
+    private int _bgIdleTimeoutMinutes;
+    private bool _bgTaskDeferralEnabled;
+    private bool _bgProcessPriorityEnabled;
 
     private bool _isDirty;
     private string _statusMessage = "";
@@ -102,6 +118,74 @@ public class SettingsViewModel : INotifyPropertyChanged
     {
         get => _pingTarget;
         set { if (_pingTarget != value) { _pingTarget = value; IsDirty = true; OnPropertyChanged(); } }
+    }
+
+    // ── Background Mode properties ────────────────────────────────────
+    public bool BgEnabled
+    {
+        get => _bgEnabled;
+        set { if (_bgEnabled != value) { _bgEnabled = value; IsDirty = true; OnPropertyChanged(); } }
+    }
+
+    public bool BgStandbyListEnabled
+    {
+        get => _bgStandbyListEnabled;
+        set { if (_bgStandbyListEnabled != value) { _bgStandbyListEnabled = value; IsDirty = true; OnPropertyChanged(); } }
+    }
+
+    public int BgStandbyListThresholdMB
+    {
+        get => _bgStandbyListThresholdMB;
+        set { if (_bgStandbyListThresholdMB != value) { _bgStandbyListThresholdMB = value; IsDirty = true; OnPropertyChanged(); } }
+    }
+
+    public int BgStandbyListPollSeconds
+    {
+        get => _bgStandbyListPollSeconds;
+        set { if (_bgStandbyListPollSeconds != value) { _bgStandbyListPollSeconds = value; IsDirty = true; OnPropertyChanged(); } }
+    }
+
+    public bool BgTimerEnabled
+    {
+        get => _bgTimerEnabled;
+        set { if (_bgTimerEnabled != value) { _bgTimerEnabled = value; IsDirty = true; OnPropertyChanged(); } }
+    }
+
+    public int BgTimerResolution100ns
+    {
+        get => _bgTimerResolution100ns;
+        set { if (_bgTimerResolution100ns != value) { _bgTimerResolution100ns = value; IsDirty = true; OnPropertyChanged(); } }
+    }
+
+    public bool BgPowerPlanEnabled
+    {
+        get => _bgPowerPlanEnabled;
+        set { if (_bgPowerPlanEnabled != value) { _bgPowerPlanEnabled = value; IsDirty = true; OnPropertyChanged(); } }
+    }
+
+    public int BgIdleTimeoutMinutes
+    {
+        get => _bgIdleTimeoutMinutes;
+        set { if (_bgIdleTimeoutMinutes != value) { _bgIdleTimeoutMinutes = value; IsDirty = true; OnPropertyChanged(); } }
+    }
+
+    public bool BgTaskDeferralEnabled
+    {
+        get => _bgTaskDeferralEnabled;
+        set { if (_bgTaskDeferralEnabled != value) { _bgTaskDeferralEnabled = value; IsDirty = true; OnPropertyChanged(); } }
+    }
+
+    public bool BgProcessPriorityEnabled
+    {
+        get => _bgProcessPriorityEnabled;
+        set { if (_bgProcessPriorityEnabled != value) { _bgProcessPriorityEnabled = value; IsDirty = true; OnPropertyChanged(); } }
+    }
+
+    // ── Game Profiles properties ────────────────────────────────────
+    public bool GameProfilesEnabled
+    {
+        get => _gameProfilesEnabled;
+        set { if (_gameProfilesEnabled != value) { _gameProfilesEnabled = value; IsDirty = true; OnPropertyChanged(); } }
     }
 
     public bool EnableLogging
@@ -204,6 +288,24 @@ public class SettingsViewModel : INotifyPropertyChanged
         _suppressNotificationsDuringGaming = settings.SuppressNotificationsDuringGaming;
         _globalHotkeyBinding = settings.GlobalHotkeyBinding;
         _pingTarget = settings.PingTarget;
+
+        // Background Mode
+        var bg = settings.BackgroundMode ?? new BackgroundModeSettings();
+        _bgEnabled = bg.Enabled;
+        _bgStandbyListEnabled = bg.StandbyListCleanerEnabled;
+        _bgStandbyListThresholdMB = bg.StandbyListThresholdMB;
+        _bgStandbyListPollSeconds = bg.StandbyListPollSeconds;
+        _bgTimerEnabled = bg.TimerResolutionEnabled;
+        _bgTimerResolution100ns = bg.TimerResolution100ns;
+        _bgPowerPlanEnabled = bg.PowerPlanEnabled;
+        _bgIdleTimeoutMinutes = bg.IdleTimeoutMinutes;
+        _bgTaskDeferralEnabled = bg.TaskDeferralEnabled;
+        _bgProcessPriorityEnabled = bg.ProcessPriorityEnabled;
+
+        // Game Profiles
+        var gp = settings.GameProfiles ?? new GameProfileSettings();
+        _gameProfilesEnabled = gp.Enabled;
+
         IsDirty = false;
         StatusMessage = "";
 
@@ -223,6 +325,17 @@ public class SettingsViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(SuppressNotificationsDuringGaming));
         OnPropertyChanged(nameof(GlobalHotkeyBinding));
         OnPropertyChanged(nameof(PingTarget));
+        OnPropertyChanged(nameof(BgEnabled));
+        OnPropertyChanged(nameof(BgStandbyListEnabled));
+        OnPropertyChanged(nameof(BgStandbyListThresholdMB));
+        OnPropertyChanged(nameof(BgStandbyListPollSeconds));
+        OnPropertyChanged(nameof(BgTimerEnabled));
+        OnPropertyChanged(nameof(BgTimerResolution100ns));
+        OnPropertyChanged(nameof(BgPowerPlanEnabled));
+        OnPropertyChanged(nameof(BgIdleTimeoutMinutes));
+        OnPropertyChanged(nameof(BgTaskDeferralEnabled));
+        OnPropertyChanged(nameof(BgProcessPriorityEnabled));
+        OnPropertyChanged(nameof(GameProfilesEnabled));
     }
 
     /// <summary>
@@ -251,10 +364,30 @@ public class SettingsViewModel : INotifyPropertyChanged
         settings.GlobalHotkeyBinding = GlobalHotkeyBinding;
         settings.PingTarget = PingTarget;
 
+        // Background Mode
+        settings.BackgroundMode ??= new BackgroundModeSettings();
+        settings.BackgroundMode.Enabled = BgEnabled;
+        settings.BackgroundMode.StandbyListCleanerEnabled = BgStandbyListEnabled;
+        settings.BackgroundMode.StandbyListThresholdMB = BgStandbyListThresholdMB;
+        settings.BackgroundMode.StandbyListPollSeconds = BgStandbyListPollSeconds;
+        settings.BackgroundMode.TimerResolutionEnabled = BgTimerEnabled;
+        settings.BackgroundMode.TimerResolution100ns = BgTimerResolution100ns;
+        settings.BackgroundMode.PowerPlanEnabled = BgPowerPlanEnabled;
+        settings.BackgroundMode.IdleTimeoutMinutes = BgIdleTimeoutMinutes;
+        settings.BackgroundMode.TaskDeferralEnabled = BgTaskDeferralEnabled;
+        settings.BackgroundMode.ProcessPriorityEnabled = BgProcessPriorityEnabled;
+
+        // Game Profiles
+        settings.GameProfiles ??= new GameProfileSettings();
+        settings.GameProfiles.Enabled = GameProfilesEnabled;
+
         SettingsManager.Save(settings);
 
         // Apply startup registration change to Windows registry
         StartupManager.SetStartWithWindows(settings.StartWithWindows);
+
+        // Apply Background Mode changes live
+        App.BackgroundMode?.ApplySettings();
 
         IsDirty = false;
         StatusMessage = "Settings saved.";
