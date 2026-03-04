@@ -5,6 +5,7 @@ using System.Runtime.CompilerServices;
 using System.Windows.Media;
 using System.Windows.Threading;
 using GameShift.Core.Detection;
+using GameShift.Core.GameProfiles;
 using GameShift.Core.Monitoring;
 using GameShift.Core.Optimization;
 
@@ -28,6 +29,8 @@ public class TrayFlyoutViewModel : INotifyPropertyChanged, IDisposable
     private string _dpcText = "-- \u00B5s";
     private string _optimizationCount = "0 active";
     private string _sessionInfo = "No active session";
+    private string _bgModeText = "Off";
+    private string _profileText = "None";
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -59,6 +62,18 @@ public class TrayFlyoutViewModel : INotifyPropertyChanged, IDisposable
     {
         get => _sessionInfo;
         private set { _sessionInfo = value; OnPropertyChanged(); }
+    }
+
+    public string BgModeText
+    {
+        get => _bgModeText;
+        private set { _bgModeText = value; OnPropertyChanged(); }
+    }
+
+    public string ProfileText
+    {
+        get => _profileText;
+        private set { _profileText = value; OnPropertyChanged(); }
     }
 
     public TrayFlyoutViewModel(
@@ -139,6 +154,14 @@ public class TrayFlyoutViewModel : INotifyPropertyChanged, IDisposable
         {
             SessionInfo = "No active session";
         }
+
+        // Background Mode
+        var bg = App.BackgroundMode;
+        BgModeText = bg != null && bg.IsEnabled ? "Active" : "Off";
+
+        // Game Profile
+        var gpm = App.GameProfileMgr;
+        ProfileText = gpm != null && gpm.HasActiveProfile ? gpm.ActiveProfile!.DisplayName : "None";
     }
 
     public void Dispose()
