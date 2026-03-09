@@ -99,7 +99,7 @@ public class DetectionOrchestrator
     /// Initializes the complete detection system.
     /// Startup sequence: load store -> scan libraries -> merge -> sync to detector -> subscribe to events -> start monitoring.
     /// </summary>
-    public async Task InitializeAsync()
+    public Task InitializeAsync()
     {
         _logger.Information("Initializing detection orchestrator");
 
@@ -129,8 +129,7 @@ public class DetectionOrchestrator
         _logger.Information("Detection system initialized. Monitoring {Count} known games.",
             _store.GetAllGames().Count);
 
-        // Suppress await warning - InitializeAsync is naturally async for future extensibility
-        await Task.CompletedTask;
+        return Task.CompletedTask;
     }
 
     /// <summary>

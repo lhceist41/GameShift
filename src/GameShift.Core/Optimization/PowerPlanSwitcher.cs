@@ -35,8 +35,6 @@ public class PowerPlanSwitcher : IOptimization
     /// </summary>
     public async Task<bool> ApplyAsync(SystemStateSnapshot snapshot, GameProfile profile)
     {
-        await Task.CompletedTask; // Make async to satisfy interface
-
         try
         {
             // Log the original power plan (already captured during snapshot creation)
@@ -141,10 +139,8 @@ public class PowerPlanSwitcher : IOptimization
     /// <summary>
     /// Reverts to the original power plan captured in the snapshot.
     /// </summary>
-    public async Task<bool> RevertAsync(SystemStateSnapshot snapshot)
+    public Task<bool> RevertAsync(SystemStateSnapshot snapshot)
     {
-        await Task.CompletedTask; // Make async to satisfy interface
-
         try
         {
             if (snapshot.OriginalPowerPlan == Guid.Empty)
@@ -152,7 +148,7 @@ public class PowerPlanSwitcher : IOptimization
                 SettingsManager.Logger.Warning(
                     "PowerPlanSwitcher: No original power plan recorded in snapshot, skipping revert");
                 IsApplied = false;
-                return true; // Not a fatal error
+                return Task.FromResult(true); // Not a fatal error
             }
 
             var originalGuid = snapshot.OriginalPowerPlan;
@@ -164,7 +160,7 @@ public class PowerPlanSwitcher : IOptimization
                     "PowerPlanSwitcher: Reverted to original power plan {OriginalPlan}",
                     snapshot.OriginalPowerPlan);
                 IsApplied = false;
-                return true;
+                return Task.FromResult(true);
             }
             else
             {
@@ -172,14 +168,14 @@ public class PowerPlanSwitcher : IOptimization
                     "PowerPlanSwitcher: Failed to revert to original plan (error {ErrorCode})",
                     result);
                 IsApplied = false; // Mark as not applied even on failure
-                return false;
+                return Task.FromResult(false);
             }
         }
         catch (Exception ex)
         {
             SettingsManager.Logger.Error(ex, "PowerPlanSwitcher: Failed to revert power plan");
             IsApplied = false;
-            return false;
+            return Task.FromResult(false);
         }
     }
 }

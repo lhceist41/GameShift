@@ -81,10 +81,8 @@ public class CompetitiveMode : IOptimization
     /// 5. Write frame cap hint
     /// 6. Start 6-hour safety timer
     /// </summary>
-    public async Task<bool> ApplyAsync(SystemStateSnapshot snapshot, GameProfile profile)
+    public Task<bool> ApplyAsync(SystemStateSnapshot snapshot, GameProfile profile)
     {
-        await Task.CompletedTask;
-
         try
         {
             _logger.Information(
@@ -138,14 +136,14 @@ public class CompetitiveMode : IOptimization
                 _killedProcessNames.Count);
 
             _isApplied = true;
-            return true;
+            return Task.FromResult(true);
         }
         catch (Exception ex)
         {
             _logger.Error(
                 ex,
                 "CompetitiveMode: Failed to apply competitive mode");
-            return false;
+            return Task.FromResult(false);
         }
     }
 
@@ -156,13 +154,11 @@ public class CompetitiveMode : IOptimization
     /// 3. Restore Discord overlay registry
     /// 4. Delete frame cap hint file
     /// </summary>
-    public async Task<bool> RevertAsync(SystemStateSnapshot snapshot)
+    public Task<bool> RevertAsync(SystemStateSnapshot snapshot)
     {
-        await Task.CompletedTask;
-
         if (!_isApplied)
         {
-            return true;
+            return Task.FromResult(true);
         }
 
         try
@@ -192,14 +188,14 @@ public class CompetitiveMode : IOptimization
                 "CompetitiveMode: Revert complete");
 
             _isApplied = false;
-            return true;
+            return Task.FromResult(true);
         }
         catch (Exception ex)
         {
             _logger.Error(
                 ex,
                 "CompetitiveMode: Failed to revert competitive mode");
-            return false;
+            return Task.FromResult(false);
         }
     }
 
