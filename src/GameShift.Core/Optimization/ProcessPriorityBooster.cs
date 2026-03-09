@@ -48,10 +48,8 @@ public class ProcessPriorityBooster : IOptimization
     /// Uses IFEO registry path for anti-cheat games, runtime API for others.
     /// Records original state in snapshot before changing.
     /// </summary>
-    public async Task<bool> ApplyAsync(SystemStateSnapshot snapshot, GameProfile profile)
+    public Task<bool> ApplyAsync(SystemStateSnapshot snapshot, GameProfile profile)
     {
-        await Task.CompletedTask; // Make async to satisfy interface
-
         try
         {
             // Apply session-scoped Win32PrioritySeparation (gaming-optimal scheduling quantum)
@@ -59,17 +57,17 @@ public class ProcessPriorityBooster : IOptimization
 
             if (profile.RequiresIfeoFallback)
             {
-                return ApplyViaIfeo(snapshot, profile);
+                return Task.FromResult(ApplyViaIfeo(snapshot, profile));
             }
             else
             {
-                return ApplyViaRuntimeApi(snapshot, profile);
+                return Task.FromResult(ApplyViaRuntimeApi(snapshot, profile));
             }
         }
         catch (Exception ex)
         {
             SettingsManager.Logger.Error(ex, "ProcessPriorityBooster: Failed to apply priority boost");
-            return false;
+            return Task.FromResult(false);
         }
     }
 
@@ -212,10 +210,8 @@ public class ProcessPriorityBooster : IOptimization
     /// Reverts process priority to original value.
     /// Handles both runtime API and IFEO registry paths.
     /// </summary>
-    public async Task<bool> RevertAsync(SystemStateSnapshot snapshot)
+    public Task<bool> RevertAsync(SystemStateSnapshot snapshot)
     {
-        await Task.CompletedTask; // Make async to satisfy interface
-
         try
         {
             // Revert session-scoped Win32PrioritySeparation
@@ -223,18 +219,18 @@ public class ProcessPriorityBooster : IOptimization
 
             if (_usedIfeo)
             {
-                return RevertViaIfeo();
+                return Task.FromResult(RevertViaIfeo());
             }
             else
             {
-                return RevertViaRuntimeApi(snapshot);
+                return Task.FromResult(RevertViaRuntimeApi(snapshot));
             }
         }
         catch (Exception ex)
         {
             SettingsManager.Logger.Error(ex, "ProcessPriorityBooster: Failed to revert priority");
             IsApplied = false; // Mark as not applied even on failure
-            return false;
+            return Task.FromResult(false);
         }
     }
 

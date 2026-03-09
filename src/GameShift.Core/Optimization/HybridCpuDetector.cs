@@ -70,16 +70,14 @@ public class HybridCpuDetector : IOptimization
     /// Pins game process to optimal CPU sets based on detected topology.
     /// Uses SetProcessDefaultCpuSets for most games, IFEO fallback for anti-cheat titles.
     /// </summary>
-    public async Task<bool> ApplyAsync(SystemStateSnapshot snapshot, GameProfile profile)
+    public Task<bool> ApplyAsync(SystemStateSnapshot snapshot, GameProfile profile)
     {
-        await Task.CompletedTask;
-
         try
         {
             if (_topology == null)
             {
                 SettingsManager.Logger.Warning("HybridCpuDetector: No topology available");
-                return false;
+                return Task.FromResult(false);
             }
 
             // Determine target CPU sets based on profile and topology
@@ -89,52 +87,50 @@ public class HybridCpuDetector : IOptimization
                 SettingsManager.Logger.Information(
                     "HybridCpuDetector: No CPU Set pinning recommended for current profile/topology");
                 IsApplied = true;
-                return true;
+                return Task.FromResult(true);
             }
 
             if (profile.RequiresIfeoFallback)
             {
                 // Anti-cheat games: try SetProcessDefaultCpuSets first, fall back to IFEO
-                return ApplyWithFallback(snapshot, profile, targetCpuSets);
+                return Task.FromResult(ApplyWithFallback(snapshot, profile, targetCpuSets));
             }
             else
             {
-                return ApplyViaCpuSets(snapshot, profile, targetCpuSets);
+                return Task.FromResult(ApplyViaCpuSets(snapshot, profile, targetCpuSets));
             }
         }
         catch (Exception ex)
         {
             SettingsManager.Logger.Error(ex, "HybridCpuDetector: Failed to apply CPU pinning");
-            return false;
+            return Task.FromResult(false);
         }
     }
 
     /// <summary>
     /// Removes CPU Set restriction or reverts IFEO registry change.
     /// </summary>
-    public async Task<bool> RevertAsync(SystemStateSnapshot snapshot)
+    public Task<bool> RevertAsync(SystemStateSnapshot snapshot)
     {
-        await Task.CompletedTask;
-
         try
         {
             if (_usedCpuSets)
             {
-                return RevertViaCpuSets();
+                return Task.FromResult(RevertViaCpuSets());
             }
             else if (_usedIfeo)
             {
-                return RevertViaIfeo();
+                return Task.FromResult(RevertViaIfeo());
             }
 
             IsApplied = false;
-            return true;
+            return Task.FromResult(true);
         }
         catch (Exception ex)
         {
             SettingsManager.Logger.Error(ex, "HybridCpuDetector: Failed to revert CPU pinning");
             IsApplied = false;
-            return false;
+            return Task.FromResult(false);
         }
     }
 

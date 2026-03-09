@@ -154,10 +154,8 @@ public class ServiceSuppressor : IOptimization
     /// Tier 3: stopped if the per-service condition is met.
     /// Records original state before stopping each service.
     /// </summary>
-    public async Task<bool> ApplyAsync(SystemStateSnapshot snapshot, GameProfile profile)
+    public Task<bool> ApplyAsync(SystemStateSnapshot snapshot, GameProfile profile)
     {
-        await Task.CompletedTask; // Make async to satisfy interface
-
         int stoppedCount = 0;
         int skippedCount = 0;
         int errorCount = 0;
@@ -279,17 +277,15 @@ public class ServiceSuppressor : IOptimization
             errorCount);
 
         IsApplied = true;
-        return true; // Partial success is still success
+        return Task.FromResult(true); // Partial success is still success
     }
 
     /// <summary>
     /// Restarts all services that were stopped during ApplyAsync.
     /// Uses snapshot to determine which services to restart.
     /// </summary>
-    public async Task<bool> RevertAsync(SystemStateSnapshot snapshot)
+    public Task<bool> RevertAsync(SystemStateSnapshot snapshot)
     {
-        await Task.CompletedTask; // Make async to satisfy interface
-
         int restartedCount = 0;
         int errorCount = 0;
 
@@ -363,7 +359,7 @@ public class ServiceSuppressor : IOptimization
             errorCount);
 
         IsApplied = false;
-        return true; // Partial success is still success
+        return Task.FromResult(true); // Partial success is still success
     }
 
     // ── Tier 3 condition helpers ──────────────────────────────────────
