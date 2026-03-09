@@ -137,7 +137,9 @@ public class ServiceSuppressor : IOptimization
 
     // ── IOptimization implementation ─────────────────────────────────
 
-    public string Name => "Windows Service Suppressor";
+    public const string OptimizationId = "Windows Service Suppressor";
+
+    public string Name => OptimizationId;
 
     public string Description => "Temporarily stops non-essential Windows services to free up system resources";
 

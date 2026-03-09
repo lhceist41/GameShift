@@ -33,7 +33,9 @@ public class ProcessPriorityBooster : IOptimization
     /// </summary>
     private const int GamingPrioritySeparation = 0x2A;
 
-    public string Name => "Process Priority Booster";
+    public const string OptimizationId = "Process Priority Booster";
+
+    public string Name => OptimizationId;
 
     public string Description => "Sets game process priority to High for better CPU scheduling";
 

@@ -30,7 +30,9 @@ public class TimerResolutionManager : IOptimization
     private object? _globalTimerOriginalValue;
     private bool _globalTimerKeyWasSet;
 
-    public string Name => "System Timer Resolution Manager";
+    public const string OptimizationId = "System Timer Resolution Manager";
+
+    public string Name => OptimizationId;
 
     public string Description => "Sets system timer to 0.5ms for reduced input latency and smoother frame delivery";
 
