@@ -1,4 +1,3 @@
-using GameShift.Core.Config;
 using GameShift.Core.Detection;
 using Microsoft.Win32;
 using Serilog;
