@@ -19,8 +19,18 @@ public class MpoToggle : IOptimization
     private bool _previousValueExisted;
     private int _previousValue;
 
+    // 24H2 fallback state
+    private bool _is24H2OrLater;
+    private bool _enableOverlayPreviouslyExisted;
+    private int _enableOverlayPreviousValue;
+    private bool _disableOverlaysPreviouslyExisted;
+    private int _disableOverlaysPreviousValue;
+
     private const string DwmRegistryPath = @"SOFTWARE\Microsoft\Windows\Dwm";
     private const string OverlayTestModeValue = "OverlayTestMode";
+    private const string EnableOverlayValue = "EnableOverlay";
+    private const string GraphicsDriversPath = @"SYSTEM\CurrentControlSet\Control\GraphicsDrivers";
+    private const string DisableOverlaysValue = "DisableOverlays";
 
     public string Name => "MPO Toggle";
 
@@ -84,6 +94,76 @@ public class MpoToggle : IOptimization
                 OverlayTestModeValue,
                 _previousValueExisted ? _previousValue.ToString() : "<not set>");
 
+            // Record in snapshot for crash recovery
+            snapshot.RecordRegistryValue(@"HKLM\" + DwmRegistryPath, OverlayTestModeValue,
+                _previousValueExisted ? _previousValue : (object)"<not set>");
+
+            // ── Windows 11 24H2+ fallback (build 26100+) ──
+            // On 24H2, OverlayTestMode=5 alone no longer fully disables MPO.
+            // Two additional registry keys are required.
+            _is24H2OrLater = Environment.OSVersion.Version.Build >= 26100;
+
+            if (_is24H2OrLater)
+            {
+                _logger.Information(
+                    "MpoToggle: Windows 11 24H2+ detected (build {Build}), applying extended MPO disable",
+                    Environment.OSVersion.Version.Build);
+
+                // EnableOverlay = 0 in same DWM key
+                var existingEnableOverlay = key.GetValue(EnableOverlayValue);
+                if (existingEnableOverlay != null)
+                {
+                    _enableOverlayPreviouslyExisted = true;
+                    _enableOverlayPreviousValue = (int)existingEnableOverlay;
+                }
+                else
+                {
+                    _enableOverlayPreviouslyExisted = false;
+                }
+
+                key.SetValue(EnableOverlayValue, 0, RegistryValueKind.DWord);
+                snapshot.RecordRegistryValue(@"HKLM\" + DwmRegistryPath, EnableOverlayValue,
+                    _enableOverlayPreviouslyExisted ? _enableOverlayPreviousValue : (object)"<not set>");
+
+                _logger.Information(
+                    "MpoToggle: Set {RegistryPath}\\{ValueName} = 0 (was: {OldValue})",
+                    @"HKLM\" + DwmRegistryPath,
+                    EnableOverlayValue,
+                    _enableOverlayPreviouslyExisted ? _enableOverlayPreviousValue.ToString() : "<not set>");
+
+                // DisableOverlays = 1 in GraphicsDrivers key
+                using var gfxKey = Registry.LocalMachine.OpenSubKey(GraphicsDriversPath, writable: true);
+                if (gfxKey != null)
+                {
+                    var existingDisableOverlays = gfxKey.GetValue(DisableOverlaysValue);
+                    if (existingDisableOverlays != null)
+                    {
+                        _disableOverlaysPreviouslyExisted = true;
+                        _disableOverlaysPreviousValue = (int)existingDisableOverlays;
+                    }
+                    else
+                    {
+                        _disableOverlaysPreviouslyExisted = false;
+                    }
+
+                    gfxKey.SetValue(DisableOverlaysValue, 1, RegistryValueKind.DWord);
+                    snapshot.RecordRegistryValue(@"HKLM\" + GraphicsDriversPath, DisableOverlaysValue,
+                        _disableOverlaysPreviouslyExisted ? _disableOverlaysPreviousValue : (object)"<not set>");
+
+                    _logger.Information(
+                        "MpoToggle: Set {RegistryPath}\\{ValueName} = 1 (was: {OldValue})",
+                        @"HKLM\" + GraphicsDriversPath,
+                        DisableOverlaysValue,
+                        _disableOverlaysPreviouslyExisted ? _disableOverlaysPreviousValue.ToString() : "<not set>");
+                }
+                else
+                {
+                    _logger.Warning(
+                        "MpoToggle: Failed to open {RegistryPath} for 24H2 DisableOverlays write",
+                        GraphicsDriversPath);
+                }
+            }
+
             // Advisory: check for multi-monitor refresh rate mismatch
             CheckMultiMonitorSuggestion();
 
@@ -143,6 +223,58 @@ public class MpoToggle : IOptimization
                     "MpoToggle: Deleted {RegistryPath}\\{ValueName} (was not present before apply)",
                     @"HKLM\" + DwmRegistryPath,
                     OverlayTestModeValue);
+            }
+
+            // ── Revert 24H2 extended keys ──
+            if (_is24H2OrLater)
+            {
+                // Revert EnableOverlay in DWM key
+                if (_enableOverlayPreviouslyExisted)
+                {
+                    key.SetValue(EnableOverlayValue, _enableOverlayPreviousValue, RegistryValueKind.DWord);
+                    _logger.Information(
+                        "MpoToggle: Restored {RegistryPath}\\{ValueName} = {RestoredValue}",
+                        @"HKLM\" + DwmRegistryPath,
+                        EnableOverlayValue,
+                        _enableOverlayPreviousValue);
+                }
+                else
+                {
+                    key.DeleteValue(EnableOverlayValue, throwOnMissingValue: false);
+                    _logger.Information(
+                        "MpoToggle: Deleted {RegistryPath}\\{ValueName} (was not present before apply)",
+                        @"HKLM\" + DwmRegistryPath,
+                        EnableOverlayValue);
+                }
+
+                // Revert DisableOverlays in GraphicsDrivers key
+                using var gfxKey = Registry.LocalMachine.OpenSubKey(GraphicsDriversPath, writable: true);
+                if (gfxKey != null)
+                {
+                    if (_disableOverlaysPreviouslyExisted)
+                    {
+                        gfxKey.SetValue(DisableOverlaysValue, _disableOverlaysPreviousValue, RegistryValueKind.DWord);
+                        _logger.Information(
+                            "MpoToggle: Restored {RegistryPath}\\{ValueName} = {RestoredValue}",
+                            @"HKLM\" + GraphicsDriversPath,
+                            DisableOverlaysValue,
+                            _disableOverlaysPreviousValue);
+                    }
+                    else
+                    {
+                        gfxKey.DeleteValue(DisableOverlaysValue, throwOnMissingValue: false);
+                        _logger.Information(
+                            "MpoToggle: Deleted {RegistryPath}\\{ValueName} (was not present before apply)",
+                            @"HKLM\" + GraphicsDriversPath,
+                            DisableOverlaysValue);
+                    }
+                }
+                else
+                {
+                    _logger.Warning(
+                        "MpoToggle: Failed to open {RegistryPath} for 24H2 DisableOverlays revert",
+                        GraphicsDriversPath);
+                }
             }
 
             _isApplied = false;

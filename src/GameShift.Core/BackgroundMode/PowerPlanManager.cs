@@ -288,31 +288,81 @@ public class PowerPlanManager : IDisposable
     }
 
     /// <summary>
-    /// Applies performance overrides to the custom plan via powercfg /setacvalueindex.
+    /// Applies all performance overrides to the custom plan via powercfg.
+    /// Includes the original 6 core overrides plus 50+ expanded overrides from PowerPlanConfigurator
+    /// covering processor tuning, storage, USB, wireless, idle resiliency, interrupt steering,
+    /// global device policy, and vendor-aware heterogeneous scheduling.
+    /// Sets both AC (plugged in) and DC (battery) values for laptop support.
     /// </summary>
     private void ApplyPowerOverrides(Guid planGuid)
     {
         var plan = planGuid.ToString();
 
+        // === Original 6 core overrides (kept for clarity) ===
+
         // Processor performance boost mode = Aggressive (SUB_PROCESSOR / PERFBOOSTMODE = 2)
         RunPowercfg($"/setacvalueindex {plan} 54533251-82be-4824-96c1-47b60b740d00 be337238-0d82-4146-a960-4f3749d470c7 2");
+        RunPowercfg($"/setdcvalueindex {plan} 54533251-82be-4824-96c1-47b60b740d00 be337238-0d82-4146-a960-4f3749d470c7 2");
 
-        // Minimum processor state = 100% (SUB_PROCESSOR / PROCTHROTTLEMIN = 100)
+        // Minimum processor state = 100%
         RunPowercfg($"/setacvalueindex {plan} 54533251-82be-4824-96c1-47b60b740d00 893dee8e-2bef-41e0-89c6-b55d0929964c 100");
+        RunPowercfg($"/setdcvalueindex {plan} 54533251-82be-4824-96c1-47b60b740d00 893dee8e-2bef-41e0-89c6-b55d0929964c 100");
 
-        // Maximum processor state = 100% (SUB_PROCESSOR / PROCTHROTTLEMAX = 100)
+        // Maximum processor state = 100%
         RunPowercfg($"/setacvalueindex {plan} 54533251-82be-4824-96c1-47b60b740d00 bc5038f7-23e0-4960-96da-33abaf5935ec 100");
+        RunPowercfg($"/setdcvalueindex {plan} 54533251-82be-4824-96c1-47b60b740d00 bc5038f7-23e0-4960-96da-33abaf5935ec 100");
 
-        // USB selective suspend = Disabled (USB / USBSELECTIVESUSPEND = 0)
+        // USB selective suspend = Disabled
         RunPowercfg($"/setacvalueindex {plan} 2a737441-1930-4402-8d77-b2bebba308a3 48e6b7a6-50f5-4782-a5d4-53bb8f07e226 0");
+        RunPowercfg($"/setdcvalueindex {plan} 2a737441-1930-4402-8d77-b2bebba308a3 48e6b7a6-50f5-4782-a5d4-53bb8f07e226 0");
 
-        // PCI Express Link State Power Management = Off (PCIEXPRESS / ASPM = 0)
+        // PCI Express Link State Power Management = Off
         RunPowercfg($"/setacvalueindex {plan} 501a4d13-42af-4429-9fd1-a8218c268e20 ee12f906-d277-404b-b6da-e5fa1a576df5 0");
+        RunPowercfg($"/setdcvalueindex {plan} 501a4d13-42af-4429-9fd1-a8218c268e20 ee12f906-d277-404b-b6da-e5fa1a576df5 0");
 
-        // Hard disk turn off timeout = 0 (never) (DISK / DISKIDLE = 0)
+        // Hard disk turn off timeout = 0 (never)
         RunPowercfg($"/setacvalueindex {plan} 0012ee47-9041-4b5d-9b77-535fba8b1442 6738e2c4-e8a5-4a42-b16a-e040e769756e 0");
+        RunPowercfg($"/setdcvalueindex {plan} 0012ee47-9041-4b5d-9b77-535fba8b1442 6738e2c4-e8a5-4a42-b16a-e040e769756e 0");
 
-        SettingsManager.Logger.Debug("[PowerPlanManager] Applied power overrides to plan {Guid}", planGuid);
+        // === Expanded overrides from PowerPlanConfigurator ===
+
+        var cpuProfile = PowerPlanConfigurator.DetectCpuProfile();
+        bool hasIntelGpu = PowerPlanConfigurator.DetectHasIntelGpu();
+
+        SettingsManager.Logger.Information(
+            "[PowerPlanManager] CPU profile: {Profile}, Intel GPU: {IntelGpu}",
+            cpuProfile, hasIntelGpu);
+
+        var configurator = new PowerPlanConfigurator();
+        var overrides = configurator.GetPlanOverrides(cpuProfile, hasIntelGpu);
+
+        int applied = 0;
+        int skipped = 0;
+
+        foreach (var o in overrides)
+        {
+            // Apply AC value
+            var acResult = RunPowercfg($"/setacvalueindex {plan} {o.SubGroupGuid} {o.SettingGuid} {o.Value}");
+
+            // Apply DC value (for laptop support)
+            RunPowercfg($"/setdcvalueindex {plan} {o.SubGroupGuid} {o.SettingGuid} {o.Value}");
+
+            if (acResult != null)
+            {
+                applied++;
+            }
+            else
+            {
+                skipped++;
+                SettingsManager.Logger.Debug(
+                    "[PowerPlanManager] Setting not available: {Description} ({Guid})",
+                    o.Description ?? "unknown", o.SettingGuid);
+            }
+        }
+
+        SettingsManager.Logger.Information(
+            "[PowerPlanManager] Applied {Applied} expanded overrides, {Skipped} skipped (not available on this hardware)",
+            applied, skipped);
     }
 
     private static string? RunPowercfg(string arguments)

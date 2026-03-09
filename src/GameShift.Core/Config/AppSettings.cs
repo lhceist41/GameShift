@@ -140,6 +140,15 @@ public class AppSettings
     /// </summary>
     public string PingTarget { get; set; } = "8.8.8.8";
 
+    // -- DPC Monitoring Preferences ----------------------------------------
+
+    /// <summary>
+    /// Whether to prefer ETW-based DPC monitoring over PerformanceCounter.
+    /// ETW provides per-driver attribution but has slightly higher overhead (~1-3% CPU).
+    /// When false, always uses PerformanceCounter regardless of admin privileges.
+    /// </summary>
+    public bool PreferEtwDpcMonitoring { get; set; } = true;
+
     // -- DPC Doctor --------------------------------------------------------
 
     /// <summary>
@@ -206,6 +215,15 @@ public class AppSettings
 
     /// <summary>Whether the window was maximized when last closed.</summary>
     public bool WindowMaximized { get; set; }
+
+    // -- Update Preferences ------------------------------------------------
+
+    /// <summary>
+    /// Version string the user chose to skip (e.g., "2.2.0").
+    /// Startup update popup will not show for this version.
+    /// Reset to empty when a newer version is released.
+    /// </summary>
+    public string SkippedUpdateVersion { get; set; } = string.Empty;
 }
 
 /// <summary>

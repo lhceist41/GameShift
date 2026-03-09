@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using GameShift.Core.Optimization;
 
 namespace GameShift.Core.GameProfiles;
 
@@ -42,6 +43,7 @@ public static class BuiltInProfiles
         AffinityMask = null,
         GamingStandbyThresholdMB = 512,
         GamingFreeMemoryThresholdMB = 3072,
+        AntiCheat = AntiCheatType.None, // Server-side ML detection only (RICOCHET)
         RecommendedTweaks = new[] { "DisableGameDvr", "DisableHags", "DisableMpo", "OptimizeMmcss", "OptimizeWin32PrioritySeparation", "DisablePowerThrottling" },
         Notes = new[]
         {
@@ -66,6 +68,7 @@ public static class BuiltInProfiles
         AffinityMask = null,
         GamingStandbyThresholdMB = null,
         GamingFreeMemoryThresholdMB = null,
+        AntiCheat = AntiCheatType.RiotVanguard,
         RecommendedTweaks = new[] { "DisableGameDvr", "OptimizeMmcss", "OptimizeWin32PrioritySeparation", "DisablePowerThrottling" },
         Notes = new[]
         {
@@ -90,6 +93,7 @@ public static class BuiltInProfiles
         AffinityMask = null,
         GamingStandbyThresholdMB = null,
         GamingFreeMemoryThresholdMB = null,
+        AntiCheat = AntiCheatType.RiotVanguard,
         RecommendedTweaks = new[] { "DisableGameDvr", "OptimizeMmcss", "DisablePowerThrottling" },
         Notes = new[]
         {
@@ -113,6 +117,7 @@ public static class BuiltInProfiles
         AffinityMask = null,
         GamingStandbyThresholdMB = 1024,
         GamingFreeMemoryThresholdMB = 2048,
+        AntiCheat = AntiCheatType.ValveAntiCheat,
         RecommendedTweaks = new[] { "DisableGameDvr", "DisableMpo", "OptimizeMmcss", "OptimizeWin32PrioritySeparation", "DisablePowerThrottling" },
         Notes = new[]
         {
@@ -136,6 +141,7 @@ public static class BuiltInProfiles
         AffinityMask = null,
         GamingStandbyThresholdMB = null,
         GamingFreeMemoryThresholdMB = null,
+        AntiCheat = AntiCheatType.None,
         RecommendedTweaks = new[] { "DisableGameDvr", "OptimizeWin32PrioritySeparation", "DisablePowerThrottling" },
         Notes = new[]
         {
@@ -161,6 +167,7 @@ public static class BuiltInProfiles
         AffinityMask = null,
         GamingStandbyThresholdMB = 1024,
         GamingFreeMemoryThresholdMB = 3072,
+        AntiCheat = AntiCheatType.BattlEye, // Uses ACE (Tencent) in a BattlEye-like variant
         RecommendedTweaks = new[] { "DisableGameDvr", "DisablePowerThrottling", "OptimizeMmcss" },
         Notes = new[]
         {
@@ -189,6 +196,7 @@ public static class BuiltInProfiles
         AffinityMask = null,
         GamingStandbyThresholdMB = 1024,
         GamingFreeMemoryThresholdMB = 3072,
+        AntiCheat = AntiCheatType.TencentACE,
         RecommendedTweaks = new[] { "DisableGameDvr", "DisablePowerThrottling", "OptimizeMmcss", "OptimizeWin32PrioritySeparation" },
         Notes = new[]
         {
@@ -221,6 +229,7 @@ public static class BuiltInProfiles
         AffinityMask = null,
         GamingStandbyThresholdMB = 1024,
         GamingFreeMemoryThresholdMB = 3072,
+        AntiCheat = AntiCheatType.Proprietary, // mHYProtect/HoYoKProtect
         RecommendedTweaks = new[] { "DisableGameDvr", "DisablePowerThrottling", "OptimizeMmcss" },
         Notes = new[]
         {
@@ -252,6 +261,7 @@ public static class BuiltInProfiles
         AffinityMask = null,
         GamingStandbyThresholdMB = 1024,
         GamingFreeMemoryThresholdMB = 2048,
+        AntiCheat = AntiCheatType.None, // Custom user-mode anti-cheat (same as Warframe)
         RecommendedTweaks = new[] { "DisableGameDvr", "DisablePowerThrottling", "OptimizeMmcss" },
         Notes = new[]
         {
@@ -281,6 +291,7 @@ public static class BuiltInProfiles
         AffinityMask = null,
         GamingStandbyThresholdMB = 1024,
         GamingFreeMemoryThresholdMB = 8192,
+        AntiCheat = AntiCheatType.ValveAntiCheat,
         RecommendedTweaks = new[] { "DisableGameDvr", "DisablePowerThrottling", "OptimizeMmcss", "OptimizeWin32PrioritySeparation", "DisableHags", "DisableMpo" },
         Notes = new[]
         {
@@ -314,6 +325,7 @@ public static class BuiltInProfiles
         AffinityMask = null,
         GamingStandbyThresholdMB = 1024,
         GamingFreeMemoryThresholdMB = 2048,
+        AntiCheat = AntiCheatType.EasyAntiCheat,
         RecommendedTweaks = new[] { "DisableGameDvr", "DisablePowerThrottling", "OptimizeMmcss", "OptimizeWin32PrioritySeparation", "DisableMpo" },
         Notes = new[]
         {
@@ -352,6 +364,7 @@ public static class BuiltInProfiles
         AffinityMask = null,
         GamingStandbyThresholdMB = 1024,
         GamingFreeMemoryThresholdMB = 2048,
+        AntiCheat = AntiCheatType.EasyAntiCheat,
         RecommendedTweaks = new[] { "DisableGameDvr", "DisablePowerThrottling", "OptimizeMmcss", "OptimizeWin32PrioritySeparation", "DisableHags", "DisableMpo" },
         Notes = new[]
         {
@@ -385,6 +398,7 @@ public static class BuiltInProfiles
         AffinityMask = null,
         GamingStandbyThresholdMB = 1024,
         GamingFreeMemoryThresholdMB = 2048,
+        AntiCheat = AntiCheatType.EasyAntiCheat,
         RecommendedTweaks = new[] { "DisableGameDvr", "DisablePowerThrottling", "OptimizeMmcss", "OptimizeWin32PrioritySeparation", "DisableMpo" },
         Notes = new[]
         {
@@ -418,6 +432,7 @@ public static class BuiltInProfiles
         AffinityMask = null,
         GamingStandbyThresholdMB = 1024,
         GamingFreeMemoryThresholdMB = 1024,
+        AntiCheat = AntiCheatType.EasyAntiCheat,
         RecommendedTweaks = new[] { "DisableGameDvr", "DisablePowerThrottling", "OptimizeMmcss", "OptimizeWin32PrioritySeparation", "DisableMpo" },
         Notes = new[]
         {
@@ -452,6 +467,7 @@ public static class BuiltInProfiles
         AffinityMask = null,
         GamingStandbyThresholdMB = 1024,
         GamingFreeMemoryThresholdMB = 1024,
+        AntiCheat = AntiCheatType.EasyAntiCheat,
         RecommendedTweaks = new[] { "DisableGameDvr", "DisablePowerThrottling", "OptimizeMmcss", "OptimizeWin32PrioritySeparation", "DisableMpo" },
         Notes = new[]
         {
@@ -485,6 +501,7 @@ public static class BuiltInProfiles
         AffinityMask = null,
         GamingStandbyThresholdMB = 1024,
         GamingFreeMemoryThresholdMB = 8192,
+        AntiCheat = AntiCheatType.Ricochet,
         RecommendedTweaks = new[] { "DisableGameDvr", "DisablePowerThrottling", "OptimizeMmcss", "OptimizeWin32PrioritySeparation", "DisableMpo" },
         Notes = new[]
         {
@@ -524,6 +541,7 @@ public static class BuiltInProfiles
         AffinityMask = null,
         GamingStandbyThresholdMB = 1024,
         GamingFreeMemoryThresholdMB = 4096,
+        AntiCheat = AntiCheatType.None, // No anti-cheat, no DRM in retail
         RecommendedTweaks = new[] { "DisableGameDvr", "DisablePowerThrottling", "OptimizeMmcss", "OptimizeWin32PrioritySeparation" },
         Notes = new[]
         {
@@ -559,6 +577,7 @@ public static class BuiltInProfiles
         AffinityMask = null,
         GamingStandbyThresholdMB = 512,
         GamingFreeMemoryThresholdMB = 1024,
+        AntiCheat = AntiCheatType.None, // Server-side only (NoCheatPlus, GrimAC)
         RecommendedTweaks = new[] { "DisableGameDvr", "DisablePowerThrottling", "OptimizeMmcss", "OptimizeWin32PrioritySeparation" },
         Notes = new[]
         {
@@ -594,6 +613,7 @@ public static class BuiltInProfiles
         AffinityMask = null,
         GamingStandbyThresholdMB = 1024,
         GamingFreeMemoryThresholdMB = 8192,
+        AntiCheat = AntiCheatType.None, // No client-side anti-cheat
         RecommendedTweaks = new[] { "DisableGameDvr", "DisablePowerThrottling", "OptimizeMmcss", "OptimizeWin32PrioritySeparation", "DisableHags", "DisableMpo" },
         Notes = new[]
         {
