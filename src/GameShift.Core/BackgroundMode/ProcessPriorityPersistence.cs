@@ -1,17 +1,17 @@
 using System.Diagnostics;
-using System.Management;
 using GameShift.Core.Config;
+using GameShift.Core.Detection;
 
 namespace GameShift.Core.BackgroundMode;
 
 /// <summary>
-/// Persistent process priority rules. Monitors for process starts via WMI
+/// Persistent process priority rules. Subscribes to GameDetector.ProcessSpawned
 /// and applies configured priority rules (e.g., chrome.exe -> BelowNormal).
 /// Runs 24/7 when enabled.
 /// </summary>
 public class ProcessPriorityPersistence : IDisposable
 {
-    private ManagementEventWatcher? _watcher;
+    private GameDetector? _detector;
     private Dictionary<string, ProcessPriorityClass> _rules = new();
     private volatile bool _running;
 
@@ -25,8 +25,9 @@ public class ProcessPriorityPersistence : IDisposable
 
     /// <summary>
     /// Starts monitoring for process starts and applying priority rules.
+    /// Subscribes to GameDetector.ProcessSpawned instead of creating its own WMI watcher.
     /// </summary>
-    public void Start(BackgroundModeSettings settings)
+    public void Start(BackgroundModeSettings settings, GameDetector? detector)
     {
         if (_running) return;
 
@@ -54,53 +55,46 @@ public class ProcessPriorityPersistence : IDisposable
         // Apply to already-running processes
         ApplyToRunningProcesses();
 
-        // Watch for new process starts
-        try
+        // Subscribe to GameDetector's shared WMI process start events
+        if (detector != null)
         {
-            _watcher = new ManagementEventWatcher(
-                new WqlEventQuery("SELECT * FROM Win32_ProcessStartTrace"));
-            _watcher.EventArrived += OnProcessStarted;
-            _watcher.Start();
+            _detector = detector;
+            _detector.ProcessSpawned += OnProcessSpawned;
             _running = true;
 
             SettingsManager.Logger.Information(
-                "[ProcessPriority] Started with {Count} rules", _rules.Count);
+                "[ProcessPriority] Started with {Count} rules (using shared WMI watcher)", _rules.Count);
         }
-        catch (Exception ex)
+        else
         {
-            SettingsManager.Logger.Error(ex, "[ProcessPriority] Failed to start WMI watcher");
+            SettingsManager.Logger.Warning(
+                "[ProcessPriority] No GameDetector available — process monitoring disabled");
         }
     }
 
     /// <summary>
-    /// Stops WMI monitoring. Does NOT revert priorities (they're meant to persist).
+    /// Stops monitoring. Does NOT revert priorities (they're meant to persist).
     /// </summary>
     public void Stop()
     {
         _running = false;
 
-        if (_watcher != null)
+        if (_detector != null)
         {
-            try
-            {
-                _watcher.EventArrived -= OnProcessStarted;
-                _watcher.Stop();
-                _watcher.Dispose();
-            }
-            catch { }
-            _watcher = null;
+            _detector.ProcessSpawned -= OnProcessSpawned;
+            _detector = null;
         }
 
         SettingsManager.Logger.Information("[ProcessPriority] Stopped");
     }
 
-    private void OnProcessStarted(object sender, EventArrivedEventArgs e)
+    private void OnProcessSpawned(object? sender, ProcessSpawnedEventArgs e)
     {
         if (!_running) return;
 
         try
         {
-            var processName = e.NewEvent.Properties["ProcessName"]?.Value?.ToString();
+            var processName = e.ProcessName;
             if (string.IsNullOrEmpty(processName)) return;
 
             var key = processName.ToLowerInvariant();
@@ -114,7 +108,7 @@ public class ProcessPriorityPersistence : IDisposable
                 return;
             }
 
-            var pid = Convert.ToInt32(e.NewEvent.Properties["ProcessID"]?.Value);
+            var pid = e.ProcessId;
 
             // Small delay to let the process initialize
             Task.Delay(500).ContinueWith(_ =>

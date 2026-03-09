@@ -7,6 +7,23 @@ using Serilog;
 namespace GameShift.Core.Detection;
 
 /// <summary>
+/// Event args for any process spawn detected via WMI.
+/// Fired for ALL processes, not just game matches.
+/// Used by ProcessPriorityPersistence and ProcessSnapshotService.
+/// </summary>
+public class ProcessSpawnedEventArgs : EventArgs
+{
+    public int ProcessId { get; }
+    public string ProcessName { get; }
+
+    public ProcessSpawnedEventArgs(int processId, string processName)
+    {
+        ProcessId = processId;
+        ProcessName = processName;
+    }
+}
+
+/// <summary>
 /// Core game detection engine that monitors process creation/termination via WMI.
 /// Matches running processes against known game install directories.
 /// Monitors process creation/termination via WMI for game detection.
@@ -38,6 +55,13 @@ public class GameDetector : IDisposable
     /// Signal for OptimizationEngine to deactivate.
     /// </summary>
     public event EventHandler? AllGamesStopped;
+
+    /// <summary>
+    /// Fired for every process start detected via WMI, before game matching.
+    /// Used by ProcessPriorityPersistence (replaces its duplicate WMI watcher)
+    /// and ProcessSnapshotService (dirty flag for cache invalidation).
+    /// </summary>
+    public event EventHandler<ProcessSpawnedEventArgs>? ProcessSpawned;
 
     /// <summary>
     /// Creates a new game detector with the specified library scanners.
@@ -193,6 +217,9 @@ public class GameDetector : IDisposable
         {
             var processId = Convert.ToInt32(e.NewEvent.Properties["ProcessID"].Value);
             var processName = e.NewEvent.Properties["ProcessName"].Value.ToString() ?? string.Empty;
+
+            // Notify all subscribers of process spawn (before game matching filter)
+            ProcessSpawned?.Invoke(this, new ProcessSpawnedEventArgs(processId, processName));
 
             // Resolve full executable path
             string? executablePath = null;

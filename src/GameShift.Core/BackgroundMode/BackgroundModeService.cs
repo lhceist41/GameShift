@@ -1,4 +1,5 @@
 using GameShift.Core.Config;
+using GameShift.Core.Detection;
 
 namespace GameShift.Core.BackgroundMode;
 
@@ -17,6 +18,7 @@ public class BackgroundModeService : IDisposable
     private readonly ProcessPriorityPersistence _processPriority = new();
 
     private bool _enabled;
+    private GameDetector? _detector;
 
     /// <summary>Whether Background Mode is currently active.</summary>
     public bool IsEnabled => _enabled;
@@ -40,8 +42,11 @@ public class BackgroundModeService : IDisposable
     /// Starts all enabled Background Mode services based on current settings.
     /// Called at app startup if Background Mode is enabled, or when user enables it.
     /// </summary>
-    public void Start()
+    /// <param name="detector">GameDetector for shared WMI process monitoring (used by ProcessPriorityPersistence)</param>
+    public void Start(GameDetector? detector = null)
     {
+        _detector = detector;
+
         var settings = SettingsManager.Load();
         var bgSettings = settings.BackgroundMode;
         if (bgSettings == null || !bgSettings.Enabled)
@@ -62,7 +67,7 @@ public class BackgroundModeService : IDisposable
             _powerPlan.Start(bgSettings);
 
         if (bgSettings.ProcessPriorityEnabled)
-            _processPriority.Start(bgSettings);
+            _processPriority.Start(bgSettings, _detector);
 
         // TaskDeferral is event-driven (starts/stops with gaming sessions), not always-on
         // It will be triggered by OnGamingStart/OnGamingStop
@@ -162,7 +167,7 @@ public class BackgroundModeService : IDisposable
             _powerPlan.Stop();
 
         if (bgSettings.ProcessPriorityEnabled && !_processPriority.IsRunning)
-            _processPriority.Start(bgSettings);
+            _processPriority.Start(bgSettings, _detector);
         else if (!bgSettings.ProcessPriorityEnabled && _processPriority.IsRunning)
             _processPriority.Stop();
     }
