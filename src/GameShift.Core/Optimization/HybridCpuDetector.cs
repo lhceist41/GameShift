@@ -41,7 +41,9 @@ public class HybridCpuDetector : IOptimization
 
     private const string IfeoBasePath = @"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options";
 
-    public string Name => "Hybrid CPU Optimizer";
+    public const string OptimizationId = "Hybrid CPU Optimizer";
+
+    public string Name => OptimizationId;
 
     public string Description => "Detects CPU core topology and pins game process to optimal cores (P-cores, V-Cache CCD)";
 

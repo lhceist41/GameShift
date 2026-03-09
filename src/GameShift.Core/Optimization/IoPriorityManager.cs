@@ -27,7 +27,9 @@ public class IoPriorityManager : IOptimization
     private Timer? _rescanTimer;
     private string[] _activeGameProcessNames = Array.Empty<string>();
 
-    public string Name => "I/O Priority Management";
+    public const string OptimizationId = "I/O Priority Management";
+
+    public string Name => OptimizationId;
 
     public string Description => "Lowers disk I/O priority of background processes during gaming to prevent asset loading stutters";
 

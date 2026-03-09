@@ -18,7 +18,9 @@ public class PowerPlanSwitcher : IOptimization
     /// </summary>
     private static readonly Guid UltimatePerformanceGuid = new Guid("e9a42b02-d5df-448d-aa00-03f14749eb61");
 
-    public string Name => "Ultimate Performance Power Plan";
+    public const string OptimizationId = "Ultimate Performance Power Plan";
+
+    public string Name => OptimizationId;
 
     public string Description => "Switches to Ultimate Performance power plan for maximum CPU/GPU performance";
 
