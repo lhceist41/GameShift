@@ -123,7 +123,8 @@ public class HardwareScanner
             IsVanguardDetected = vbs.IsVanguardInstalled(),
             HasRiotGamesOnDisk = DetectRiotGamesOnDisk(),
             PrimaryRefreshRate = displayInfo.RefreshRate,
-            IsHagsEnabled = DetectHagsEnabled()
+            IsHagsEnabled = DetectHagsEnabled(),
+            GpuGeneration = DetectGpuGeneration(GpuName)
         };
     }
 
@@ -289,6 +290,44 @@ public class HardwareScanner
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Classifies the GPU generation from its name string.
+    /// Used by the HAGS recommendation engine to determine Frame Generation support.
+    /// </summary>
+    public static GpuGeneration DetectGpuGeneration(string gpuName)
+    {
+        if (string.IsNullOrEmpty(gpuName)) return GpuGeneration.Unknown;
+
+        string upper = gpuName.ToUpperInvariant();
+
+        // NVIDIA — detect by model number patterns
+        if (upper.Contains("RTX 50") || upper.Contains("RTX50")) return GpuGeneration.NvidiaRtx50;
+        if (upper.Contains("RTX 40") || upper.Contains("RTX40")) return GpuGeneration.NvidiaRtx40;
+        if (upper.Contains("RTX 30") || upper.Contains("RTX30")) return GpuGeneration.NvidiaRtx30;
+        if (upper.Contains("RTX 20") || upper.Contains("RTX20")) return GpuGeneration.NvidiaRtx20;
+        if (upper.Contains("GTX 16")) return GpuGeneration.NvidiaGtx16;
+        if (upper.Contains("GTX 10")) return GpuGeneration.NvidiaGtx10;
+
+        // AMD — detect by model number patterns (RX 9xxx = RDNA4, RX 7xxx = RDNA3, etc.)
+        if (upper.Contains("RX 9") || upper.Contains("RX9")) return GpuGeneration.AmdRdna4;
+        if (upper.Contains("RX 7") || upper.Contains("RX7")) return GpuGeneration.AmdRdna3;
+        if (upper.Contains("RX 6") || upper.Contains("RX6")) return GpuGeneration.AmdRdna2;
+        if (upper.Contains("RX 5") || upper.Contains("RX5")) return GpuGeneration.AmdRdna1;
+
+        // Intel Arc — Battlemage (B-series), then Alchemist (A-series)
+        if (upper.Contains("ARC B") || upper.Contains("B580") || upper.Contains("B570"))
+            return GpuGeneration.IntelArcBattlemage;
+        if (upper.Contains("ARC A") || upper.Contains("A770") || upper.Contains("A750") || upper.Contains("A580"))
+            return GpuGeneration.IntelArcAlchemist;
+
+        // Generic vendor detection as fallback
+        if (upper.Contains("NVIDIA") || upper.Contains("GEFORCE")) return GpuGeneration.Other;
+        if (upper.Contains("RADEON") || upper.Contains("AMD")) return GpuGeneration.Other;
+        if (upper.Contains("INTEL")) return GpuGeneration.Other;
+
+        return GpuGeneration.Unknown;
     }
 
     // ── Existing detection methods ───────────────────────────────────────

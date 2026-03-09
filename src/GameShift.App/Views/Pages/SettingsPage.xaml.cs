@@ -1,7 +1,9 @@
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using GameShift.App.ViewModels;
+using GameShift.Core.Optimization;
 using GameShift.Core.SystemTweaks;
 using GameShift.Core.GameProfiles;
 
@@ -154,17 +156,42 @@ public partial class SettingsPage : Page
             Grid.SetColumn(textStack, 0);
             grid.Children.Add(textStack);
 
+            // Check if this tweak is blocked by anti-cheat
+            bool isBlockedByAntiCheat = tweak is GameShift.Core.SystemTweaks.Tweaks.DisableMemoryIntegrity
+                && !isApplied
+                && AntiCheatDetector.IsVbsRequiredByAntiCheat();
+
+            // Check if memory compression is inapplicable (< 32GB RAM)
+            bool isMemCompInapplicable = tweak is GameShift.Core.SystemTweaks.Tweaks.DisableMemoryCompression memComp
+                && !memComp.IsApplicable && !isApplied;
+
+            bool isBlocked = isBlockedByAntiCheat || isMemCompInapplicable;
+
             var btn = new Button
             {
-                Content = isApplied ? (isGameShift ? "Revert" : "Applied") : "Apply",
+                Content = isBlocked ? "Blocked" : (isApplied ? (isGameShift ? "Revert" : "Applied") : "Apply"),
                 Padding = new Thickness(12, 6, 12, 6),
                 VerticalAlignment = VerticalAlignment.Center,
                 Cursor = System.Windows.Input.Cursors.Hand,
-                IsEnabled = !isApplied || isGameShift,
+                IsEnabled = !isBlocked && (!isApplied || isGameShift),
                 Tag = tweak
             };
 
-            if (isApplied && !isGameShift)
+            if (isBlockedByAntiCheat)
+            {
+                btn.Background = (Brush)FindResource("GS.Surface.Base");
+                btn.Foreground = (Brush)FindResource("GS.Text.Secondary");
+                var blockingACs = AntiCheatDetector.GetVbsRequiringAntiCheats();
+                var acNames = string.Join(", ", blockingACs.Select(ac => ac.DisplayName));
+                btn.ToolTip = $"Blocked: required by {acNames}";
+            }
+            else if (isMemCompInapplicable)
+            {
+                btn.Background = (Brush)FindResource("GS.Surface.Base");
+                btn.Foreground = (Brush)FindResource("GS.Text.Secondary");
+                btn.ToolTip = "Memory compression should remain enabled on systems with less than 32GB RAM.";
+            }
+            else if (isApplied && !isGameShift)
             {
                 btn.Background = (Brush)FindResource("GS.Surface.Base");
                 btn.Foreground = (Brush)FindResource("GS.Text.Secondary");
@@ -203,11 +230,64 @@ public partial class SettingsPage : Page
         }
         else if (tweak is GameShift.Core.SystemTweaks.Tweaks.DisableMemoryIntegrity)
         {
+            // Check anti-cheat blocking
+            var blockingACs = AntiCheatDetector.GetVbsRequiringAntiCheats();
+            if (blockingACs.Count > 0)
+            {
+                var acNames = string.Join(", ", blockingACs.Select(ac => ac.DisplayName));
+                MessageBox.Show(
+                    $"Cannot disable Memory Integrity — it is required by {acNames}.\n\n" +
+                    "Disabling it would cause VAN:RESTRICTION errors and prevent these games from launching.",
+                    "Blocked by Anti-Cheat",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+                return;
+            }
+
             var result = MessageBox.Show(
                 "Disabling Memory Integrity reduces system security. This removes VBS overhead which can improve FPS, but makes your system more vulnerable to kernel-level attacks.\n\nAre you sure you want to proceed?",
                 "Security Warning",
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Warning);
+            if (result != MessageBoxResult.Yes) return;
+            mgr.ApplyTweak(tweak);
+        }
+        else if (tweak is GameShift.Core.SystemTweaks.Tweaks.OptimizeInterruptHandling)
+        {
+            var result = MessageBox.Show(
+                "This modifies PCI device interrupt configuration (MSI mode and CPU affinity). " +
+                "Incorrect settings can cause system instability. A reboot is required.\n\nContinue?",
+                "Interrupt Optimization",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning);
+            if (result != MessageBoxResult.Yes) return;
+            mgr.ApplyTweak(tweak);
+        }
+        else if (tweak is GameShift.Core.SystemTweaks.Tweaks.DisableHags hags)
+        {
+            hags.EvaluateRecommendation();
+            // Warn when disabling on Frame Gen capable GPU
+            if (hags.IsFrameGenCapable && hags.IsHagsEnabled)
+            {
+                var result = MessageBox.Show(
+                    "Your GPU supports Frame Generation (DLSS FG / AFMF), which requires HAGS to be enabled. " +
+                    "Disabling HAGS will prevent Frame Generation from working.\n\nAre you sure?",
+                    "Frame Generation Warning",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Warning);
+                if (result != MessageBoxResult.Yes) return;
+            }
+            mgr.ApplyTweak(tweak);
+        }
+        else if (tweak is GameShift.Core.SystemTweaks.Tweaks.EnableLargePages)
+        {
+            var result = MessageBox.Show(
+                "This grants the Lock Pages in Memory privilege to your user account. " +
+                "Games that support large pages (UE5, Minecraft Java with -XX:+UseLargePages) will use 2MB pages for reduced TLB misses. " +
+                "Requires logoff or reboot.\n\nContinue?",
+                "Large Pages Privilege",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question);
             if (result != MessageBoxResult.Yes) return;
             mgr.ApplyTweak(tweak);
         }

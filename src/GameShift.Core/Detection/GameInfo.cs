@@ -62,8 +62,8 @@ public class GameInfo
         var source = launcherSource.ToLowerInvariant();
         var identifier = launcherId.ToLowerInvariant();
 
-        // For launchers with numeric IDs, use them directly
-        if (source is "steam" or "epic" or "gog" && !string.IsNullOrWhiteSpace(identifier))
+        // For launchers with direct IDs, use them directly
+        if (source is "steam" or "epic" or "gog" or "xbox" && !string.IsNullOrWhiteSpace(identifier))
         {
             return $"{source}_{identifier}";
         }

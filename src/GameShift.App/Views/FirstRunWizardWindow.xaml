@@ -31,7 +31,7 @@
                            Margin="0,0,0,12"/>
 
                 <!-- Version badge -->
-                <TextBlock Text="v2.1"
+                <TextBlock Text="v3.0"
                            FontSize="14"
                            Foreground="#8B949E"
                            HorizontalAlignment="Center"

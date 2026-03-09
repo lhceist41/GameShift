@@ -6,7 +6,8 @@ namespace GameShift.Core.Monitoring;
 
 /// <summary>
 /// Event arguments for DPC latency spike detection.
-/// DriverName is null for the PerformanceCounter approach (ETW needed for per-driver attribution).
+/// DriverName is populated when ETW-based monitoring is active (per-driver attribution).
+/// DriverName is null for the PerformanceCounter fallback (aggregate only).
 /// </summary>
 public class DpcSpikeEventArgs : EventArgs
 {
@@ -21,7 +22,13 @@ public class DpcSpikeEventArgs : EventArgs
 }
 
 /// <summary>
-/// Passive DPC latency monitor that samples via PerformanceCounter every 500ms.
+/// Passive DPC latency monitor with two backends:
+/// 1. ETW (via DpcTraceEngine) — per-driver attribution, microsecond accuracy
+/// 2. PerformanceCounter fallback — aggregate % DPC Time, no driver info
+///
+/// ETW is preferred when available (requires admin, no other kernel session active).
+/// Falls back to PerformanceCounter automatically if ETW session creation fails.
+///
 /// NOT an IOptimization — observes DPC latency without changing system state.
 /// Fires DpcSpikeDetected when a sample exceeds a configurable threshold (with 30s cooldown).
 /// </summary>
@@ -38,6 +45,10 @@ public class DpcLatencyMonitor : IDisposable
     private bool _counterAvailable;
     private bool _disposed;
     private readonly ILogger _logger;
+
+    // ETW backend (provides per-driver attribution)
+    private DpcTraceEngine? _traceEngine;
+    private bool _useEtwBackend;
 
     // -- Public properties ──────────────────────────────────────────────────
 
@@ -79,6 +90,18 @@ public class DpcLatencyMonitor : IDisposable
     /// Whether the monitor is currently sampling.
     /// </summary>
     public bool IsMonitoring => _isMonitoring;
+
+    /// <summary>
+    /// Whether per-driver DPC data is available (ETW backend active).
+    /// When true, DriverStatistics contains per-driver breakdown.
+    /// </summary>
+    public bool HasPerDriverData => _useEtwBackend && _traceEngine?.IsCapturing == true;
+
+    /// <summary>
+    /// Per-driver DPC statistics when ETW backend is active. Null when using PerformanceCounter fallback.
+    /// </summary>
+    public IReadOnlyList<DriverDpcStats>? DriverStatistics =>
+        HasPerDriverData ? _traceEngine?.GetTopDrivers(20) : null;
 
     // -- Events ─────────────────────────────────────────────────────────────
 
@@ -139,6 +162,62 @@ public class DpcLatencyMonitor : IDisposable
     }
 
     /// <summary>
+    /// Attempts to enable ETW-based monitoring for per-driver DPC attribution.
+    /// Requires admin privileges and no other kernel trace session active.
+    /// Falls back silently to PerformanceCounter if ETW is unavailable.
+    /// </summary>
+    /// <param name="traceEngine">DpcTraceEngine instance (shared with DPC Doctor page).</param>
+    /// <returns>True if ETW backend was activated, false if using PerformanceCounter fallback.</returns>
+    public bool EnableEtwBackend(DpcTraceEngine traceEngine)
+    {
+        try
+        {
+            _traceEngine = traceEngine;
+
+            if (_traceEngine.IsCapturing || _traceEngine.StartCapture())
+            {
+                _useEtwBackend = true;
+
+                // Subscribe to ETW driver updates for spike detection with attribution
+                _traceEngine.DriversUpdated += OnEtwDriversUpdated;
+
+                _logger.Information("DPC monitor: ETW backend activated (per-driver attribution available)");
+                return true;
+            }
+
+            _logger.Information("DPC monitor: ETW session unavailable, using PerformanceCounter fallback");
+            _traceEngine = null;
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _logger.Warning(ex, "DPC monitor: Failed to enable ETW backend, using PerformanceCounter fallback");
+            _traceEngine = null;
+            _useEtwBackend = false;
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Disables the ETW backend and reverts to PerformanceCounter monitoring.
+    /// </summary>
+    public void DisableEtwBackend()
+    {
+        if (_traceEngine != null)
+        {
+            _traceEngine.DriversUpdated -= OnEtwDriversUpdated;
+
+            // Only stop capture if we started it (DPC Doctor may still be using it)
+            // Don't stop — let the DPC Doctor page manage the trace engine lifecycle
+        }
+
+        _useEtwBackend = false;
+        _traceEngine = null;
+
+        _logger.Information("DPC monitor: ETW backend disabled, using PerformanceCounter");
+    }
+
+    /// <summary>
     /// Stop DPC latency monitoring.
     /// </summary>
     public void Stop()
@@ -169,6 +248,27 @@ public class DpcLatencyMonitor : IDisposable
 
     private void OnTimerElapsed(object? sender, global::System.Timers.ElapsedEventArgs e)
     {
+        if (_useEtwBackend)
+        {
+            // When ETW is active, derive aggregate latency from the trace engine's system peak
+            if (_traceEngine != null)
+            {
+                double value = _traceEngine.SystemPeakDpc;
+                CurrentLatencyMicroseconds = value;
+
+                lock (_lock)
+                {
+                    _samples.Enqueue(value);
+                    while (_samples.Count > 120)
+                        _samples.Dequeue();
+                }
+
+                LatencySampled?.Invoke(this, value);
+            }
+            return;
+        }
+
+        // PerformanceCounter fallback
         if (!_counterAvailable || _counter == null)
             return;
 
@@ -203,6 +303,26 @@ public class DpcLatencyMonitor : IDisposable
         }
     }
 
+    /// <summary>
+    /// Called when DpcTraceEngine fires DriversUpdated (1-second intervals).
+    /// Checks the top offender for spike detection with driver attribution.
+    /// </summary>
+    private void OnEtwDriversUpdated(IReadOnlyList<DriverDpcStats> drivers)
+    {
+        if (drivers.Count == 0 || _thresholdMicroseconds <= 0) return;
+
+        // Check if any driver's highest DPC exceeds the threshold
+        var topOffender = drivers[0]; // Already sorted by HighestExecutionMicroseconds
+        if (topOffender.HighestExecutionMicroseconds > _thresholdMicroseconds &&
+            (DateTime.UtcNow - _lastAlertTime).TotalSeconds >= 30)
+        {
+            _lastAlertTime = DateTime.UtcNow;
+            DpcSpikeDetected?.Invoke(this, new DpcSpikeEventArgs(
+                topOffender.HighestExecutionMicroseconds,
+                topOffender.FriendlyName));
+        }
+    }
+
     // -- IDisposable ────────────────────────────────────────────────────────
 
     public void Dispose()
@@ -211,6 +331,9 @@ public class DpcLatencyMonitor : IDisposable
             return;
 
         _disposed = true;
+
+        DisableEtwBackend();
+
         _timer.Enabled = false;
         _timer.Dispose();
         _counter?.Dispose();

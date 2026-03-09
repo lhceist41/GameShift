@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using GameShift.Core.Optimization;
 
 namespace GameShift.Core.GameProfiles;
 
@@ -50,6 +51,11 @@ public class GameProfile
 
     /// <summary>System tweak class names this profile recommends.</summary>
     public string[] RecommendedTweaks { get; set; } = Array.Empty<string>();
+
+    // -- Anti-Cheat --
+
+    /// <summary>Anti-cheat system used by this game (for IFEO fallback and VBS gating).</summary>
+    public AntiCheatType AntiCheat { get; set; } = AntiCheatType.None;
 
     // -- Notes --
 

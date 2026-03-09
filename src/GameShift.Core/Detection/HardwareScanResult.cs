@@ -34,6 +34,9 @@ public class HardwareScanResult
     // HAGS (Hardware Accelerated GPU Scheduling)
     public bool IsHagsEnabled { get; set; }
 
+    // GPU Generation (Sprint 7 — HAGS recommendation engine)
+    public GpuGeneration GpuGeneration { get; set; } = GpuGeneration.Unknown;
+
     // Convenience
     public bool HasSufficientVram(double requiredGb) => GpuVramGb >= requiredGb;
 }

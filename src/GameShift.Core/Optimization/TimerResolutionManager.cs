@@ -9,14 +9,26 @@ namespace GameShift.Core.Optimization;
 /// <summary>
 /// Sets Windows system timer resolution to 0.5ms for reduced input latency.
 /// Manages system timer resolution for reduced input latency during gameplay.
+/// On Windows 11, also sets GlobalTimerResolutionRequests to ensure system-wide effect.
 /// </summary>
 public class TimerResolutionManager : IOptimization
 {
     /// <summary>
-    /// Registry key path for Windows 11 24H2+ global timer resolution workaround.
+    /// Registry key path for Windows 11 global timer resolution workaround.
+    /// On Win11, NtSetTimerResolution only affects the calling process by default.
+    /// Setting GlobalTimerResolutionRequests=1 restores Windows 10 behavior where
+    /// the highest requested resolution applies system-wide.
     /// </summary>
     private const string GlobalTimerResolutionKeyPath = @"SYSTEM\CurrentControlSet\Control\Session Manager\kernel";
     private const string GlobalTimerResolutionValueName = "GlobalTimerResolutionRequests";
+
+    /// <summary>
+    /// Tracks whether this instance set the GlobalTimerResolutionRequests key,
+    /// and whether the key existed before we set it (for proper cleanup on revert).
+    /// </summary>
+    private bool _globalTimerKeyExistedBefore;
+    private object? _globalTimerOriginalValue;
+    private bool _globalTimerKeyWasSet;
 
     public string Name => "System Timer Resolution Manager";
 
@@ -51,7 +63,8 @@ public class TimerResolutionManager : IOptimization
     /// <summary>
     /// Sets system timer resolution to 0.5ms (5000 in 100-nanosecond units).
     /// Records original resolution in snapshot before changing.
-    /// Also sets Win11 24H2+ registry workaround if needed.
+    /// On Win11: sets GlobalTimerResolutionRequests BEFORE calling NtSetTimerResolution.
+    /// On Win10: skips GlobalTimerResolutionRequests entirely (not needed — Win10 always uses global).
     /// </summary>
     public async Task<bool> ApplyAsync(SystemStateSnapshot snapshot, GameProfile profile)
     {
@@ -82,12 +95,17 @@ public class TimerResolutionManager : IOptimization
             // Record original resolution
             snapshot.RecordTimerResolution(currentResolution);
 
+            // Win11 GlobalTimerResolutionRequests — MUST be set BEFORE NtSetTimerResolution
+            // This is a prerequisite for both session timer and Background Mode timer to work globally.
+            // Only relevant on Win11 (build >= 22000) — Win10 always uses global timer resolution.
+            ApplyGlobalTimerRegistryKey();
+
             // Check if Background Mode is handling timer resolution
             var bgSettings = SettingsManager.Load();
             if (bgSettings.BackgroundMode?.Enabled == true && bgSettings.BackgroundMode.TimerResolutionEnabled)
             {
                 SettingsManager.Logger.Information(
-                    "TimerResolutionManager: Background Mode active — recording snapshot but skipping set");
+                    "TimerResolutionManager: Background Mode active — recording snapshot but skipping NtSetTimerResolution");
                 IsApplied = true;
                 return true;
             }
@@ -116,53 +134,6 @@ public class TimerResolutionManager : IOptimization
                 desiredResolution,
                 actualResolution / 10000.0);
 
-            // Win11 24H2+ registry workaround
-            // Some Windows 11 24H2 builds require a registry key to honor timer resolution changes
-            try
-            {
-                using var key = Registry.LocalMachine.OpenSubKey(GlobalTimerResolutionKeyPath, writable: true);
-                if (key != null)
-                {
-                    // Record original value if it exists
-                    var originalValue = key.GetValue(GlobalTimerResolutionValueName);
-                    if (originalValue != null)
-                    {
-                        snapshot.RecordRegistryValue(
-                            $@"HKEY_LOCAL_MACHINE\{GlobalTimerResolutionKeyPath}",
-                            GlobalTimerResolutionValueName,
-                            originalValue);
-
-                        SettingsManager.Logger.Debug(
-                            "TimerResolutionManager: Recorded original GlobalTimerResolutionRequests value: {Value}",
-                            originalValue);
-                    }
-
-                    // Set to 1 (enabled)
-                    key.SetValue(GlobalTimerResolutionValueName, 1, RegistryValueKind.DWord);
-
-                    SettingsManager.Logger.Information(
-                        "TimerResolutionManager: Set Win11 24H2 GlobalTimerResolutionRequests registry key");
-                }
-                else
-                {
-                    SettingsManager.Logger.Debug(
-                        "TimerResolutionManager: Registry key for Win11 24H2 workaround not accessible (may not be needed)");
-                }
-            }
-            catch (UnauthorizedAccessException)
-            {
-                // Registry access denied - not fatal, workaround only needed on some systems
-                SettingsManager.Logger.Debug(
-                    "TimerResolutionManager: Could not access GlobalTimerResolutionRequests registry key (access denied)");
-            }
-            catch (Exception ex)
-            {
-                // Other registry errors - not fatal
-                SettingsManager.Logger.Warning(
-                    ex,
-                    "TimerResolutionManager: Failed to set Win11 24H2 registry workaround");
-            }
-
             IsApplied = true;
             return true;
         }
@@ -175,7 +146,7 @@ public class TimerResolutionManager : IOptimization
 
     /// <summary>
     /// Reverts timer resolution to the original value captured in the snapshot.
-    /// Also restores the Win11 24H2 registry key if it was modified.
+    /// Also restores or deletes the Win11 GlobalTimerResolutionRequests key.
     /// </summary>
     public async Task<bool> RevertAsync(SystemStateSnapshot snapshot)
     {
@@ -203,50 +174,8 @@ public class TimerResolutionManager : IOptimization
                     setResult);
             }
 
-            // Restore Win11 24H2 registry key if it was modified
-            string registryKey = $@"HKEY_LOCAL_MACHINE\{GlobalTimerResolutionKeyPath}\{GlobalTimerResolutionValueName}";
-            if (snapshot.RegistryValues.TryGetValue(registryKey, out var originalValue))
-            {
-                try
-                {
-                    using var key = Registry.LocalMachine.OpenSubKey(GlobalTimerResolutionKeyPath, writable: true);
-                    if (key != null)
-                    {
-                        key.SetValue(GlobalTimerResolutionValueName, originalValue);
-
-                        SettingsManager.Logger.Information(
-                            "TimerResolutionManager: Restored GlobalTimerResolutionRequests to original value: {Value}",
-                            originalValue);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    SettingsManager.Logger.Warning(
-                        ex,
-                        "TimerResolutionManager: Failed to restore Win11 24H2 registry key");
-                }
-            }
-            else
-            {
-                // No original value recorded - try to delete the key we created
-                try
-                {
-                    using var key = Registry.LocalMachine.OpenSubKey(GlobalTimerResolutionKeyPath, writable: true);
-                    if (key != null && key.GetValue(GlobalTimerResolutionValueName) != null)
-                    {
-                        key.DeleteValue(GlobalTimerResolutionValueName, throwOnMissingValue: false);
-
-                        SettingsManager.Logger.Debug(
-                            "TimerResolutionManager: Removed GlobalTimerResolutionRequests registry value");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    SettingsManager.Logger.Warning(
-                        ex,
-                        "TimerResolutionManager: Failed to remove Win11 24H2 registry key");
-                }
-            }
+            // Revert Win11 GlobalTimerResolutionRequests registry key
+            RevertGlobalTimerRegistryKey();
 
             IsApplied = false;
             return true;
@@ -257,5 +186,110 @@ public class TimerResolutionManager : IOptimization
             IsApplied = false;
             return false;
         }
+    }
+
+    // ── Win11 GlobalTimerResolutionRequests helpers ──────────────────────────
+
+    /// <summary>
+    /// Sets GlobalTimerResolutionRequests=1 on Win11 to enable system-wide timer resolution.
+    /// On Win10, this is a no-op (Win10 always uses global timer resolution).
+    /// Records whether the key existed before for proper cleanup on revert.
+    /// </summary>
+    private void ApplyGlobalTimerRegistryKey()
+    {
+        int build = Environment.OSVersion.Version.Build;
+        bool isWin11 = build >= 22000;
+
+        if (!isWin11)
+        {
+            // Win10 always uses global timer resolution — no registry key needed
+            SettingsManager.Logger.Debug(
+                "TimerResolutionManager: Win10 detected (build {Build}) — skipping GlobalTimerResolutionRequests",
+                build);
+            return;
+        }
+
+        try
+        {
+            using var key = Registry.LocalMachine.OpenSubKey(GlobalTimerResolutionKeyPath, writable: true);
+            if (key == null)
+            {
+                SettingsManager.Logger.Debug(
+                    "TimerResolutionManager: Registry key for GlobalTimerResolutionRequests not accessible");
+                return;
+            }
+
+            // Record original state
+            var existingValue = key.GetValue(GlobalTimerResolutionValueName);
+            _globalTimerKeyExistedBefore = existingValue != null;
+            _globalTimerOriginalValue = existingValue;
+
+            // Set to 1 (enabled — global timer resolution behavior)
+            key.SetValue(GlobalTimerResolutionValueName, 1, RegistryValueKind.DWord);
+            _globalTimerKeyWasSet = true;
+
+            SettingsManager.Logger.Information(
+                "TimerResolutionManager: Set GlobalTimerResolutionRequests=1 (original: {Original})",
+                existingValue ?? "not present");
+
+            // Log reboot advisory for older Win11 builds
+            bool is24H2OrNewer = build >= 26100;
+            if (!is24H2OrNewer)
+            {
+                SettingsManager.Logger.Information(
+                    "TimerResolutionManager: GlobalTimerResolutionRequests set. " +
+                    "A reboot may be required for system-wide timer resolution on this Windows version (build {Build}).",
+                    build);
+            }
+        }
+        catch (UnauthorizedAccessException)
+        {
+            SettingsManager.Logger.Debug(
+                "TimerResolutionManager: Could not access GlobalTimerResolutionRequests registry key (access denied)");
+        }
+        catch (Exception ex)
+        {
+            SettingsManager.Logger.Warning(ex,
+                "TimerResolutionManager: Failed to set GlobalTimerResolutionRequests");
+        }
+    }
+
+    /// <summary>
+    /// Reverts GlobalTimerResolutionRequests to its original state.
+    /// If the key didn't exist before → delete it (don't leave as 0).
+    /// If the key existed → restore original value.
+    /// </summary>
+    private void RevertGlobalTimerRegistryKey()
+    {
+        if (!_globalTimerKeyWasSet) return;
+
+        try
+        {
+            using var key = Registry.LocalMachine.OpenSubKey(GlobalTimerResolutionKeyPath, writable: true);
+            if (key == null) return;
+
+            if (!_globalTimerKeyExistedBefore)
+            {
+                // Key didn't exist before — delete it entirely
+                key.DeleteValue(GlobalTimerResolutionValueName, throwOnMissingValue: false);
+                SettingsManager.Logger.Information(
+                    "TimerResolutionManager: Deleted GlobalTimerResolutionRequests (was not present before)");
+            }
+            else
+            {
+                // Key existed — restore original value
+                key.SetValue(GlobalTimerResolutionValueName, _globalTimerOriginalValue!, RegistryValueKind.DWord);
+                SettingsManager.Logger.Information(
+                    "TimerResolutionManager: Restored GlobalTimerResolutionRequests to original value: {Value}",
+                    _globalTimerOriginalValue);
+            }
+        }
+        catch (Exception ex)
+        {
+            SettingsManager.Logger.Warning(ex,
+                "TimerResolutionManager: Failed to revert GlobalTimerResolutionRequests");
+        }
+
+        _globalTimerKeyWasSet = false;
     }
 }

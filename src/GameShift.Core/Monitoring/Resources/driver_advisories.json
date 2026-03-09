@@ -1,0 +1,80 @@
+{
+  "advisories": [
+    {
+      "id": "NV-2024-551-24H2",
+      "vendor": "NVIDIA",
+      "affectedVersionRange": {
+        "min": "551.00",
+        "max": "551.99"
+      },
+      "severity": "critical",
+      "title": "Severe stuttering on Windows 11 24H2",
+      "description": "NVIDIA 551.xx drivers cause frame pacing issues and micro-stuttering on Windows 11 24H2 due to a graphics kernel interaction bug.",
+      "recommendation": "Update to driver 560.94 or newer.",
+      "windowsVersionCondition": ">=26100",
+      "url": "https://nvidia.custhelp.com/app/answers/detail/a_id/5000"
+    },
+    {
+      "id": "NV-2025-581-25H2",
+      "vendor": "NVIDIA",
+      "affectedVersionRange": {
+        "min": "560.00",
+        "max": "581.93"
+      },
+      "severity": "warning",
+      "title": "FPS drops after Windows 11 25H2 October 2025 update",
+      "description": "NVIDIA confirmed gaming performance regression with KB5066835. Fixed in driver 581.94+.",
+      "recommendation": "Update to driver 581.94 or newer.",
+      "windowsVersionCondition": ">=26200"
+    },
+    {
+      "id": "AMD-2024-ANTILAG",
+      "vendor": "AMD",
+      "affectedVersionRange": {
+        "min": "24.12.1",
+        "max": "24.12.1"
+      },
+      "severity": "warning",
+      "title": "Anti-Lag+ causes crashes in several games",
+      "description": "Adrenalin 24.12.1 Anti-Lag+ implementation causes crashes in CS2, Fortnite, and Apex Legends.",
+      "recommendation": "Update to 25.1.1 or newer, or disable Anti-Lag+ for affected games.",
+      "gameCondition": ["cs2.exe", "FortniteClient-Win64-Shipping.exe", "r5apex.exe"]
+    },
+    {
+      "id": "REALTEK-DPC-GENERIC",
+      "vendor": "Realtek",
+      "affectedVersionRange": {
+        "min": "0.0.0",
+        "max": "6.0.9600.0"
+      },
+      "severity": "elevated",
+      "title": "Realtek audio driver causes high DPC latency",
+      "description": "Older Realtek HD Audio drivers are a common source of DPC latency spikes, causing audio glitches and micro-stutters during gaming.",
+      "recommendation": "Update to the latest Realtek driver from your motherboard manufacturer's website."
+    },
+    {
+      "id": "INTEL-ARC-DX12",
+      "vendor": "Intel",
+      "affectedVersionRange": {
+        "min": "30.0.0.0",
+        "max": "32.0.101.6082"
+      },
+      "severity": "warning",
+      "title": "Intel Arc DX12 stability issues",
+      "description": "Intel Arc drivers before 32.0.101.6083 have known DX12 stability issues causing crashes and rendering artifacts in modern games.",
+      "recommendation": "Update to Intel Arc driver 32.0.101.6083 or newer."
+    },
+    {
+      "id": "NV-2024-SHADER-CORRUPTION",
+      "vendor": "NVIDIA",
+      "affectedVersionRange": {
+        "min": "545.00",
+        "max": "546.99"
+      },
+      "severity": "warning",
+      "title": "Shader cache corruption causes stuttering",
+      "description": "NVIDIA 545-546.xx drivers have a shader cache corruption bug that causes progressive stuttering over time. Clearing the shader cache temporarily fixes it but the issue recurs.",
+      "recommendation": "Update to driver 550.00 or newer."
+    }
+  ]
+}

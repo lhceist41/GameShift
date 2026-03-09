@@ -294,7 +294,7 @@ public class GpuDriverOptimizer : IOptimization
             }
         }
 
-        // ── Shader Cache Size 10GB ──
+        // ── Shader Cache Size 16GB ──
         if (profile.OptimizeShaderCache)
         {
             try
@@ -303,9 +303,9 @@ public class GpuDriverOptimizer : IOptimization
                     snapshot,
                     NvidiaTweakPath,
                     NvidiaTweakValueName,
-                    10240,
+                    16384,
                     RegistryValueKind.DWord,
-                    "NVIDIA Shader Cache Size 10GB");
+                    "NVIDIA Shader Cache Size 16GB");
                 anySuccess = true;
             }
             catch (Exception ex)

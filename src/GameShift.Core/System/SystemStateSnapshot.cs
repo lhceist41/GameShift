@@ -58,6 +58,45 @@ public class SystemStateSnapshot
     public Dictionary<string, object> RegistryValues { get; set; } = new();
 
     /// <summary>
+    /// Scheduled task paths disabled by ScheduledTaskSuppressor.
+    /// Used for crash recovery to re-enable orphaned disabled tasks.
+    /// </summary>
+    public List<string> DisabledScheduledTasks { get; set; } = new();
+
+    /// <summary>
+    /// CPU parking: active scheme GUID when CpuParkingManager applied.
+    /// Used for crash recovery to restore orphaned parking settings.
+    /// </summary>
+    public string? CpuParkingSchemeGuid { get; set; }
+
+    /// <summary>
+    /// CPU parking: original AC/DC values for each setting.
+    /// Used for crash recovery to restore orphaned parking settings.
+    /// </summary>
+    public List<Optimization.CpuParkingSnapshotEntry> CpuParkingEntries { get; set; } = new();
+
+    /// <summary>
+    /// Original Win32PrioritySeparation registry value before session-scoped override.
+    /// Null if not modified. Used for crash recovery to restore original scheduling quantum.
+    /// </summary>
+    public int? OriginalPrioritySeparation { get; set; }
+
+    /// <summary>
+    /// Power scheme GUID where processor idle was disabled during a gaming session.
+    /// Null if idle was not disabled. Used for crash recovery to re-enable processor idle
+    /// and restore time check interval if GameShift crashes mid-game with IDLEDISABLE=1.
+    /// </summary>
+    public string? IdleDisableSchemeGuid { get; set; }
+
+    /// <summary>
+    /// IFEO (Image File Execution Options) PerfOptions entries created by GameShift.
+    /// Key: IFEO subkey path (e.g., "SOFTWARE\Microsoft\Windows NT\...\game.exe\PerfOptions")
+    /// Value: JSON of original values if the key existed, or null if GameShift created it.
+    /// Used for crash recovery to clean up orphaned IFEO entries.
+    /// </summary>
+    public Dictionary<string, string?> IfeoEntries { get; set; } = new();
+
+    /// <summary>
     /// Timestamp when this snapshot was captured.
     /// </summary>
     public DateTime CaptureTime { get; set; }
@@ -175,6 +214,64 @@ public class SystemStateSnapshot
     }
 
     /// <summary>
+    /// Records disabled scheduled task paths for crash recovery.
+    /// Use case: ScheduledTaskSuppressor records tasks it disabled.
+    /// </summary>
+    /// <param name="taskPaths">List of task paths that were disabled</param>
+    public void RecordDisabledScheduledTasks(List<string> taskPaths)
+    {
+        DisabledScheduledTasks = taskPaths;
+    }
+
+    /// <summary>
+    /// Records CPU parking original state for crash recovery.
+    /// Use case: CpuParkingManager records the active scheme GUID and original values.
+    /// </summary>
+    /// <param name="schemeGuid">Active power scheme GUID when parking was modified</param>
+    /// <param name="entries">Original AC/DC values for each parking setting</param>
+    public void RecordCpuParkingState(string schemeGuid, List<Optimization.CpuParkingSnapshotEntry> entries)
+    {
+        CpuParkingSchemeGuid = schemeGuid;
+        CpuParkingEntries = entries;
+    }
+
+    /// <summary>
+    /// Records the original Win32PrioritySeparation value before session-scoped override.
+    /// Only records if not already set (preserves first/original state).
+    /// Use case: ProcessPriorityBooster records original value before setting gaming-optimal 0x2A.
+    /// </summary>
+    /// <param name="originalValue">Original Win32PrioritySeparation DWORD value</param>
+    public void RecordPrioritySeparation(int originalValue)
+    {
+        OriginalPrioritySeparation ??= originalValue;
+    }
+
+    /// <summary>
+    /// Records an IFEO PerfOptions entry for crash recovery.
+    /// Only records if not already present (preserves first/original state).
+    /// Use case: ProcessPriorityBooster and HybridCpuDetector IFEO fallback path.
+    /// </summary>
+    /// <param name="subKeyPath">Full IFEO subkey path (e.g., "SOFTWARE\Microsoft\...\game.exe\PerfOptions")</param>
+    /// <param name="originalValueJson">JSON of original values if key existed, or null if created by GameShift</param>
+    public void RecordIfeoEntry(string subKeyPath, string? originalValueJson)
+    {
+        if (!IfeoEntries.ContainsKey(subKeyPath))
+        {
+            IfeoEntries[subKeyPath] = originalValueJson;
+        }
+    }
+
+    /// <summary>
+    /// Records that processor idle was disabled on a specific power scheme.
+    /// Used for crash recovery to re-enable idle if GameShift crashes during gaming.
+    /// </summary>
+    /// <param name="schemeGuid">Active power scheme GUID where idle was disabled</param>
+    public void RecordIdleDisableState(string schemeGuid)
+    {
+        IdleDisableSchemeGuid ??= schemeGuid;
+    }
+
+    /// <summary>
     /// Records an original registry value before modification.
     /// Only records if not already present (preserves first/original state).
     /// Use case: VisualEffectReducer and NetworkOptimizer record registry changes.
@@ -188,6 +285,57 @@ public class SystemStateSnapshot
         if (!RegistryValues.ContainsKey(compositeKey))
         {
             RegistryValues[compositeKey] = originalValue;
+        }
+    }
+
+    /// <summary>
+    /// Cleans up stale IFEO PerfOptions entries from a previous crashed session.
+    /// Called during startup when a stale lockfile is found.
+    /// </summary>
+    /// <param name="snapshot">The snapshot loaded from the stale lockfile</param>
+    public static void CleanupStaleIfeoEntries(SystemStateSnapshot snapshot)
+    {
+        if (snapshot.IfeoEntries.Count == 0)
+            return;
+
+        foreach (var (subKeyPath, originalValueJson) in snapshot.IfeoEntries)
+        {
+            try
+            {
+                if (originalValueJson == null)
+                {
+                    // GameShift created this key — delete it entirely
+                    using var parentKey = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(
+                        subKeyPath.Contains("\\PerfOptions")
+                            ? subKeyPath[..subKeyPath.LastIndexOf("\\PerfOptions", StringComparison.Ordinal)]
+                            : subKeyPath,
+                        writable: true);
+
+                    parentKey?.DeleteSubKey("PerfOptions", throwOnMissingSubKey: false);
+                }
+                else
+                {
+                    // Original values existed — restore them
+                    var originalValues = JsonSerializer
+                        .Deserialize<Dictionary<string, int>>(originalValueJson);
+
+                    if (originalValues != null)
+                    {
+                        using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(subKeyPath, writable: true);
+                        if (key != null)
+                        {
+                            foreach (var (valueName, value) in originalValues)
+                            {
+                                key.SetValue(valueName, value, Microsoft.Win32.RegistryValueKind.DWord);
+                            }
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // Best-effort cleanup — log failure but continue
+            }
         }
     }
 
