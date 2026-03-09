@@ -344,6 +344,9 @@ public partial class App : Application
 
             Detector = new GameDetector(scanners);
 
+            // Wire process spawn events to shared cache invalidation
+            Detector.ProcessSpawned += (_, _) => GameShift.Core.System.ProcessSnapshotService.MarkDirty();
+
             var store = new KnownGamesStore();
 
             Orchestrator = new DetectionOrchestrator(

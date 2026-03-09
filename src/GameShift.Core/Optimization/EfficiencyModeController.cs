@@ -190,7 +190,7 @@ public class EfficiencyModeController : IOptimization
 
         try
         {
-            foreach (var process in Process.GetProcesses())
+            foreach (var process in ProcessSnapshotService.GetProcesses())
             {
                 try
                 {
