@@ -39,7 +39,7 @@ public class PowerPlanSwitcher : IOptimization
         {
             // Log the original power plan (already captured during snapshot creation)
             SettingsManager.Logger.Information(
-                "PowerPlanSwitcher: Original power plan GUID: {OriginalPlan}",
+                "[PowerPlanSwitcher] Original power plan GUID: {OriginalPlan}",
                 snapshot.OriginalPowerPlan);
 
             // Try to activate Ultimate Performance plan
@@ -50,14 +50,14 @@ public class PowerPlanSwitcher : IOptimization
             {
                 // Success
                 SettingsManager.Logger.Information(
-                    "PowerPlanSwitcher: Activated Ultimate Performance plan");
+                    "[PowerPlanSwitcher] Activated Ultimate Performance plan");
                 IsApplied = true;
                 return true;
             }
 
             // Plan doesn't exist - create it via powercfg
             SettingsManager.Logger.Information(
-                "PowerPlanSwitcher: Ultimate Performance plan not found (error {ErrorCode}), creating it via powercfg",
+                "[PowerPlanSwitcher] Ultimate Performance plan not found (error {ErrorCode}), creating it via powercfg",
                 result);
 
             try
@@ -75,7 +75,7 @@ public class PowerPlanSwitcher : IOptimization
                 using var process = Process.Start(psi);
                 if (process == null)
                 {
-                    SettingsManager.Logger.Error("PowerPlanSwitcher: Failed to start powercfg process");
+                    SettingsManager.Logger.Error("[PowerPlanSwitcher] Failed to start powercfg process");
                     return false;
                 }
 
@@ -85,19 +85,19 @@ public class PowerPlanSwitcher : IOptimization
                 {
                     var error = await process.StandardError.ReadToEndAsync();
                     SettingsManager.Logger.Error(
-                        "PowerPlanSwitcher: powercfg failed with exit code {ExitCode}: {Error}",
+                        "[PowerPlanSwitcher] powercfg failed with exit code {ExitCode}: {Error}",
                         process.ExitCode,
                         error);
                     return false;
                 }
 
-                SettingsManager.Logger.Information("PowerPlanSwitcher: Successfully created Ultimate Performance plan");
+                SettingsManager.Logger.Information("[PowerPlanSwitcher] Successfully created Ultimate Performance plan");
             }
             catch (Exception ex)
             {
                 SettingsManager.Logger.Error(
                     ex,
-                    "PowerPlanSwitcher: Failed to execute powercfg to create plan");
+                    "[PowerPlanSwitcher] Failed to execute powercfg to create plan");
                 return false;
             }
 
@@ -106,21 +106,21 @@ public class PowerPlanSwitcher : IOptimization
             if (result == 0)
             {
                 SettingsManager.Logger.Information(
-                    "PowerPlanSwitcher: Activated newly created Ultimate Performance plan");
+                    "[PowerPlanSwitcher] Activated newly created Ultimate Performance plan");
                 IsApplied = true;
                 return true;
             }
             else
             {
                 SettingsManager.Logger.Error(
-                    "PowerPlanSwitcher: Failed to activate plan after creation (error {ErrorCode})",
+                    "[PowerPlanSwitcher] Failed to activate plan after creation (error {ErrorCode})",
                     result);
                 return false;
             }
         }
         catch (Exception ex)
         {
-            SettingsManager.Logger.Error(ex, "PowerPlanSwitcher: Failed to apply power plan");
+            SettingsManager.Logger.Error(ex, "[PowerPlanSwitcher] Failed to apply power plan");
             return false;
         }
     }
@@ -135,7 +135,7 @@ public class PowerPlanSwitcher : IOptimization
             if (snapshot.OriginalPowerPlan == Guid.Empty)
             {
                 SettingsManager.Logger.Warning(
-                    "PowerPlanSwitcher: No original power plan recorded in snapshot, skipping revert");
+                    "[PowerPlanSwitcher] No original power plan recorded in snapshot, skipping revert");
                 IsApplied = false;
                 return Task.FromResult(true); // Not a fatal error
             }
@@ -146,7 +146,7 @@ public class PowerPlanSwitcher : IOptimization
             if (result == 0)
             {
                 SettingsManager.Logger.Information(
-                    "PowerPlanSwitcher: Reverted to original power plan {OriginalPlan}",
+                    "[PowerPlanSwitcher] Reverted to original power plan {OriginalPlan}",
                     snapshot.OriginalPowerPlan);
                 IsApplied = false;
                 return Task.FromResult(true);
@@ -154,7 +154,7 @@ public class PowerPlanSwitcher : IOptimization
             else
             {
                 SettingsManager.Logger.Error(
-                    "PowerPlanSwitcher: Failed to revert to original plan (error {ErrorCode})",
+                    "[PowerPlanSwitcher] Failed to revert to original plan (error {ErrorCode})",
                     result);
                 IsApplied = false; // Mark as not applied even on failure
                 return Task.FromResult(false);
@@ -162,7 +162,7 @@ public class PowerPlanSwitcher : IOptimization
         }
         catch (Exception ex)
         {
-            SettingsManager.Logger.Error(ex, "PowerPlanSwitcher: Failed to revert power plan");
+            SettingsManager.Logger.Error(ex, "[PowerPlanSwitcher] Failed to revert power plan");
             IsApplied = false;
             return Task.FromResult(false);
         }
