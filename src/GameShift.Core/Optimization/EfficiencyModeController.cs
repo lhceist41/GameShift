@@ -29,7 +29,9 @@ public class EfficiencyModeController : IOptimization
     private string[] _activeGameProcessNames = Array.Empty<string>();
     private bool _isWindows11;
 
-    public string Name => "Efficiency Mode Control";
+    public const string OptimizationId = "Efficiency Mode Control";
+
+    public string Name => OptimizationId;
 
     public string Description => "Applies Windows Efficiency Mode to background processes, constraining them to E-cores on hybrid CPUs";
 

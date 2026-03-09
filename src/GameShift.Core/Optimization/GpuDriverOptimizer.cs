@@ -45,7 +45,9 @@ public class GpuDriverOptimizer : IOptimization
     private const string NvidiaTweakPath = @"HKEY_LOCAL_MACHINE\SOFTWARE\NVIDIA Corporation\Global\NVTweak";
     private const string NvidiaTweakValueName = "NVCplShaderCacheSize";
 
-    public string Name => "GPU Driver Optimizer";
+    public const string OptimizationId = "GPU Driver Optimizer";
+
+    public string Name => OptimizationId;
 
     public string Description => "Applies vendor-specific GPU registry optimizations (NVIDIA/AMD) for reduced latency and better performance";
 

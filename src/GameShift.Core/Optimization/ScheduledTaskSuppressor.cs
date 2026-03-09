@@ -60,7 +60,9 @@ public class ScheduledTaskSuppressor : IOptimization
 
     private readonly List<TaskOriginalState> _disabledTasks = new();
 
-    public string Name => "Scheduled Task Suppression";
+    public const string OptimizationId = "Scheduled Task Suppression";
+
+    public string Name => OptimizationId;
 
     public string Description => "Disables resource-heavy Windows scheduled tasks during gaming sessions";
 

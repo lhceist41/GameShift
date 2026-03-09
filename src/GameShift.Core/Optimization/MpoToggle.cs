@@ -32,7 +32,9 @@ public class MpoToggle : IOptimization
     private const string GraphicsDriversPath = @"SYSTEM\CurrentControlSet\Control\GraphicsDrivers";
     private const string DisableOverlaysValue = "DisableOverlays";
 
-    public string Name => "MPO Toggle";
+    public const string OptimizationId = "MPO Toggle";
+
+    public string Name => OptimizationId;
 
     public string Description => "Disables Multiplane Overlay to reduce frame pacing issues";
 

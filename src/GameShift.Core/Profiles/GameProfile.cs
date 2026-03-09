@@ -354,21 +354,21 @@ public class GameProfile
     {
         return optimizationName switch
         {
-            "Windows Service Suppressor" => SuppressServices,
-            "Ultimate Performance Power Plan" => SwitchPowerPlan,
-            "System Timer Resolution Manager" => SetTimerResolution,
-            "Process Priority Booster" => BoostProcessPriority,
-            "Memory Optimizer" => OptimizeMemory,
-            "Visual Effect Reducer" => ReduceVisualEffects,
-            "Network Optimizer" => OptimizeNetwork,
-            "Hybrid CPU Optimizer" => UsePerformanceCoresOnly,
-            "MPO Toggle" => DisableMpo,
-            "Competitive Mode" => EnableCompetitiveMode,
-            "GPU Driver Optimizer" => EnableGpuOptimization,
-            "Scheduled Task Suppression" => SuppressScheduledTasks,
-            "CPU Core Unparking" => UnparkCpuCores,
-            "I/O Priority Management" => ManageIoPriority,
-            "Efficiency Mode Control" => EnableEfficiencyMode,
+            ServiceSuppressor.OptimizationId => SuppressServices,
+            PowerPlanSwitcher.OptimizationId => SwitchPowerPlan,
+            TimerResolutionManager.OptimizationId => SetTimerResolution,
+            ProcessPriorityBooster.OptimizationId => BoostProcessPriority,
+            MemoryOptimizer.OptimizationId => OptimizeMemory,
+            VisualEffectReducer.OptimizationId => ReduceVisualEffects,
+            NetworkOptimizer.OptimizationId => OptimizeNetwork,
+            HybridCpuDetector.OptimizationId => UsePerformanceCoresOnly,
+            MpoToggle.OptimizationId => DisableMpo,
+            CompetitiveMode.OptimizationId => EnableCompetitiveMode,
+            GpuDriverOptimizer.OptimizationId => EnableGpuOptimization,
+            ScheduledTaskSuppressor.OptimizationId => SuppressScheduledTasks,
+            CpuParkingManager.OptimizationId => UnparkCpuCores,
+            IoPriorityManager.OptimizationId => ManageIoPriority,
+            EfficiencyModeController.OptimizationId => EnableEfficiencyMode,
             _ => true // Unknown optimizations are enabled by default
         };
     }
