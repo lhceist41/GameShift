@@ -360,7 +360,7 @@ public partial class App : Application
 
             // v3: Create and start Background Mode service
             BackgroundMode = new BackgroundModeService();
-            BackgroundMode.Start(); // No-op if not enabled in settings
+            BackgroundMode.Start(Detector); // No-op if not enabled in settings
             WriteDiag($"BackgroundMode initialized (enabled={BackgroundMode.IsEnabled})");
 
             // v2.3: Create temperature monitor
