@@ -157,6 +157,22 @@ public class PingMonitor : IDisposable
         _logger.Information("Ping monitor stopped");
     }
 
+    /// <summary>Pause monitoring (stop timer but keep state and samples).</summary>
+    public void Pause()
+    {
+        if (!_isMonitoring) return;
+        _timer.Enabled = false;
+        _logger.Debug("Ping monitor paused");
+    }
+
+    /// <summary>Resume monitoring after a pause.</summary>
+    public void Resume()
+    {
+        if (!_isMonitoring) return;
+        _timer.Enabled = true;
+        _logger.Debug("Ping monitor resumed");
+    }
+
     // -- Private methods ────────────────────────────────────────────────────
 
     private async void OnTimerElapsed(object? sender, global::System.Timers.ElapsedEventArgs e)
