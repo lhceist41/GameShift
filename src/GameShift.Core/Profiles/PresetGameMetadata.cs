@@ -1,3 +1,5 @@
+using GameShift.Core.Optimization;
+
 namespace GameShift.Core.Profiles;
 
 /// <summary>
@@ -10,6 +12,9 @@ public class PresetGameMetadata
 
     /// <summary>Anti-cheat system name (e.g., "Riot Vanguard", "VAC"). Empty if none.</summary>
     public string AntiCheatName { get; init; } = "";
+
+    /// <summary>Structured anti-cheat type for optimization strategy decisions.</summary>
+    public AntiCheatType AntiCheat { get; init; } = AntiCheatType.None;
 
     /// <summary>Whether this game uses an anti-cheat system.</summary>
     public bool HasAntiCheat => !string.IsNullOrEmpty(AntiCheatName);
