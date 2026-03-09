@@ -8,7 +8,7 @@ namespace GameShift.Core.GameProfiles;
 /// </summary>
 public static class BuiltInProfiles
 {
-    public static IReadOnlyList<GameProfile> GetAll() => new[]
+    public static IReadOnlyList<GameSessionConfig> GetAll() => new[]
     {
         Overwatch2(),
         Valorant(),
@@ -31,7 +31,7 @@ public static class BuiltInProfiles
         FinalFantasyXiv()
     };
 
-    public static GameProfile Overwatch2() => new()
+    public static GameSessionConfig Overwatch2() => new()
     {
         Id = "overwatch2",
         DisplayName = "Overwatch 2",
@@ -56,7 +56,7 @@ public static class BuiltInProfiles
         }
     };
 
-    public static GameProfile Valorant() => new()
+    public static GameSessionConfig Valorant() => new()
     {
         Id = "valorant",
         DisplayName = "Valorant",
@@ -81,7 +81,7 @@ public static class BuiltInProfiles
         }
     };
 
-    public static GameProfile LeagueOfLegends() => new()
+    public static GameSessionConfig LeagueOfLegends() => new()
     {
         Id = "leagueoflegends",
         DisplayName = "League of Legends",
@@ -105,7 +105,7 @@ public static class BuiltInProfiles
         }
     };
 
-    public static GameProfile Deadlock() => new()
+    public static GameSessionConfig Deadlock() => new()
     {
         Id = "deadlock",
         DisplayName = "Deadlock",
@@ -129,7 +129,7 @@ public static class BuiltInProfiles
         }
     };
 
-    public static GameProfile Osu() => new()
+    public static GameSessionConfig Osu() => new()
     {
         Id = "osu",
         DisplayName = "osu!",
@@ -155,7 +155,7 @@ public static class BuiltInProfiles
         }
     };
 
-    public static GameProfile ArknightsEndfield() => new()
+    public static GameSessionConfig ArknightsEndfield() => new()
     {
         Id = "arknights-endfield",
         DisplayName = "Arknights: Endfield",
@@ -184,7 +184,7 @@ public static class BuiltInProfiles
         }
     };
 
-    public static GameProfile WutheringWaves() => new()
+    public static GameSessionConfig WutheringWaves() => new()
     {
         Id = "wuthering-waves",
         DisplayName = "Wuthering Waves",
@@ -217,7 +217,7 @@ public static class BuiltInProfiles
         }
     };
 
-    public static GameProfile GenshinImpact() => new()
+    public static GameSessionConfig GenshinImpact() => new()
     {
         Id = "genshin-impact",
         DisplayName = "Genshin Impact",
@@ -249,7 +249,7 @@ public static class BuiltInProfiles
         }
     };
 
-    public static GameProfile Soulframe() => new()
+    public static GameSessionConfig Soulframe() => new()
     {
         Id = "soulframe",
         DisplayName = "Soulframe (Placeholder)",
@@ -279,7 +279,7 @@ public static class BuiltInProfiles
         }
     };
 
-    public static GameProfile CounterStrike2() => new()
+    public static GameSessionConfig CounterStrike2() => new()
     {
         Id = "counter-strike-2",
         DisplayName = "Counter-Strike 2",
@@ -313,7 +313,7 @@ public static class BuiltInProfiles
         }
     };
 
-    public static GameProfile Fortnite() => new()
+    public static GameSessionConfig Fortnite() => new()
     {
         Id = "fortnite",
         DisplayName = "Fortnite",
@@ -352,7 +352,7 @@ public static class BuiltInProfiles
         }
     };
 
-    public static GameProfile ApexLegends() => new()
+    public static GameSessionConfig ApexLegends() => new()
     {
         Id = "apex-legends",
         DisplayName = "Apex Legends",
@@ -386,7 +386,7 @@ public static class BuiltInProfiles
         }
     };
 
-    public static GameProfile Rust() => new()
+    public static GameSessionConfig Rust() => new()
     {
         Id = "rust",
         DisplayName = "Rust",
@@ -420,7 +420,7 @@ public static class BuiltInProfiles
         }
     };
 
-    public static GameProfile EldenRing() => new()
+    public static GameSessionConfig EldenRing() => new()
     {
         Id = "elden-ring",
         DisplayName = "Elden Ring",
@@ -455,7 +455,7 @@ public static class BuiltInProfiles
         }
     };
 
-    public static GameProfile EldenRingNightreign() => new()
+    public static GameSessionConfig EldenRingNightreign() => new()
     {
         Id = "elden-ring-nightreign",
         DisplayName = "Elden Ring: Nightreign",
@@ -489,7 +489,7 @@ public static class BuiltInProfiles
         }
     };
 
-    public static GameProfile CallOfDuty() => new()
+    public static GameSessionConfig CallOfDuty() => new()
     {
         Id = "call-of-duty",
         DisplayName = "Call of Duty",
@@ -529,7 +529,7 @@ public static class BuiltInProfiles
         }
     };
 
-    public static GameProfile Cyberpunk2077() => new()
+    public static GameSessionConfig Cyberpunk2077() => new()
     {
         Id = "cyberpunk-2077",
         DisplayName = "Cyberpunk 2077",
@@ -565,7 +565,7 @@ public static class BuiltInProfiles
         }
     };
 
-    public static GameProfile MinecraftJava() => new()
+    public static GameSessionConfig MinecraftJava() => new()
     {
         Id = "minecraft-java",
         DisplayName = "Minecraft: Java Edition",
@@ -601,7 +601,7 @@ public static class BuiltInProfiles
         }
     };
 
-    public static GameProfile FinalFantasyXiv() => new()
+    public static GameSessionConfig FinalFantasyXiv() => new()
     {
         Id = "final-fantasy-xiv",
         DisplayName = "Final Fantasy XIV",

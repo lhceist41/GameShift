@@ -4,11 +4,11 @@ using GameShift.Core.Optimization;
 namespace GameShift.Core.GameProfiles;
 
 /// <summary>
-/// Represents a per-game optimization profile for process-level optimizations.
+/// Represents a per-game session configuration for process-level optimizations.
 /// This is separate from GameShift.Core.Profiles.GameProfile which handles IOptimization toggles.
 /// This class handles process priority, CPU affinity, launcher demotion, and BG mode overrides.
 /// </summary>
-public class GameProfile
+public class GameSessionConfig
 {
     /// <summary>Unique profile ID (e.g., "overwatch2").</summary>
     public string Id { get; set; } = "";
