@@ -376,6 +376,13 @@ public partial class App : Application
                 Detector.AllGamesStopped += (_, _) => BackgroundMode.OnGamingStop();
             }
 
+            // Pause dashboard monitors during gaming (they poll every 1-2s and the dashboard isn't visible)
+            if (Detector != null)
+            {
+                Detector.GameStarted += (_, _) => { PerfMon?.Pause(); PingMon?.Pause(); TempMon?.Pause(); };
+                Detector.AllGamesStopped += (_, _) => { PerfMon?.Resume(); PingMon?.Resume(); TempMon?.Resume(); };
+            }
+
             // v6: Create driver version tracker and scan asynchronously
             DriverTracker = new DriverVersionTracker();
             _ = DriverTracker.ScanAndCheckAsync(); // Fire-and-forget, non-blocking

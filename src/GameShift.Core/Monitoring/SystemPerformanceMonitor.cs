@@ -160,6 +160,22 @@ public class SystemPerformanceMonitor : IDisposable
         _logger.Information("System performance monitor stopped");
     }
 
+    /// <summary>Pause monitoring (stop timer but keep state and samples).</summary>
+    public void Pause()
+    {
+        if (!_isMonitoring) return;
+        _timer.Enabled = false;
+        _logger.Debug("System performance monitor paused");
+    }
+
+    /// <summary>Resume monitoring after a pause.</summary>
+    public void Resume()
+    {
+        if (!_isMonitoring) return;
+        _timer.Enabled = true;
+        _logger.Debug("System performance monitor resumed");
+    }
+
     // -- Private methods ────────────────────────────────────────────────────
 
     private void OnTimerElapsed(object? sender, global::System.Timers.ElapsedEventArgs e)
