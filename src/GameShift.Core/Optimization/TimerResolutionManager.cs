@@ -100,9 +100,8 @@ public class TimerResolutionManager : IOptimization
             // Only relevant on Win11 (build >= 22000) — Win10 always uses global timer resolution.
             ApplyGlobalTimerRegistryKey();
 
-            // TODO: Read from AppSettings.TimerResolution100ns when DI is set up
-            // For now, hardcode to 5000 (0.5ms in 100-nanosecond units)
-            int desiredResolution = 5000;
+            // Competitive: 0.5ms (5000) for minimum latency; Casual: 1ms (10000) for lower overhead
+            int desiredResolution = profile.Intensity == OptimizationIntensity.Competitive ? 5000 : 10000;
 
             // Set new timer resolution
             int setResult = NativeInterop.NtSetTimerResolution(

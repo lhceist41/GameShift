@@ -152,6 +152,7 @@ public static class CompetitivePresets
         GameName = "Overwatch 2",
         ExecutableName = Overwatch2Exe,
         AntiCheat = AntiCheatType.None,
+        Intensity = OptimizationIntensity.Competitive,
         // v1 optimizations — all on
         SuppressServices = true,
         SwitchPowerPlan = true,
@@ -244,6 +245,7 @@ public static class CompetitivePresets
         GameName = "Valorant",
         ExecutableName = ValorantExe,
         AntiCheat = AntiCheatType.RiotVanguard,
+        Intensity = OptimizationIntensity.Competitive,
         // v1 optimizations — all on
         SuppressServices = true,
         SwitchPowerPlan = true,
@@ -321,6 +323,7 @@ public static class CompetitivePresets
         GameName = "League of Legends",
         ExecutableName = LeagueExe,
         AntiCheat = AntiCheatType.RiotVanguard,
+        Intensity = OptimizationIntensity.Casual,
         // v1 optimizations — all on
         SuppressServices = true,
         SwitchPowerPlan = true,
@@ -396,6 +399,7 @@ public static class CompetitivePresets
         GameName = "Deadlock",
         ExecutableName = DeadlockExe,
         AntiCheat = AntiCheatType.ValveAntiCheat,
+        Intensity = OptimizationIntensity.Competitive,
         // v1 optimizations — all on
         SuppressServices = true,
         SwitchPowerPlan = true,
@@ -477,6 +481,7 @@ public static class CompetitivePresets
         GameName = "osu!",
         ExecutableName = OsuExe,
         AntiCheat = AntiCheatType.None,
+        Intensity = OptimizationIntensity.Competitive,
         SuppressServices = true,
         SwitchPowerPlan = true,
         SetTimerResolution = true,         // Critical for osu! audio/input timing
