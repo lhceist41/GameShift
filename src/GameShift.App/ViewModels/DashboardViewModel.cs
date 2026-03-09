@@ -574,7 +574,7 @@ public class DashboardViewModel : INotifyPropertyChanged
                 if (stagedUpdate != null)
                 {
                     _pendingUpdate = stagedUpdate;
-                    Application.Current.Dispatcher.BeginInvoke(() =>
+                    _ = Application.Current.Dispatcher.BeginInvoke(() =>
                     {
                         IsUpdateReady = true;
                         ShowUpdateBanner = true;
@@ -589,7 +589,7 @@ public class DashboardViewModel : INotifyPropertyChanged
             if (update != null)
             {
                 _pendingUpdate = update;
-                Application.Current.Dispatcher.BeginInvoke(() =>
+                _ = Application.Current.Dispatcher.BeginInvoke(() =>
                 {
                     UpdateMessage = $"GameShift v{update.LatestVersion} is available (you have v{update.CurrentVersion})";
                     UpdateUrl = update.ReleaseUrl;
