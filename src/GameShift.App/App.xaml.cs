@@ -408,13 +408,16 @@ public partial class App : Application
             WriteDiag("Step e: Creating TrayIconManager...");
             try
             {
-                _trayManager = new TrayIconManager(Orchestrator, Engine, Detector, settings, DpcMon, ProfileMgr);
+                if (Detector != null)
+                {
+                    _trayManager = new TrayIconManager(Orchestrator, Engine, Detector, settings, DpcMon, ProfileMgr);
 
-                // Wire tray menu actions — show MainWindow and navigate to the requested page
-                _trayManager.DashboardRequested += () => ShowAndNavigate(typeof(DashboardPage));
-                _trayManager.GameLibraryRequested += () => ShowAndNavigate(typeof(GameLibraryPage));
-                _trayManager.ProfileEditorRequested += () => ShowAndNavigate(typeof(ProfilesPage));
-                _trayManager.SettingsRequested += () => ShowAndNavigate(typeof(SettingsPage));
+                    // Wire tray menu actions — show MainWindow and navigate to the requested page
+                    _trayManager.DashboardRequested += () => ShowAndNavigate(typeof(DashboardPage));
+                    _trayManager.GameLibraryRequested += () => ShowAndNavigate(typeof(GameLibraryPage));
+                    _trayManager.ProfileEditorRequested += () => ShowAndNavigate(typeof(ProfilesPage));
+                    _trayManager.SettingsRequested += () => ShowAndNavigate(typeof(SettingsPage));
+                }
                 WriteDiag("TrayIconManager created OK");
             }
             catch (Exception ex)

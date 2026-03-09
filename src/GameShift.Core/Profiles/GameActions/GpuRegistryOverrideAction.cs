@@ -128,8 +128,8 @@ public class GpuRegistryOverrideAction : GameAction
         key.SetValue(_umdValueName, _gameActiveValue, RegistryValueKind.String);
         _applied = true;
 
-        // Record for crash recovery
-        snapshot.RecordRegistryValue(keyPath, _umdValueName, currentValue);
+        // Record for crash recovery (pass sentinel if value was absent)
+        snapshot.RecordRegistryValue(keyPath, _umdValueName, currentValue ?? "<not set>");
 
         Log.Information(
             "GpuRegistryOverrideAction: Set {Path}\\{ValueName} = {NewValue} (was: {OldValue})",
