@@ -336,7 +336,7 @@ public class GameProfileSettings
     public Dictionary<string, GameProfileOverrides> ProfileOverrides { get; set; } = new();
 
     /// <summary>User-created custom profiles.</summary>
-    public List<GameProfiles.GameProfile> CustomProfiles { get; set; } = new();
+    public List<GameProfiles.GameSessionConfig> CustomProfiles { get; set; } = new();
 }
 
 /// <summary>
