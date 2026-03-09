@@ -1,5 +1,6 @@
 using System.Text.Json;
 using GameShift.Core.Config;
+using GameShift.Core.Optimization;
 
 namespace GameShift.Core.SystemTweaks;
 
@@ -24,7 +25,14 @@ public class SystemTweaksManager
             new Tweaks.OptimizeMmcss(),
             new Tweaks.OptimizeWin32PrioritySeparation(),
             new Tweaks.DisableMemoryIntegrity(),
-            new Tweaks.DisablePowerThrottling()
+            new Tweaks.DisablePowerThrottling(),
+            new Tweaks.OptimizePageFile(),
+            new Tweaks.DisableLastAccessTimestamp(),
+            new Tweaks.DisableNtfs8dot3(),
+            new Tweaks.DisableUsbSelectiveSuspend(),
+            new Tweaks.OptimizeInterruptHandling(),
+            new Tweaks.DisableMemoryCompression(),
+            new Tweaks.EnableLargePages()
         };
     }
 
@@ -53,6 +61,17 @@ public class SystemTweaksManager
     public bool ApplyTweak(ISystemTweak tweak)
     {
         var className = tweak.GetType().Name;
+
+        // Hard-block DisableMemoryIntegrity when VBS-requiring anti-cheat is installed
+        if (tweak is Tweaks.DisableMemoryIntegrity && AntiCheatDetector.IsVbsRequiredByAntiCheat())
+        {
+            var blockers = string.Join(", ",
+                AntiCheatDetector.GetVbsRequiringAntiCheats().Select(ac => ac.DisplayName));
+            SettingsManager.Logger.Warning(
+                "[SystemTweaks] DisableMemoryIntegrity BLOCKED — {AntiCheats} require VBS/HVCI enabled",
+                blockers);
+            return false;
+        }
 
         if (tweak.DetectIsApplied())
         {
@@ -137,7 +156,15 @@ public class SystemTweaksManager
     }
 
     /// <summary>
-    /// Applies all non-security tweaks (excludes DisableMemoryIntegrity).
+    /// Applies all recommended tweaks.
+    /// Exclusions:
+    ///   - DisableMemoryIntegrity: security/anti-cheat gated, never auto-applied
+    ///   - OptimizePageFile: requires reboot + user understanding
+    ///   - OptimizeInterruptHandling: higher risk, requires reboot (opt-in only)
+    ///   - DisableMemoryCompression: only for 32GB+ systems, requires reboot (opt-in only)
+    ///   - EnableLargePages: requires logoff/reboot, game support varies (opt-in only)
+    ///   - DisableHags: context-dependent — follows recommendation engine
+    ///     (Enable/Disable/NoChange), only applies when recommendation differs from current state
     /// Returns count of successfully applied tweaks.
     /// </summary>
     public int ApplyAllRecommended()
@@ -145,8 +172,20 @@ public class SystemTweaksManager
         int count = 0;
         foreach (var tweak in _tweaks)
         {
-            if (tweak is Tweaks.DisableMemoryIntegrity) continue; // Skip security tweak
-            if (tweak.DetectIsApplied()) continue; // Skip already applied
+            if (tweak is Tweaks.DisableMemoryIntegrity) continue;     // Security gated
+            if (tweak is Tweaks.OptimizePageFile) continue;            // Opt-in only
+            if (tweak is Tweaks.OptimizeInterruptHandling) continue;   // Higher risk, opt-in only
+            if (tweak is Tweaks.DisableMemoryCompression) continue;    // 32GB+ only, opt-in only
+            if (tweak is Tweaks.EnableLargePages) continue;            // Opt-in only
+
+            // HAGS: context-dependent — skip if NoChange recommendation
+            if (tweak is Tweaks.DisableHags hags)
+            {
+                hags.EvaluateRecommendation();
+                if (hags.Recommendation == GameShift.Core.SystemTweaks.Tweaks.HagsRecommendation.NoChange) continue;
+            }
+
+            if (tweak.DetectIsApplied()) continue;                     // Skip already applied
 
             if (ApplyTweak(tweak))
                 count++;

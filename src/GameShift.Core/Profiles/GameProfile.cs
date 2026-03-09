@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using GameShift.Core.Optimization;
 
 namespace GameShift.Core.Profiles;
 
@@ -79,6 +80,87 @@ public class GameProfile
     /// </summary>
     public bool UsePerformanceCoresOnly { get; set; } = false;
 
+    // ── v4 Process Intelligence toggles ─────────────────────────────
+
+    /// <summary>
+    /// Whether to lower I/O priority of background processes during gameplay.
+    /// Maps to "I/O Priority Management" optimization.
+    /// Default true — reduces disk contention from background processes.
+    /// </summary>
+    public bool ManageIoPriority { get; set; } = true;
+
+    /// <summary>
+    /// Whether to apply Windows 11 Efficiency Mode to background processes during gameplay.
+    /// Maps to "Efficiency Mode Control" optimization.
+    /// Constrains background processes to E-cores on hybrid CPUs.
+    /// Gracefully skips on Windows 10.
+    /// Default true — reduces background CPU competition with the game.
+    /// </summary>
+    public bool EnableEfficiencyMode { get; set; } = true;
+
+    /// <summary>
+    /// Whether to flush modified (dirty) pages alongside standby list purging.
+    /// Sub-toggle of OptimizeMemory — only active when memory optimization is enabled.
+    /// Default true — prevents I/O storms from dirty page write-back during gameplay.
+    /// </summary>
+    public bool FlushModifiedPages { get; set; } = true;
+
+    /// <summary>
+    /// Whether to lower memory priority of background processes during gameplay.
+    /// Sub-toggle of OptimizeMemory — only active when memory optimization is enabled.
+    /// Causes OS to preferentially evict background process pages under memory pressure.
+    /// Default true — protects game memory pages from eviction.
+    /// </summary>
+    public bool ManageMemoryPriority { get; set; } = true;
+
+    // ── v5 Platform Coverage toggles ───────────────────────────────
+
+    /// <summary>
+    /// Whether to pin the game process to the V-Cache CCD on AMD X3D processors.
+    /// Maps to V-Cache CCD pinning in "Hybrid CPU Optimizer".
+    /// Default true — auto-detected; no effect on non-X3D CPUs.
+    /// </summary>
+    public bool PinToVCacheCcd { get; set; } = true;
+
+    /// <summary>
+    /// Whether to suppress Tier 2 (medium-impact) Windows services during gameplay.
+    /// Sub-toggle of SuppressServices — only active when service suppression is enabled.
+    /// Default true — Tier 2 services (Print Spooler, Fax, etc.) are safe for gaming PCs.
+    /// </summary>
+    public bool SuppressTier2Services { get; set; } = true;
+
+    // ── v3 New Module toggles ────────────────────────────────────────
+
+    /// <summary>
+    /// Whether to disable resource-heavy Windows scheduled tasks during gameplay.
+    /// Maps to "Scheduled Task Suppression" optimization.
+    /// Default true — safe to disable telemetry, defrag, and update tasks during gaming.
+    /// </summary>
+    public bool SuppressScheduledTasks { get; set; } = true;
+
+    /// <summary>
+    /// Whether to also suppress Windows Defender scheduled scan during gameplay.
+    /// Sub-toggle of SuppressScheduledTasks — only active when task suppression is enabled.
+    /// Default false — user must opt in. Defender scans will resume when gaming session ends.
+    /// </summary>
+    public bool SuppressDefenderScheduledScan { get; set; } = false;
+
+    /// <summary>
+    /// Whether to unpark all CPU cores during gameplay.
+    /// Maps to "CPU Core Unparking" optimization.
+    /// Default true — prevents core unparking latency that causes micro-stutters.
+    /// </summary>
+    public bool UnparkCpuCores { get; set; } = true;
+
+    /// <summary>
+    /// Whether to disable processor idle (force C0 state) during gameplay.
+    /// Eliminates C-state transition latency but doubles idle power consumption.
+    /// Sub-toggle of UnparkCpuCores — only active when CPU core unparking is enabled.
+    /// Default true — most impactful single latency setting for gaming.
+    /// Laptop users or those with thermal concerns may want to disable this.
+    /// </summary>
+    public bool DisableProcessorIdle { get; set; } = true;
+
     // ── v2 Competitive Gaming toggles ────────────────────────────────
 
     /// <summary>
@@ -145,7 +227,7 @@ public class GameProfile
 
     /// <summary>
     /// Whether to optimize GPU shader cache settings during gameplay.
-    /// NVIDIA: Sets shader cache to 10GB. AMD: Enables shader cache.
+    /// NVIDIA: Sets shader cache to 16GB. AMD: Enables shader cache.
     /// Default true — larger shader cache reduces stutter from shader compilation.
     /// </summary>
     public bool OptimizeShaderCache { get; set; } = true;
@@ -173,6 +255,28 @@ public class GameProfile
     /// Default 0 -- use global setting.
     /// </summary>
     public int DpcThresholdMicroseconds { get; set; } = 0;
+
+    // ── Anti-Cheat metadata ────────────────────────────────────────
+
+    /// <summary>
+    /// The anti-cheat system used by this game.
+    /// Determines optimization strategy (runtime API vs IFEO registry fallback)
+    /// and VBS/HVCI safety gating.
+    /// Default None — most games have no kernel-level anti-cheat.
+    /// </summary>
+    public AntiCheatType AntiCheat { get; set; } = AntiCheatType.None;
+
+    /// <summary>
+    /// Whether this game's anti-cheat blocks runtime SetPriorityClass/SetProcessAffinityMask calls,
+    /// requiring IFEO registry-based fallback for priority and affinity.
+    /// True for EAC, BattlEye, RICOCHET, and TencentACE titles.
+    /// </summary>
+    [JsonIgnore]
+    public bool RequiresIfeoFallback => AntiCheat is
+        AntiCheatType.EasyAntiCheat or
+        AntiCheatType.BattlEye or
+        AntiCheatType.Ricochet or
+        AntiCheatType.TencentACE;
 
     // ── v2 Game-Specific Actions ───────────────────────────────────
 
@@ -261,6 +365,10 @@ public class GameProfile
             "MPO Toggle" => DisableMpo,
             "Competitive Mode" => EnableCompetitiveMode,
             "GPU Driver Optimizer" => EnableGpuOptimization,
+            "Scheduled Task Suppression" => SuppressScheduledTasks,
+            "CPU Core Unparking" => UnparkCpuCores,
+            "I/O Priority Management" => ManageIoPriority,
+            "Efficiency Mode Control" => EnableEfficiencyMode,
             _ => true // Unknown optimizations are enabled by default
         };
     }

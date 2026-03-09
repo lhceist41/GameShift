@@ -50,6 +50,8 @@ public class DashboardViewModel : INotifyPropertyChanged
     private bool _showDpcIndicator = false;
     private bool _showVbsBanner = false;
     private string _vbsBannerMessage = "";
+    private bool _isVbsConflict = false;
+    private string _vbsBannerSeverity = "warning";
 
     // New Phase 13 properties
     private PointCollection _sparklinePoints = new();
@@ -208,6 +210,26 @@ public class DashboardViewModel : INotifyPropertyChanged
     {
         get => _vbsBannerMessage;
         private set { _vbsBannerMessage = value; OnPropertyChanged(); }
+    }
+
+    /// <summary>
+    /// Whether there is a VBS conflict (VBS disabled but VBS-requiring anti-cheat detected).
+    /// When true, the banner should be red/error level with a "Re-enable" action.
+    /// </summary>
+    public bool IsVbsConflict
+    {
+        get => _isVbsConflict;
+        private set { _isVbsConflict = value; OnPropertyChanged(); }
+    }
+
+    /// <summary>
+    /// Banner severity: "error" when VBS is disabled + AC requires it, "warning" otherwise.
+    /// Used by the UI to switch between red and amber banner styles.
+    /// </summary>
+    public string VbsBannerSeverity
+    {
+        get => _vbsBannerSeverity;
+        private set { _vbsBannerSeverity = value; OnPropertyChanged(); }
     }
 
     // ── Phase 13 new properties ──────────────────────────────────────────
@@ -497,11 +519,29 @@ public class DashboardViewModel : INotifyPropertyChanged
         // Load recent sessions
         LoadRecentSessions();
 
-        // Set initial VBS banner state
+        // Set initial VBS banner state — contextual red/amber logic
         if (_vbsHvciToggle != null)
         {
-            _showVbsBanner = _vbsHvciToggle.ShouldShowBanner;
-            _vbsBannerMessage = _vbsHvciToggle.BannerMessage;
+            var blockingACs = AntiCheatDetector.GetVbsRequiringAntiCheats();
+            if (!_vbsHvciToggle.IsEitherEnabled && blockingACs.Count > 0)
+            {
+                // VBS disabled but anti-cheat requires it — RED error banner
+                var acNames = string.Join(", ", blockingACs.Select(ac => ac.DisplayName));
+                _isVbsConflict = true;
+                _vbsBannerSeverity = "error";
+                _showVbsBanner = true;
+                _vbsBannerMessage = $"Memory Integrity is disabled but required by {acNames}. " +
+                    "You may experience VAN:RESTRICTION errors or anti-cheat failures. " +
+                    "Click Re-enable & Reboot to fix.";
+            }
+            else
+            {
+                // Normal amber warning (VBS enabled, no conflict)
+                _isVbsConflict = false;
+                _vbsBannerSeverity = "warning";
+                _showVbsBanner = _vbsHvciToggle.ShouldShowBanner;
+                _vbsBannerMessage = _vbsHvciToggle.BannerMessage;
+            }
         }
 
         // Set GPU info from live WMI detection (single source of truth)
@@ -527,6 +567,24 @@ public class DashboardViewModel : INotifyPropertyChanged
     {
         try
         {
+            // If update was already downloaded via startup popup, show "ready" state
+            if (System.IO.File.Exists(UpdateApplier.GetUpdateStagingPath()))
+            {
+                var stagedUpdate = await UpdateChecker.CheckForUpdateAsync();
+                if (stagedUpdate != null)
+                {
+                    _pendingUpdate = stagedUpdate;
+                    Application.Current.Dispatcher.BeginInvoke(() =>
+                    {
+                        IsUpdateReady = true;
+                        ShowUpdateBanner = true;
+                        UpdateMessage = $"GameShift v{stagedUpdate.LatestVersion} is downloaded and ready to install";
+                        UpdateUrl = stagedUpdate.ReleaseUrl;
+                    });
+                    return;
+                }
+            }
+
             var update = await UpdateChecker.CheckForUpdateAsync();
             if (update != null)
             {
@@ -1291,6 +1349,23 @@ public class DashboardViewModel : INotifyPropertyChanged
         var result = _vbsHvciToggle.DisableVbsHvci();
         if (result)
         {
+            ShowVbsBanner = false;
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Re-enables VBS/HVCI when a conflict is detected (VBS disabled + AC requires it).
+    /// Returns true if successful. Caller should schedule a reboot on success.
+    /// </summary>
+    public bool ReEnableVbsHvci()
+    {
+        if (_vbsHvciToggle == null) return false;
+        var result = _vbsHvciToggle.ReEnableVbsHvci();
+        if (result)
+        {
+            IsVbsConflict = false;
+            VbsBannerSeverity = "warning";
             ShowVbsBanner = false;
         }
         return result;

@@ -66,11 +66,11 @@ public class VbsHvciToggle
     }
 
     /// <summary>
-    /// Warning message displayed when Riot Vanguard is detected.
+    /// Warning message displayed when VBS-requiring anti-cheat is detected.
     /// </summary>
     public string VanguardWarning =>
-        "Riot Vanguard is installed. HVCI is not currently required by Vanguard, " +
-        "but Riot may change this policy in the future.";
+        "Riot Vanguard / FACEIT Anti-Cheat requires Memory Integrity (VBS/HVCI) to be enabled. " +
+        "Disabling it will prevent you from playing Valorant, League of Legends, and FACEIT-protected games.";
 
     // ── Detection ──────────────────────────────────────────────────────
 
@@ -164,8 +164,17 @@ public class VbsHvciToggle
         }
     }
 
-    /// <summary>Whether VBS disable is blocked due to Riot games being installed.</summary>
-    public bool IsVbsDisableBlocked => AreRiotGamesOnDisk();
+    /// <summary>Whether VBS disable is blocked due to VBS-requiring anti-cheat being installed.</summary>
+    public bool IsVbsDisableBlocked => AntiCheatDetector.IsVbsRequiredByAntiCheat();
+
+    /// <summary>
+    /// Returns the names of anti-cheat systems that require VBS/HVCI.
+    /// Used for UI display (error messages, tooltips).
+    /// </summary>
+    public List<string> GetBlockingAntiCheats() =>
+        AntiCheatDetector.GetVbsRequiringAntiCheats()
+            .Select(ac => ac.DisplayName)
+            .ToList();
 
     // ── Disable VBS/HVCI ───────────────────────────────────────────────
 
@@ -183,11 +192,13 @@ public class VbsHvciToggle
     {
         try
         {
-            // Safety interlock: block VBS disable when Riot games are present
-            if (AreRiotGamesOnDisk())
+            // Safety interlock: block VBS disable when VBS-requiring anti-cheat is installed
+            if (AntiCheatDetector.IsVbsRequiredByAntiCheat())
             {
+                var blockers = string.Join(", ", GetBlockingAntiCheats());
                 _logger.Warning(
-                    "VbsHvciToggle: VBS disable BLOCKED — Riot games detected on disk. Vanguard requires HVCI.");
+                    "VbsHvciToggle: VBS disable BLOCKED — {AntiCheats} detected. These require HVCI to be enabled.",
+                    blockers);
                 return false;
             }
 

@@ -99,6 +99,12 @@ public partial class App : Application
     /// <summary>Game Profile manager — per-game optimization profiles.</summary>
     public static GameProfileManager? GameProfileMgr { get; private set; }
 
+    /// <summary>Driver version tracker — detects installed drivers and checks for advisories.</summary>
+    public static DriverVersionTracker? DriverTracker { get; private set; }
+
+    /// <summary>Benchmark service — PresentMon-based frame time capture.</summary>
+    public static BenchmarkService? Benchmark { get; private set; }
+
     /// <summary>
     /// Static constructor: registers global crash handlers as early as possible —
     /// before XAML resources load, before OnStartup fires. This catches crashes during
@@ -213,6 +219,15 @@ public partial class App : Application
                     // only shows a message — actual registry restoration is a future enhancement.
                     Log.Warning("Detected orphaned session lockfile - performing crash recovery");
 
+                    // Recover processor idle disable state (if GameShift crashed with IDLEDISABLE=1)
+                    if (snapshot?.IdleDisableSchemeGuid != null)
+                    {
+                        Log.Information("Crash recovery: restoring processor idle state for scheme {Guid}",
+                            snapshot.IdleDisableSchemeGuid);
+                        GameShift.Core.Optimization.CpuParkingManager.CleanupStaleIdleDisable(
+                            snapshot.IdleDisableSchemeGuid);
+                    }
+
                     MessageBox.Show(
                         "GameShift recovered from an unexpected shutdown. All settings have been restored.",
                         "Crash Recovery",
@@ -231,6 +246,20 @@ public partial class App : Application
             {
                 Log.Information("No orphaned session detected, proceeding normally");
             }
+
+            // Step b1.5: Clean up orphaned ETW DPC trace session from a previous crash
+            try
+            {
+                var zombieSession = Microsoft.Diagnostics.Tracing.Session.TraceEventSession
+                    .GetActiveSession("GameShift-DPC-Trace");
+                if (zombieSession != null)
+                {
+                    zombieSession.Stop();
+                    zombieSession.Dispose();
+                    Log.Information("Cleaned up orphaned DPC monitoring ETW session");
+                }
+            }
+            catch { /* Best-effort cleanup — session may not exist */ }
 
             // Step b2: Clean up leftover update artifacts from a previous auto-update
             GameShift.Core.Updates.UpdateApplier.CleanupPreviousUpdate();
@@ -284,17 +313,21 @@ public partial class App : Application
             // Create all optimization modules (stored as static for page ViewModel construction)
             Optimizations = new IOptimization[]
             {
-                new ServiceSuppressor(),       // 0 - v1
-                new PowerPlanSwitcher(),       // 1 - v1
-                new TimerResolutionManager(),  // 2 - v1
-                new ProcessPriorityBooster(),  // 3 - v1
-                new MemoryOptimizer(),         // 4 - v1
-                new VisualEffectReducer(),     // 5 - v1
-                new NetworkOptimizer(),        // 6 - v1
-                new HybridCpuDetector(),       // 7 - v1
-                new MpoToggle(),               // 8 - v2
-                new CompetitiveMode(),         // 9 - v2
-                new GpuDriverOptimizer()       // 10 - v2
+                new ServiceSuppressor(),         // 0 - v1
+                new PowerPlanSwitcher(),         // 1 - v1
+                new TimerResolutionManager(),    // 2 - v1
+                new ProcessPriorityBooster(),    // 3 - v1
+                new MemoryOptimizer(),           // 4 - v1
+                new VisualEffectReducer(),       // 5 - v1
+                new NetworkOptimizer(),          // 6 - v1
+                new HybridCpuDetector(),         // 7 - v1
+                new MpoToggle(),                 // 8 - v2
+                new CompetitiveMode(),           // 9 - v2
+                new GpuDriverOptimizer(),        // 10 - v2
+                new ScheduledTaskSuppressor(),   // 11 - v3 (after ServiceSuppressor)
+                new CpuParkingManager(),         // 12 - v3 (after PowerPlanSwitcher)
+                new IoPriorityManager(),         // 13 - v4 (after GpuDriverOptimizer)
+                new EfficiencyModeController()   // 14 - v4 (last — process-level, reverts first)
             };
 
             Engine = new OptimizationEngine(Optimizations);
@@ -305,7 +338,8 @@ public partial class App : Application
             {
                 new SteamLibraryScanner(),
                 new EpicLibraryScanner(),
-                new GogLibraryScanner()
+                new GogLibraryScanner(),
+                new XboxLibraryScanner()
             };
 
             Detector = new GameDetector(scanners);
@@ -338,6 +372,15 @@ public partial class App : Application
                 Detector.GameStarted += (_, _) => BackgroundMode.OnGamingStart();
                 Detector.AllGamesStopped += (_, _) => BackgroundMode.OnGamingStop();
             }
+
+            // v6: Create driver version tracker and scan asynchronously
+            DriverTracker = new DriverVersionTracker();
+            _ = DriverTracker.ScanAndCheckAsync(); // Fire-and-forget, non-blocking
+            WriteDiag("DriverVersionTracker initialized (scanning in background)");
+
+            // v6: Create benchmark service
+            Benchmark = new BenchmarkService();
+            WriteDiag("BenchmarkService initialized");
 
             // v4: Create System Tweaks manager (stateless — just detects and applies)
             TweaksMgr = new SystemTweaksManager();
@@ -431,6 +474,10 @@ public partial class App : Application
                 WriteDiag($"Global hotkey FAILED: {ex.Message}");
             }
 
+            // Step f3: Check for updates and show popup if available
+            WriteDiag("Step f3: Checking for updates...");
+            await CheckAndShowUpdatePopupAsync(settings);
+
             // Wire DPC spike toast notifications
             if (DpcMon != null)
             {
@@ -493,6 +540,61 @@ public partial class App : Application
         }
 
         _mainWindow.NavigateTo(pageType);
+    }
+
+    /// <summary>
+    /// Checks for available updates and shows the UpdateWindow popup if one exists.
+    /// Called during startup after MainWindow is shown. Never blocks or throws.
+    /// Respects the user's "Skip This Version" preference.
+    /// </summary>
+    private async Task CheckAndShowUpdatePopupAsync(AppSettings settings)
+    {
+        try
+        {
+            // Check if an update was already downloaded (e.g., from a previous session)
+            bool alreadyStaged = File.Exists(GameShift.Core.Updates.UpdateApplier.GetUpdateStagingPath());
+
+            if (alreadyStaged)
+            {
+                // We have a staged update — check what version it is
+                var updateInfo = await GameShift.Core.Updates.UpdateChecker.CheckForUpdateAsync();
+                if (updateInfo != null)
+                {
+                    WriteDiag($"Step f3: Staged update found for v{updateInfo.LatestVersion}");
+                    var updateWindow = new UpdateWindow(updateInfo, alreadyStaged: true);
+                    if (_mainWindow != null) updateWindow.Owner = _mainWindow;
+                    updateWindow.ShowDialog();
+                    return;
+                }
+            }
+
+            // Check GitHub for a newer release
+            var update = await GameShift.Core.Updates.UpdateChecker.CheckForUpdateAsync();
+            if (update == null)
+            {
+                WriteDiag("Step f3: No update available");
+                return;
+            }
+
+            // Respect "Skip This Version" preference
+            if (!string.IsNullOrEmpty(settings.SkippedUpdateVersion) &&
+                update.LatestVersion == settings.SkippedUpdateVersion)
+            {
+                WriteDiag($"Step f3: Update v{update.LatestVersion} skipped by user");
+                return;
+            }
+
+            WriteDiag($"Step f3: Update available v{update.LatestVersion}, showing popup");
+            var popup = new UpdateWindow(update);
+            if (_mainWindow != null) popup.Owner = _mainWindow;
+            popup.ShowDialog();
+        }
+        catch (Exception ex)
+        {
+            // Update check failure never blocks startup
+            Log.Debug(ex, "Update popup check failed (non-fatal)");
+            WriteDiag($"Step f3: Update check failed: {ex.Message}");
+        }
     }
 
     /// <summary>

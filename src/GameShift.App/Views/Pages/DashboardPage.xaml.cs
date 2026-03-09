@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -64,6 +65,20 @@ public partial class DashboardPage : Page
         var vm = DataContext as DashboardViewModel;
         if (vm == null) return;
 
+        // Block disable if anti-cheat requires VBS
+        var blockingACs = GameShift.Core.Optimization.AntiCheatDetector.GetVbsRequiringAntiCheats();
+        if (blockingACs.Count > 0)
+        {
+            var acNames = string.Join(", ", blockingACs.Select(ac => ac.DisplayName));
+            MessageBox.Show(
+                $"Cannot disable Memory Integrity — it is required by {acNames}.\n\n" +
+                "Disabling it would cause VAN:RESTRICTION errors and prevent these games from launching.",
+                "Blocked by Anti-Cheat",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+            return;
+        }
+
         var result = MessageBox.Show(
             "This will disable Memory Integrity (VBS/HVCI) and schedule a reboot in 30 seconds.\n\nContinue?",
             "Disable Memory Integrity",
@@ -79,6 +94,32 @@ public partial class DashboardPage : Page
             else
             {
                 MessageBox.Show("Failed to disable VBS/HVCI. Check logs for details.",
+                    "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+    }
+
+    private void OnReEnableVbsClicked(object sender, RoutedEventArgs e)
+    {
+        var vm = DataContext as DashboardViewModel;
+        if (vm == null) return;
+
+        var result = MessageBox.Show(
+            "This will re-enable Memory Integrity (VBS/HVCI) and schedule a reboot in 30 seconds.\n\n" +
+            "This is required for Riot Vanguard and FACEIT Anti-Cheat to function properly.\n\nContinue?",
+            "Re-enable Memory Integrity",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Question);
+
+        if (result == MessageBoxResult.Yes)
+        {
+            if (vm.ReEnableVbsHvci())
+            {
+                GameShift.Core.Optimization.VbsHvciToggle.ScheduleReboot();
+            }
+            else
+            {
+                MessageBox.Show("Failed to re-enable VBS/HVCI. Check logs for details.",
                     "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }

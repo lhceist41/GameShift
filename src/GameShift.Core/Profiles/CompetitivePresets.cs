@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using GameShift.Core.Detection;
+using GameShift.Core.Optimization;
 using GameShift.Core.Profiles.GameActions;
 
 namespace GameShift.Core.Profiles;
@@ -38,32 +39,37 @@ public static class CompetitivePresets
         {
             DisplayName = "Overwatch 2",
             AntiCheatName = "", // Server-side ML detection only — no kernel anti-cheat
+            AntiCheat = AntiCheatType.None,
             VbsSafeToDisable = true
         },
         [ValorantExe] = new()
         {
             DisplayName = "Valorant",
             AntiCheatName = "Riot Vanguard",
+            AntiCheat = AntiCheatType.RiotVanguard,
             VbsSafeToDisable = false,
-            VbsSafetyReason = "Riot Vanguard requires VBS/HVCI. Disabling would prevent Valorant from launching."
+            VbsSafetyReason = "Riot Vanguard enforces VBS/HVCI (Memory Integrity) as a hard requirement. Disabling it causes VAN:RESTRICTION errors and prevents Valorant from launching."
         },
         [LeagueExe] = new()
         {
             DisplayName = "League of Legends",
             AntiCheatName = "Riot Vanguard",
+            AntiCheat = AntiCheatType.RiotVanguard,
             VbsSafeToDisable = false,
-            VbsSafetyReason = "Riot Vanguard requires VBS/HVCI. Disabling would prevent League from launching."
+            VbsSafetyReason = "Riot Vanguard enforces VBS/HVCI (Memory Integrity) as a hard requirement. Disabling it causes VAN:RESTRICTION errors and prevents League of Legends from launching."
         },
         [DeadlockExe] = new()
         {
             DisplayName = "Deadlock",
             AntiCheatName = "VAC",
+            AntiCheat = AntiCheatType.ValveAntiCheat,
             VbsSafeToDisable = true
         },
         [OsuExe] = new()
         {
             DisplayName = "osu!",
             AntiCheatName = "",
+            AntiCheat = AntiCheatType.None,
             VbsSafeToDisable = true
         }
     };
@@ -145,6 +151,7 @@ public static class CompetitivePresets
     {
         GameName = "Overwatch 2",
         ExecutableName = Overwatch2Exe,
+        AntiCheat = AntiCheatType.None,
         // v1 optimizations — all on
         SuppressServices = true,
         SwitchPowerPlan = true,
@@ -158,7 +165,18 @@ public static class CompetitivePresets
         // v2 toggles
         EnableCompetitiveMode = true,  // Overlays can cause alt-tab freezes
         EnableGpuOptimization = true,
-        DisableMpo = true              // MPO documented to cause frame pacing issues
+        DisableMpo = true,             // MPO documented to cause frame pacing issues
+        // v3 toggles
+        SuppressScheduledTasks = true,
+        UnparkCpuCores = true,
+        // v4 toggles
+        ManageIoPriority = true,
+        EnableEfficiencyMode = true,
+        FlushModifiedPages = true,
+        ManageMemoryPriority = true,
+        // v5 toggles
+        PinToVCacheCcd = true,
+        SuppressTier2Services = true
     };
 
     private static List<GameAction> BuildOverwatch2Actions() => new()
@@ -225,6 +243,7 @@ public static class CompetitivePresets
     {
         GameName = "Valorant",
         ExecutableName = ValorantExe,
+        AntiCheat = AntiCheatType.RiotVanguard,
         // v1 optimizations — all on
         SuppressServices = true,
         SwitchPowerPlan = true,
@@ -238,7 +257,18 @@ public static class CompetitivePresets
         // v2 toggles
         EnableCompetitiveMode = true,
         EnableGpuOptimization = true,
-        DisableMpo = false // Valorant doesn't require MPO disabled
+        DisableMpo = false, // Valorant doesn't require MPO disabled
+        // v3 toggles
+        SuppressScheduledTasks = true,
+        UnparkCpuCores = true,
+        // v4 toggles
+        ManageIoPriority = true,
+        EnableEfficiencyMode = true,
+        FlushModifiedPages = true,
+        ManageMemoryPriority = true,
+        // v5 toggles
+        PinToVCacheCcd = true,
+        SuppressTier2Services = true
     };
 
     private static List<GameAction> BuildValorantActions() => new()
@@ -290,6 +320,7 @@ public static class CompetitivePresets
     {
         GameName = "League of Legends",
         ExecutableName = LeagueExe,
+        AntiCheat = AntiCheatType.RiotVanguard,
         // v1 optimizations — all on
         SuppressServices = true,
         SwitchPowerPlan = true,
@@ -303,7 +334,18 @@ public static class CompetitivePresets
         // v2 toggles
         EnableCompetitiveMode = true,
         EnableGpuOptimization = true,
-        DisableMpo = false
+        DisableMpo = false,
+        // v3 toggles
+        SuppressScheduledTasks = true,
+        UnparkCpuCores = true,
+        // v4 toggles
+        ManageIoPriority = true,
+        EnableEfficiencyMode = true,
+        FlushModifiedPages = true,
+        ManageMemoryPriority = true,
+        // v5 toggles
+        PinToVCacheCcd = true,
+        SuppressTier2Services = true
     };
 
     private static List<GameAction> BuildLeagueActions() => new()
@@ -353,6 +395,7 @@ public static class CompetitivePresets
     {
         GameName = "Deadlock",
         ExecutableName = DeadlockExe,
+        AntiCheat = AntiCheatType.ValveAntiCheat,
         // v1 optimizations — all on
         SuppressServices = true,
         SwitchPowerPlan = true,
@@ -366,7 +409,18 @@ public static class CompetitivePresets
         // v2 toggles
         EnableCompetitiveMode = true,
         EnableGpuOptimization = true,
-        DisableMpo = false
+        DisableMpo = false,
+        // v3 toggles
+        SuppressScheduledTasks = true,
+        UnparkCpuCores = true,
+        // v4 toggles
+        ManageIoPriority = true,
+        EnableEfficiencyMode = true,
+        FlushModifiedPages = true,
+        ManageMemoryPriority = true,
+        // v5 toggles
+        PinToVCacheCcd = true,
+        SuppressTier2Services = true
     };
 
     private static List<GameAction> BuildDeadlockActions() => new()
@@ -422,6 +476,7 @@ public static class CompetitivePresets
     {
         GameName = "osu!",
         ExecutableName = OsuExe,
+        AntiCheat = AntiCheatType.None,
         SuppressServices = true,
         SwitchPowerPlan = true,
         SetTimerResolution = true,         // Critical for osu! audio/input timing
@@ -433,7 +488,18 @@ public static class CompetitivePresets
         EnableCompetitiveMode = false,     // No overlays to kill for rhythm games
         SuspendDiscordOverlay = true,      // But still suspend Discord overlay
         EnableGpuOptimization = true,
-        DisableMpo = false
+        DisableMpo = false,
+        // v3 toggles
+        SuppressScheduledTasks = true,
+        UnparkCpuCores = true,
+        // v4 toggles
+        ManageIoPriority = true,
+        EnableEfficiencyMode = true,
+        FlushModifiedPages = true,
+        ManageMemoryPriority = true,
+        // v5 toggles
+        PinToVCacheCcd = true,
+        SuppressTier2Services = true
     };
 
     private static List<GameAction> BuildOsuActions()

@@ -87,19 +87,56 @@
                  Appears at top above the card grid — conditional visibility
                  ═══════════════════════════════════════════════════════════ -->
 
-            <!-- VBS/HVCI Warning Banner (amber) -->
-            <Border Background="{DynamicResource GS.Badge.Warning.Bg}"
-                    CornerRadius="8" Padding="15" Margin="0,0,0,12"
+            <!-- VBS/HVCI Banner — amber (warning: VBS enabled, perf cost) or red (error: VBS disabled + AC conflict) -->
+            <Border x:Name="VbsBanner" CornerRadius="8" Padding="15" Margin="0,0,0,12"
+                    Background="{DynamicResource GS.Badge.Warning.Bg}"
                     BorderBrush="{DynamicResource GS.Status.Warning}" BorderThickness="1"
-                    Visibility="{Binding ShowVbsBanner, Converter={StaticResource BoolToVisibility}}"
-                    Style="{StaticResource AnimatedBannerStyle}">
+                    Visibility="{Binding ShowVbsBanner, Converter={StaticResource BoolToVisibility}}">
+                <Border.Style>
+                    <Style TargetType="Border" BasedOn="{StaticResource AnimatedBannerStyle}">
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding VbsBannerSeverity}" Value="error">
+                                <Setter Property="Background" Value="{DynamicResource GS.Badge.Error.Bg}"/>
+                                <Setter Property="BorderBrush" Value="{DynamicResource GS.Status.Error}"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
                 <DockPanel>
                     <StackPanel DockPanel.Dock="Right" Orientation="Horizontal"
                                 VerticalAlignment="Center" Margin="10,0,0,0">
+                        <!-- Warning mode: Disable & Reboot button (only when NOT conflict) -->
                         <Button Content="Disable &amp; Reboot" Padding="10,4"
                                 Background="{DynamicResource GS.Status.Warning}" Foreground="White"
                                 BorderThickness="0" Cursor="Hand" FontSize="12"
-                                Click="OnDisableVbsClicked" Margin="0,0,8,0"/>
+                                Click="OnDisableVbsClicked" Margin="0,0,8,0">
+                            <Button.Style>
+                                <Style TargetType="Button">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsVbsConflict}" Value="True">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
+                        <!-- Conflict mode: Re-enable & Reboot button (only when IS conflict) -->
+                        <Button Content="Re-enable &amp; Reboot" Padding="10,4"
+                                Background="{DynamicResource GS.Status.Error}" Foreground="White"
+                                BorderThickness="0" Cursor="Hand" FontSize="12"
+                                Click="OnReEnableVbsClicked" Margin="0,0,8,0">
+                            <Button.Style>
+                                <Style TargetType="Button">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsVbsConflict}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
                         <Button Content="Dismiss" Padding="10,4"
                                 Background="{DynamicResource GS.Surface.Card}"
                                 Foreground="{DynamicResource GS.Text.Primary}"
@@ -108,8 +145,21 @@
                                 Click="OnDismissVbsClicked"/>
                     </StackPanel>
                     <StackPanel VerticalAlignment="Center">
-                        <TextBlock Text="Performance Warning" FontWeight="Bold"
-                                   Foreground="{DynamicResource GS.Status.Warning}" FontSize="13"/>
+                        <!-- Title switches between "Performance Warning" and "Anti-Cheat Conflict" -->
+                        <TextBlock FontWeight="Bold" FontSize="13">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Text" Value="Performance Warning"/>
+                                    <Setter Property="Foreground" Value="{DynamicResource GS.Status.Warning}"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding VbsBannerSeverity}" Value="error">
+                                            <Setter Property="Text" Value="Anti-Cheat Conflict"/>
+                                            <Setter Property="Foreground" Value="{DynamicResource GS.Status.Error}"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
                         <TextBlock Text="{Binding VbsBannerMessage, Mode=OneWay}"
                                    FontSize="12" Foreground="{DynamicResource GS.Text.Primary}"
                                    TextWrapping="Wrap"/>

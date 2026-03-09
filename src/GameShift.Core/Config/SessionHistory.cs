@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Serilog;
 
 namespace GameShift.Core.Config;
@@ -18,6 +19,24 @@ public class GameSession
     public double AvgDpcDuring { get; set; }
     public double PeakDpcDuring { get; set; }
     public int OptimizationsApplied { get; set; }
+
+    // ── Benchmark data (Sprint 6) ──────────────────────────────────────
+
+    /// <summary>
+    /// Average FPS from a benchmark capture during this session. 0 if no benchmark was run.
+    /// </summary>
+    public double BenchmarkAvgFps { get; set; }
+
+    /// <summary>
+    /// 1% low FPS from a benchmark capture during this session. 0 if no benchmark was run.
+    /// </summary>
+    public double BenchmarkFps1PercentLow { get; set; }
+
+    /// <summary>
+    /// Whether a benchmark was captured during this session.
+    /// </summary>
+    [JsonIgnore]
+    public bool HasBenchmark => BenchmarkAvgFps > 0;
 }
 
 /// <summary>

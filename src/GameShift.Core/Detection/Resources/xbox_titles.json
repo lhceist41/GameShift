@@ -1,0 +1,202 @@
+{
+  "Microsoft.624F8B84B80_8wekyb3d8bbwe": {
+    "name": "Halo Infinite",
+    "executable": "HaloInfinite.exe"
+  },
+  "BethesdaSoftworks.ProjectGold_3275kfvn8vcwc": {
+    "name": "Starfield",
+    "executable": "Starfield.exe"
+  },
+  "39EA002F.HellbladeIISenua_022p0x24hybq2": {
+    "name": "Hellblade II: Senua's Saga",
+    "executable": "HellbladeGame-Win64-Shipping.exe"
+  },
+  "Microsoft.Grounded_8wekyb3d8bbwe": {
+    "name": "Grounded",
+    "executable": "Maine-Win64-Shipping.exe"
+  },
+  "Microsoft.PentimentWin_8wekyb3d8bbwe": {
+    "name": "Pentiment",
+    "executable": "Pentiment.exe"
+  },
+  "Microsoft.HiFiRush_8wekyb3d8bbwe": {
+    "name": "Hi-Fi Rush",
+    "executable": "Hi-Fi-RUSH.exe"
+  },
+  "Microsoft.SeaofThieves_8wekyb3d8bbwe": {
+    "name": "Sea of Thieves",
+    "executable": "SoTGame.exe"
+  },
+  "Microsoft.StateOfDecay2_8wekyb3d8bbwe": {
+    "name": "State of Decay 2",
+    "executable": "StateOfDecay2.exe"
+  },
+  "Microsoft.FlightSimulator_8wekyb3d8bbwe": {
+    "name": "Microsoft Flight Simulator",
+    "executable": "FlightSimulator.exe"
+  },
+  "Microsoft.MinecraftBedrockEdition_8wekyb3d8bbwe": {
+    "name": "Minecraft (Bedrock Edition)",
+    "executable": "Minecraft.Windows.exe"
+  },
+  "Microsoft.AgeOfEmpires4_8wekyb3d8bbwe": {
+    "name": "Age of Empires IV",
+    "executable": "RelicCardinal.exe"
+  },
+  "Microsoft.PhoenixPointAllianceOfSteel_8wekyb3d8bbwe": {
+    "name": "Avowed",
+    "executable": "Indiana-Win64-Shipping.exe"
+  },
+  "Microsoft.ForzaHorizon5_8wekyb3d8bbwe": {
+    "name": "Forza Horizon 5",
+    "executable": "ForzaHorizon5.exe"
+  },
+  "Microsoft.ForzaMotorsport8_8wekyb3d8bbwe": {
+    "name": "Forza Motorsport",
+    "executable": "ForzaMotorsport.exe"
+  },
+  "Microsoft.GearsOfWar5_8wekyb3d8bbwe": {
+    "name": "Gears 5",
+    "executable": "Gears5.exe"
+  },
+  "Microsoft.WastelandRemastered_8wekyb3d8bbwe": {
+    "name": "Wasteland Remastered",
+    "executable": "WastelandRemastered.exe"
+  },
+  "BethesdaSoftworks.F76_3275kfvn8vcwc": {
+    "name": "Fallout 76",
+    "executable": "Fallout76.exe"
+  },
+  "BethesdaSoftworks.DVCE_3275kfvn8vcwc": {
+    "name": "Dishonored 2",
+    "executable": "Dishonored2.exe"
+  },
+  "BethesdaSoftworks.TES5Morrowind_3275kfvn8vcwc": {
+    "name": "The Elder Scrolls V: Skyrim",
+    "executable": "SkyrimSE.exe"
+  },
+  "BethesdaSoftworks.Prey_3275kfvn8vcwc": {
+    "name": "Prey",
+    "executable": "Prey.exe"
+  },
+  "BethesdaSoftworks.YOUREWELCOME_3275kfvn8vcwc": {
+    "name": "DOOM Eternal",
+    "executable": "DOOMEternalx64vk.exe"
+  },
+  "BethesdaSoftworks.Wolfenstein2_3275kfvn8vcwc": {
+    "name": "Wolfenstein II: The New Colossus",
+    "executable": "NewColossus_x64vk.exe"
+  },
+  "EAPlay.NeedForSpeedHeat_8wekyb3d8bbwe": {
+    "name": "Need for Speed Heat",
+    "executable": "NeedForSpeedHeat.exe"
+  },
+  "EAPlay.FIFAULT_8wekyb3d8bbwe": {
+    "name": "EA Sports FC",
+    "executable": "FC.exe"
+  },
+  "EAPlay.MassEffectLE_8wekyb3d8bbwe": {
+    "name": "Mass Effect Legendary Edition",
+    "executable": "MassEffectLegendaryEdition.exe"
+  },
+  "EAPlay.DeadSpace_8wekyb3d8bbwe": {
+    "name": "Dead Space",
+    "executable": "Dead Space.exe"
+  },
+  "DeepSilver.MetroExodus_8wekyb3d8bbwe": {
+    "name": "Metro Exodus",
+    "executable": "MetroExodus.exe"
+  },
+  "ParadoxInteractive.CrusaderKingsIII_8wekyb3d8bbwe": {
+    "name": "Crusader Kings III",
+    "executable": "ck3.exe"
+  },
+  "ParadoxInteractive.CitiesSkylines2_8wekyb3d8bbwe": {
+    "name": "Cities: Skylines II",
+    "executable": "Cities2.exe"
+  },
+  "Microsoft.Psychonauts2_8wekyb3d8bbwe": {
+    "name": "Psychonauts 2",
+    "executable": "Psychonauts2-Win64-Shipping.exe"
+  },
+  "Microsoft.Ori2_8wekyb3d8bbwe": {
+    "name": "Ori and the Will of the Wisps",
+    "executable": "oriwotw.exe"
+  },
+  "Microsoft.OuterWilds_8wekyb3d8bbwe": {
+    "name": "Outer Wilds",
+    "executable": "OuterWilds.exe"
+  },
+  "Microsoft.Deathloop_8wekyb3d8bbwe": {
+    "name": "Deathloop",
+    "executable": "Deathloop.exe"
+  },
+  "Microsoft.TurnBasedGame_8wekyb3d8bbwe": {
+    "name": "Ara: History Untold",
+    "executable": "Ara.exe"
+  },
+  "InXile.Wasteland3_8wekyb3d8bbwe": {
+    "name": "Wasteland 3",
+    "executable": "WL3.exe"
+  },
+  "Microsoft.TheOuterWorlds_8wekyb3d8bbwe": {
+    "name": "The Outer Worlds",
+    "executable": "Indiana-Win64-Shipping.exe"
+  },
+  "CompulsionGames.WeHappyFew_8wekyb3d8bbwe": {
+    "name": "We Happy Few",
+    "executable": "GlimpseGame.exe"
+  },
+  "NinjaTheory.BleedingEdge_8wekyb3d8bbwe": {
+    "name": "Bleeding Edge",
+    "executable": "Bleeding Edge.exe"
+  },
+  "Microsoft.LakeMicro_8wekyb3d8bbwe": {
+    "name": "As Dusk Falls",
+    "executable": "AsDuskFalls.exe"
+  },
+  "DVLPR.SombervilleDLC_022p0x24hybq2": {
+    "name": "Somerville",
+    "executable": "Somerville.exe"
+  },
+  "SNKCorporation.FatalFuryCoTW_8wekyb3d8bbwe": {
+    "name": "Fatal Fury: City of the Wolves",
+    "executable": "FatalFury-Win64-Shipping.exe"
+  },
+  "Microsoft.SouthofMidnight_8wekyb3d8bbwe": {
+    "name": "South of Midnight",
+    "executable": "SouthOfMidnight-Win64-Shipping.exe"
+  },
+  "Microsoft.Clair_8wekyb3d8bbwe": {
+    "name": "Clair Obscur: Expedition 33",
+    "executable": "Clair-Win64-Shipping.exe"
+  },
+  "CoffeeStainStudios.SatisfactoryPC_8wekyb3d8bbwe": {
+    "name": "Satisfactory",
+    "executable": "FactoryGame-Win64-Shipping.exe"
+  },
+  "CapcomCo.MonsterHunterWildsPC_8wekyb3d8bbwe": {
+    "name": "Monster Hunter Wilds",
+    "executable": "MonsterHunterWilds.exe"
+  },
+  "SquareEnix.FinalFantasyVIIRebirthPC_8wekyb3d8bbwe": {
+    "name": "Final Fantasy VII Rebirth",
+    "executable": "ff7rebirth_.exe"
+  },
+  "ConcernedApe.StardewValley_8wekyb3d8bbwe": {
+    "name": "Stardew Valley",
+    "executable": "Stardew Valley.exe"
+  },
+  "Re-Logic.Terraria_8wekyb3d8bbwe": {
+    "name": "Terraria",
+    "executable": "Terraria.exe"
+  },
+  "Mediatonic.FallGuysUltimateKnockout_8wekyb3d8bbwe": {
+    "name": "Fall Guys",
+    "executable": "FallGuys_client_game.exe"
+  },
+  "Microsoft.TotalWarWarhammer3_8wekyb3d8bbwe": {
+    "name": "Total War: Warhammer III",
+    "executable": "Warhammer3.exe"
+  }
+}
