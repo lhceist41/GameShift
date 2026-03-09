@@ -93,7 +93,7 @@ public class ScheduledTaskSuppressor : IOptimization
             {
                 targetTasks.AddRange(Tier3DefenderTasks);
                 SettingsManager.Logger.Information(
-                    "ScheduledTaskSuppressor: Defender scan deferral enabled by profile");
+                    "[ScheduledTaskSuppressor] Defender scan deferral enabled by profile");
             }
 
             foreach (var taskPath in targetTasks)
@@ -107,7 +107,7 @@ public class ScheduledTaskSuppressor : IOptimization
                     {
                         // Task doesn't exist on this system — skip
                         SettingsManager.Logger.Debug(
-                            "ScheduledTaskSuppressor: Task not found (skipping): {TaskPath}", taskPath);
+                            "[ScheduledTaskSuppressor] Task not found (skipping): {TaskPath}", taskPath);
                         skippedCount++;
                         continue;
                     }
@@ -116,7 +116,7 @@ public class ScheduledTaskSuppressor : IOptimization
                     {
                         // Already disabled — skip but don't track for revert
                         SettingsManager.Logger.Debug(
-                            "ScheduledTaskSuppressor: Task already disabled (skipping): {TaskPath}", taskPath);
+                            "[ScheduledTaskSuppressor] Task already disabled (skipping): {TaskPath}", taskPath);
                         skippedCount++;
                         continue;
                     }
@@ -128,19 +128,19 @@ public class ScheduledTaskSuppressor : IOptimization
                         _disabledTasks.Add(new TaskOriginalState(taskPath, true));
                         disabledCount++;
                         SettingsManager.Logger.Debug(
-                            "ScheduledTaskSuppressor: Disabled task: {TaskPath}", taskPath);
+                            "[ScheduledTaskSuppressor] Disabled task: {TaskPath}", taskPath);
                     }
                     else
                     {
                         SettingsManager.Logger.Warning(
-                            "ScheduledTaskSuppressor: Failed to disable task: {TaskPath}", taskPath);
+                            "[ScheduledTaskSuppressor] Failed to disable task: {TaskPath}", taskPath);
                         errorCount++;
                     }
                 }
                 catch (Exception ex)
                 {
                     SettingsManager.Logger.Warning(ex,
-                        "ScheduledTaskSuppressor: Error processing task {TaskPath}", taskPath);
+                        "[ScheduledTaskSuppressor] Error processing task {TaskPath}", taskPath);
                     errorCount++;
                 }
             }
@@ -150,7 +150,7 @@ public class ScheduledTaskSuppressor : IOptimization
                 _disabledTasks.Select(t => t.TaskPath).ToList());
 
             SettingsManager.Logger.Information(
-                "ScheduledTaskSuppressor: Completed — {Disabled} disabled, {Skipped} skipped, {Errors} errors",
+                "[ScheduledTaskSuppressor] Completed — {Disabled} disabled, {Skipped} skipped, {Errors} errors",
                 disabledCount, skippedCount, errorCount);
 
             IsApplied = true;
@@ -158,7 +158,7 @@ public class ScheduledTaskSuppressor : IOptimization
         }
         catch (Exception ex)
         {
-            SettingsManager.Logger.Error(ex, "ScheduledTaskSuppressor: Apply failed");
+            SettingsManager.Logger.Error(ex, "[ScheduledTaskSuppressor] Apply failed");
             return Task.FromResult(false);
         }
     }
@@ -187,12 +187,12 @@ public class ScheduledTaskSuppressor : IOptimization
                         {
                             restoredCount++;
                             SettingsManager.Logger.Debug(
-                                "ScheduledTaskSuppressor: Re-enabled task: {TaskPath}", state.TaskPath);
+                                "[ScheduledTaskSuppressor] Re-enabled task: {TaskPath}", state.TaskPath);
                         }
                         else
                         {
                             SettingsManager.Logger.Warning(
-                                "ScheduledTaskSuppressor: Failed to re-enable task: {TaskPath}", state.TaskPath);
+                                "[ScheduledTaskSuppressor] Failed to re-enable task: {TaskPath}", state.TaskPath);
                             errorCount++;
                         }
                     }
@@ -200,13 +200,13 @@ public class ScheduledTaskSuppressor : IOptimization
                 catch (Exception ex)
                 {
                     SettingsManager.Logger.Warning(ex,
-                        "ScheduledTaskSuppressor: Error re-enabling task {TaskPath}", state.TaskPath);
+                        "[ScheduledTaskSuppressor] Error re-enabling task {TaskPath}", state.TaskPath);
                     errorCount++;
                 }
             }
 
             SettingsManager.Logger.Information(
-                "ScheduledTaskSuppressor: Revert completed — {Restored} re-enabled, {Errors} errors",
+                "[ScheduledTaskSuppressor] Revert completed — {Restored} re-enabled, {Errors} errors",
                 restoredCount, errorCount);
 
             _disabledTasks.Clear();
@@ -215,7 +215,7 @@ public class ScheduledTaskSuppressor : IOptimization
         }
         catch (Exception ex)
         {
-            SettingsManager.Logger.Error(ex, "ScheduledTaskSuppressor: Revert failed");
+            SettingsManager.Logger.Error(ex, "[ScheduledTaskSuppressor] Revert failed");
             IsApplied = false;
             return Task.FromResult(false);
         }
@@ -288,7 +288,7 @@ public class ScheduledTaskSuppressor : IOptimization
         catch (Exception ex)
         {
             SettingsManager.Logger.Warning(ex,
-                "ScheduledTaskSuppressor: schtasks failed: {Args}", arguments);
+                "[ScheduledTaskSuppressor] schtasks failed: {Args}", arguments);
             return null;
         }
     }

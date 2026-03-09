@@ -55,13 +55,13 @@ public class MpoToggle : IOptimization
         try
         {
             _logger.Information(
-                "MpoToggle: Applying MPO Toggle — disabling Multiplane Overlay via registry");
+                "[MpoToggle] Applying MPO Toggle — disabling Multiplane Overlay via registry");
 
             using var key = Registry.LocalMachine.OpenSubKey(DwmRegistryPath, writable: true);
             if (key == null)
             {
                 _logger.Error(
-                    "MpoToggle: Failed to open registry key {RegistryPath} for writing",
+                    "[MpoToggle] Failed to open registry key {RegistryPath} for writing",
                     DwmRegistryPath);
                 return Task.FromResult(false);
             }
@@ -73,7 +73,7 @@ public class MpoToggle : IOptimization
                 _previousValueExisted = true;
                 _previousValue = (int)existingValue;
                 _logger.Debug(
-                    "MpoToggle: Existing {ValueName} = {OldValue}, will restore on revert",
+                    "[MpoToggle] Existing {ValueName} = {OldValue}, will restore on revert",
                     OverlayTestModeValue,
                     _previousValue);
             }
@@ -81,7 +81,7 @@ public class MpoToggle : IOptimization
             {
                 _previousValueExisted = false;
                 _logger.Debug(
-                    "MpoToggle: No existing {ValueName} value, will delete on revert",
+                    "[MpoToggle] No existing {ValueName} value, will delete on revert",
                     OverlayTestModeValue);
             }
 
@@ -89,7 +89,7 @@ public class MpoToggle : IOptimization
             key.SetValue(OverlayTestModeValue, 5, RegistryValueKind.DWord);
 
             _logger.Information(
-                "MpoToggle: Set {RegistryPath}\\{ValueName} = 5 (was: {OldValue})",
+                "[MpoToggle] Set {RegistryPath}\\{ValueName} = 5 (was: {OldValue})",
                 @"HKLM\" + DwmRegistryPath,
                 OverlayTestModeValue,
                 _previousValueExisted ? _previousValue.ToString() : "<not set>");
@@ -106,7 +106,7 @@ public class MpoToggle : IOptimization
             if (_is24H2OrLater)
             {
                 _logger.Information(
-                    "MpoToggle: Windows 11 24H2+ detected (build {Build}), applying extended MPO disable",
+                    "[MpoToggle] Windows 11 24H2+ detected (build {Build}), applying extended MPO disable",
                     Environment.OSVersion.Version.Build);
 
                 // EnableOverlay = 0 in same DWM key
@@ -126,7 +126,7 @@ public class MpoToggle : IOptimization
                     _enableOverlayPreviouslyExisted ? _enableOverlayPreviousValue : (object)"<not set>");
 
                 _logger.Information(
-                    "MpoToggle: Set {RegistryPath}\\{ValueName} = 0 (was: {OldValue})",
+                    "[MpoToggle] Set {RegistryPath}\\{ValueName} = 0 (was: {OldValue})",
                     @"HKLM\" + DwmRegistryPath,
                     EnableOverlayValue,
                     _enableOverlayPreviouslyExisted ? _enableOverlayPreviousValue.ToString() : "<not set>");
@@ -151,7 +151,7 @@ public class MpoToggle : IOptimization
                         _disableOverlaysPreviouslyExisted ? _disableOverlaysPreviousValue : (object)"<not set>");
 
                     _logger.Information(
-                        "MpoToggle: Set {RegistryPath}\\{ValueName} = 1 (was: {OldValue})",
+                        "[MpoToggle] Set {RegistryPath}\\{ValueName} = 1 (was: {OldValue})",
                         @"HKLM\" + GraphicsDriversPath,
                         DisableOverlaysValue,
                         _disableOverlaysPreviouslyExisted ? _disableOverlaysPreviousValue.ToString() : "<not set>");
@@ -159,7 +159,7 @@ public class MpoToggle : IOptimization
                 else
                 {
                     _logger.Warning(
-                        "MpoToggle: Failed to open {RegistryPath} for 24H2 DisableOverlays write",
+                        "[MpoToggle] Failed to open {RegistryPath} for 24H2 DisableOverlays write",
                         GraphicsDriversPath);
                 }
             }
@@ -174,7 +174,7 @@ public class MpoToggle : IOptimization
         {
             _logger.Error(
                 ex,
-                "MpoToggle: Failed to apply MPO Toggle");
+                "[MpoToggle] Failed to apply MPO Toggle");
             return Task.FromResult(false);
         }
     }
@@ -192,13 +192,13 @@ public class MpoToggle : IOptimization
         try
         {
             _logger.Information(
-                "MpoToggle: Reverting MPO Toggle — restoring Multiplane Overlay");
+                "[MpoToggle] Reverting MPO Toggle — restoring Multiplane Overlay");
 
             using var key = Registry.LocalMachine.OpenSubKey(DwmRegistryPath, writable: true);
             if (key == null)
             {
                 _logger.Error(
-                    "MpoToggle: Failed to open registry key {RegistryPath} for writing during revert",
+                    "[MpoToggle] Failed to open registry key {RegistryPath} for writing during revert",
                     DwmRegistryPath);
                 return Task.FromResult(false);
             }
@@ -208,7 +208,7 @@ public class MpoToggle : IOptimization
                 // Restore previous value
                 key.SetValue(OverlayTestModeValue, _previousValue, RegistryValueKind.DWord);
                 _logger.Information(
-                    "MpoToggle: Restored {RegistryPath}\\{ValueName} = {RestoredValue}",
+                    "[MpoToggle] Restored {RegistryPath}\\{ValueName} = {RestoredValue}",
                     @"HKLM\" + DwmRegistryPath,
                     OverlayTestModeValue,
                     _previousValue);
@@ -218,7 +218,7 @@ public class MpoToggle : IOptimization
                 // Delete the value (it didn't exist before)
                 key.DeleteValue(OverlayTestModeValue, throwOnMissingValue: false);
                 _logger.Information(
-                    "MpoToggle: Deleted {RegistryPath}\\{ValueName} (was not present before apply)",
+                    "[MpoToggle] Deleted {RegistryPath}\\{ValueName} (was not present before apply)",
                     @"HKLM\" + DwmRegistryPath,
                     OverlayTestModeValue);
             }
@@ -231,7 +231,7 @@ public class MpoToggle : IOptimization
                 {
                     key.SetValue(EnableOverlayValue, _enableOverlayPreviousValue, RegistryValueKind.DWord);
                     _logger.Information(
-                        "MpoToggle: Restored {RegistryPath}\\{ValueName} = {RestoredValue}",
+                        "[MpoToggle] Restored {RegistryPath}\\{ValueName} = {RestoredValue}",
                         @"HKLM\" + DwmRegistryPath,
                         EnableOverlayValue,
                         _enableOverlayPreviousValue);
@@ -240,7 +240,7 @@ public class MpoToggle : IOptimization
                 {
                     key.DeleteValue(EnableOverlayValue, throwOnMissingValue: false);
                     _logger.Information(
-                        "MpoToggle: Deleted {RegistryPath}\\{ValueName} (was not present before apply)",
+                        "[MpoToggle] Deleted {RegistryPath}\\{ValueName} (was not present before apply)",
                         @"HKLM\" + DwmRegistryPath,
                         EnableOverlayValue);
                 }
@@ -253,7 +253,7 @@ public class MpoToggle : IOptimization
                     {
                         gfxKey.SetValue(DisableOverlaysValue, _disableOverlaysPreviousValue, RegistryValueKind.DWord);
                         _logger.Information(
-                            "MpoToggle: Restored {RegistryPath}\\{ValueName} = {RestoredValue}",
+                            "[MpoToggle] Restored {RegistryPath}\\{ValueName} = {RestoredValue}",
                             @"HKLM\" + GraphicsDriversPath,
                             DisableOverlaysValue,
                             _disableOverlaysPreviousValue);
@@ -262,7 +262,7 @@ public class MpoToggle : IOptimization
                     {
                         gfxKey.DeleteValue(DisableOverlaysValue, throwOnMissingValue: false);
                         _logger.Information(
-                            "MpoToggle: Deleted {RegistryPath}\\{ValueName} (was not present before apply)",
+                            "[MpoToggle] Deleted {RegistryPath}\\{ValueName} (was not present before apply)",
                             @"HKLM\" + GraphicsDriversPath,
                             DisableOverlaysValue);
                     }
@@ -270,7 +270,7 @@ public class MpoToggle : IOptimization
                 else
                 {
                     _logger.Warning(
-                        "MpoToggle: Failed to open {RegistryPath} for 24H2 DisableOverlays revert",
+                        "[MpoToggle] Failed to open {RegistryPath} for 24H2 DisableOverlays revert",
                         GraphicsDriversPath);
                 }
             }
@@ -282,7 +282,7 @@ public class MpoToggle : IOptimization
         {
             _logger.Error(
                 ex,
-                "MpoToggle: Failed to revert MPO Toggle");
+                "[MpoToggle] Failed to revert MPO Toggle");
             return Task.FromResult(false);
         }
     }
@@ -336,14 +336,14 @@ public class MpoToggle : IOptimization
                         .ToArray();
 
                     _logger.Information(
-                        "MpoToggle: Multi-monitor setup detected with mismatched refresh rates ({Rates}). " +
+                        "[MpoToggle] Multi-monitor setup detected with mismatched refresh rates ({Rates}). " +
                         "MPO Toggle is recommended for reducing frame pacing issues",
                         string.Join(", ", rateDescriptions));
                 }
                 else
                 {
                     _logger.Debug(
-                        "MpoToggle: Multi-monitor setup detected ({Count} monitors) with matching refresh rates ({Rate}Hz)",
+                        "[MpoToggle] Multi-monitor setup detected ({Count} monitors) with matching refresh rates ({Rate}Hz)",
                         refreshRates.Count,
                         distinctRates[0]);
                 }
@@ -351,7 +351,7 @@ public class MpoToggle : IOptimization
             else
             {
                 _logger.Debug(
-                    "MpoToggle: Single monitor detected ({Count} active display{Plural})",
+                    "[MpoToggle] Single monitor detected ({Count} active display{Plural})",
                     refreshRates.Count,
                     refreshRates.Count == 1 ? "" : "s");
             }
@@ -361,7 +361,7 @@ public class MpoToggle : IOptimization
             // Advisory only — failure to detect monitors should not block the optimization
             _logger.Debug(
                 ex,
-                "MpoToggle: Could not enumerate monitors for refresh rate check (advisory only)");
+                "[MpoToggle] Could not enumerate monitors for refresh rate check (advisory only)");
         }
     }
 

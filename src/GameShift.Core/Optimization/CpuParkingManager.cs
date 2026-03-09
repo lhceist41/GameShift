@@ -74,19 +74,19 @@ public class CpuParkingManager : IOptimization
             _activeSchemeGuid = GetActiveSchemeGuid();
             if (_activeSchemeGuid == null)
             {
-                SettingsManager.Logger.Error("CpuParkingManager: Failed to get active power scheme GUID");
+                SettingsManager.Logger.Error("[CpuParkingManager] Failed to get active power scheme GUID");
                 return Task.FromResult(false);
             }
 
             SettingsManager.Logger.Information(
-                "CpuParkingManager: Active power scheme: {SchemeGuid}", _activeSchemeGuid);
+                "[CpuParkingManager] Active power scheme: {SchemeGuid}", _activeSchemeGuid);
 
             // Detect CPU profile for vendor-aware parking values
             var cpuProfile = PowerPlanConfigurator.DetectCpuProfile();
             var (cpMinCores, concurrencyThreshold) = PowerPlanConfigurator.GetParkingValuesForProfile(cpuProfile);
 
             SettingsManager.Logger.Information(
-                "CpuParkingManager: CPU profile={Profile}, CPMINCORES={MinCores}, ConcurrencyThreshold={Threshold}",
+                "[CpuParkingManager] CPU profile={Profile}, CPMINCORES={MinCores}, ConcurrencyThreshold={Threshold}",
                 cpuProfile, cpMinCores, concurrencyThreshold);
 
             // Build vendor-aware parking settings
@@ -118,13 +118,13 @@ public class CpuParkingManager : IOptimization
                         $"/setdcvalueindex {_activeSchemeGuid} {ProcessorSubGroupGuid} {settingGuid} {targetValue}");
 
                     SettingsManager.Logger.Debug(
-                        "CpuParkingManager: Set {Setting}={Value} (original AC={OrigAc}, DC={OrigDc})",
+                        "[CpuParkingManager] Set {Setting}={Value} (original AC={OrigAc}, DC={OrigDc})",
                         settingName, targetValue, originalAc ?? "null", originalDc ?? "null");
                 }
                 catch (Exception ex)
                 {
                     SettingsManager.Logger.Warning(ex,
-                        "CpuParkingManager: Failed to set {Setting}", settingName);
+                        "[CpuParkingManager] Failed to set {Setting}", settingName);
                 }
             }
 
@@ -145,7 +145,7 @@ public class CpuParkingManager : IOptimization
                     s.SettingGuid, s.OriginalAcValue, s.OriginalDcValue)).ToList());
 
             SettingsManager.Logger.Information(
-                "CpuParkingManager: All CPU cores unparked — {Count} settings applied, idle disable={IdleDisable}",
+                "[CpuParkingManager] All CPU cores unparked — {Count} settings applied, idle disable={IdleDisable}",
                 _originalStates.Count, _idleDisableApplied);
 
             IsApplied = true;
@@ -153,7 +153,7 @@ public class CpuParkingManager : IOptimization
         }
         catch (Exception ex)
         {
-            SettingsManager.Logger.Error(ex, "CpuParkingManager: Apply failed");
+            SettingsManager.Logger.Error(ex, "[CpuParkingManager] Apply failed");
             return Task.FromResult(false);
         }
     }
@@ -169,7 +169,7 @@ public class CpuParkingManager : IOptimization
             if (_activeSchemeGuid == null)
             {
                 SettingsManager.Logger.Warning(
-                    "CpuParkingManager: No active scheme GUID recorded, skipping revert");
+                    "[CpuParkingManager] No active scheme GUID recorded, skipping revert");
                 IsApplied = false;
                 return Task.FromResult(true);
             }
@@ -193,13 +193,13 @@ public class CpuParkingManager : IOptimization
                     }
 
                     SettingsManager.Logger.Debug(
-                        "CpuParkingManager: Restored {Setting} to AC={AcValue}, DC={DcValue}",
+                        "[CpuParkingManager] Restored {Setting} to AC={AcValue}, DC={DcValue}",
                         state.SettingName, state.OriginalAcValue ?? "null", state.OriginalDcValue ?? "null");
                 }
                 catch (Exception ex)
                 {
                     SettingsManager.Logger.Warning(ex,
-                        "CpuParkingManager: Failed to restore {Setting}", state.SettingName);
+                        "[CpuParkingManager] Failed to restore {Setting}", state.SettingName);
                 }
             }
 
@@ -213,7 +213,7 @@ public class CpuParkingManager : IOptimization
             RunPowercfg($"/setactive {_activeSchemeGuid}");
 
             SettingsManager.Logger.Information(
-                "CpuParkingManager: CPU parking settings restored ({Count} settings)",
+                "[CpuParkingManager] CPU parking settings restored ({Count} settings)",
                 _originalStates.Count);
 
             _originalStates.Clear();
@@ -222,7 +222,7 @@ public class CpuParkingManager : IOptimization
         }
         catch (Exception ex)
         {
-            SettingsManager.Logger.Error(ex, "CpuParkingManager: Revert failed");
+            SettingsManager.Logger.Error(ex, "[CpuParkingManager] Revert failed");
             IsApplied = false;
             return Task.FromResult(false);
         }
@@ -279,12 +279,12 @@ public class CpuParkingManager : IOptimization
             RunPowercfg($"/setactive {schemeGuid}");
 
             SettingsManager.Logger.Information(
-                "CpuParkingManager: Cleaned up stale idle disable state for scheme {Guid}", schemeGuid);
+                "[CpuParkingManager] Cleaned up stale idle disable state for scheme {Guid}", schemeGuid);
         }
         catch (Exception ex)
         {
             SettingsManager.Logger.Warning(ex,
-                "CpuParkingManager: Failed to clean up stale idle disable state");
+                "[CpuParkingManager] Failed to clean up stale idle disable state");
         }
     }
 
@@ -309,11 +309,11 @@ public class CpuParkingManager : IOptimization
             RunPowercfg($"/setdcvalueindex {_activeSchemeGuid} {ProcessorSubGroupGuid} {TimeCheckIntervalGuid} 5000");
 
             _idleDisableApplied = true;
-            SettingsManager.Logger.Information("CpuParkingManager: Processor idle disabled (C0 forced) for gaming session");
+            SettingsManager.Logger.Information("[CpuParkingManager] Processor idle disabled (C0 forced) for gaming session");
         }
         catch (Exception ex)
         {
-            SettingsManager.Logger.Warning(ex, "CpuParkingManager: Failed to disable processor idle");
+            SettingsManager.Logger.Warning(ex, "[CpuParkingManager] Failed to disable processor idle");
         }
     }
 
@@ -336,11 +336,11 @@ public class CpuParkingManager : IOptimization
             RunPowercfg($"/setdcvalueindex {_activeSchemeGuid} {ProcessorSubGroupGuid} {TimeCheckIntervalGuid} 15");
 
             _idleDisableApplied = false;
-            SettingsManager.Logger.Information("CpuParkingManager: Processor idle re-enabled (C-states restored)");
+            SettingsManager.Logger.Information("[CpuParkingManager] Processor idle re-enabled (C-states restored)");
         }
         catch (Exception ex)
         {
-            SettingsManager.Logger.Warning(ex, "CpuParkingManager: Failed to re-enable processor idle");
+            SettingsManager.Logger.Warning(ex, "[CpuParkingManager] Failed to re-enable processor idle");
         }
     }
 

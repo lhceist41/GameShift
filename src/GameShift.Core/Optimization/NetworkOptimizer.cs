@@ -75,13 +75,13 @@ public class NetworkOptimizer : IOptimization
 
             IsApplied = true;
             SettingsManager.Logger.Information(
-                "NetworkOptimizer: Applied successfully — {Interfaces} Nagle interfaces, {Nics} NIC adapters optimized",
+                "[NetworkOptimizer] Applied successfully — {Interfaces} Nagle interfaces, {Nics} NIC adapters optimized",
                 _modifiedInterfaceIds.Count, _nicOriginalStates.Count);
             return true;
         }
         catch (Exception ex)
         {
-            SettingsManager.Logger.Warning(ex, "NetworkOptimizer: Failed to apply");
+            SettingsManager.Logger.Warning(ex, "[NetworkOptimizer] Failed to apply");
             IsApplied = false;
             return false;
         }
@@ -107,12 +107,12 @@ public class NetworkOptimizer : IOptimization
             await Task.Run(() => RestoreRscGlobal());
 
             IsApplied = false;
-            SettingsManager.Logger.Information("NetworkOptimizer: Reverted successfully");
+            SettingsManager.Logger.Information("[NetworkOptimizer] Reverted successfully");
             return true;
         }
         catch (Exception ex)
         {
-            SettingsManager.Logger.Warning(ex, "NetworkOptimizer: Failed to revert");
+            SettingsManager.Logger.Warning(ex, "[NetworkOptimizer] Failed to revert");
             return false;
         }
     }
@@ -129,7 +129,7 @@ public class NetworkOptimizer : IOptimization
             using var interfacesKey = Registry.LocalMachine.OpenSubKey(TcpipInterfacesPath);
             if (interfacesKey == null)
             {
-                SettingsManager.Logger.Warning("NetworkOptimizer: TCP/IP Interfaces registry key not found");
+                SettingsManager.Logger.Warning("[NetworkOptimizer] TCP/IP Interfaces registry key not found");
                 return;
             }
 
@@ -179,15 +179,15 @@ public class NetworkOptimizer : IOptimization
                 catch (Exception ex)
                 {
                     // Log per-interface errors but continue processing others
-                    SettingsManager.Logger.Debug(ex, "NetworkOptimizer: Failed to modify interface {InterfaceId}", interfaceId);
+                    SettingsManager.Logger.Debug(ex, "[NetworkOptimizer] Failed to modify interface {InterfaceId}", interfaceId);
                 }
             }
 
-            SettingsManager.Logger.Information("NetworkOptimizer: Disabled Nagle's algorithm on {Count} network interfaces", modifiedCount);
+            SettingsManager.Logger.Information("[NetworkOptimizer] Disabled Nagle's algorithm on {Count} network interfaces", modifiedCount);
         }
         catch (Exception ex)
         {
-            SettingsManager.Logger.Warning(ex, "NetworkOptimizer: Failed to disable Nagle's algorithm");
+            SettingsManager.Logger.Warning(ex, "[NetworkOptimizer] Failed to disable Nagle's algorithm");
         }
     }
 
@@ -208,17 +208,17 @@ public class NetworkOptimizer : IOptimization
                 snapshot.RecordServiceState(DoSvcServiceName, service.Status);
                 service.Stop();
                 service.WaitForStatus(ServiceControllerStatus.Stopped, TimeSpan.FromSeconds(10));
-                SettingsManager.Logger.Information("NetworkOptimizer: Stopped Delivery Optimization service");
+                SettingsManager.Logger.Information("[NetworkOptimizer] Stopped Delivery Optimization service");
             }
             else
             {
-                SettingsManager.Logger.Debug("NetworkOptimizer: Delivery Optimization service not running, skipping");
+                SettingsManager.Logger.Debug("[NetworkOptimizer] Delivery Optimization service not running, skipping");
             }
         }
         catch (Exception ex)
         {
             // Service may not exist or be accessible - not critical
-            SettingsManager.Logger.Debug(ex, "NetworkOptimizer: Failed to stop Delivery Optimization service");
+            SettingsManager.Logger.Debug(ex, "[NetworkOptimizer] Failed to stop Delivery Optimization service");
         }
     }
 
@@ -235,7 +235,7 @@ public class NetworkOptimizer : IOptimization
             using var key = Registry.LocalMachine.OpenSubKey(MultimediaSystemProfilePath, writable: true);
             if (key == null)
             {
-                SettingsManager.Logger.Warning("NetworkOptimizer: Multimedia SystemProfile registry key not found");
+                SettingsManager.Logger.Warning("[NetworkOptimizer] Multimedia SystemProfile registry key not found");
                 return;
             }
 
@@ -247,7 +247,7 @@ public class NetworkOptimizer : IOptimization
                 currentThrottling ?? "__NOT_SET__");
             key.SetValue(NetworkThrottlingIndexName, unchecked((int)0xFFFFFFFF), RegistryValueKind.DWord);
             SettingsManager.Logger.Information(
-                "NetworkOptimizer: Set NetworkThrottlingIndex to 0xFFFFFFFF (was {Original})",
+                "[NetworkOptimizer] Set NetworkThrottlingIndex to 0xFFFFFFFF (was {Original})",
                 currentThrottling ?? "not set");
 
             // SystemResponsiveness: store original, set to 10 (minimum background reservation)
@@ -256,12 +256,12 @@ public class NetworkOptimizer : IOptimization
                 currentResponsiveness ?? "__NOT_SET__");
             key.SetValue(SystemResponsivenessName, 10, RegistryValueKind.DWord);
             SettingsManager.Logger.Information(
-                "NetworkOptimizer: Set SystemResponsiveness to 10 (was {Original})",
+                "[NetworkOptimizer] Set SystemResponsiveness to 10 (was {Original})",
                 currentResponsiveness ?? "not set");
         }
         catch (Exception ex)
         {
-            SettingsManager.Logger.Warning(ex, "NetworkOptimizer: Failed to apply multimedia throttling settings");
+            SettingsManager.Logger.Warning(ex, "[NetworkOptimizer] Failed to apply multimedia throttling settings");
         }
     }
 
@@ -283,11 +283,11 @@ public class NetworkOptimizer : IOptimization
             // Restore SystemResponsiveness
             RestoreRegistryDword(key, regPath, SystemResponsivenessName, snapshot);
 
-            SettingsManager.Logger.Information("NetworkOptimizer: Restored multimedia throttling settings");
+            SettingsManager.Logger.Information("[NetworkOptimizer] Restored multimedia throttling settings");
         }
         catch (Exception ex)
         {
-            SettingsManager.Logger.Warning(ex, "NetworkOptimizer: Failed to revert multimedia throttling settings");
+            SettingsManager.Logger.Warning(ex, "[NetworkOptimizer] Failed to revert multimedia throttling settings");
         }
     }
 
@@ -320,7 +320,7 @@ public class NetworkOptimizer : IOptimization
             using var baseKey = Registry.LocalMachine.OpenSubKey(NetworkClassBasePath);
             if (baseKey == null)
             {
-                SettingsManager.Logger.Warning("NetworkOptimizer: Network adapter class registry key not found");
+                SettingsManager.Logger.Warning("[NetworkOptimizer] Network adapter class registry key not found");
                 return;
             }
 
@@ -356,7 +356,7 @@ public class NetworkOptimizer : IOptimization
                     {
                         adapterKey.SetValue("*InterruptModeration", "0", RegistryValueKind.String);
                         SettingsManager.Logger.Information(
-                            "NetworkOptimizer: Disabled Interrupt Moderation on {Adapter} (was \"{Original}\")",
+                            "[NetworkOptimizer] Disabled Interrupt Moderation on {Adapter} (was \"{Original}\")",
                             driverDesc, original.InterruptModeration);
                         modified = true;
                     }
@@ -366,7 +366,7 @@ public class NetworkOptimizer : IOptimization
                     {
                         adapterKey.SetValue("*LsoV2IPv4", "0", RegistryValueKind.String);
                         SettingsManager.Logger.Information(
-                            "NetworkOptimizer: Disabled LSO v2 IPv4 on {Adapter}", driverDesc);
+                            "[NetworkOptimizer] Disabled LSO v2 IPv4 on {Adapter}", driverDesc);
                         modified = true;
                     }
 
@@ -375,7 +375,7 @@ public class NetworkOptimizer : IOptimization
                     {
                         adapterKey.SetValue("*LsoV2IPv6", "0", RegistryValueKind.String);
                         SettingsManager.Logger.Information(
-                            "NetworkOptimizer: Disabled LSO v2 IPv6 on {Adapter}", driverDesc);
+                            "[NetworkOptimizer] Disabled LSO v2 IPv6 on {Adapter}", driverDesc);
                         modified = true;
                     }
 
@@ -384,7 +384,7 @@ public class NetworkOptimizer : IOptimization
                     {
                         adapterKey.SetValue("*RscIPv4", "0", RegistryValueKind.String);
                         SettingsManager.Logger.Information(
-                            "NetworkOptimizer: Disabled RSC IPv4 on {Adapter}", driverDesc);
+                            "[NetworkOptimizer] Disabled RSC IPv4 on {Adapter}", driverDesc);
                         modified = true;
                     }
 
@@ -393,7 +393,7 @@ public class NetworkOptimizer : IOptimization
                     {
                         adapterKey.SetValue("*RscIPv6", "0", RegistryValueKind.String);
                         SettingsManager.Logger.Information(
-                            "NetworkOptimizer: Disabled RSC IPv6 on {Adapter}", driverDesc);
+                            "[NetworkOptimizer] Disabled RSC IPv6 on {Adapter}", driverDesc);
                         modified = true;
                     }
 
@@ -401,32 +401,32 @@ public class NetworkOptimizer : IOptimization
                     {
                         _nicOriginalStates.Add(original);
                         SettingsManager.Logger.Information(
-                            "NetworkOptimizer: Optimized NIC: {Adapter} [{SubKey}]", driverDesc, subKeyName);
+                            "[NetworkOptimizer] Optimized NIC: {Adapter} [{SubKey}]", driverDesc, subKeyName);
                     }
                 }
                 catch (Exception ex)
                 {
                     SettingsManager.Logger.Debug(ex,
-                        "NetworkOptimizer: Failed to optimize NIC adapter [{SubKey}]", subKeyName);
+                        "[NetworkOptimizer] Failed to optimize NIC adapter [{SubKey}]", subKeyName);
                 }
             }
 
             if (_nicOriginalStates.Count > 0)
             {
                 SettingsManager.Logger.Information(
-                    "NetworkOptimizer: NIC optimization complete — {Count} adapters modified. " +
+                    "[NetworkOptimizer] NIC optimization complete — {Count} adapters modified. " +
                     "Some NICs may briefly drop connection when registry values change.",
                     _nicOriginalStates.Count);
             }
             else
             {
                 SettingsManager.Logger.Information(
-                    "NetworkOptimizer: No NIC adapters required modification (all already optimized or unsupported)");
+                    "[NetworkOptimizer] No NIC adapters required modification (all already optimized or unsupported)");
             }
         }
         catch (Exception ex)
         {
-            SettingsManager.Logger.Warning(ex, "NetworkOptimizer: Failed to optimize NIC adapters");
+            SettingsManager.Logger.Warning(ex, "[NetworkOptimizer] Failed to optimize NIC adapters");
         }
     }
 
@@ -467,22 +467,22 @@ public class NetworkOptimizer : IOptimization
                         adapterKey.SetValue("*RscIPv6", original.RscIPv6, RegistryValueKind.String);
 
                     SettingsManager.Logger.Information(
-                        "NetworkOptimizer: Restored NIC settings on {Adapter} [{SubKey}]",
+                        "[NetworkOptimizer] Restored NIC settings on {Adapter} [{SubKey}]",
                         original.DriverDesc, original.SubKeyName);
                 }
                 catch (Exception ex)
                 {
                     SettingsManager.Logger.Debug(ex,
-                        "NetworkOptimizer: Failed to restore NIC [{SubKey}]", original.SubKeyName);
+                        "[NetworkOptimizer] Failed to restore NIC [{SubKey}]", original.SubKeyName);
                 }
             }
 
             SettingsManager.Logger.Information(
-                "NetworkOptimizer: Restored NIC settings on {Count} adapters", _nicOriginalStates.Count);
+                "[NetworkOptimizer] Restored NIC settings on {Count} adapters", _nicOriginalStates.Count);
         }
         catch (Exception ex)
         {
-            SettingsManager.Logger.Warning(ex, "NetworkOptimizer: Failed to revert NIC adapters");
+            SettingsManager.Logger.Warning(ex, "[NetworkOptimizer] Failed to revert NIC adapters");
         }
 
         _nicOriginalStates.Clear();
@@ -504,29 +504,29 @@ public class NetworkOptimizer : IOptimization
             {
                 _originalRscState = ParseRscState(queryOutput);
                 SettingsManager.Logger.Information(
-                    "NetworkOptimizer: Current RSC state: {State}", _originalRscState ?? "unknown");
+                    "[NetworkOptimizer] Current RSC state: {State}", _originalRscState ?? "unknown");
             }
             else
             {
                 SettingsManager.Logger.Warning(
-                    "NetworkOptimizer: Failed to query RSC state (exit code {ExitCode})", queryExitCode);
+                    "[NetworkOptimizer] Failed to query RSC state (exit code {ExitCode})", queryExitCode);
             }
 
             // Disable RSC
             var (disableExitCode, _) = RunProcess("netsh", "int tcp set global rsc=disabled");
             if (disableExitCode == 0)
             {
-                SettingsManager.Logger.Information("NetworkOptimizer: Disabled RSC globally via netsh");
+                SettingsManager.Logger.Information("[NetworkOptimizer] Disabled RSC globally via netsh");
             }
             else
             {
                 SettingsManager.Logger.Warning(
-                    "NetworkOptimizer: Failed to disable RSC via netsh (exit code {ExitCode})", disableExitCode);
+                    "[NetworkOptimizer] Failed to disable RSC via netsh (exit code {ExitCode})", disableExitCode);
             }
         }
         catch (Exception ex)
         {
-            SettingsManager.Logger.Warning(ex, "NetworkOptimizer: Failed to disable RSC globally");
+            SettingsManager.Logger.Warning(ex, "[NetworkOptimizer] Failed to disable RSC globally");
         }
     }
 
@@ -543,17 +543,17 @@ public class NetworkOptimizer : IOptimization
             if (exitCode == 0)
             {
                 SettingsManager.Logger.Information(
-                    "NetworkOptimizer: Restored RSC to original state: {State}", _originalRscState);
+                    "[NetworkOptimizer] Restored RSC to original state: {State}", _originalRscState);
             }
             else
             {
                 SettingsManager.Logger.Warning(
-                    "NetworkOptimizer: Failed to restore RSC via netsh (exit code {ExitCode})", exitCode);
+                    "[NetworkOptimizer] Failed to restore RSC via netsh (exit code {ExitCode})", exitCode);
             }
         }
         catch (Exception ex)
         {
-            SettingsManager.Logger.Warning(ex, "NetworkOptimizer: Failed to restore RSC globally");
+            SettingsManager.Logger.Warning(ex, "[NetworkOptimizer] Failed to restore RSC globally");
         }
 
         _originalRscState = null;
@@ -637,11 +637,11 @@ public class NetworkOptimizer : IOptimization
             }
             catch (Exception ex)
             {
-                SettingsManager.Logger.Debug(ex, "NetworkOptimizer: Failed to restore interface {InterfaceId}", interfaceId);
+                SettingsManager.Logger.Debug(ex, "[NetworkOptimizer] Failed to restore interface {InterfaceId}", interfaceId);
             }
         }
 
-        SettingsManager.Logger.Information("NetworkOptimizer: Restored TCP settings on {Count} interfaces", _modifiedInterfaceIds.Count);
+        SettingsManager.Logger.Information("[NetworkOptimizer] Restored TCP settings on {Count} interfaces", _modifiedInterfaceIds.Count);
     }
 
     /// <summary>
@@ -660,14 +660,14 @@ public class NetworkOptimizer : IOptimization
                     {
                         service.Start();
                         service.WaitForStatus(ServiceControllerStatus.Running, TimeSpan.FromSeconds(10));
-                        SettingsManager.Logger.Information("NetworkOptimizer: Restarted Delivery Optimization service");
+                        SettingsManager.Logger.Information("[NetworkOptimizer] Restarted Delivery Optimization service");
                     }
                 }
             }
         }
         catch (Exception ex)
         {
-            SettingsManager.Logger.Debug(ex, "NetworkOptimizer: Failed to restart Delivery Optimization service");
+            SettingsManager.Logger.Debug(ex, "[NetworkOptimizer] Failed to restart Delivery Optimization service");
         }
     }
 

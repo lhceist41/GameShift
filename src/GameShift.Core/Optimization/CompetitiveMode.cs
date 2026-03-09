@@ -86,7 +86,7 @@ public class CompetitiveMode : IOptimization
         try
         {
             _logger.Information(
-                "CompetitiveMode: Applying competitive mode optimizations at {Timestamp}",
+                "[CompetitiveMode] Applying competitive mode optimizations at {Timestamp}",
                 DateTime.UtcNow.ToString("o"));
 
             // ── Step 1: Log any running anti-cheat processes ──
@@ -128,10 +128,10 @@ public class CompetitiveMode : IOptimization
                 Timeout.Infinite);
 
             _logger.Information(
-                "CompetitiveMode: Safety timeout started — auto-resume in 6 hours");
+                "[CompetitiveMode] Safety timeout started — auto-resume in 6 hours");
 
             _logger.Information(
-                "CompetitiveMode: Apply complete — {SuspendedCount} processes suspended, {KilledCount} processes killed",
+                "[CompetitiveMode] Apply complete — {SuspendedCount} processes suspended, {KilledCount} processes killed",
                 _suspendedProcesses.Count,
                 _killedProcessNames.Count);
 
@@ -142,7 +142,7 @@ public class CompetitiveMode : IOptimization
         {
             _logger.Error(
                 ex,
-                "CompetitiveMode: Failed to apply competitive mode");
+                "[CompetitiveMode] Failed to apply competitive mode");
             return Task.FromResult(false);
         }
     }
@@ -164,7 +164,7 @@ public class CompetitiveMode : IOptimization
         try
         {
             _logger.Information(
-                "CompetitiveMode: Reverting competitive mode at {Timestamp}",
+                "[CompetitiveMode] Reverting competitive mode at {Timestamp}",
                 DateTime.UtcNow.ToString("o"));
 
             // ── Step 1: Dispose safety timer ──
@@ -185,7 +185,7 @@ public class CompetitiveMode : IOptimization
             _killedProcessNames.Clear();
 
             _logger.Information(
-                "CompetitiveMode: Revert complete");
+                "[CompetitiveMode] Revert complete");
 
             _isApplied = false;
             return Task.FromResult(true);
@@ -194,7 +194,7 @@ public class CompetitiveMode : IOptimization
         {
             _logger.Error(
                 ex,
-                "CompetitiveMode: Failed to revert competitive mode");
+                "[CompetitiveMode] Failed to revert competitive mode");
             return Task.FromResult(false);
         }
     }
@@ -231,7 +231,7 @@ public class CompetitiveMode : IOptimization
                 if (processes.Length > 0)
                 {
                     _logger.Warning(
-                        "CompetitiveMode: Anti-cheat process detected: {ProcessName} (PID: {Pids}) — will NOT be touched",
+                        "[CompetitiveMode] Anti-cheat process detected: {ProcessName} (PID: {Pids}) — will NOT be touched",
                         acName,
                         string.Join(", ", processes.Select(p => p.Id)));
                 }
@@ -242,7 +242,7 @@ public class CompetitiveMode : IOptimization
         {
             _logger.Debug(
                 ex,
-                "CompetitiveMode: Error during anti-cheat detection (non-blocking)");
+                "[CompetitiveMode] Error during anti-cheat detection (non-blocking)");
         }
     }
 
@@ -266,7 +266,7 @@ public class CompetitiveMode : IOptimization
                         if (IsBlocklisted(fullName))
                         {
                             _logger.Warning(
-                                "CompetitiveMode: Skipping blocklisted process {ProcessName} (PID: {ProcessId})",
+                                "[CompetitiveMode] Skipping blocklisted process {ProcessName} (PID: {ProcessId})",
                                 fullName,
                                 process.Id);
                             continue;
@@ -277,7 +277,7 @@ public class CompetitiveMode : IOptimization
                             process.Id, process.ProcessName, DateTime.UtcNow));
 
                         _logger.Information(
-                            "CompetitiveMode: Suspended {Category} process: {ProcessName} (PID: {ProcessId}) at {Timestamp}",
+                            "[CompetitiveMode] Suspended {Category} process: {ProcessName} (PID: {ProcessId}) at {Timestamp}",
                             category,
                             process.ProcessName,
                             process.Id,
@@ -287,7 +287,7 @@ public class CompetitiveMode : IOptimization
                     {
                         _logger.Warning(
                             ex,
-                            "CompetitiveMode: Failed to suspend {Category} process {ProcessName} (PID: {ProcessId})",
+                            "[CompetitiveMode] Failed to suspend {Category} process {ProcessName} (PID: {ProcessId})",
                             category,
                             process.ProcessName,
                             process.Id);
@@ -302,7 +302,7 @@ public class CompetitiveMode : IOptimization
             {
                 _logger.Warning(
                     ex,
-                    "CompetitiveMode: Failed to enumerate processes for {ProcessName}",
+                    "[CompetitiveMode] Failed to enumerate processes for {ProcessName}",
                     name);
             }
         }
@@ -323,7 +323,7 @@ public class CompetitiveMode : IOptimization
             if (handle == IntPtr.Zero)
             {
                 _logger.Warning(
-                    "CompetitiveMode: Failed to open process handle for {ProcessName} (PID: {ProcessId})",
+                    "[CompetitiveMode] Failed to open process handle for {ProcessName} (PID: {ProcessId})",
                     process.ProcessName,
                     process.Id);
                 return;
@@ -333,7 +333,7 @@ public class CompetitiveMode : IOptimization
             if (status != 0)
             {
                 _logger.Warning(
-                    "CompetitiveMode: NtSuspendProcess returned non-zero status {Status} for {ProcessName} (PID: {ProcessId})",
+                    "[CompetitiveMode] NtSuspendProcess returned non-zero status {Status} for {ProcessName} (PID: {ProcessId})",
                     status,
                     process.ProcessName,
                     process.Id);
@@ -363,7 +363,7 @@ public class CompetitiveMode : IOptimization
             if (handle == IntPtr.Zero)
             {
                 _logger.Warning(
-                    "CompetitiveMode: Failed to open process handle for resume — {ProcessName} (PID: {ProcessId}) may have already exited",
+                    "[CompetitiveMode] Failed to open process handle for resume — {ProcessName} (PID: {ProcessId}) may have already exited",
                     processName,
                     processId);
                 return;
@@ -373,7 +373,7 @@ public class CompetitiveMode : IOptimization
             if (status != 0)
             {
                 _logger.Warning(
-                    "CompetitiveMode: NtResumeProcess returned non-zero status {Status} for {ProcessName} (PID: {ProcessId})",
+                    "[CompetitiveMode] NtResumeProcess returned non-zero status {Status} for {ProcessName} (PID: {ProcessId})",
                     status,
                     processName,
                     processId);
@@ -406,7 +406,7 @@ public class CompetitiveMode : IOptimization
                 catch (ArgumentException)
                 {
                     _logger.Debug(
-                        "CompetitiveMode: Process {ProcessName} (PID: {ProcessId}) already exited, skipping resume",
+                        "[CompetitiveMode] Process {ProcessName} (PID: {ProcessId}) already exited, skipping resume",
                         info.ProcessName,
                         info.ProcessId);
                     continue;
@@ -415,7 +415,7 @@ public class CompetitiveMode : IOptimization
                 ResumeProcess(info.ProcessId, info.ProcessName);
 
                 _logger.Information(
-                    "CompetitiveMode: Resumed process: {ProcessName} (PID: {ProcessId}) at {Timestamp}",
+                    "[CompetitiveMode] Resumed process: {ProcessName} (PID: {ProcessId}) at {Timestamp}",
                     info.ProcessName,
                     info.ProcessId,
                     DateTime.UtcNow.ToString("o"));
@@ -424,7 +424,7 @@ public class CompetitiveMode : IOptimization
             {
                 _logger.Warning(
                     ex,
-                    "CompetitiveMode: Failed to resume process {ProcessName} (PID: {ProcessId})",
+                    "[CompetitiveMode] Failed to resume process {ProcessName} (PID: {ProcessId})",
                     info.ProcessName,
                     info.ProcessId);
             }
@@ -454,7 +454,7 @@ public class CompetitiveMode : IOptimization
                         if (IsBlocklisted(fullName))
                         {
                             _logger.Warning(
-                                "CompetitiveMode: Skipping blocklisted process {ProcessName} (PID: {ProcessId})",
+                                "[CompetitiveMode] Skipping blocklisted process {ProcessName} (PID: {ProcessId})",
                                 fullName,
                                 process.Id);
                             continue;
@@ -465,7 +465,7 @@ public class CompetitiveMode : IOptimization
                         _killedProcessNames.Add(name);
 
                         _logger.Information(
-                            "CompetitiveMode: Killed GPU consumer: {ProcessName} (PID: {ProcessId}) at {Timestamp}",
+                            "[CompetitiveMode] Killed GPU consumer: {ProcessName} (PID: {ProcessId}) at {Timestamp}",
                             name,
                             pid,
                             DateTime.UtcNow.ToString("o"));
@@ -474,7 +474,7 @@ public class CompetitiveMode : IOptimization
                     {
                         _logger.Warning(
                             ex,
-                            "CompetitiveMode: Failed to kill GPU consumer {ProcessName} (PID: {ProcessId})",
+                            "[CompetitiveMode] Failed to kill GPU consumer {ProcessName} (PID: {ProcessId})",
                             name,
                             process.Id);
                     }
@@ -488,7 +488,7 @@ public class CompetitiveMode : IOptimization
             {
                 _logger.Warning(
                     ex,
-                    "CompetitiveMode: Failed to enumerate processes for {ProcessName}",
+                    "[CompetitiveMode] Failed to enumerate processes for {ProcessName}",
                     name);
             }
         }
@@ -542,7 +542,7 @@ public class CompetitiveMode : IOptimization
                         _killedProcessNames.Add("msedgewebview2");
 
                         _logger.Information(
-                            "CompetitiveMode: Killed non-game msedgewebview2 (PID: {ProcessId}, Path: {Path}) at {Timestamp}",
+                            "[CompetitiveMode] Killed non-game msedgewebview2 (PID: {ProcessId}, Path: {Path}) at {Timestamp}",
                             pid,
                             modulePath,
                             DateTime.UtcNow.ToString("o"));
@@ -556,7 +556,7 @@ public class CompetitiveMode : IOptimization
                 {
                     _logger.Warning(
                         ex,
-                        "CompetitiveMode: Failed to evaluate/kill msedgewebview2 (PID: {ProcessId})",
+                        "[CompetitiveMode] Failed to evaluate/kill msedgewebview2 (PID: {ProcessId})",
                         process.Id);
                 }
                 finally
@@ -569,7 +569,7 @@ public class CompetitiveMode : IOptimization
         {
             _logger.Warning(
                 ex,
-                "CompetitiveMode: Failed to enumerate msedgewebview2 processes");
+                "[CompetitiveMode] Failed to enumerate msedgewebview2 processes");
         }
     }
 
@@ -585,7 +585,7 @@ public class CompetitiveMode : IOptimization
             if (key == null)
             {
                 _logger.Debug(
-                    "CompetitiveMode: Discord overlay registry key not found — Discord may not be installed");
+                    "[CompetitiveMode] Discord overlay registry key not found — Discord may not be installed");
                 _discordOverlayWasEnabled = false;
                 return;
             }
@@ -596,14 +596,14 @@ public class CompetitiveMode : IOptimization
             key.SetValue(DiscordOverlayEnabledValue, 0, RegistryValueKind.DWord);
 
             _logger.Information(
-                "CompetitiveMode: Disabled Discord overlay via registry (previous value: {PreviousValue})",
+                "[CompetitiveMode] Disabled Discord overlay via registry (previous value: {PreviousValue})",
                 _discordOverlayPreviousValue ?? "<not set>");
         }
         catch (Exception ex)
         {
             _logger.Warning(
                 ex,
-                "CompetitiveMode: Failed to disable Discord overlay via registry");
+                "[CompetitiveMode] Failed to disable Discord overlay via registry");
         }
     }
 
@@ -617,7 +617,7 @@ public class CompetitiveMode : IOptimization
             if (!_discordOverlayWasEnabled)
             {
                 _logger.Debug(
-                    "CompetitiveMode: Discord overlay registry was not modified, skipping restore");
+                    "[CompetitiveMode] Discord overlay registry was not modified, skipping restore");
                 return;
             }
 
@@ -625,7 +625,7 @@ public class CompetitiveMode : IOptimization
             if (key == null)
             {
                 _logger.Warning(
-                    "CompetitiveMode: Discord overlay registry key not found during revert");
+                    "[CompetitiveMode] Discord overlay registry key not found during revert");
                 return;
             }
 
@@ -633,7 +633,7 @@ public class CompetitiveMode : IOptimization
             {
                 key.SetValue(DiscordOverlayEnabledValue, _discordOverlayPreviousValue, RegistryValueKind.DWord);
                 _logger.Information(
-                    "CompetitiveMode: Restored Discord overlay registry to {PreviousValue}",
+                    "[CompetitiveMode] Restored Discord overlay registry to {PreviousValue}",
                     _discordOverlayPreviousValue);
             }
 
@@ -644,7 +644,7 @@ public class CompetitiveMode : IOptimization
         {
             _logger.Warning(
                 ex,
-                "CompetitiveMode: Failed to restore Discord overlay registry");
+                "[CompetitiveMode] Failed to restore Discord overlay registry");
         }
     }
 
@@ -681,7 +681,7 @@ public class CompetitiveMode : IOptimization
             File.WriteAllText(FrameCapHintPath, json);
 
             _logger.Information(
-                "CompetitiveMode: Frame cap hint written: {FrameCap} ({RefreshRate}Hz monitor)",
+                "[CompetitiveMode] Frame cap hint written: {FrameCap} ({RefreshRate}Hz monitor)",
                 frameCap,
                 refreshRate);
         }
@@ -689,7 +689,7 @@ public class CompetitiveMode : IOptimization
         {
             _logger.Warning(
                 ex,
-                "CompetitiveMode: Failed to write frame cap hint");
+                "[CompetitiveMode] Failed to write frame cap hint");
         }
     }
 
@@ -704,14 +704,14 @@ public class CompetitiveMode : IOptimization
             {
                 File.Delete(FrameCapHintPath);
                 _logger.Information(
-                    "CompetitiveMode: Deleted frame cap hint file");
+                    "[CompetitiveMode] Deleted frame cap hint file");
             }
         }
         catch (Exception ex)
         {
             _logger.Warning(
                 ex,
-                "CompetitiveMode: Failed to delete frame cap hint file");
+                "[CompetitiveMode] Failed to delete frame cap hint file");
         }
     }
 
@@ -738,7 +738,7 @@ public class CompetitiveMode : IOptimization
         {
             _logger.Debug(
                 ex,
-                "CompetitiveMode: Failed to detect monitor refresh rate, using default 60Hz");
+                "[CompetitiveMode] Failed to detect monitor refresh rate, using default 60Hz");
         }
 
         return 60; // Safe default
@@ -754,7 +754,7 @@ public class CompetitiveMode : IOptimization
         try
         {
             _logger.Warning(
-                "CompetitiveMode: Safety timeout triggered after 6 hours — resuming all suspended processes");
+                "[CompetitiveMode] Safety timeout triggered after 6 hours — resuming all suspended processes");
 
             ResumeAllSuspended();
             RestoreDiscordOverlayRegistry();
@@ -766,7 +766,7 @@ public class CompetitiveMode : IOptimization
         {
             _logger.Error(
                 ex,
-                "CompetitiveMode: Error during safety timeout resume");
+                "[CompetitiveMode] Error during safety timeout resume");
         }
     }
 
