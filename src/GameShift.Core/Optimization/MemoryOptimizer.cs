@@ -69,16 +69,6 @@ public class MemoryOptimizer : IOptimization
             _manageMemoryPriority = profile.ManageMemoryPriority;
             _activeGameProcessNames = ResolveGameProcessNames(profile);
 
-            // Check if Background Mode is handling memory management
-            var bgSettings = SettingsManager.Load();
-            if (bgSettings.BackgroundMode?.Enabled == true && bgSettings.BackgroundMode.StandbyListCleanerEnabled)
-            {
-                SettingsManager.Logger.Information(
-                    "[MemoryOptimizer] Background Mode active — recording snapshot but skipping start");
-                _isApplied = true;
-                return Task.FromResult(true);
-            }
-
             SettingsManager.Logger.Information("[MemoryOptimizer] Applying memory optimization");
 
             // Initial flush of modified pages at session start (clears accumulated dirty pages)
