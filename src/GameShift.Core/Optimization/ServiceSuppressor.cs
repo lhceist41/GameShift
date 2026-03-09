@@ -184,14 +184,14 @@ public class ServiceSuppressor : IOptimization
                 else
                 {
                     SettingsManager.Logger.Debug(
-                        "ServiceSuppressor: Tier 3 service {ServiceName} skipped — condition not met",
+                        "[ServiceSuppressor] Tier 3 service {ServiceName} skipped — condition not met",
                         svc.ServiceName);
                 }
             }
             catch (Exception ex)
             {
                 SettingsManager.Logger.Debug(
-                    "ServiceSuppressor: Tier 3 condition check failed for {ServiceName}: {Message}",
+                    "[ServiceSuppressor] Tier 3 condition check failed for {ServiceName}: {Message}",
                     svc.ServiceName, ex.Message);
             }
         }
@@ -202,7 +202,7 @@ public class ServiceSuppressor : IOptimization
             if (NeverStopServices.Contains(svcInfo.ServiceName))
             {
                 SettingsManager.Logger.Warning(
-                    "ServiceSuppressor: Service {ServiceName} is in the never-stop safety list — skipping",
+                    "[ServiceSuppressor] Service {ServiceName} is in the never-stop safety list — skipping",
                     svcInfo.ServiceName);
                 skippedCount++;
                 continue;
@@ -219,7 +219,7 @@ public class ServiceSuppressor : IOptimization
                     snapshot.RecordServiceState(svcInfo.ServiceName, sc.Status);
 
                     SettingsManager.Logger.Debug(
-                        "ServiceSuppressor: Stopping service {ServiceName} ({DisplayName})",
+                        "[ServiceSuppressor] Stopping service {ServiceName} ({DisplayName})",
                         svcInfo.ServiceName,
                         svcInfo.DisplayName);
 
@@ -227,7 +227,7 @@ public class ServiceSuppressor : IOptimization
                     sc.WaitForStatus(ServiceControllerStatus.Stopped, TimeSpan.FromSeconds(10));
 
                     SettingsManager.Logger.Information(
-                        "ServiceSuppressor: Successfully stopped service {ServiceName}",
+                        "[ServiceSuppressor] Successfully stopped service {ServiceName}",
                         svcInfo.ServiceName);
 
                     stoppedCount++;
@@ -235,7 +235,7 @@ public class ServiceSuppressor : IOptimization
                 else
                 {
                     SettingsManager.Logger.Debug(
-                        "ServiceSuppressor: Skipping service {ServiceName} (status: {Status})",
+                        "[ServiceSuppressor] Skipping service {ServiceName} (status: {Status})",
                         svcInfo.ServiceName,
                         sc.Status);
                     skippedCount++;
@@ -245,7 +245,7 @@ public class ServiceSuppressor : IOptimization
             {
                 // Service doesn't exist on this system - skip silently
                 SettingsManager.Logger.Debug(
-                    "ServiceSuppressor: Service {ServiceName} not found on system: {Message}",
+                    "[ServiceSuppressor] Service {ServiceName} not found on system: {Message}",
                     svcInfo.ServiceName,
                     ex.Message);
                 skippedCount++;
@@ -254,7 +254,7 @@ public class ServiceSuppressor : IOptimization
             {
                 // Service didn't stop within timeout - log warning and continue
                 SettingsManager.Logger.Warning(
-                    "ServiceSuppressor: Service {ServiceName} failed to stop within timeout: {Message}",
+                    "[ServiceSuppressor] Service {ServiceName} failed to stop within timeout: {Message}",
                     svcInfo.ServiceName,
                     ex.Message);
                 errorCount++;
@@ -264,14 +264,14 @@ public class ServiceSuppressor : IOptimization
                 // Other errors - log and continue to next service
                 SettingsManager.Logger.Warning(
                     ex,
-                    "ServiceSuppressor: Failed to stop service {ServiceName}",
+                    "[ServiceSuppressor] Failed to stop service {ServiceName}",
                     svcInfo.ServiceName);
                 errorCount++;
             }
         }
 
         SettingsManager.Logger.Information(
-            "ServiceSuppressor: Completed — {StoppedCount} stopped, {SkippedCount} skipped, {ErrorCount} errors",
+            "[ServiceSuppressor] Completed — {StoppedCount} stopped, {SkippedCount} skipped, {ErrorCount} errors",
             stoppedCount,
             skippedCount,
             errorCount);
@@ -305,14 +305,14 @@ public class ServiceSuppressor : IOptimization
                 if (sc.Status == ServiceControllerStatus.Stopped)
                 {
                     SettingsManager.Logger.Debug(
-                        "ServiceSuppressor: Restarting service {ServiceName}",
+                        "[ServiceSuppressor] Restarting service {ServiceName}",
                         entry.Key);
 
                     sc.Start();
                     sc.WaitForStatus(ServiceControllerStatus.Running, TimeSpan.FromSeconds(10));
 
                     SettingsManager.Logger.Information(
-                        "ServiceSuppressor: Successfully restarted service {ServiceName}",
+                        "[ServiceSuppressor] Successfully restarted service {ServiceName}",
                         entry.Key);
 
                     restartedCount++;
@@ -320,7 +320,7 @@ public class ServiceSuppressor : IOptimization
                 else
                 {
                     SettingsManager.Logger.Debug(
-                        "ServiceSuppressor: Service {ServiceName} already running (status: {Status})",
+                        "[ServiceSuppressor] Service {ServiceName} already running (status: {Status})",
                         entry.Key,
                         sc.Status);
                 }
@@ -329,7 +329,7 @@ public class ServiceSuppressor : IOptimization
             {
                 // Service no longer exists - not a fatal error
                 SettingsManager.Logger.Warning(
-                    "ServiceSuppressor: Service {ServiceName} not found during revert: {Message}",
+                    "[ServiceSuppressor] Service {ServiceName} not found during revert: {Message}",
                     entry.Key,
                     ex.Message);
                 errorCount++;
@@ -338,7 +338,7 @@ public class ServiceSuppressor : IOptimization
             {
                 // Service didn't start within timeout
                 SettingsManager.Logger.Warning(
-                    "ServiceSuppressor: Service {ServiceName} failed to start within timeout: {Message}",
+                    "[ServiceSuppressor] Service {ServiceName} failed to start within timeout: {Message}",
                     entry.Key,
                     ex.Message);
                 errorCount++;
@@ -347,14 +347,14 @@ public class ServiceSuppressor : IOptimization
             {
                 SettingsManager.Logger.Warning(
                     ex,
-                    "ServiceSuppressor: Failed to restart service {ServiceName}",
+                    "[ServiceSuppressor] Failed to restart service {ServiceName}",
                     entry.Key);
                 errorCount++;
             }
         }
 
         SettingsManager.Logger.Information(
-            "ServiceSuppressor: Revert completed — {RestartedCount} restarted, {ErrorCount} errors",
+            "[ServiceSuppressor] Revert completed — {RestartedCount} restarted, {ErrorCount} errors",
             restartedCount,
             errorCount);
 

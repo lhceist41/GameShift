@@ -81,13 +81,13 @@ public class TimerResolutionManager : IOptimization
             if (queryResult != 0)
             {
                 SettingsManager.Logger.Error(
-                    "TimerResolutionManager: NtQueryTimerResolution failed with NTSTATUS {Status}",
+                    "[TimerResolutionManager] NtQueryTimerResolution failed with NTSTATUS {Status}",
                     queryResult);
                 return Task.FromResult(false);
             }
 
             SettingsManager.Logger.Information(
-                "TimerResolutionManager: Current timer resolution: {Current} (min: {Min}, max: {Max}) in 100ns units",
+                "[TimerResolutionManager] Current timer resolution: {Current} (min: {Min}, max: {Max}) in 100ns units",
                 currentResolution,
                 minResolution,
                 maxResolution);
@@ -113,13 +113,13 @@ public class TimerResolutionManager : IOptimization
             if (setResult != 0)
             {
                 SettingsManager.Logger.Error(
-                    "TimerResolutionManager: NtSetTimerResolution failed with NTSTATUS {Status}",
+                    "[TimerResolutionManager] NtSetTimerResolution failed with NTSTATUS {Status}",
                     setResult);
                 return Task.FromResult(false);
             }
 
             SettingsManager.Logger.Information(
-                "TimerResolutionManager: Set timer resolution to {Actual} (requested {Desired}) in 100ns units ({ActualMs}ms)",
+                "[TimerResolutionManager] Set timer resolution to {Actual} (requested {Desired}) in 100ns units ({ActualMs}ms)",
                 actualResolution,
                 desiredResolution,
                 actualResolution / 10000.0);
@@ -129,7 +129,7 @@ public class TimerResolutionManager : IOptimization
         }
         catch (Exception ex)
         {
-            SettingsManager.Logger.Error(ex, "TimerResolutionManager: Failed to apply timer resolution");
+            SettingsManager.Logger.Error(ex, "[TimerResolutionManager] Failed to apply timer resolution");
             return Task.FromResult(false);
         }
     }
@@ -151,14 +151,14 @@ public class TimerResolutionManager : IOptimization
             if (setResult == 0)
             {
                 SettingsManager.Logger.Information(
-                    "TimerResolutionManager: Reverted timer resolution to {Original} (actual: {Actual}) in 100ns units",
+                    "[TimerResolutionManager] Reverted timer resolution to {Original} (actual: {Actual}) in 100ns units",
                     snapshot.TimerResolution,
                     actualResolution);
             }
             else
             {
                 SettingsManager.Logger.Warning(
-                    "TimerResolutionManager: NtSetTimerResolution revert returned NTSTATUS {Status}",
+                    "[TimerResolutionManager] NtSetTimerResolution revert returned NTSTATUS {Status}",
                     setResult);
             }
 
@@ -170,7 +170,7 @@ public class TimerResolutionManager : IOptimization
         }
         catch (Exception ex)
         {
-            SettingsManager.Logger.Error(ex, "TimerResolutionManager: Failed to revert timer resolution");
+            SettingsManager.Logger.Error(ex, "[TimerResolutionManager] Failed to revert timer resolution");
             IsApplied = false;
             return Task.FromResult(false);
         }
@@ -192,7 +192,7 @@ public class TimerResolutionManager : IOptimization
         {
             // Win10 always uses global timer resolution — no registry key needed
             SettingsManager.Logger.Debug(
-                "TimerResolutionManager: Win10 detected (build {Build}) — skipping GlobalTimerResolutionRequests",
+                "[TimerResolutionManager] Win10 detected (build {Build}) — skipping GlobalTimerResolutionRequests",
                 build);
             return;
         }
@@ -203,7 +203,7 @@ public class TimerResolutionManager : IOptimization
             if (key == null)
             {
                 SettingsManager.Logger.Debug(
-                    "TimerResolutionManager: Registry key for GlobalTimerResolutionRequests not accessible");
+                    "[TimerResolutionManager] Registry key for GlobalTimerResolutionRequests not accessible");
                 return;
             }
 
@@ -217,7 +217,7 @@ public class TimerResolutionManager : IOptimization
             _globalTimerKeyWasSet = true;
 
             SettingsManager.Logger.Information(
-                "TimerResolutionManager: Set GlobalTimerResolutionRequests=1 (original: {Original})",
+                "[TimerResolutionManager] Set GlobalTimerResolutionRequests=1 (original: {Original})",
                 existingValue ?? "not present");
 
             // Log reboot advisory for older Win11 builds
@@ -225,7 +225,7 @@ public class TimerResolutionManager : IOptimization
             if (!is24H2OrNewer)
             {
                 SettingsManager.Logger.Information(
-                    "TimerResolutionManager: GlobalTimerResolutionRequests set. " +
+                    "[TimerResolutionManager] GlobalTimerResolutionRequests set. " +
                     "A reboot may be required for system-wide timer resolution on this Windows version (build {Build}).",
                     build);
             }
@@ -233,12 +233,12 @@ public class TimerResolutionManager : IOptimization
         catch (UnauthorizedAccessException)
         {
             SettingsManager.Logger.Debug(
-                "TimerResolutionManager: Could not access GlobalTimerResolutionRequests registry key (access denied)");
+                "[TimerResolutionManager] Could not access GlobalTimerResolutionRequests registry key (access denied)");
         }
         catch (Exception ex)
         {
             SettingsManager.Logger.Warning(ex,
-                "TimerResolutionManager: Failed to set GlobalTimerResolutionRequests");
+                "[TimerResolutionManager] Failed to set GlobalTimerResolutionRequests");
         }
     }
 
@@ -261,21 +261,21 @@ public class TimerResolutionManager : IOptimization
                 // Key didn't exist before — delete it entirely
                 key.DeleteValue(GlobalTimerResolutionValueName, throwOnMissingValue: false);
                 SettingsManager.Logger.Information(
-                    "TimerResolutionManager: Deleted GlobalTimerResolutionRequests (was not present before)");
+                    "[TimerResolutionManager] Deleted GlobalTimerResolutionRequests (was not present before)");
             }
             else
             {
                 // Key existed — restore original value
                 key.SetValue(GlobalTimerResolutionValueName, _globalTimerOriginalValue!, RegistryValueKind.DWord);
                 SettingsManager.Logger.Information(
-                    "TimerResolutionManager: Restored GlobalTimerResolutionRequests to original value: {Value}",
+                    "[TimerResolutionManager] Restored GlobalTimerResolutionRequests to original value: {Value}",
                     _globalTimerOriginalValue);
             }
         }
         catch (Exception ex)
         {
             SettingsManager.Logger.Warning(ex,
-                "TimerResolutionManager: Failed to revert GlobalTimerResolutionRequests");
+                "[TimerResolutionManager] Failed to revert GlobalTimerResolutionRequests");
         }
 
         _globalTimerKeyWasSet = false;

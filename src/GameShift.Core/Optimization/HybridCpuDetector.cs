@@ -76,7 +76,7 @@ public class HybridCpuDetector : IOptimization
         {
             if (_topology == null)
             {
-                SettingsManager.Logger.Warning("HybridCpuDetector: No topology available");
+                SettingsManager.Logger.Warning("[HybridCpuDetector] No topology available");
                 return Task.FromResult(false);
             }
 
@@ -85,7 +85,7 @@ public class HybridCpuDetector : IOptimization
             if (targetCpuSets.Length == 0)
             {
                 SettingsManager.Logger.Information(
-                    "HybridCpuDetector: No CPU Set pinning recommended for current profile/topology");
+                    "[HybridCpuDetector] No CPU Set pinning recommended for current profile/topology");
                 IsApplied = true;
                 return Task.FromResult(true);
             }
@@ -102,7 +102,7 @@ public class HybridCpuDetector : IOptimization
         }
         catch (Exception ex)
         {
-            SettingsManager.Logger.Error(ex, "HybridCpuDetector: Failed to apply CPU pinning");
+            SettingsManager.Logger.Error(ex, "[HybridCpuDetector] Failed to apply CPU pinning");
             return Task.FromResult(false);
         }
     }
@@ -128,7 +128,7 @@ public class HybridCpuDetector : IOptimization
         }
         catch (Exception ex)
         {
-            SettingsManager.Logger.Error(ex, "HybridCpuDetector: Failed to revert CPU pinning");
+            SettingsManager.Logger.Error(ex, "[HybridCpuDetector] Failed to revert CPU pinning");
             IsApplied = false;
             return Task.FromResult(false);
         }
@@ -152,7 +152,7 @@ public class HybridCpuDetector : IOptimization
 
             if (requiredSize == 0)
             {
-                SettingsManager.Logger.Warning("HybridCpuDetector: GetSystemCpuSetInformation returned 0 size");
+                SettingsManager.Logger.Warning("[HybridCpuDetector] GetSystemCpuSetInformation returned 0 size");
                 return topology;
             }
 
@@ -163,7 +163,7 @@ public class HybridCpuDetector : IOptimization
                 {
                     int error = Marshal.GetLastWin32Error();
                     SettingsManager.Logger.Warning(
-                        "HybridCpuDetector: GetSystemCpuSetInformation failed with error {Error}", error);
+                        "[HybridCpuDetector] GetSystemCpuSetInformation failed with error {Error}", error);
                     return topology;
                 }
 
@@ -216,7 +216,7 @@ public class HybridCpuDetector : IOptimization
             DetectVCacheCcd(topology);
 
             SettingsManager.Logger.Information(
-                "HybridCpuDetector: Topology detected — P-cores: {P}, E-cores: {E}, LP-cores: {LP}, " +
+                "[HybridCpuDetector] Topology detected — P-cores: {P}, E-cores: {E}, LP-cores: {LP}, " +
                 "Hybrid: {IsHybrid}, 3-tier: {HasThree}, V-Cache CCD: {VCache}",
                 topology.PerformanceCores.Count,
                 topology.EfficiencyCores.Count,
@@ -227,7 +227,7 @@ public class HybridCpuDetector : IOptimization
         }
         catch (Exception ex)
         {
-            SettingsManager.Logger.Error(ex, "HybridCpuDetector: Failed to detect CPU topology");
+            SettingsManager.Logger.Error(ex, "[HybridCpuDetector] Failed to detect CPU topology");
         }
 
         return topology;
@@ -258,7 +258,7 @@ public class HybridCpuDetector : IOptimization
         topology.VCacheCcdIndex = 0;
 
         SettingsManager.Logger.Information(
-            "HybridCpuDetector: AMD X3D detected — V-Cache CCD index: {CcdIndex} ({CoreCount} cores)",
+            "[HybridCpuDetector] AMD X3D detected — V-Cache CCD index: {CcdIndex} ({CoreCount} cores)",
             topology.VCacheCcdIndex,
             ccdGroups[0].Count());
     }
@@ -301,7 +301,7 @@ public class HybridCpuDetector : IOptimization
             if (vCacheSets.Length > 0)
             {
                 SettingsManager.Logger.Information(
-                    "HybridCpuDetector: V-Cache CCD pinning — {Count} cores on CCD {Ccd}",
+                    "[HybridCpuDetector] V-Cache CCD pinning — {Count} cores on CCD {Ccd}",
                     vCacheSets.Length, topology.VCacheCcdIndex);
                 return vCacheSets;
             }
@@ -316,7 +316,7 @@ public class HybridCpuDetector : IOptimization
                 .ToArray();
 
             SettingsManager.Logger.Information(
-                "HybridCpuDetector: 3-tier hybrid — pinning to P+E cores ({Count}), excluding {LpCount} LP-cores",
+                "[HybridCpuDetector] 3-tier hybrid — pinning to P+E cores ({Count}), excluding {LpCount} LP-cores",
                 pePlusSets.Length, topology.LowPowerCores.Count);
             return pePlusSets;
         }
@@ -329,7 +329,7 @@ public class HybridCpuDetector : IOptimization
                 .ToArray();
 
             SettingsManager.Logger.Information(
-                "HybridCpuDetector: P-core only pinning — {Count} P-cores",
+                "[HybridCpuDetector] P-core only pinning — {Count} P-cores",
                 pCoreSets.Length);
             return pCoreSets;
         }
@@ -345,7 +345,7 @@ public class HybridCpuDetector : IOptimization
     {
         if (profile.ProcessId <= 0)
         {
-            SettingsManager.Logger.Warning("HybridCpuDetector: No valid process ID in profile");
+            SettingsManager.Logger.Warning("[HybridCpuDetector] No valid process ID in profile");
             return false;
         }
 
@@ -357,7 +357,7 @@ public class HybridCpuDetector : IOptimization
         catch (ArgumentException)
         {
             SettingsManager.Logger.Warning(
-                "HybridCpuDetector: Game process {ProcessId} not found — may have exited",
+                "[HybridCpuDetector] Game process {ProcessId} not found — may have exited",
                 profile.ProcessId);
             return false;
         }
@@ -378,14 +378,14 @@ public class HybridCpuDetector : IOptimization
             IsApplied = true;
 
             SettingsManager.Logger.Information(
-                "HybridCpuDetector: Pinned {ProcessName} (PID {Pid}) to {Count} CPU Sets via SetProcessDefaultCpuSets",
+                "[HybridCpuDetector] Pinned {ProcessName} (PID {Pid}) to {Count} CPU Sets via SetProcessDefaultCpuSets",
                 process.ProcessName, profile.ProcessId, targetCpuSets.Length);
         }
         else
         {
             int error = Marshal.GetLastWin32Error();
             SettingsManager.Logger.Warning(
-                "HybridCpuDetector: SetProcessDefaultCpuSets failed with error {Error}", error);
+                "[HybridCpuDetector] SetProcessDefaultCpuSets failed with error {Error}", error);
         }
 
         return success;
@@ -409,7 +409,7 @@ public class HybridCpuDetector : IOptimization
                 catch (ArgumentException)
                 {
                     SettingsManager.Logger.Warning(
-                        "HybridCpuDetector: Game process {ProcessId} not found for CPU Sets attempt",
+                        "[HybridCpuDetector] Game process {ProcessId} not found for CPU Sets attempt",
                         profile.ProcessId);
                     // Fall through to IFEO
                     return ApplyViaIfeo(snapshot, profile, targetCpuSets);
@@ -430,7 +430,7 @@ public class HybridCpuDetector : IOptimization
                     IsApplied = true;
 
                     SettingsManager.Logger.Information(
-                        "HybridCpuDetector: Pinned anti-cheat game {ProcessName} via SetProcessDefaultCpuSets (succeeded despite anti-cheat)",
+                        "[HybridCpuDetector] Pinned anti-cheat game {ProcessName} via SetProcessDefaultCpuSets (succeeded despite anti-cheat)",
                         process.ProcessName);
                     return true;
                 }
@@ -439,7 +439,7 @@ public class HybridCpuDetector : IOptimization
         catch (Exception ex)
         {
             SettingsManager.Logger.Debug(
-                "HybridCpuDetector: SetProcessDefaultCpuSets blocked by anti-cheat, falling back to IFEO: {Error}",
+                "[HybridCpuDetector] SetProcessDefaultCpuSets blocked by anti-cheat, falling back to IFEO: {Error}",
                 ex.Message);
         }
 
@@ -465,13 +465,13 @@ public class HybridCpuDetector : IOptimization
             NativeInterop.SetProcessDefaultCpuSets(process.Handle, null, 0);
 
             SettingsManager.Logger.Information(
-                "HybridCpuDetector: CPU Set pinning removed for {ProcessName} (PID {Pid})",
+                "[HybridCpuDetector] CPU Set pinning removed for {ProcessName} (PID {Pid})",
                 process.ProcessName, _pinnedProcessId);
         }
         catch (ArgumentException)
         {
             SettingsManager.Logger.Information(
-                "HybridCpuDetector: Process {ProcessId} already exited, no CPU Set revert needed",
+                "[HybridCpuDetector] Process {ProcessId} already exited, no CPU Set revert needed",
                 _pinnedProcessId);
         }
 
@@ -493,7 +493,7 @@ public class HybridCpuDetector : IOptimization
         if (string.IsNullOrEmpty(exeName))
         {
             SettingsManager.Logger.Warning(
-                "HybridCpuDetector: No executable name in profile for IFEO fallback");
+                "[HybridCpuDetector] No executable name in profile for IFEO fallback");
             return false;
         }
 
@@ -507,7 +507,7 @@ public class HybridCpuDetector : IOptimization
             if (affinityMask == 0)
             {
                 SettingsManager.Logger.Warning(
-                    "HybridCpuDetector: Could not convert CPU Sets to affinity mask for IFEO");
+                    "[HybridCpuDetector] Could not convert CPU Sets to affinity mask for IFEO");
                 return false;
             }
 
@@ -534,7 +534,7 @@ public class HybridCpuDetector : IOptimization
             if (ifeoExeKey == null)
             {
                 SettingsManager.Logger.Error(
-                    "HybridCpuDetector: Failed to create IFEO key for {ExeName}", exeName);
+                    "[HybridCpuDetector] Failed to create IFEO key for {ExeName}", exeName);
                 return false;
             }
 
@@ -542,7 +542,7 @@ public class HybridCpuDetector : IOptimization
             if (perfOptionsKey == null)
             {
                 SettingsManager.Logger.Error(
-                    "HybridCpuDetector: Failed to create PerfOptions subkey for {ExeName}", exeName);
+                    "[HybridCpuDetector] Failed to create PerfOptions subkey for {ExeName}", exeName);
                 return false;
             }
 
@@ -557,7 +557,7 @@ public class HybridCpuDetector : IOptimization
             snapshot.RecordIfeoEntry(snapshotKey, originalJson);
 
             SettingsManager.Logger.Information(
-                "HybridCpuDetector: Set IFEO CpuAffinityMask=0x{Mask:X} for {ExeName} (anti-cheat: {AntiCheat})",
+                "[HybridCpuDetector] Set IFEO CpuAffinityMask=0x{Mask:X} for {ExeName} (anti-cheat: {AntiCheat})",
                 affinityMaskInt, exeName, profile.AntiCheat);
 
             _usedIfeo = true;
@@ -568,7 +568,7 @@ public class HybridCpuDetector : IOptimization
         catch (Exception ex)
         {
             SettingsManager.Logger.Error(ex,
-                "HybridCpuDetector: Failed to apply IFEO affinity for {ExeName}", exeName);
+                "[HybridCpuDetector] Failed to apply IFEO affinity for {ExeName}", exeName);
             return false;
         }
     }
@@ -598,7 +598,7 @@ public class HybridCpuDetector : IOptimization
                     perfKey.SetValue("CpuAffinityMask", _ifeoOriginalAffinityMask.Value,
                         RegistryValueKind.DWord);
                     SettingsManager.Logger.Information(
-                        "HybridCpuDetector: Restored IFEO CpuAffinityMask=0x{Value:X} for {ExeName}",
+                        "[HybridCpuDetector] Restored IFEO CpuAffinityMask=0x{Value:X} for {ExeName}",
                         _ifeoOriginalAffinityMask.Value, _ifeoExeName);
                 }
             }
@@ -615,13 +615,13 @@ public class HybridCpuDetector : IOptimization
                         parentKey?.DeleteSubKey("PerfOptions", throwOnMissingSubKey: false);
 
                         SettingsManager.Logger.Information(
-                            "HybridCpuDetector: Deleted empty IFEO PerfOptions subkey for {ExeName}",
+                            "[HybridCpuDetector] Deleted empty IFEO PerfOptions subkey for {ExeName}",
                             _ifeoExeName);
                     }
                     else
                     {
                         SettingsManager.Logger.Information(
-                            "HybridCpuDetector: Deleted IFEO CpuAffinityMask for {ExeName} (PerfOptions retained)",
+                            "[HybridCpuDetector] Deleted IFEO CpuAffinityMask for {ExeName} (PerfOptions retained)",
                             _ifeoExeName);
                     }
                 }
@@ -634,7 +634,7 @@ public class HybridCpuDetector : IOptimization
         catch (Exception ex)
         {
             SettingsManager.Logger.Error(ex,
-                "HybridCpuDetector: Failed to revert IFEO affinity for {ExeName}", _ifeoExeName);
+                "[HybridCpuDetector] Failed to revert IFEO affinity for {ExeName}", _ifeoExeName);
             IsApplied = false;
             return false;
         }

@@ -66,7 +66,7 @@ public class ProcessPriorityBooster : IOptimization
         }
         catch (Exception ex)
         {
-            SettingsManager.Logger.Error(ex, "ProcessPriorityBooster: Failed to apply priority boost");
+            SettingsManager.Logger.Error(ex, "[ProcessPriorityBooster] Failed to apply priority boost");
             return Task.FromResult(false);
         }
     }
@@ -79,7 +79,7 @@ public class ProcessPriorityBooster : IOptimization
     {
         if (profile.ProcessId <= 0)
         {
-            SettingsManager.Logger.Warning("ProcessPriorityBooster: No valid process ID in profile");
+            SettingsManager.Logger.Warning("[ProcessPriorityBooster] No valid process ID in profile");
             return false;
         }
 
@@ -91,7 +91,7 @@ public class ProcessPriorityBooster : IOptimization
         catch (ArgumentException)
         {
             SettingsManager.Logger.Warning(
-                "ProcessPriorityBooster: Game process {ProcessId} not found — may have exited",
+                "[ProcessPriorityBooster] Game process {ProcessId} not found — may have exited",
                 profile.ProcessId);
             return false;
         }
@@ -104,7 +104,7 @@ public class ProcessPriorityBooster : IOptimization
         process.PriorityClass = ProcessPriorityClass.High;
 
         SettingsManager.Logger.Information(
-            "ProcessPriorityBooster: Set process {ProcessName} (PID: {ProcessId}) priority from {Original} to High via runtime API",
+            "[ProcessPriorityBooster] Set process {ProcessName} (PID: {ProcessId}) priority from {Original} to High via runtime API",
             process.ProcessName,
             profile.ProcessId,
             originalPriority);
@@ -127,7 +127,7 @@ public class ProcessPriorityBooster : IOptimization
         if (string.IsNullOrEmpty(exeName))
         {
             SettingsManager.Logger.Warning(
-                "ProcessPriorityBooster: No executable name in profile for IFEO fallback");
+                "[ProcessPriorityBooster] No executable name in profile for IFEO fallback");
             return false;
         }
 
@@ -162,7 +162,7 @@ public class ProcessPriorityBooster : IOptimization
             if (ifeoExeKey == null)
             {
                 SettingsManager.Logger.Error(
-                    "ProcessPriorityBooster: Failed to create IFEO key for {ExeName}",
+                    "[ProcessPriorityBooster] Failed to create IFEO key for {ExeName}",
                     exeName);
                 return false;
             }
@@ -171,7 +171,7 @@ public class ProcessPriorityBooster : IOptimization
             if (perfOptionsKey == null)
             {
                 SettingsManager.Logger.Error(
-                    "ProcessPriorityBooster: Failed to create PerfOptions subkey for {ExeName}",
+                    "[ProcessPriorityBooster] Failed to create PerfOptions subkey for {ExeName}",
                     exeName);
                 return false;
             }
@@ -186,7 +186,7 @@ public class ProcessPriorityBooster : IOptimization
             snapshot.RecordIfeoEntry(_ifeoSubKeyPath, originalJson);
 
             SettingsManager.Logger.Information(
-                "ProcessPriorityBooster: Set IFEO CpuPriorityClass=3 (High) for {ExeName} " +
+                "[ProcessPriorityBooster] Set IFEO CpuPriorityClass=3 (High) for {ExeName} " +
                 "(anti-cheat: {AntiCheat}, PerfOptions previously existed: {Existed})",
                 exeName,
                 profile.AntiCheat,
@@ -200,7 +200,7 @@ public class ProcessPriorityBooster : IOptimization
         {
             SettingsManager.Logger.Error(
                 ex,
-                "ProcessPriorityBooster: Failed to apply IFEO priority for {ExeName}",
+                "[ProcessPriorityBooster] Failed to apply IFEO priority for {ExeName}",
                 exeName);
             return false;
         }
@@ -228,7 +228,7 @@ public class ProcessPriorityBooster : IOptimization
         }
         catch (Exception ex)
         {
-            SettingsManager.Logger.Error(ex, "ProcessPriorityBooster: Failed to revert priority");
+            SettingsManager.Logger.Error(ex, "[ProcessPriorityBooster] Failed to revert priority");
             IsApplied = false; // Mark as not applied even on failure
             return Task.FromResult(false);
         }
@@ -248,7 +248,7 @@ public class ProcessPriorityBooster : IOptimization
         if (!snapshot.ProcessPriorities.TryGetValue(_boostedProcessId, out var originalPriority))
         {
             SettingsManager.Logger.Warning(
-                "ProcessPriorityBooster: No recorded priority for PID {ProcessId}",
+                "[ProcessPriorityBooster] No recorded priority for PID {ProcessId}",
                 _boostedProcessId);
             return true; // Not a fatal error
         }
@@ -261,7 +261,7 @@ public class ProcessPriorityBooster : IOptimization
         catch (ArgumentException)
         {
             SettingsManager.Logger.Information(
-                "ProcessPriorityBooster: Process {ProcessId} already exited, no revert needed",
+                "[ProcessPriorityBooster] Process {ProcessId} already exited, no revert needed",
                 _boostedProcessId);
             IsApplied = false;
             return true; // Clean exit - process is gone, nothing to revert
@@ -271,7 +271,7 @@ public class ProcessPriorityBooster : IOptimization
         process.PriorityClass = originalPriority;
 
         SettingsManager.Logger.Information(
-            "ProcessPriorityBooster: Reverted process {ProcessName} priority to {Original} via runtime API",
+            "[ProcessPriorityBooster] Reverted process {ProcessName} priority to {Original} via runtime API",
             process.ProcessName,
             originalPriority);
 
@@ -305,7 +305,7 @@ public class ProcessPriorityBooster : IOptimization
                     perfKey.SetValue("CpuPriorityClass", _ifeoOriginalValues["CpuPriorityClass"],
                         RegistryValueKind.DWord);
                     SettingsManager.Logger.Information(
-                        "ProcessPriorityBooster: Restored IFEO CpuPriorityClass={Value} for {ExeName}",
+                        "[ProcessPriorityBooster] Restored IFEO CpuPriorityClass={Value} for {ExeName}",
                         _ifeoOriginalValues["CpuPriorityClass"],
                         _ifeoExeName);
                 }
@@ -325,13 +325,13 @@ public class ProcessPriorityBooster : IOptimization
                         parentKey?.DeleteSubKey("PerfOptions", throwOnMissingSubKey: false);
 
                         SettingsManager.Logger.Information(
-                            "ProcessPriorityBooster: Deleted empty IFEO PerfOptions subkey for {ExeName}",
+                            "[ProcessPriorityBooster] Deleted empty IFEO PerfOptions subkey for {ExeName}",
                             _ifeoExeName);
                     }
                     else
                     {
                         SettingsManager.Logger.Information(
-                            "ProcessPriorityBooster: Deleted IFEO CpuPriorityClass for {ExeName} (PerfOptions retained)",
+                            "[ProcessPriorityBooster] Deleted IFEO CpuPriorityClass for {ExeName} (PerfOptions retained)",
                             _ifeoExeName);
                     }
                 }
@@ -344,7 +344,7 @@ public class ProcessPriorityBooster : IOptimization
         {
             SettingsManager.Logger.Error(
                 ex,
-                "ProcessPriorityBooster: Failed to revert IFEO priority for {ExeName}",
+                "[ProcessPriorityBooster] Failed to revert IFEO priority for {ExeName}",
                 _ifeoExeName);
             IsApplied = false;
             return false;
@@ -369,7 +369,7 @@ public class ProcessPriorityBooster : IOptimization
             if (key == null)
             {
                 SettingsManager.Logger.Warning(
-                    "ProcessPriorityBooster: Cannot open PriorityControl registry key");
+                    "[ProcessPriorityBooster] Cannot open PriorityControl registry key");
                 return;
             }
 
@@ -386,7 +386,7 @@ public class ProcessPriorityBooster : IOptimization
             if (currentValue == GamingPrioritySeparation)
             {
                 SettingsManager.Logger.Debug(
-                    "ProcessPriorityBooster: Win32PrioritySeparation already 0x{Value:X2}, skipping",
+                    "[ProcessPriorityBooster] Win32PrioritySeparation already 0x{Value:X2}, skipping",
                     GamingPrioritySeparation);
                 _prioritySeparationApplied = false;
                 return;
@@ -396,7 +396,7 @@ public class ProcessPriorityBooster : IOptimization
             _prioritySeparationApplied = true;
 
             SettingsManager.Logger.Information(
-                "ProcessPriorityBooster: Win32PrioritySeparation set to 0x{New:X2} (was: 0x{Original:X2})",
+                "[ProcessPriorityBooster] Win32PrioritySeparation set to 0x{New:X2} (was: 0x{Original:X2})",
                 GamingPrioritySeparation,
                 currentValue ?? 0);
         }
@@ -404,7 +404,7 @@ public class ProcessPriorityBooster : IOptimization
         {
             SettingsManager.Logger.Warning(
                 ex,
-                "ProcessPriorityBooster: Failed to set Win32PrioritySeparation");
+                "[ProcessPriorityBooster] Failed to set Win32PrioritySeparation");
         }
     }
 
@@ -424,7 +424,7 @@ public class ProcessPriorityBooster : IOptimization
             if (key == null)
             {
                 SettingsManager.Logger.Warning(
-                    "ProcessPriorityBooster: Cannot open PriorityControl registry key for revert");
+                    "[ProcessPriorityBooster] Cannot open PriorityControl registry key for revert");
                 return;
             }
 
@@ -432,14 +432,14 @@ public class ProcessPriorityBooster : IOptimization
             _prioritySeparationApplied = false;
 
             SettingsManager.Logger.Information(
-                "ProcessPriorityBooster: Win32PrioritySeparation restored to 0x{Original:X2}",
+                "[ProcessPriorityBooster] Win32PrioritySeparation restored to 0x{Original:X2}",
                 _originalPrioritySeparation.Value);
         }
         catch (Exception ex)
         {
             SettingsManager.Logger.Warning(
                 ex,
-                "ProcessPriorityBooster: Failed to restore Win32PrioritySeparation");
+                "[ProcessPriorityBooster] Failed to restore Win32PrioritySeparation");
         }
     }
 
@@ -461,14 +461,14 @@ public class ProcessPriorityBooster : IOptimization
                 RegistryValueKind.DWord);
 
             SettingsManager.Logger.Information(
-                "ProcessPriorityBooster: Crash recovery — restored Win32PrioritySeparation to 0x{Value:X2}",
+                "[ProcessPriorityBooster] Crash recovery — restored Win32PrioritySeparation to 0x{Value:X2}",
                 snapshot.OriginalPrioritySeparation.Value);
         }
         catch (Exception ex)
         {
             SettingsManager.Logger.Warning(
                 ex,
-                "ProcessPriorityBooster: Crash recovery — failed to restore Win32PrioritySeparation");
+                "[ProcessPriorityBooster] Crash recovery — failed to restore Win32PrioritySeparation");
         }
     }
 }

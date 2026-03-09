@@ -68,7 +68,7 @@ public class GpuDriverOptimizer : IOptimization
         try
         {
             _logger.Information(
-                "GpuDriverOptimizer: Applying GPU driver optimizations at {Timestamp}",
+                "[GpuDriverOptimizer] Applying GPU driver optimizations at {Timestamp}",
                 DateTime.UtcNow.ToString("o"));
 
             // ── Step 1: Detect GPU vendor ──
@@ -77,12 +77,12 @@ public class GpuDriverOptimizer : IOptimization
             if (_detectedVendor == GpuVendor.Unknown)
             {
                 _logger.Warning(
-                    "GpuDriverOptimizer: No supported GPU vendor detected (NVIDIA or AMD required). Skipping GPU optimizations.");
+                    "[GpuDriverOptimizer] No supported GPU vendor detected (NVIDIA or AMD required). Skipping GPU optimizations.");
                 return Task.FromResult(false);
             }
 
             _logger.Information(
-                "GpuDriverOptimizer: Detected {Vendor} GPU: {GpuName}",
+                "[GpuDriverOptimizer] Detected {Vendor} GPU: {GpuName}",
                 _detectedVendor,
                 _detectedGpuName ?? "Unknown");
 
@@ -98,13 +98,13 @@ public class GpuDriverOptimizer : IOptimization
             {
                 _isApplied = true;
                 _logger.Information(
-                    "GpuDriverOptimizer: GPU optimizations applied successfully ({Count} registry values modified)",
+                    "[GpuDriverOptimizer] GPU optimizations applied successfully ({Count} registry values modified)",
                     _registryChanges.Count);
             }
             else
             {
                 _logger.Warning(
-                    "GpuDriverOptimizer: GPU optimizations partially or fully failed");
+                    "[GpuDriverOptimizer] GPU optimizations partially or fully failed");
             }
 
             return Task.FromResult(success);
@@ -113,7 +113,7 @@ public class GpuDriverOptimizer : IOptimization
         {
             _logger.Error(
                 ex,
-                "GpuDriverOptimizer: Failed to apply GPU driver optimizations");
+                "[GpuDriverOptimizer] Failed to apply GPU driver optimizations");
             return Task.FromResult(false);
         }
     }
@@ -132,7 +132,7 @@ public class GpuDriverOptimizer : IOptimization
         try
         {
             _logger.Information(
-                "GpuDriverOptimizer: Reverting GPU driver optimizations at {Timestamp}",
+                "[GpuDriverOptimizer] Reverting GPU driver optimizations at {Timestamp}",
                 DateTime.UtcNow.ToString("o"));
 
             int successCount = 0;
@@ -149,7 +149,7 @@ public class GpuDriverOptimizer : IOptimization
                         // Restore previous value
                         Registry.SetValue(change.KeyPath, change.ValueName, change.PreviousValue!, change.ValueKind);
                         _logger.Debug(
-                            "GpuDriverOptimizer: Restored {KeyPath}\\{ValueName} = {Value}",
+                            "[GpuDriverOptimizer] Restored {KeyPath}\\{ValueName} = {Value}",
                             change.KeyPath,
                             change.ValueName,
                             change.PreviousValue);
@@ -159,7 +159,7 @@ public class GpuDriverOptimizer : IOptimization
                         // Value did not exist before — delete it
                         DeleteRegistryValue(change.KeyPath, change.ValueName);
                         _logger.Debug(
-                            "GpuDriverOptimizer: Deleted {KeyPath}\\{ValueName} (was not present before apply)",
+                            "[GpuDriverOptimizer] Deleted {KeyPath}\\{ValueName} (was not present before apply)",
                             change.KeyPath,
                             change.ValueName);
                     }
@@ -171,7 +171,7 @@ public class GpuDriverOptimizer : IOptimization
                     failCount++;
                     _logger.Warning(
                         ex,
-                        "GpuDriverOptimizer: Failed to revert {KeyPath}\\{ValueName}",
+                        "[GpuDriverOptimizer] Failed to revert {KeyPath}\\{ValueName}",
                         change.KeyPath,
                         change.ValueName);
                 }
@@ -183,12 +183,12 @@ public class GpuDriverOptimizer : IOptimization
             _detectedGpuName = null;
 
             _logger.Information(
-                "GpuDriverOptimizer: Revert complete — {SuccessCount} restored, {FailCount} failed",
+                "[GpuDriverOptimizer] Revert complete — {SuccessCount} restored, {FailCount} failed",
                 successCount,
                 failCount);
 
             _logger.Warning(
-                "GpuDriverOptimizer: Some GPU driver settings may require a driver restart to take full effect");
+                "[GpuDriverOptimizer] Some GPU driver settings may require a driver restart to take full effect");
 
             return Task.FromResult(failCount == 0);
         }
@@ -196,7 +196,7 @@ public class GpuDriverOptimizer : IOptimization
         {
             _logger.Error(
                 ex,
-                "GpuDriverOptimizer: Failed to revert GPU driver optimizations");
+                "[GpuDriverOptimizer] Failed to revert GPU driver optimizations");
             return Task.FromResult(false);
         }
     }
@@ -223,7 +223,7 @@ public class GpuDriverOptimizer : IOptimization
                 string? name = obj["Name"]?.ToString();
 
                 _logger.Debug(
-                    "GpuDriverOptimizer: Found GPU — AdapterCompatibility: {Compatibility}, Name: {Name}",
+                    "[GpuDriverOptimizer] Found GPU — AdapterCompatibility: {Compatibility}, Name: {Name}",
                     compatibility ?? "<null>",
                     name ?? "<null>");
 
@@ -250,7 +250,7 @@ public class GpuDriverOptimizer : IOptimization
         {
             _logger.Warning(
                 ex,
-                "GpuDriverOptimizer: WMI query for GPU detection failed");
+                "[GpuDriverOptimizer] WMI query for GPU detection failed");
         }
 
         return GpuVendor.Unknown;
@@ -288,7 +288,7 @@ public class GpuDriverOptimizer : IOptimization
             {
                 _logger.Warning(
                     ex,
-                    "GpuDriverOptimizer: Failed to apply NVIDIA Low Latency Mode Ultra");
+                    "[GpuDriverOptimizer] Failed to apply NVIDIA Low Latency Mode Ultra");
             }
         }
 
@@ -310,7 +310,7 @@ public class GpuDriverOptimizer : IOptimization
             {
                 _logger.Warning(
                     ex,
-                    "GpuDriverOptimizer: Failed to apply NVIDIA Shader Cache Size");
+                    "[GpuDriverOptimizer] Failed to apply NVIDIA Shader Cache Size");
             }
         }
 
@@ -325,7 +325,7 @@ public class GpuDriverOptimizer : IOptimization
             //   - Threaded optimization: On
             //   - Texture filtering - Quality: High performance
             _logger.Information(
-                "GpuDriverOptimizer: NVIDIA power management, threaded optimization, and texture filtering " +
+                "[GpuDriverOptimizer] NVIDIA power management, threaded optimization, and texture filtering " +
                 "are DRS profile settings — configure via NVIDIA Control Panel > Manage 3D Settings for best results. " +
                 "Registry-accessible settings (Low Latency, Shader Cache) have been applied.");
         }
@@ -353,7 +353,7 @@ public class GpuDriverOptimizer : IOptimization
         if (amdDriverSubkey == null)
         {
             _logger.Warning(
-                "GpuDriverOptimizer: Could not find AMD driver subkey in display adapter registry. " +
+                "[GpuDriverOptimizer] Could not find AMD driver subkey in display adapter registry. " +
                 "AMD optimizations cannot be applied via registry.");
             return false;
         }
@@ -361,7 +361,7 @@ public class GpuDriverOptimizer : IOptimization
         string amdUmdPath = $@"HKEY_LOCAL_MACHINE\{amdDriverSubkey}\UMD";
 
         _logger.Debug(
-            "GpuDriverOptimizer: Found AMD driver subkey: {SubkeyPath}",
+            "[GpuDriverOptimizer] Found AMD driver subkey: {SubkeyPath}",
             amdDriverSubkey);
 
         // ── Anti-Lag Enable (standard Anti-Lag ONLY — NOT Anti-Lag+ which causes bans) ──
@@ -383,7 +383,7 @@ public class GpuDriverOptimizer : IOptimization
             {
                 _logger.Warning(
                     ex,
-                    "GpuDriverOptimizer: Failed to enable AMD Anti-Lag");
+                    "[GpuDriverOptimizer] Failed to enable AMD Anti-Lag");
             }
         }
 
@@ -404,7 +404,7 @@ public class GpuDriverOptimizer : IOptimization
         {
             _logger.Warning(
                 ex,
-                "GpuDriverOptimizer: Failed to disable AMD Radeon Chill");
+                "[GpuDriverOptimizer] Failed to disable AMD Radeon Chill");
         }
 
         // ── Surface Format Optimization Enable ──
@@ -424,7 +424,7 @@ public class GpuDriverOptimizer : IOptimization
         {
             _logger.Warning(
                 ex,
-                "GpuDriverOptimizer: Failed to enable AMD Surface Format Optimization");
+                "[GpuDriverOptimizer] Failed to enable AMD Surface Format Optimization");
         }
 
         // ── Shader Cache Enable/Reset ──
@@ -446,7 +446,7 @@ public class GpuDriverOptimizer : IOptimization
             {
                 _logger.Warning(
                     ex,
-                    "GpuDriverOptimizer: Failed to enable AMD Shader Cache");
+                    "[GpuDriverOptimizer] Failed to enable AMD Shader Cache");
             }
         }
 
@@ -488,7 +488,7 @@ public class GpuDriverOptimizer : IOptimization
         Registry.SetValue(keyPath, valueName, newValue, valueKind);
 
         _logger.Information(
-            "GpuDriverOptimizer: {Description} — set {KeyPath}\\{ValueName} = {NewValue} (was: {OldValue})",
+            "[GpuDriverOptimizer] {Description} — set {KeyPath}\\{ValueName} = {NewValue} (was: {OldValue})",
             description,
             keyPath,
             valueName,
@@ -508,7 +508,7 @@ public class GpuDriverOptimizer : IOptimization
             if (classKey == null)
             {
                 _logger.Debug(
-                    "GpuDriverOptimizer: Display adapter class key not found: {Path}",
+                    "[GpuDriverOptimizer] Display adapter class key not found: {Path}",
                     DriverClassBasePath);
                 return null;
             }
@@ -534,7 +534,7 @@ public class GpuDriverOptimizer : IOptimization
                         if (driverDesc.Contains(vendor, StringComparison.OrdinalIgnoreCase))
                         {
                             _logger.Debug(
-                                "GpuDriverOptimizer: Found {Vendor} driver at subkey {Subkey}: {DriverDesc}",
+                                "[GpuDriverOptimizer] Found {Vendor} driver at subkey {Subkey}: {DriverDesc}",
                                 vendor,
                                 subkeyName,
                                 driverDesc);
@@ -546,7 +546,7 @@ public class GpuDriverOptimizer : IOptimization
                 {
                     _logger.Debug(
                         ex,
-                        "GpuDriverOptimizer: Error reading driver subkey {Subkey}",
+                        "[GpuDriverOptimizer] Error reading driver subkey {Subkey}",
                         subkeyName);
                 }
             }
@@ -555,7 +555,7 @@ public class GpuDriverOptimizer : IOptimization
         {
             _logger.Warning(
                 ex,
-                "GpuDriverOptimizer: Failed to enumerate display adapter subkeys");
+                "[GpuDriverOptimizer] Failed to enumerate display adapter subkeys");
         }
 
         return null;
@@ -586,7 +586,7 @@ public class GpuDriverOptimizer : IOptimization
             else
             {
                 _logger.Warning(
-                    "GpuDriverOptimizer: Cannot determine registry root for path: {KeyPath}",
+                    "[GpuDriverOptimizer] Cannot determine registry root for path: {KeyPath}",
                     keyPath);
                 return;
             }
@@ -601,7 +601,7 @@ public class GpuDriverOptimizer : IOptimization
         {
             _logger.Warning(
                 ex,
-                "GpuDriverOptimizer: Failed to delete registry value {KeyPath}\\{ValueName}",
+                "[GpuDriverOptimizer] Failed to delete registry value {KeyPath}\\{ValueName}",
                 keyPath,
                 valueName);
         }
