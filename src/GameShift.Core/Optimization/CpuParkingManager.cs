@@ -129,7 +129,9 @@ public class CpuParkingManager : IOptimization
             }
 
             // === Processor Idle Disable (session toggle) ===
-            if (profile.DisableProcessorIdle)
+            // Only apply for Competitive intensity — Casual games don't need C0 force
+            // (eliminates C-state transition overhead and doubles idle power consumption)
+            if (profile.DisableProcessorIdle && profile.Intensity == OptimizationIntensity.Competitive)
             {
                 ApplyIdleDisable();
                 snapshot.RecordIdleDisableState(_activeSchemeGuid);

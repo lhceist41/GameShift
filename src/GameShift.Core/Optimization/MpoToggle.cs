@@ -54,6 +54,13 @@ public class MpoToggle : IOptimization
     {
         try
         {
+            // MPO disable is only beneficial for competitive gaming — skip for casual games
+            if (profile.Intensity == OptimizationIntensity.Casual)
+            {
+                _logger.Information("[MpoToggle] Skipping MPO disable for Casual intensity profile");
+                return Task.FromResult(true);
+            }
+
             _logger.Information(
                 "[MpoToggle] Applying MPO Toggle — disabling Multiplane Overlay via registry");
 

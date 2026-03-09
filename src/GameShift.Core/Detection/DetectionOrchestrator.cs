@@ -203,7 +203,11 @@ public class DetectionOrchestrator
                         profile.MemoryThresholdMB = settings.MemoryThresholdMB;
                     }
 
-                    _logger.Information("Using profile '{ProfileId}' for {GameName}", profile.Id, e.GameName);
+                    // Set optimization intensity based on game classification
+                    profile.Intensity = GetIntensityForExecutable(executableName);
+
+                    _logger.Information("Using profile '{ProfileId}' for {GameName} (intensity: {Intensity})",
+                        profile.Id, e.GameName, profile.Intensity);
 
                     await _engine.ActivateProfileAsync(profile);
                     _isOptimizing = true;
@@ -431,5 +435,27 @@ public class DetectionOrchestrator
     public IReadOnlyDictionary<int, GameInfo> GetActiveGames()
     {
         return _detector.GetActiveGames();
+    }
+
+    /// <summary>
+    /// Maps executable names to optimization intensity tiers.
+    /// Competitive: FPS, arena shooters, rhythm games (latency-critical).
+    /// Casual: RPGs, MOBAs, open-world (default for all unknown games).
+    /// </summary>
+    private static OptimizationIntensity GetIntensityForExecutable(string executableName)
+    {
+        return executableName.ToLowerInvariant() switch
+        {
+            "overwatch.exe" => OptimizationIntensity.Competitive,
+            "valorant-win64-shipping.exe" => OptimizationIntensity.Competitive,
+            "cs2.exe" => OptimizationIntensity.Competitive,
+            "project8.exe" => OptimizationIntensity.Competitive,
+            "fortnite" or "fortniteclient-win64-shipping.exe" => OptimizationIntensity.Competitive,
+            "cod.exe" => OptimizationIntensity.Competitive,
+            "rustclient.exe" => OptimizationIntensity.Competitive,
+            "r5apex.exe" or "r5apex_dx12.exe" => OptimizationIntensity.Competitive,
+            "osu!.exe" => OptimizationIntensity.Competitive,
+            _ => OptimizationIntensity.Casual
+        };
     }
 }
