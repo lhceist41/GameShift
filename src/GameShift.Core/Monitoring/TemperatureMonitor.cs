@@ -76,6 +76,22 @@ public class TemperatureMonitor : IDisposable
         _logger.Information("Temperature monitor stopped");
     }
 
+    /// <summary>Pause monitoring (stop timer but keep state).</summary>
+    public void Pause()
+    {
+        if (!_isMonitoring) return;
+        _timer.Enabled = false;
+        _logger.Debug("Temperature monitor paused");
+    }
+
+    /// <summary>Resume monitoring after a pause.</summary>
+    public void Resume()
+    {
+        if (!_isMonitoring) return;
+        _timer.Enabled = true;
+        _logger.Debug("Temperature monitor resumed");
+    }
+
     private void OnTimerElapsed(object? sender, global::System.Timers.ElapsedEventArgs e)
     {
         if (_computer == null || !IsAvailable) return;
