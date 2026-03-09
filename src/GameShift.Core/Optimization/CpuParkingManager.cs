@@ -66,10 +66,8 @@ public class CpuParkingManager : IOptimization
     /// Also disables processor idle (forces C0 state) if the game profile allows it.
     /// Uses vendor-aware parking values for AMD dual-CCD X3D processors.
     /// </summary>
-    public async Task<bool> ApplyAsync(SystemStateSnapshot snapshot, GameProfile profile)
+    public Task<bool> ApplyAsync(SystemStateSnapshot snapshot, GameProfile profile)
     {
-        await Task.CompletedTask;
-
         try
         {
             // Get the currently active power scheme GUID
@@ -77,7 +75,7 @@ public class CpuParkingManager : IOptimization
             if (_activeSchemeGuid == null)
             {
                 SettingsManager.Logger.Error("CpuParkingManager: Failed to get active power scheme GUID");
-                return false;
+                return Task.FromResult(false);
             }
 
             SettingsManager.Logger.Information(
@@ -151,12 +149,12 @@ public class CpuParkingManager : IOptimization
                 _originalStates.Count, _idleDisableApplied);
 
             IsApplied = true;
-            return true;
+            return Task.FromResult(true);
         }
         catch (Exception ex)
         {
             SettingsManager.Logger.Error(ex, "CpuParkingManager: Apply failed");
-            return false;
+            return Task.FromResult(false);
         }
     }
 
@@ -164,10 +162,8 @@ public class CpuParkingManager : IOptimization
     /// Restores original parking settings for both AC and DC power.
     /// Re-enables processor idle and restores time check interval to responsive value.
     /// </summary>
-    public async Task<bool> RevertAsync(SystemStateSnapshot snapshot)
+    public Task<bool> RevertAsync(SystemStateSnapshot snapshot)
     {
-        await Task.CompletedTask;
-
         try
         {
             if (_activeSchemeGuid == null)
@@ -175,7 +171,7 @@ public class CpuParkingManager : IOptimization
                 SettingsManager.Logger.Warning(
                     "CpuParkingManager: No active scheme GUID recorded, skipping revert");
                 IsApplied = false;
-                return true;
+                return Task.FromResult(true);
             }
 
             foreach (var state in _originalStates)
@@ -222,13 +218,13 @@ public class CpuParkingManager : IOptimization
 
             _originalStates.Clear();
             IsApplied = false;
-            return true;
+            return Task.FromResult(true);
         }
         catch (Exception ex)
         {
             SettingsManager.Logger.Error(ex, "CpuParkingManager: Revert failed");
             IsApplied = false;
-            return false;
+            return Task.FromResult(false);
         }
     }
 

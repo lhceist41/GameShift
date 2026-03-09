@@ -68,10 +68,8 @@ public class TimerResolutionManager : IOptimization
     /// On Win11: sets GlobalTimerResolutionRequests BEFORE calling NtSetTimerResolution.
     /// On Win10: skips GlobalTimerResolutionRequests entirely (not needed — Win10 always uses global).
     /// </summary>
-    public async Task<bool> ApplyAsync(SystemStateSnapshot snapshot, GameProfile profile)
+    public Task<bool> ApplyAsync(SystemStateSnapshot snapshot, GameProfile profile)
     {
-        await Task.CompletedTask; // Make async to satisfy interface
-
         try
         {
             // Query current timer resolution
@@ -85,7 +83,7 @@ public class TimerResolutionManager : IOptimization
                 SettingsManager.Logger.Error(
                     "TimerResolutionManager: NtQueryTimerResolution failed with NTSTATUS {Status}",
                     queryResult);
-                return false;
+                return Task.FromResult(false);
             }
 
             SettingsManager.Logger.Information(
@@ -109,7 +107,7 @@ public class TimerResolutionManager : IOptimization
                 SettingsManager.Logger.Information(
                     "TimerResolutionManager: Background Mode active — recording snapshot but skipping NtSetTimerResolution");
                 IsApplied = true;
-                return true;
+                return Task.FromResult(true);
             }
 
             // TODO: Read from AppSettings.TimerResolution100ns when DI is set up
@@ -127,7 +125,7 @@ public class TimerResolutionManager : IOptimization
                 SettingsManager.Logger.Error(
                     "TimerResolutionManager: NtSetTimerResolution failed with NTSTATUS {Status}",
                     setResult);
-                return false;
+                return Task.FromResult(false);
             }
 
             SettingsManager.Logger.Information(
@@ -137,12 +135,12 @@ public class TimerResolutionManager : IOptimization
                 actualResolution / 10000.0);
 
             IsApplied = true;
-            return true;
+            return Task.FromResult(true);
         }
         catch (Exception ex)
         {
             SettingsManager.Logger.Error(ex, "TimerResolutionManager: Failed to apply timer resolution");
-            return false;
+            return Task.FromResult(false);
         }
     }
 
@@ -150,10 +148,8 @@ public class TimerResolutionManager : IOptimization
     /// Reverts timer resolution to the original value captured in the snapshot.
     /// Also restores or deletes the Win11 GlobalTimerResolutionRequests key.
     /// </summary>
-    public async Task<bool> RevertAsync(SystemStateSnapshot snapshot)
+    public Task<bool> RevertAsync(SystemStateSnapshot snapshot)
     {
-        await Task.CompletedTask; // Make async to satisfy interface
-
         try
         {
             // Restore original timer resolution
@@ -180,13 +176,13 @@ public class TimerResolutionManager : IOptimization
             RevertGlobalTimerRegistryKey();
 
             IsApplied = false;
-            return true;
+            return Task.FromResult(true);
         }
         catch (Exception ex)
         {
             SettingsManager.Logger.Error(ex, "TimerResolutionManager: Failed to revert timer resolution");
             IsApplied = false;
-            return false;
+            return Task.FromResult(false);
         }
     }
 

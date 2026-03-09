@@ -76,10 +76,8 @@ public class ScheduledTaskSuppressor : IOptimization
     /// Tier 3 (Defender) only disabled if SuppressDefenderScheduledScan is true.
     /// Records original state in snapshot for crash recovery.
     /// </summary>
-    public async Task<bool> ApplyAsync(SystemStateSnapshot snapshot, GameProfile profile)
+    public Task<bool> ApplyAsync(SystemStateSnapshot snapshot, GameProfile profile)
     {
-        await Task.CompletedTask;
-
         int disabledCount = 0;
         int skippedCount = 0;
         int errorCount = 0;
@@ -156,12 +154,12 @@ public class ScheduledTaskSuppressor : IOptimization
                 disabledCount, skippedCount, errorCount);
 
             IsApplied = true;
-            return true; // Partial success is still success
+            return Task.FromResult(true); // Partial success is still success
         }
         catch (Exception ex)
         {
             SettingsManager.Logger.Error(ex, "ScheduledTaskSuppressor: Apply failed");
-            return false;
+            return Task.FromResult(false);
         }
     }
 
@@ -169,10 +167,8 @@ public class ScheduledTaskSuppressor : IOptimization
     /// Re-enables all tasks that were disabled during Apply.
     /// Reverts in reverse order (LIFO pattern).
     /// </summary>
-    public async Task<bool> RevertAsync(SystemStateSnapshot snapshot)
+    public Task<bool> RevertAsync(SystemStateSnapshot snapshot)
     {
-        await Task.CompletedTask;
-
         int restoredCount = 0;
         int errorCount = 0;
 
@@ -215,13 +211,13 @@ public class ScheduledTaskSuppressor : IOptimization
 
             _disabledTasks.Clear();
             IsApplied = false;
-            return true;
+            return Task.FromResult(true);
         }
         catch (Exception ex)
         {
             SettingsManager.Logger.Error(ex, "ScheduledTaskSuppressor: Revert failed");
             IsApplied = false;
-            return false;
+            return Task.FromResult(false);
         }
     }
 
