@@ -4,6 +4,17 @@ using GameShift.Core.Optimization;
 namespace GameShift.Core.Profiles;
 
 /// <summary>
+/// Controls the aggressiveness of system optimizations for a game.
+/// Competitive: full aggressive optimizations (ProcessorIdleDisable, 0.5ms timer, MPO disable).
+/// Casual: gentler optimizations (no idle disable, 1ms timer, no MPO disable).
+/// </summary>
+public enum OptimizationIntensity
+{
+    Competitive = 0,
+    Casual = 1
+}
+
+/// <summary>
 /// Represents a per-game optimization profile with toggle properties for each optimization.
 /// Each game can have different optimizations enabled/disabled, persisted as JSON files.
 /// Supports per-game profiles and a default profile for unmatched games.
@@ -28,6 +39,14 @@ public class GameProfile
     /// Zero if game is not currently running.
     /// </summary>
     public int ProcessId { get; set; }
+
+    /// <summary>
+    /// Optimization intensity tier for this game.
+    /// Competitive: aggressive optimizations (idle disable, 0.5ms timer, MPO disable).
+    /// Casual: gentler optimizations suitable for RPGs, open-world games.
+    /// Default: Casual (safe default for unknown games).
+    /// </summary>
+    public OptimizationIntensity Intensity { get; set; } = OptimizationIntensity.Casual;
 
     // ── Per-optimization toggles ──────────────────────────────────────
 

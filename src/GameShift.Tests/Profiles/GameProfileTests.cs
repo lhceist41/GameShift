@@ -219,6 +219,45 @@ public class GameProfileTests
             deserialized.IsOptimizationEnabled(MpoToggle.OptimizationId));
     }
 
+    // ── Intensity ─────────────────────────────────────────────────────
+
+    [Fact]
+    public void CreateDefault_Intensity_IsCasual()
+    {
+        var profile = GameProfile.CreateDefault();
+        Assert.Equal(OptimizationIntensity.Casual, profile.Intensity);
+    }
+
+    [Fact]
+    public void Intensity_SerializationRoundTrip_PreservesValue()
+    {
+        var original = new GameProfile
+        {
+            Id = "intensity_test",
+            Intensity = OptimizationIntensity.Competitive
+        };
+
+        var json = JsonSerializer.Serialize(original);
+        var deserialized = JsonSerializer.Deserialize<GameProfile>(json)!;
+
+        Assert.Equal(OptimizationIntensity.Competitive, deserialized.Intensity);
+    }
+
+    [Fact]
+    public void Intensity_DoesNotAffect_IsOptimizationEnabled()
+    {
+        var casual = new GameProfile { Intensity = OptimizationIntensity.Casual };
+        var competitive = new GameProfile { Intensity = OptimizationIntensity.Competitive };
+
+        // IsOptimizationEnabled should be the same regardless of intensity
+        Assert.Equal(
+            casual.IsOptimizationEnabled(ServiceSuppressor.OptimizationId),
+            competitive.IsOptimizationEnabled(ServiceSuppressor.OptimizationId));
+        Assert.Equal(
+            casual.IsOptimizationEnabled(MpoToggle.OptimizationId),
+            competitive.IsOptimizationEnabled(MpoToggle.OptimizationId));
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────
 
     private static GameProfile CreateAllDisabledProfile() => new()
