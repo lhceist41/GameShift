@@ -1,3 +1,4 @@
+using GameShift.Core.BackgroundMode;
 using GameShift.Core.Config;
 using GameShift.Core.Profiles;
 using GameShift.Core.System;
@@ -92,6 +93,9 @@ public class OptimizationEngine
             _snapshot = SystemStateSnapshot.Capture();
             _logger.Debug("System state snapshot captured at {CaptureTime}", _snapshot.CaptureTime);
 
+            // Load BackgroundMode settings once for all optimizations
+            var bgExclusions = BuildBackgroundModeExclusions();
+
             // Apply available optimizations in order
             int skippedCount = 0;
             foreach (var optimization in _optimizations.Where(o => o.IsAvailable))
@@ -99,6 +103,13 @@ public class OptimizationEngine
                 if (!profile.IsOptimizationEnabled(optimization.Name))
                 {
                     _logger.Information("Skipped (disabled in profile): {OptimizationName}", optimization.Name);
+                    skippedCount++;
+                    continue;
+                }
+
+                if (bgExclusions.Contains(optimization.Name))
+                {
+                    _logger.Information("Skipped (handled by Background Mode): {OptimizationName}", optimization.Name);
                     skippedCount++;
                     continue;
                 }
@@ -133,13 +144,40 @@ public class OptimizationEngine
                 }
             }
 
-            _logger.Information("Profile activation complete. Applied {AppliedCount}, skipped {SkippedCount} (disabled in profile).",
+            _logger.Information("Profile activation complete. Applied {AppliedCount}, skipped {SkippedCount} (disabled in profile or Background Mode).",
                 _appliedOptimizations.Count, skippedCount);
         }
         finally
         {
             _semaphore.Release();
         }
+    }
+
+    /// <summary>
+    /// Builds a set of optimization names that are already handled by Background Mode.
+    /// When Background Mode is active and a specific service is enabled, the corresponding
+    /// session optimization is excluded to avoid double-handling.
+    /// </summary>
+    private static HashSet<string> BuildBackgroundModeExclusions()
+    {
+        var exclusions = new HashSet<string>(StringComparer.Ordinal);
+
+        var settings = SettingsManager.Load();
+        if (settings.BackgroundMode?.Enabled != true)
+            return exclusions;
+
+        var bg = settings.BackgroundMode;
+
+        if (bg.StandbyListCleanerEnabled)
+            exclusions.Add(MemoryOptimizer.OptimizationId);
+
+        if (bg.PowerPlanEnabled)
+            exclusions.Add(PowerPlanSwitcher.OptimizationId);
+
+        if (bg.TimerResolutionEnabled)
+            exclusions.Add(TimerResolutionManager.OptimizationId);
+
+        return exclusions;
     }
 
     /// <summary>

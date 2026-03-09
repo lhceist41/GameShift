@@ -42,17 +42,6 @@ public class PowerPlanSwitcher : IOptimization
                 "PowerPlanSwitcher: Original power plan GUID: {OriginalPlan}",
                 snapshot.OriginalPowerPlan);
 
-            // Check if Background Mode is handling power plan management
-            var bgSettings = SettingsManager.Load();
-            if (bgSettings.BackgroundMode?.Enabled == true && bgSettings.BackgroundMode.PowerPlanEnabled)
-            {
-                SettingsManager.Logger.Information(
-                    "PowerPlanSwitcher: Background Mode active — recording snapshot but skipping switch");
-                // Still record current plan GUID in snapshot so revert works if BG mode is disabled mid-session
-                IsApplied = true;
-                return true;
-            }
-
             // Try to activate Ultimate Performance plan
             var ultimateGuid = UltimatePerformanceGuid;
             uint result = NativeInterop.PowerSetActiveScheme(IntPtr.Zero, ref ultimateGuid);
