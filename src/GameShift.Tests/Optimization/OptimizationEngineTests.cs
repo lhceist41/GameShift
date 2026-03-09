@@ -168,4 +168,73 @@ public class OptimizationEngineTests
         // Assert - should complete without errors
         Assert.Equal(0, mock.RevertCallCount);
     }
+
+    [Fact]
+    public async Task ActivateProfile_SkipsOptimizationsDisabledInProfile()
+    {
+        // Arrange — use real OptimizationId values so IsOptimizationEnabled matches
+        var memOpt = new MockOptimizationSuccess { Name = MemoryOptimizer.OptimizationId };
+        var netOpt = new MockOptimizationSuccess { Name = NetworkOptimizer.OptimizationId };
+        var engine = new OptimizationEngine(new IOptimization[] { memOpt, netOpt });
+        var profile = new GameProfile
+        {
+            Id = "test",
+            GameName = "TestGame",
+            ProcessId = 1234,
+            OptimizeMemory = false,   // Disabled
+            OptimizeNetwork = true    // Enabled
+        };
+
+        // Act
+        await engine.ActivateProfileAsync(profile);
+
+        // Assert — memory optimizer should be skipped, network should be applied
+        Assert.Equal(0, memOpt.ApplyCallCount);
+        Assert.Equal(1, netOpt.ApplyCallCount);
+        Assert.True(netOpt.IsApplied);
+    }
+
+    [Fact]
+    public async Task ActivateProfile_OnlyAppliesEnabledOptimizations_CountsCorrectly()
+    {
+        // Arrange — disable multiple optimizations via profile
+        var opt1 = new MockOptimizationSuccess { Name = ServiceSuppressor.OptimizationId };
+        var opt2 = new MockOptimizationSuccess { Name = PowerPlanSwitcher.OptimizationId };
+        var opt3 = new MockOptimizationSuccess { Name = ProcessPriorityBooster.OptimizationId };
+        var engine = new OptimizationEngine(new IOptimization[] { opt1, opt2, opt3 });
+        var profile = new GameProfile
+        {
+            Id = "test",
+            GameName = "TestGame",
+            ProcessId = 1234,
+            SuppressServices = false,
+            SwitchPowerPlan = false,
+            BoostProcessPriority = true
+        };
+
+        // Act
+        await engine.ActivateProfileAsync(profile);
+
+        // Assert
+        Assert.Equal(0, opt1.ApplyCallCount);
+        Assert.Equal(0, opt2.ApplyCallCount);
+        Assert.Equal(1, opt3.ApplyCallCount);
+        Assert.Equal(1, engine.AppliedCount);
+    }
+
+    [Fact]
+    public async Task ActivateProfile_UnknownOptimizationName_DefaultsToEnabled()
+    {
+        // Arrange — IsOptimizationEnabled returns true for unrecognized names
+        var unknownOpt = new MockOptimizationSuccess { Name = "SomeNewOptimization" };
+        var engine = new OptimizationEngine(new[] { unknownOpt });
+        var profile = new GameProfile { Id = "test", GameName = "TestGame", ProcessId = 1234 };
+
+        // Act
+        await engine.ActivateProfileAsync(profile);
+
+        // Assert — unknown optimization should be applied (default=true)
+        Assert.Equal(1, unknownOpt.ApplyCallCount);
+        Assert.True(unknownOpt.IsApplied);
+    }
 }
