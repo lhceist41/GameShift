@@ -33,8 +33,10 @@ public class MemoryOptimizer : IOptimization
     private readonly HashSet<int> _demotedPids = new();
     private readonly object _memPriorityLock = new();
 
+    public const string OptimizationId = "Memory Optimizer";
+
     /// <inheritdoc/>
-    public string Name => "Memory Optimizer";
+    public string Name => OptimizationId;
 
     /// <inheritdoc/>
     public string Description => "Purges standby list when free memory drops below threshold";

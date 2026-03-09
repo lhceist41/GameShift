@@ -59,7 +59,9 @@ public class CompetitiveMode : IOptimization
     // ── Safety timer — 6 hours in milliseconds ────────────
     private const int SafetyTimeoutMs = 6 * 60 * 60 * 1000; // 21,600,000 ms
 
-    public string Name => "Competitive Mode";
+    public const string OptimizationId = "Competitive Mode";
+
+    public string Name => OptimizationId;
 
     public string Description => "Suspends overlays and kills GPU consumers for competitive gaming";
 

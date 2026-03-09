@@ -41,7 +41,9 @@ public class NetworkOptimizer : IOptimization
     /// </summary>
     private string? _originalRscState;
 
-    public string Name => "Network Optimizer";
+    public const string OptimizationId = "Network Optimizer";
+
+    public string Name => OptimizationId;
 
     public string Description => "Disables Nagle's algorithm, network throttling, interrupt moderation, LSO, and RSC for lower latency";
 

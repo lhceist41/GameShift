@@ -19,8 +19,10 @@ public class VisualEffectReducer : IOptimization
     private bool _originalAnimationState;
     private bool _isApplied;
 
+    public const string OptimizationId = "Visual Effect Reducer";
+
     /// <inheritdoc/>
-    public string Name => "Visual Effect Reducer";
+    public string Name => OptimizationId;
 
     /// <inheritdoc/>
     public string Description => "Disables Windows transparency and animations for reduced GPU overhead";

@@ -1123,37 +1123,37 @@ public class DashboardViewModel : INotifyPropertyChanged
 
         switch (item.Name)
         {
-            case "Windows Service Suppressor":
+            case ServiceSuppressor.OptimizationId:
                 profile.SuppressServices = item.IsEnabled;
                 break;
-            case "Ultimate Performance Power Plan":
+            case PowerPlanSwitcher.OptimizationId:
                 profile.SwitchPowerPlan = item.IsEnabled;
                 break;
-            case "System Timer Resolution Manager":
+            case TimerResolutionManager.OptimizationId:
                 profile.SetTimerResolution = item.IsEnabled;
                 break;
-            case "Process Priority Booster":
+            case ProcessPriorityBooster.OptimizationId:
                 profile.BoostProcessPriority = item.IsEnabled;
                 break;
-            case "Memory Optimizer":
+            case MemoryOptimizer.OptimizationId:
                 profile.OptimizeMemory = item.IsEnabled;
                 break;
-            case "Visual Effect Reducer":
+            case VisualEffectReducer.OptimizationId:
                 profile.ReduceVisualEffects = item.IsEnabled;
                 break;
-            case "Network Optimizer":
+            case NetworkOptimizer.OptimizationId:
                 profile.OptimizeNetwork = item.IsEnabled;
                 break;
-            case "Hybrid CPU Optimizer":
+            case HybridCpuDetector.OptimizationId:
                 profile.UsePerformanceCoresOnly = item.IsEnabled;
                 break;
-            case "MPO Toggle":
+            case MpoToggle.OptimizationId:
                 profile.DisableMpo = item.IsEnabled;
                 break;
-            case "Competitive Mode":
+            case CompetitiveMode.OptimizationId:
                 profile.EnableCompetitiveMode = item.IsEnabled;
                 break;
-            case "GPU Driver Optimizer":
+            case GpuDriverOptimizer.OptimizationId:
                 profile.EnableGpuOptimization = item.IsEnabled;
                 break;
         }

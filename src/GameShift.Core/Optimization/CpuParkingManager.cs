@@ -49,7 +49,9 @@ public class CpuParkingManager : IOptimization
     private string? _activeSchemeGuid;
     private bool _idleDisableApplied;
 
-    public string Name => "CPU Core Unparking";
+    public const string OptimizationId = "CPU Core Unparking";
+
+    public string Name => OptimizationId;
 
     public string Description => "Keeps all CPU cores active during gaming to prevent unparking latency";
 
