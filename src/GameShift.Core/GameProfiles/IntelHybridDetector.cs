@@ -51,7 +51,7 @@ public static class IntelHybridDetector
     /// If IntelHybridPCoreOnly is true and CPU is hybrid, returns P-core mask.
     /// Otherwise returns the profile's explicit AffinityMask, or 0 (all cores).
     /// </summary>
-    public static long GetAffinityMask(GameProfile profile)
+    public static long GetAffinityMask(GameSessionConfig profile)
     {
         if (profile.IntelHybridPCoreOnly && IsHybridCpu && _pCoreAffinityMask != 0)
             return _pCoreAffinityMask;
