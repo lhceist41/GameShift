@@ -166,7 +166,7 @@ public class IoPriorityManager : IOptimization
 
         try
         {
-            foreach (var process in Process.GetProcesses())
+            foreach (var process in ProcessSnapshotService.GetProcesses())
             {
                 try
                 {
