@@ -1,4 +1,3 @@
-using GameShift.Core.BackgroundMode;
 using GameShift.Core.Config;
 using GameShift.Core.Profiles;
 using GameShift.Core.System;
