@@ -50,10 +50,8 @@ public class MpoToggle : IOptimization
     /// Disables MPO by setting OverlayTestMode=5 in the DWM registry key.
     /// Records existing value for clean revert. Logs multi-monitor refresh rate advisory.
     /// </summary>
-    public async Task<bool> ApplyAsync(SystemStateSnapshot snapshot, GameProfile profile)
+    public Task<bool> ApplyAsync(SystemStateSnapshot snapshot, GameProfile profile)
     {
-        await Task.CompletedTask;
-
         try
         {
             _logger.Information(
@@ -65,7 +63,7 @@ public class MpoToggle : IOptimization
                 _logger.Error(
                     "MpoToggle: Failed to open registry key {RegistryPath} for writing",
                     DwmRegistryPath);
-                return false;
+                return Task.FromResult(false);
             }
 
             // Read and store existing value for clean revert
@@ -170,27 +168,25 @@ public class MpoToggle : IOptimization
             CheckMultiMonitorSuggestion();
 
             _isApplied = true;
-            return true;
+            return Task.FromResult(true);
         }
         catch (Exception ex)
         {
             _logger.Error(
                 ex,
                 "MpoToggle: Failed to apply MPO Toggle");
-            return false;
+            return Task.FromResult(false);
         }
     }
 
     /// <summary>
     /// Reverts MPO by restoring the previous registry value or deleting it.
     /// </summary>
-    public async Task<bool> RevertAsync(SystemStateSnapshot snapshot)
+    public Task<bool> RevertAsync(SystemStateSnapshot snapshot)
     {
-        await Task.CompletedTask;
-
         if (!_isApplied)
         {
-            return true; // No-op if not applied
+            return Task.FromResult(true); // No-op if not applied
         }
 
         try
@@ -204,7 +200,7 @@ public class MpoToggle : IOptimization
                 _logger.Error(
                     "MpoToggle: Failed to open registry key {RegistryPath} for writing during revert",
                     DwmRegistryPath);
-                return false;
+                return Task.FromResult(false);
             }
 
             if (_previousValueExisted)
@@ -280,14 +276,14 @@ public class MpoToggle : IOptimization
             }
 
             _isApplied = false;
-            return true;
+            return Task.FromResult(true);
         }
         catch (Exception ex)
         {
             _logger.Error(
                 ex,
                 "MpoToggle: Failed to revert MPO Toggle");
-            return false;
+            return Task.FromResult(false);
         }
     }
 

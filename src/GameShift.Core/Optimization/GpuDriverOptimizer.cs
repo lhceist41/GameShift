@@ -63,10 +63,8 @@ public class GpuDriverOptimizer : IOptimization
     /// Detects GPU vendor and applies vendor-specific registry optimizations.
     /// All registry values are snapshotted before modification for crash recovery.
     /// </summary>
-    public async Task<bool> ApplyAsync(SystemStateSnapshot snapshot, GameProfile profile)
+    public Task<bool> ApplyAsync(SystemStateSnapshot snapshot, GameProfile profile)
     {
-        await Task.CompletedTask;
-
         try
         {
             _logger.Information(
@@ -80,7 +78,7 @@ public class GpuDriverOptimizer : IOptimization
             {
                 _logger.Warning(
                     "GpuDriverOptimizer: No supported GPU vendor detected (NVIDIA or AMD required). Skipping GPU optimizations.");
-                return false;
+                return Task.FromResult(false);
             }
 
             _logger.Information(
@@ -109,14 +107,14 @@ public class GpuDriverOptimizer : IOptimization
                     "GpuDriverOptimizer: GPU optimizations partially or fully failed");
             }
 
-            return success;
+            return Task.FromResult(success);
         }
         catch (Exception ex)
         {
             _logger.Error(
                 ex,
                 "GpuDriverOptimizer: Failed to apply GPU driver optimizations");
-            return false;
+            return Task.FromResult(false);
         }
     }
 
@@ -124,13 +122,11 @@ public class GpuDriverOptimizer : IOptimization
     /// Reverts all GPU registry changes using internally tracked previous values.
     /// Logs advisory that some settings may require a driver restart to take full effect.
     /// </summary>
-    public async Task<bool> RevertAsync(SystemStateSnapshot snapshot)
+    public Task<bool> RevertAsync(SystemStateSnapshot snapshot)
     {
-        await Task.CompletedTask;
-
         if (!_isApplied)
         {
-            return true; // No-op if not applied
+            return Task.FromResult(true); // No-op if not applied
         }
 
         try
@@ -194,14 +190,14 @@ public class GpuDriverOptimizer : IOptimization
             _logger.Warning(
                 "GpuDriverOptimizer: Some GPU driver settings may require a driver restart to take full effect");
 
-            return failCount == 0;
+            return Task.FromResult(failCount == 0);
         }
         catch (Exception ex)
         {
             _logger.Error(
                 ex,
                 "GpuDriverOptimizer: Failed to revert GPU driver optimizations");
-            return false;
+            return Task.FromResult(false);
         }
     }
 
