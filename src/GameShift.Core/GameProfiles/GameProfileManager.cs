@@ -11,8 +11,8 @@ namespace GameShift.Core.GameProfiles;
 /// </summary>
 public class GameProfileManager : IDisposable
 {
-    private readonly List<GameProfile> _allProfiles;
-    private GameProfile? _activeProfile;
+    private readonly List<GameSessionConfig> _allProfiles;
+    private GameSessionConfig? _activeProfile;
 
     // Session state for revert
     private readonly Dictionary<int, ProcessPriorityClass> _originalPriorities = new();
@@ -20,7 +20,7 @@ public class GameProfileManager : IDisposable
     private readonly List<(string ProcessName, int Pid, ProcessPriorityClass OriginalPriority)> _launcherOriginals = new();
 
     /// <summary>Currently active game profile, null if no game detected.</summary>
-    public GameProfile? ActiveProfile => _activeProfile;
+    public GameSessionConfig? ActiveProfile => _activeProfile;
 
     /// <summary>Whether a profile is currently active.</summary>
     public bool HasActiveProfile => _activeProfile != null;
@@ -30,7 +30,7 @@ public class GameProfileManager : IDisposable
 
     public GameProfileManager()
     {
-        _allProfiles = new List<GameProfile>(BuiltInProfiles.GetAll());
+        _allProfiles = new List<GameSessionConfig>(BuiltInProfiles.GetAll());
 
         // Load custom profiles from settings
         var settings = SettingsManager.Load();
@@ -42,16 +42,16 @@ public class GameProfileManager : IDisposable
     }
 
     /// <summary>Gets all profiles (built-in + custom).</summary>
-    public IReadOnlyList<GameProfile> GetAllProfiles() => _allProfiles;
+    public IReadOnlyList<GameSessionConfig> GetAllProfiles() => _allProfiles;
 
     /// <summary>Gets the active profile or null.</summary>
-    public GameProfile? GetActiveProfile() => _activeProfile;
+    public GameSessionConfig? GetActiveProfile() => _activeProfile;
 
     /// <summary>
     /// Finds a matching profile for a given process name.
     /// Case-insensitive comparison.
     /// </summary>
-    public GameProfile? GetProfileForProcess(string executableName)
+    public GameSessionConfig? GetProfileForProcess(string executableName)
     {
         var settings = SettingsManager.Load();
         var profileSettings = settings.GameProfiles;
