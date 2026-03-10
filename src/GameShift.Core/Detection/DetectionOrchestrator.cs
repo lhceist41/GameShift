@@ -203,8 +203,10 @@ public class DetectionOrchestrator
                         profile.MemoryThresholdMB = settings.MemoryThresholdMB;
                     }
 
-                    // Set optimization intensity based on game classification
-                    profile.Intensity = GetIntensityForExecutable(executableName);
+                    // Auto-set intensity only for the default catch-all profile;
+                    // game-specific profiles use their saved Intensity value
+                    if (profile.Id == "default")
+                        profile.Intensity = GetIntensityForExecutable(executableName);
 
                     _logger.Information("Using profile '{ProfileId}' for {GameName} (intensity: {Intensity})",
                         profile.Id, e.GameName, profile.Intensity);

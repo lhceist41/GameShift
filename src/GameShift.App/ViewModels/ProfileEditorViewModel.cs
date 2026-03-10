@@ -47,6 +47,9 @@ public class ProfileEditorViewModel : INotifyPropertyChanged
     // v2 MPO
     private bool _disableMpo;
 
+    // v3 Intensity
+    private string _intensity = "Casual";
+
     // v2 DPC Monitoring
     private bool _enableDpcMonitoring;
     private int _dpcThresholdMicroseconds;
@@ -196,6 +199,16 @@ public class ProfileEditorViewModel : INotifyPropertyChanged
     {
         get => _disableMpo;
         set { if (_disableMpo != value) { _disableMpo = value; IsDirty = true; OnPropertyChanged(); } }
+    }
+
+    // ── v3 Intensity ──────────────────────────────────────────────────
+
+    public List<string> IntensityOptions { get; } = new() { "Competitive", "Casual" };
+
+    public string Intensity
+    {
+        get => _intensity;
+        set { if (_intensity != value) { _intensity = value; IsDirty = true; OnPropertyChanged(); } }
     }
 
     // ── v2 DPC Monitoring ────────────────────────────────────────────
@@ -366,6 +379,7 @@ public class ProfileEditorViewModel : INotifyPropertyChanged
         _disableMpo = profile.DisableMpo;
         _enableDpcMonitoring = profile.EnableDpcMonitoring;
         _dpcThresholdMicroseconds = profile.DpcThresholdMicroseconds;
+        _intensity = profile.Intensity.ToString();
 
         IsDirty = false;
         StatusMessage = "";
@@ -398,6 +412,7 @@ public class ProfileEditorViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(DisableMpo));
         OnPropertyChanged(nameof(EnableDpcMonitoring));
         OnPropertyChanged(nameof(DpcThresholdMicroseconds));
+        OnPropertyChanged(nameof(Intensity));
         OnPropertyChanged(nameof(HasSelectedProfile));
     }
 
@@ -530,6 +545,7 @@ public class ProfileEditorViewModel : INotifyPropertyChanged
         profile.DisableMpo = DisableMpo;
         profile.EnableDpcMonitoring = EnableDpcMonitoring;
         profile.DpcThresholdMicroseconds = DpcThresholdMicroseconds;
+        profile.Intensity = Enum.Parse<OptimizationIntensity>(Intensity);
 
         _profileManager.SaveProfile(profile);
         IsDirty = false;
