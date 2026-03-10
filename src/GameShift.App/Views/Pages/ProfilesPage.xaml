@@ -80,6 +80,23 @@
                               helpers:ScrollHelper.FixScrolling="True">
                     <StackPanel IsEnabled="{Binding HasSelectedProfile, Mode=OneWay}">
 
+                        <!-- Optimization Intensity -->
+                        <Border Background="{DynamicResource GS.Surface.Base}" CornerRadius="6"
+                                Padding="12,10" Margin="0,0,0,12">
+                            <StackPanel>
+                                <TextBlock Text="Optimization Intensity" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource GS.Text.Primary}"/>
+                                <TextBlock Text="Competitive: aggressive (idle disable, 0.5ms timer, MPO off). Casual: gentler."
+                                           FontSize="11" Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,2,0,6"/>
+                                <ComboBox ItemsSource="{Binding IntensityOptions}"
+                                          SelectedItem="{Binding Intensity, Mode=TwoWay}"
+                                          Width="150" HorizontalAlignment="Left"
+                                          Background="{DynamicResource GS.Surface.Card}"
+                                          Foreground="{DynamicResource GS.Text.Primary}"
+                                          BorderBrush="{DynamicResource GS.Surface.Border}"/>
+                            </StackPanel>
+                        </Border>
+
                         <Border Background="{DynamicResource GS.Surface.Base}" CornerRadius="6"
                                 Padding="12,10" Margin="0,0,0,6">
                             <DockPanel>
