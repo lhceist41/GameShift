@@ -285,6 +285,10 @@ public class DpcFixEngine
 
     // -- Power plan fixes ──────────────────────────────────────────
 
+    /// <summary>Well-known GUIDs for built-in Windows power plans.</summary>
+    private const string HighPerformanceGuid = "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c";
+    private const string UltimatePerformanceGuid = "e9a42b02-d5df-448d-aa00-03f14749eb61";
+
     private DpcFixResult ApplyPowerPlanFix(DriverAutoFix fix)
     {
         if (fix.Value == "high_performance")
@@ -306,8 +310,13 @@ public class DpcFixEngine
                 }
             }
 
-            // Activate High Performance plan
-            var (success, output) = RunProcess("powercfg.exe", "/setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c");
+            // Try High Performance first; if it doesn't exist, try Ultimate Performance;
+            // if neither exists, duplicate from the hidden Ultimate Performance template.
+            var targetGuid = FindOrCreatePerformancePlan();
+            if (targetGuid == null)
+                return new DpcFixResult { Success = false, Message = "Could not find or create a High Performance power plan." };
+
+            var (success, output) = RunProcess("powercfg.exe", $"/setactive {targetGuid}");
             if (!success)
                 return new DpcFixResult { Success = false, Message = $"powercfg failed: {output}" };
 
@@ -317,7 +326,7 @@ public class DpcFixEngine
                 Description = fix.Name,
                 ActionType = "PowerPlanSetting",
                 PreviousValue = previousGuid,
-                Target = "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c",
+                Target = targetGuid,
                 AppliedAt = DateTime.Now,
                 RequiresReboot = false
             });
@@ -391,6 +400,96 @@ public class DpcFixEngine
         RunProcess("powercfg.exe", "/setactive SCHEME_CURRENT");
 
         return new DpcFixResult { Success = s, Message = s ? "Setting reverted." : o };
+    }
+
+    // -- Power plan helpers ──────────────────────────────────────────
+
+    /// <summary>
+    /// Finds an existing high-performance plan or creates one from the hidden template.
+    /// Many OEM and Windows 11 installs don't ship the classic High Performance GUID.
+    /// Falls back to Ultimate Performance, then duplicates from the hidden template.
+    /// </summary>
+    private static string? FindOrCreatePerformancePlan()
+    {
+        // 1. Check if classic High Performance exists
+        if (IsPlanAvailable(HighPerformanceGuid))
+            return HighPerformanceGuid;
+
+        // 2. Check if Ultimate Performance exists
+        if (IsPlanAvailable(UltimatePerformanceGuid))
+            return UltimatePerformanceGuid;
+
+        // 3. List all plans — look for any existing "Ultimate Performance" variant
+        var (listOk, listOut) = RunProcess("powercfg.exe", "-list");
+        if (listOk)
+        {
+            foreach (var line in listOut.Split('\n'))
+            {
+                if (line.Contains("Ultimate Performance", StringComparison.OrdinalIgnoreCase) ||
+                    line.Contains("High Performance", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Extract the GUID from the line
+                    var guid = ExtractGuidFromLine(line);
+                    if (guid != null)
+                        return guid;
+                }
+            }
+        }
+
+        // 4. None found — duplicate from hidden Ultimate Performance template
+        var (dupOk, dupOut) = RunProcess("powercfg.exe", $"-duplicatescheme {UltimatePerformanceGuid}");
+        if (dupOk)
+        {
+            var newGuid = ExtractGuidFromLine(dupOut);
+            if (newGuid != null)
+            {
+                Log.Information("DpcFixEngine: created Ultimate Performance plan {Guid}", newGuid);
+                return newGuid;
+            }
+        }
+
+        // 5. Last resort — try duplicating from High Performance template
+        var (dup2Ok, dup2Out) = RunProcess("powercfg.exe", $"-duplicatescheme {HighPerformanceGuid}");
+        if (dup2Ok)
+        {
+            var newGuid = ExtractGuidFromLine(dup2Out);
+            if (newGuid != null)
+            {
+                Log.Information("DpcFixEngine: created High Performance plan {Guid}", newGuid);
+                return newGuid;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Checks if a power plan GUID is registered on this system.
+    /// </summary>
+    private static bool IsPlanAvailable(string guid)
+    {
+        var (ok, output) = RunProcess("powercfg.exe", $"-query {guid}");
+        return ok && !output.Contains("Invalid Parameters", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Extracts a GUID from a powercfg output line like:
+    /// "Power Scheme GUID: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx  (Name)"
+    /// </summary>
+    private static string? ExtractGuidFromLine(string line)
+    {
+        var parts = line.Split(' ');
+        foreach (var part in parts)
+        {
+            var trimmed = part.Trim();
+            if (trimmed.Length >= 36 && trimmed.Contains('-'))
+            {
+                // Validate it looks like a GUID
+                if (Guid.TryParse(trimmed, out _))
+                    return trimmed;
+            }
+        }
+        return null;
     }
 
     // -- Network adapter fixes ─────────────────────────────────────

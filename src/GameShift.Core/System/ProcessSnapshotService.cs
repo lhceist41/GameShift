@@ -7,6 +7,10 @@ namespace GameShift.Core.System;
 /// Three periodic timers (MemoryOptimizer 5s, EfficiencyModeController 30s, IoPriorityManager 30s)
 /// were each independently enumerating all processes. This service caches the result
 /// with a 2-second TTL and a dirty flag triggered by GameDetector.ProcessSpawned.
+///
+/// OWNERSHIP: This service owns the cached Process[] and disposes old snapshots on refresh.
+/// Callers must NOT dispose the returned Process objects — they belong to the cache.
+/// Copy any data you need (ProcessName, Id, WorkingSet64, etc.) before releasing the lock.
 /// </summary>
 public static class ProcessSnapshotService
 {
@@ -18,8 +22,10 @@ public static class ProcessSnapshotService
 
     /// <summary>
     /// Returns a cached process snapshot if still fresh (under 2 seconds old and not dirty).
-    /// Otherwise refreshes from Process.GetProcesses().
-    /// Callers are responsible for disposing each Process object after use.
+    /// Otherwise refreshes from Process.GetProcesses(), disposing the previous snapshot.
+    ///
+    /// IMPORTANT: Callers must NOT dispose the returned Process objects.
+    /// The cache owns them and will dispose them on the next refresh.
     /// </summary>
     public static Process[] GetProcesses()
     {
@@ -31,9 +37,21 @@ public static class ProcessSnapshotService
                 return _cached;
             }
 
+            var previous = _cached;
             _cached = Process.GetProcesses();
             _lastRefresh = now;
             _dirty = false;
+
+            // Dispose the previous snapshot now that it's been replaced
+            if (previous != null)
+            {
+                foreach (var p in previous)
+                {
+                    try { p.Dispose(); }
+                    catch { /* Process may already be disposed or exited */ }
+                }
+            }
+
             return _cached;
         }
     }

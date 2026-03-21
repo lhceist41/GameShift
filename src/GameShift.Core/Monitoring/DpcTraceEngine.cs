@@ -317,6 +317,13 @@ public class DpcTraceEngine : IDisposable
         try { _session?.Dispose(); } catch { /* ignore */ }
         _session = null;
         _source = null;
+
+        // Wait for the ETW processing thread to exit (session.Stop() causes Process() to return)
+        if (_processingThread != null && _processingThread.IsAlive)
+        {
+            _processingThread.Join(TimeSpan.FromSeconds(3));
+        }
+        _processingThread = null;
     }
 
     public void Dispose()

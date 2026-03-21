@@ -36,7 +36,7 @@ public class OptimizationRevertedEventArgs : EventArgs
 /// Handles state capture, LIFO revert, and graceful failure for optimizations.
 /// Thread-safe for concurrent activate/deactivate calls.
 /// </summary>
-public class OptimizationEngine
+public class OptimizationEngine : IDisposable
 {
     private readonly Stack<IOptimization> _appliedOptimizations;
     private SystemStateSnapshot? _snapshot;
@@ -60,6 +60,12 @@ public class OptimizationEngine
     /// Used by UI to update status indicators (Phase 6).
     /// </summary>
     public event EventHandler<OptimizationRevertedEventArgs>? OptimizationReverted;
+
+    /// <summary>
+    /// Fired when an optimization fails to apply (returns false or throws).
+    /// Used by UI to show failure counts on dashboard and session summary.
+    /// </summary>
+    public event EventHandler<OptimizationAppliedEventArgs>? OptimizationFailed;
 
     /// <summary>
     /// Creates a new OptimizationEngine with the specified optimizations.
@@ -130,16 +136,16 @@ public class OptimizationEngine
                     }
                     else
                     {
-                        // Log warning but continue with other optimizations
                         _logger.Warning("Optimization failed (returned false): {OptimizationName}",
                             optimization.Name);
+                        OptimizationFailed?.Invoke(this, new OptimizationAppliedEventArgs(optimization));
                     }
                 }
                 catch (Exception ex)
                 {
-                    // Catch exceptions from misbehaving optimizations
                     _logger.Warning(ex, "Optimization threw exception: {OptimizationName}",
                         optimization.Name);
+                    OptimizationFailed?.Invoke(this, new OptimizationAppliedEventArgs(optimization));
                 }
             }
 
@@ -170,8 +176,9 @@ public class OptimizationEngine
         if (bg.StandbyListCleanerEnabled)
             exclusions.Add(MemoryOptimizer.OptimizationId);
 
-        if (bg.PowerPlanEnabled)
-            exclusions.Add(PowerPlanSwitcher.OptimizationId);
+        // Always exclude session power plan switching when Background Mode is active —
+        // Background Mode owns power plan management via PowerPlanManager
+        exclusions.Add(PowerPlanSwitcher.OptimizationId);
 
         if (bg.TimerResolutionEnabled)
             exclusions.Add(TimerResolutionManager.OptimizationId);
@@ -200,7 +207,13 @@ public class OptimizationEngine
                 {
                     _logger.Debug("Reverting optimization: {OptimizationName}", optimization.Name);
 
-                    bool success = await optimization.RevertAsync(_snapshot!);
+                    if (_snapshot == null)
+                    {
+                        _logger.Error("Cannot revert {OptimizationName}: snapshot is null (double-deactivate or activate failed)", optimization.Name);
+                        continue;
+                    }
+
+                    bool success = await optimization.RevertAsync(_snapshot);
 
                     if (success)
                     {
@@ -230,5 +243,10 @@ public class OptimizationEngine
         {
             _semaphore.Release();
         }
+    }
+
+    public void Dispose()
+    {
+        _semaphore.Dispose();
     }
 }

@@ -9,6 +9,7 @@ using GameShift.Core.GameProfiles;
 using GameShift.Core.Monitoring;
 using GameShift.Core.Optimization;
 using GameShift.Core.Profiles;
+using GameShift.Core.Profiles.GameActions;
 using GameShift.Core.System;
 using GameShift.Core.SystemTweaks;
 using GameShift.App.Services;
@@ -31,6 +32,13 @@ public partial class App : Application
     private MainWindow? _mainWindow;
     private GlobalHotkeyService? _hotkeyService;
     private SingleInstancePipe? _singleInstancePipe;
+
+    // Stored event handlers for proper unsubscription in OnExit
+    private EventHandler<GameDetectedEventArgs>? _bgModeGameStarted;
+    private EventHandler? _bgModeAllGamesStopped;
+    private EventHandler<GameDetectedEventArgs>? _monitorPauseGameStarted;
+    private EventHandler? _monitorResumeAllGamesStopped;
+    private EventHandler<ProcessSpawnedEventArgs>? _markDirtyHandler;
 
     /// <summary>
     /// True when the tray icon was created successfully. When false (tray creation failed),
@@ -213,19 +221,71 @@ public partial class App : Application
                 {
                     var snapshot = SystemStateSnapshot.LoadFromLockfile(lockfilePath);
 
-                    // TODO: Crash recovery should iterate snapshot.RegistryValues and restore each entry.
-                    // Currently GPU registry changes (and other registry-based optimizations) are recorded
-                    // in RegistryValues and serialized to active_session.json, but the recovery path here
-                    // only shows a message — actual registry restoration is a future enhancement.
                     Log.Warning("Detected orphaned session lockfile - performing crash recovery");
 
-                    // Recover processor idle disable state (if GameShift crashed with IDLEDISABLE=1)
-                    if (snapshot?.IdleDisableSchemeGuid != null)
+                    if (snapshot != null)
                     {
-                        Log.Information("Crash recovery: restoring processor idle state for scheme {Guid}",
-                            snapshot.IdleDisableSchemeGuid);
-                        GameShift.Core.Optimization.CpuParkingManager.CleanupStaleIdleDisable(
-                            snapshot.IdleDisableSchemeGuid);
+                        // Recover processor idle disable state (if GameShift crashed with IDLEDISABLE=1)
+                        if (snapshot.IdleDisableSchemeGuid != null)
+                        {
+                            Log.Information("Crash recovery: restoring processor idle state for scheme {Guid}",
+                                snapshot.IdleDisableSchemeGuid);
+                            GameShift.Core.Optimization.CpuParkingManager.CleanupStaleIdleDisable(
+                                snapshot.IdleDisableSchemeGuid);
+                        }
+
+                        // Restore CPU parking settings
+                        if (snapshot.CpuParkingSchemeGuid != null && snapshot.CpuParkingEntries.Count > 0)
+                        {
+                            Log.Information("Crash recovery: restoring CPU parking settings for scheme {Guid}",
+                                snapshot.CpuParkingSchemeGuid);
+                            GameShift.Core.Optimization.CpuParkingManager.CleanupStaleParkingState(
+                                snapshot.CpuParkingSchemeGuid, snapshot.CpuParkingEntries);
+                        }
+
+                        // Re-enable scheduled tasks that were disabled during gaming
+                        if (snapshot.DisabledScheduledTasks.Count > 0)
+                        {
+                            Log.Information("Crash recovery: re-enabling {Count} disabled scheduled tasks",
+                                snapshot.DisabledScheduledTasks.Count);
+                            GameShift.Core.Optimization.ScheduledTaskSuppressor.CleanupStaleDisabledTasks(
+                                snapshot.DisabledScheduledTasks);
+                        }
+
+                        // Clean up IFEO PerfOptions entries
+                        if (snapshot.IfeoEntries.Count > 0)
+                        {
+                            Log.Information("Crash recovery: cleaning up {Count} IFEO PerfOptions entries",
+                                snapshot.IfeoEntries.Count);
+                            SystemStateSnapshot.CleanupStaleIfeoEntries(snapshot);
+                        }
+
+                        // Restore registry values (GPU, visual effects, network optimizations)
+                        if (snapshot.RegistryValues.Count > 0)
+                        {
+                            Log.Information("Crash recovery: restoring {Count} registry values",
+                                snapshot.RegistryValues.Count);
+                            RestoreCrashRecoveryRegistryValues(snapshot.RegistryValues);
+                        }
+
+                        // Restore Win32PrioritySeparation
+                        if (snapshot.OriginalPrioritySeparation.HasValue)
+                        {
+                            Log.Information("Crash recovery: restoring Win32PrioritySeparation to {Value}",
+                                snapshot.OriginalPrioritySeparation.Value);
+                            try
+                            {
+                                using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(
+                                    @"SYSTEM\CurrentControlSet\Control\PriorityControl", writable: true);
+                                key?.SetValue("Win32PrioritySeparation",
+                                    snapshot.OriginalPrioritySeparation.Value,
+                                    Microsoft.Win32.RegistryValueKind.DWord);
+                            }
+                            catch (Exception ex)
+                            {
+                                Log.Warning(ex, "Crash recovery: failed to restore Win32PrioritySeparation");
+                            }
+                        }
                     }
 
                     MessageBox.Show(
@@ -345,7 +405,8 @@ public partial class App : Application
             Detector = new GameDetector(scanners);
 
             // Wire process spawn events to shared cache invalidation
-            Detector.ProcessSpawned += (_, _) => GameShift.Core.System.ProcessSnapshotService.MarkDirty();
+            _markDirtyHandler = (_, _) => GameShift.Core.System.ProcessSnapshotService.MarkDirty();
+            Detector.ProcessSpawned += _markDirtyHandler;
 
             var store = new KnownGamesStore();
 
@@ -372,20 +433,28 @@ public partial class App : Application
             // Wire Background Mode gaming session hooks
             if (Detector != null && BackgroundMode != null)
             {
-                Detector.GameStarted += (_, _) => BackgroundMode.OnGamingStart();
-                Detector.AllGamesStopped += (_, _) => BackgroundMode.OnGamingStop();
+                _bgModeGameStarted = (_, _) => BackgroundMode.OnGamingStart();
+                _bgModeAllGamesStopped = (object? _, EventArgs _2) => BackgroundMode.OnGamingStop();
+                Detector.GameStarted += _bgModeGameStarted;
+                Detector.AllGamesStopped += _bgModeAllGamesStopped;
             }
 
             // Pause dashboard monitors during gaming (they poll every 1-2s and the dashboard isn't visible)
             if (Detector != null)
             {
-                Detector.GameStarted += (_, _) => { PerfMon?.Pause(); PingMon?.Pause(); TempMon?.Pause(); };
-                Detector.AllGamesStopped += (_, _) => { PerfMon?.Resume(); PingMon?.Resume(); TempMon?.Resume(); };
+                _monitorPauseGameStarted = (_, _) => { PerfMon?.Pause(); PingMon?.Pause(); TempMon?.Pause(); };
+                _monitorResumeAllGamesStopped = (object? _, EventArgs _2) => { PerfMon?.Resume(); PingMon?.Resume(); TempMon?.Resume(); };
+                Detector.GameStarted += _monitorPauseGameStarted;
+                Detector.AllGamesStopped += _monitorResumeAllGamesStopped;
             }
 
             // v6: Create driver version tracker and scan asynchronously
             DriverTracker = new DriverVersionTracker();
-            _ = DriverTracker.ScanAndCheckAsync(); // Fire-and-forget, non-blocking
+            _ = DriverTracker.ScanAndCheckAsync().ContinueWith(t =>
+            {
+                if (t.IsFaulted)
+                    Log.Warning(t.Exception?.InnerException, "DriverVersionTracker background scan failed");
+            }, TaskContinuationOptions.OnlyOnFaulted);
             WriteDiag("DriverVersionTracker initialized (scanning in background)");
 
             // v6: Create benchmark service
@@ -409,6 +478,12 @@ public partial class App : Application
                 BackgroundMode.ProcessPriority.GameProfileActiveProcesses = GameProfileMgr.ActiveSessionProcessNames;
             }
             WriteDiag($"GameProfileManager initialized (profiles={GameProfileMgr?.GetAllProfiles().Count})");
+
+            // Wire game tip notifications to snackbar toast
+            OneTimeTipAction.TipTriggered += message =>
+            {
+                Dispatcher.InvokeAsync(() => _mainWindow?.ShowToast("Game Tip", message, TimeSpan.FromSeconds(6)));
+            };
 
             WriteDiag("Core services wired OK");
 
@@ -671,11 +746,29 @@ public partial class App : Application
             }
         }
 
+        // Unsubscribe all event handlers from Detector before disposing
+        if (Detector != null)
+        {
+            if (_bgModeGameStarted != null) Detector.GameStarted -= _bgModeGameStarted;
+            if (_bgModeAllGamesStopped != null) Detector.AllGamesStopped -= _bgModeAllGamesStopped;
+            if (_monitorPauseGameStarted != null) Detector.GameStarted -= _monitorPauseGameStarted;
+            if (_monitorResumeAllGamesStopped != null) Detector.AllGamesStopped -= _monitorResumeAllGamesStopped;
+            if (_markDirtyHandler != null) Detector.ProcessSpawned -= _markDirtyHandler;
+            if (GameProfileMgr != null)
+            {
+                Detector.GameStarted -= GameProfileMgr.OnGameStarted;
+                Detector.AllGamesStopped -= GameProfileMgr.OnAllGamesStopped;
+            }
+        }
+
         // Dispose Game Profile manager
         GameProfileMgr?.Dispose();
 
         // Stop Background Mode services
         BackgroundMode?.Dispose();
+
+        // Dispose optimization engine
+        Engine?.Dispose();
 
         // Stop game monitoring
         Detector?.StopMonitoring();
@@ -745,6 +838,85 @@ public partial class App : Application
             File.AppendAllText("gameshift-diag.log", line + Environment.NewLine);
         }
         catch { }
+    }
+
+    /// <summary>
+    /// Restores registry values from a crash recovery snapshot.
+    /// Each key is "{RegistryKeyPath}\{ValueName}" and the value is the original data.
+    /// </summary>
+    private static void RestoreCrashRecoveryRegistryValues(Dictionary<string, object> registryValues)
+    {
+        foreach (var (compositeKey, originalValue) in registryValues)
+        {
+            try
+            {
+                // Split composite key into key path and value name
+                var lastSlash = compositeKey.LastIndexOf('\\');
+                if (lastSlash < 0) continue;
+
+                var keyPath = compositeKey[..lastSlash];
+                var valueName = compositeKey[(lastSlash + 1)..];
+
+                // Determine the root key
+                Microsoft.Win32.RegistryKey? rootKey = null;
+                string subKeyPath;
+
+                if (keyPath.StartsWith("HKEY_LOCAL_MACHINE\\", StringComparison.OrdinalIgnoreCase))
+                {
+                    rootKey = Microsoft.Win32.Registry.LocalMachine;
+                    subKeyPath = keyPath["HKEY_LOCAL_MACHINE\\".Length..];
+                }
+                else if (keyPath.StartsWith("HKEY_CURRENT_USER\\", StringComparison.OrdinalIgnoreCase))
+                {
+                    rootKey = Microsoft.Win32.Registry.CurrentUser;
+                    subKeyPath = keyPath["HKEY_CURRENT_USER\\".Length..];
+                }
+                else
+                {
+                    Log.Warning("Crash recovery: unrecognized registry root in key '{Key}'", keyPath);
+                    continue;
+                }
+
+                using var key = rootKey.OpenSubKey(subKeyPath, writable: true);
+                if (key == null)
+                {
+                    Log.Debug("Crash recovery: registry key '{Key}' no longer exists, skipping", keyPath);
+                    continue;
+                }
+
+                // Restore the original value
+                // originalValue comes from JSON deserialization and may be JsonElement
+                if (originalValue is System.Text.Json.JsonElement jsonElement)
+                {
+                    switch (jsonElement.ValueKind)
+                    {
+                        case System.Text.Json.JsonValueKind.Number:
+                            key.SetValue(valueName, jsonElement.GetInt32(), Microsoft.Win32.RegistryValueKind.DWord);
+                            break;
+                        case System.Text.Json.JsonValueKind.String:
+                            key.SetValue(valueName, jsonElement.GetString() ?? "", Microsoft.Win32.RegistryValueKind.String);
+                            break;
+                        default:
+                            Log.Debug("Crash recovery: unsupported JSON type for registry value '{Key}\\{Name}'", keyPath, valueName);
+                            break;
+                    }
+                }
+                else if (originalValue is int intVal)
+                {
+                    key.SetValue(valueName, intVal, Microsoft.Win32.RegistryValueKind.DWord);
+                }
+                else if (originalValue is string strVal)
+                {
+                    key.SetValue(valueName, strVal, Microsoft.Win32.RegistryValueKind.String);
+                }
+
+                Log.Debug("Crash recovery: restored registry value '{Key}\\{Name}'", keyPath, valueName);
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "Crash recovery: failed to restore registry value '{Key}'", compositeKey);
+            }
+        }
     }
 
     private static void WriteCrashLog(string type, Exception? ex)

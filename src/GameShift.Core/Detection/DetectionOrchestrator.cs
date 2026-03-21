@@ -255,6 +255,20 @@ public class DetectionOrchestrator
                         }
 
                         _logger.Information("Applied {Count} game-specific actions", _activeGameActions.Count);
+
+                        // Process Tier 3 tips (one-time, self-guarded via DismissedTips)
+                        var tips = profile.GameSpecificActions.Where(a => a.Tier == 3);
+                        foreach (var tip in tips)
+                        {
+                            try
+                            {
+                                tip.Apply(_actionSnapshot);
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.Debug(ex, "Tip action failed (non-blocking): {ActionName}", tip.Name);
+                            }
+                        }
                     }
 
                     // Start DPC monitoring if enabled in profile

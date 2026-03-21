@@ -386,7 +386,7 @@ public class MemoryOptimizer : IOptimization
                 }
                 finally
                 {
-                    process.Dispose();
+                    // Process objects are owned by ProcessSnapshotService cache — do not dispose
                 }
             }
 

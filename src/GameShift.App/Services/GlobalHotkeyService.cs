@@ -79,6 +79,10 @@ public class GlobalHotkeyService : IDisposable
                     "GlobalHotkeyService: Failed to register hotkey '{Binding}' (Win32 error {Error}). " +
                     "Another app may be using this hotkey combination.",
                     hotkeyBinding, error);
+
+                // Remove the WndProc hook since registration failed — no WM_HOTKEY will arrive
+                _hwndSource?.RemoveHook(WndProc);
+                _hwndSource = null;
             }
 
             return _isRegistered;
