@@ -121,7 +121,13 @@ public class ProcessPriorityPersistence : IDisposable
                         "[ProcessPriority] Set {Process} (PID {Pid}) to {Priority}",
                         processName, pid, targetPriority);
                 }
-                catch { } // Process may have exited
+                catch (ArgumentException) { /* Process exited before we could set priority */ }
+                catch (Exception ex)
+                {
+                    SettingsManager.Logger.Debug(ex,
+                        "[ProcessPriority] Failed to set priority for {Process} (PID {Pid})",
+                        processName, pid);
+                }
             });
         }
         catch (Exception ex)

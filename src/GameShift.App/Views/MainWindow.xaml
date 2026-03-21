@@ -68,6 +68,12 @@
                     </ui:NavigationViewItem.Icon>
                 </ui:NavigationViewItem>
             </ui:NavigationView.FooterMenuItems>
+            <ui:NavigationView.PaneFooter>
+                <TextBlock x:Name="VersionLabel"
+                           FontSize="11" Foreground="#484F58"
+                           HorizontalAlignment="Center"
+                           Margin="0,4,0,8"/>
+            </ui:NavigationView.PaneFooter>
             <ui:NavigationView.ContentOverlay>
                 <ui:SnackbarPresenter x:Name="SnackbarPresenter"/>
             </ui:NavigationView.ContentOverlay>
