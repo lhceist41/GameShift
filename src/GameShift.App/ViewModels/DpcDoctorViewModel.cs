@@ -527,26 +527,7 @@ public class DpcDoctorViewModel : INotifyPropertyChanged
             }
         }
 
-        // Quick fix 3: High Performance Power Plan
-        if (_driverDb.TryGetDriver("ACPI.sys", out var acpi2))
-        {
-            var fix = acpi2.AutoFixes.FirstOrDefault(f => f.Id == "high_perf_power_plan");
-            if (fix != null)
-            {
-                QuickFixes.Add(new QuickFixViewModel
-                {
-                    FixId = fix.Id,
-                    Name = "High Performance Power Plan",
-                    SimpleTooltip = fix.SimpleExplanation,
-                    TechnicalTooltip = fix.TechnicalExplanation,
-                    RequiresReboot = false,
-                    Fix = fix,
-                    IsActive = _fixEngine.IsFixActive(fix.Id)
-                });
-            }
-        }
-
-        // Quick fix 4: Disable HPET (bcdedit)
+        // Quick fix 3: Disable HPET (bcdedit)
         QuickFixes.Add(new QuickFixViewModel
         {
             FixId = "disable_hpet",

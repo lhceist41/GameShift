@@ -103,6 +103,12 @@ public class DashboardViewModel : INotifyPropertyChanged
     private readonly SessionHistoryStore? _sessionStore;
     private readonly SessionTracker? _sessionTracker;
 
+    // Optimization failure tracking
+    private int _sessionFailedCount;
+
+    // Stored handler for AllActivities.CollectionChanged so we can unsubscribe
+    private readonly System.Collections.Specialized.NotifyCollectionChangedEventHandler _activitiesChangedHandler;
+
     public event PropertyChangedEventHandler? PropertyChanged;
 
     /// <summary>
@@ -483,6 +489,7 @@ public class DashboardViewModel : INotifyPropertyChanged
         // Subscribe to engine events for optimization state changes
         _engine.OptimizationApplied += OnOptimizationApplied;
         _engine.OptimizationReverted += OnOptimizationReverted;
+        _engine.OptimizationFailed += OnOptimizationFailed;
 
         // Subscribe to detector events for active game tracking
         _detector.GameStarted += OnGameStarted;
@@ -552,7 +559,8 @@ public class DashboardViewModel : INotifyPropertyChanged
         RefreshOptimizations();
 
         // Subscribe to AllActivities changes to keep RecentActivities updated
-        AllActivities.CollectionChanged += (s, e) => UpdateRecentActivities();
+        _activitiesChangedHandler = (s, e) => UpdateRecentActivities();
+        AllActivities.CollectionChanged += _activitiesChangedHandler;
         UpdateRecentActivities();
 
         // Check for updates asynchronously (fire-and-forget, non-blocking)
@@ -1106,7 +1114,9 @@ public class DashboardViewModel : INotifyPropertyChanged
                 index++;
             }
 
-            OptimizationSummary = $"{applied}/{total} Active";
+            OptimizationSummary = _sessionFailedCount > 0
+                ? $"{applied}/{total} Active ({_sessionFailedCount} failed)"
+                : $"{applied}/{total} Active";
             GpuOptimizationState = gpuState;
         });
     }
@@ -1177,6 +1187,22 @@ public class DashboardViewModel : INotifyPropertyChanged
         RefreshOptimizations();
     }
 
+    private void OnOptimizationFailed(object? sender, OptimizationAppliedEventArgs e)
+    {
+        _sessionFailedCount++;
+        Application.Current.Dispatcher.BeginInvoke(() =>
+        {
+            AddActivity(new ActivityEntry
+            {
+                Timestamp = DateTime.Now,
+                Type = "OptimizationFailed",
+                Description = $"{e.Optimization.Name} failed",
+                TypeIcon = "\u26A0"
+            });
+        });
+        RefreshOptimizations();
+    }
+
     private void OnOptimizationReverted(object? sender, OptimizationRevertedEventArgs e)
     {
         Application.Current.Dispatcher.BeginInvoke(() =>
@@ -1195,6 +1221,7 @@ public class DashboardViewModel : INotifyPropertyChanged
 
     private void OnGameStarted(object? sender, GameDetectedEventArgs e)
     {
+        _sessionFailedCount = 0;
         Application.Current.Dispatcher.BeginInvoke(() =>
         {
             AddActivity(new ActivityEntry
@@ -1380,6 +1407,7 @@ public class DashboardViewModel : INotifyPropertyChanged
     {
         _engine.OptimizationApplied -= OnOptimizationApplied;
         _engine.OptimizationReverted -= OnOptimizationReverted;
+        _engine.OptimizationFailed -= OnOptimizationFailed;
         _detector.GameStarted -= OnGameStarted;
         _detector.GameStopped -= OnGameStopped;
 
@@ -1404,6 +1432,7 @@ public class DashboardViewModel : INotifyPropertyChanged
         // (C# event handlers deduplicate by delegate reference)
         _engine.OptimizationApplied += OnOptimizationApplied;
         _engine.OptimizationReverted += OnOptimizationReverted;
+        _engine.OptimizationFailed += OnOptimizationFailed;
         _detector.GameStarted += OnGameStarted;
         _detector.GameStopped += OnGameStopped;
 
@@ -1432,6 +1461,7 @@ public class DashboardViewModel : INotifyPropertyChanged
 
         _engine.OptimizationApplied -= OnOptimizationApplied;
         _engine.OptimizationReverted -= OnOptimizationReverted;
+        _engine.OptimizationFailed -= OnOptimizationFailed;
         _detector.GameStarted -= OnGameStarted;
         _detector.GameStopped -= OnGameStopped;
 
@@ -1444,6 +1474,8 @@ public class DashboardViewModel : INotifyPropertyChanged
         if (_perfMonitor != null) _perfMonitor.SampleUpdated -= OnPerformanceSampled;
         if (_pingMonitor != null) _pingMonitor.PingUpdated -= OnPingUpdated;
         if (_sessionTracker != null) _sessionTracker.SessionEnded -= OnSessionEnded;
+
+        AllActivities.CollectionChanged -= _activitiesChangedHandler;
     }
 
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null)

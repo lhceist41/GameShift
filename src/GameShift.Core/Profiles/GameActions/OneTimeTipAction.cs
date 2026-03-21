@@ -14,6 +14,12 @@ namespace GameShift.Core.Profiles.GameActions;
 /// </summary>
 public class OneTimeTipAction : GameAction
 {
+    /// <summary>
+    /// Fires when a tip is shown for the first time. The string is the tip message.
+    /// Subscribe from App layer to show a visual toast notification.
+    /// </summary>
+    public static event Action<string>? TipTriggered;
+
     private readonly string _tipId;
     private readonly string _tipMessage;
     private readonly Func<HardwareScanResult, bool>? _hardwareCondition;
@@ -77,10 +83,11 @@ public class OneTimeTipAction : GameAction
                 return;
             }
 
-            // Log tip — Phase 11 will wire this to a toast notification
+            // Show tip via toast notification
             Log.Information(
                 "OneTimeTipAction: {TipMessage} [Tip ID: {TipId}]",
                 _tipMessage, _tipId);
+            TipTriggered?.Invoke(_tipMessage);
 
             settings.DismissedTips.Add(_tipId);
             SettingsManager.Save(settings);

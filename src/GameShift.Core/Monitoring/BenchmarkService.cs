@@ -447,24 +447,38 @@ public class BenchmarkService
         try
         {
             // Get processes sorted by working set descending — games typically use the most memory
-            return Process.GetProcesses()
-                .Where(p =>
+            var allProcesses = Process.GetProcesses();
+            Process? bestMatch = null;
+            long bestWorkingSet = 0;
+
+            foreach (var p in allProcesses)
+            {
+                try
                 {
-                    try
+                    // Filter: must have a window, use > 500MB RAM (typical for games)
+                    if (p.MainWindowHandle != IntPtr.Zero &&
+                        p.WorkingSet64 > 500 * 1024 * 1024 &&
+                        !IsSystemProcess(p.ProcessName))
                     {
-                        // Filter: must have a window, use > 500MB RAM (typical for games)
-                        return p.MainWindowHandle != IntPtr.Zero &&
-                               p.WorkingSet64 > 500 * 1024 * 1024 &&
-                               !IsSystemProcess(p.ProcessName);
+                        long ws = p.WorkingSet64;
+                        if (ws > bestWorkingSet)
+                        {
+                            // Dispose the previous best match since we're replacing it
+                            bestMatch?.Dispose();
+                            bestMatch = p;
+                            bestWorkingSet = ws;
+                            continue; // Don't dispose this one
+                        }
                     }
-                    catch { return false; }
-                })
-                .OrderByDescending(p =>
-                {
-                    try { return p.WorkingSet64; }
-                    catch { return 0L; }
-                })
-                .FirstOrDefault();
+                }
+                catch { /* Process may have exited */ }
+
+                // Dispose any process we're not keeping
+                if (p != bestMatch)
+                    p.Dispose();
+            }
+
+            return bestMatch;
         }
         catch (Exception ex)
         {

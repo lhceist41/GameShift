@@ -46,6 +46,7 @@ public partial class ToastNotificationWindow : Window
         string gameName,
         TimeSpan duration,
         int optimizationCount,
+        int failedCount,
         double avgDpcMicroseconds,
         double peakDpcMicroseconds)
     {
@@ -59,7 +60,18 @@ public partial class ToastNotificationWindow : Window
         else
             DurationText.Text = $"{duration.Seconds}s";
 
-        OptCountText.Text = optimizationCount.ToString();
+        var total = optimizationCount + failedCount;
+        if (failedCount > 0)
+        {
+            OptCountText.Text = $"{optimizationCount}/{total}";
+            OptCountText.Foreground = new System.Windows.Media.SolidColorBrush(
+                System.Windows.Media.Color.FromRgb(0xF5, 0x9E, 0x0B)); // Amber
+        }
+        else
+        {
+            OptCountText.Text = total > 0 ? $"{optimizationCount}/{total}" : optimizationCount.ToString();
+        }
+
         AvgDpcText.Text = avgDpcMicroseconds > 0 ? $"{avgDpcMicroseconds:F0} \u00B5s" : "N/A";
         PeakDpcText.Text = peakDpcMicroseconds > 0 ? $"{peakDpcMicroseconds:F0} \u00B5s" : "N/A";
     }
