@@ -47,14 +47,14 @@ These activate when a game launches and revert when the game closes.
 |:-------------|:-------------|
 | **Service Suppression** | Pauses 18+ non-essential Windows services (telemetry, indexing, Xbox services, Print Spooler, Fax, etc.) during gameplay. Supports Tier 1 and Tier 2 service categories. |
 | **Power Plan Switching** | Switches to Ultimate Performance scheme during the gaming session. Creates the plan if missing. |
-| **Timer Resolution** | Sets system timer to 0.5ms for lower input latency and tighter frame pacing. |
+| **Timer Resolution** | Sets system timer to 0.5ms (Competitive) or 1.0ms (Casual) for lower input latency and tighter frame pacing. |
 | **Process Priority Booster** | Elevates the game process to High priority and sets optimal Win32PrioritySeparation (0x2A). Auto-detects anti-cheat and falls back to IFEO registry when needed. |
 | **Memory Optimizer** | Monitors available RAM and purges the standby list when it drops below threshold. Includes modified page flushing and background process memory priority management. |
 | **Visual Effect Reducer** | Disables Windows transparency and animations via registry and SystemParametersInfo. |
 | **Network Tuning** | Disables Nagle's algorithm (`TcpAckFrequency`, `TCPNoDelay`) on all interfaces and stops Delivery Optimization. |
 | **Hybrid CPU Pinning** | Detects P-cores vs E-cores on Intel 12th-14th gen and AMD hybrid CPUs. Pins the game to performance cores only. Supports AMD X3D V-Cache CCD pinning. |
-| **CPU Core Unparking** | Unparks all CPU cores and optionally disables processor idle (forces C0 state) to eliminate C-state transition latency. Vendor-aware parking values for AMD X3D dual-CCD. |
-| **MPO Disable** | Disables Multiplane Overlay to fix micro-stutter on multi-monitor setups with mismatched refresh rates. Includes Windows 24H2 fallback via `DisableOverlays`. |
+| **CPU Core Unparking** | Unparks all CPU cores and disables processor idle in Competitive mode (forces C0 state) to eliminate C-state transition latency. Skipped in Casual mode. Vendor-aware parking values for AMD X3D dual-CCD. |
+| **MPO Disable** | Disables Multiplane Overlay to fix micro-stutter on multi-monitor setups with mismatched refresh rates. Applied in Competitive mode only. Includes Windows 24H2 fallback via `DisableOverlays`. |
 | **Competitive Mode** | Suspends overlay processes (Discord, Steam, NVIDIA), kills GPU-hungry background apps (Widgets, Edge WebView), respects anti-cheat blocklists. |
 | **GPU Driver Optimization** | Auto-detects NVIDIA or AMD and applies vendor-specific registry tweaks: low latency mode, 16GB shader cache, maximum performance power mode. |
 | **Scheduled Task Suppression** | Disables resource-heavy Windows scheduled tasks (telemetry, defrag, update tasks) during gameplay. Optional Defender scan suppression. |
@@ -81,7 +81,7 @@ These run 24/7 when Background Mode is enabled, independent of gaming sessions.
 | **Temperature Monitoring** | CPU and GPU temperature tracking via LibreHardwareMonitor. |
 | **DPC Latency Doctor** | ETW-based per-driver DPC/ISR attribution with automated fixes and one-click rollback. Includes Simple Mode and Technical Mode views. |
 | **DPC Latency Monitor** | Passive latency sampling during gaming sessions with configurable spike thresholds and toast notifications. |
-| **Session History** | Post-session reports with duration, optimization count, DPC statistics, and per-game tracking. |
+| **Session History** | Post-session summary toast with duration, applied/failed optimization counts, DPC statistics, and per-game tracking. |
 | **Driver Version Tracker** | Detects installed GPU and audio drivers, checks against known advisory database, flags problematic versions. |
 | **Benchmarking** | PresentMon-based frame time capture for performance measurement. |
 
@@ -103,7 +103,8 @@ One-time registry optimizations that persist across reboots (applied once, can b
 - **Auto-detection** from Steam, Epic Games, GOG Galaxy, and Xbox/Game Pass install directories
 - **19 built-in game profiles** with hardware-specific tuning and anti-cheat metadata for titles including Overwatch 2, Valorant, CS2, Fortnite, Apex Legends, Deadlock, osu!, Elden Ring, Elden Ring Nightreign, Arknights: Endfield, Wuthering Waves, Genshin Impact, Cyberpunk 2077, Minecraft Java, FFXIV, Rust, Soulframe, Call of Duty, and League of Legends
 - **Per-game toggle control** for every optimization, with sub-toggles for advanced options
-- **Competitive presets** for broad system-level optimization profiles
+- **Optimization Intensity** per profile (Competitive or Casual). Competitive enables aggressive tuning (processor idle disable, 0.5ms timer, MPO off). Casual uses gentler settings suitable for single-player and non-competitive titles. Selectable from the profile editor dropdown.
+- **Game-specific tips** shown as toast notifications on first launch. 38 built-in tips cover performance settings, anti-cheat quirks, and common pitfalls for supported titles. Each tip shows once and is remembered.
 - **Manual game adding** for any executable not in a scanned library
 
 ### Application Features
@@ -114,6 +115,7 @@ One-time registry optimizations that persist across reboots (applied once, can b
 - **Global hotkey** (Ctrl+Shift+G) to toggle monitoring pause
 - **Auto-updater** with GitHub release checking, in-app download, and staged file replacement
 - **Crash recovery** via SystemStateSnapshot lockfile. Detects orphaned sessions on startup and restores original system state including power plans, services, registry values, IFEO entries, processor idle state, CPU parking, and scheduled tasks.
+- **Version display** in the navigation sidebar for quick reference
 - **Single-instance enforcement** with named pipe communication to bring existing window to front
 
 ---
@@ -254,6 +256,12 @@ When Background Mode is enabled, GameShift creates a custom power plan cloned fr
 <summary><strong>How do I create a custom profile for a game?</strong></summary>
 <br/>
 Open GameShift, navigate to the Games tab, and click <strong>Add Game</strong>. Browse to the game executable, name the profile, and toggle which optimizations you want applied. The profile is saved as a JSON file in <code>%AppData%/GameShift/profiles/</code> and activates automatically whenever that executable launches.
+</details>
+
+<details>
+<summary><strong>What is the difference between Competitive and Casual intensity?</strong></summary>
+<br/>
+Competitive mode enables aggressive optimizations: processor idle disable (forces C0 state), 0.5ms timer resolution, and MPO disable. Casual mode skips these to reduce system stress and uses a gentler 1.0ms timer. Built-in profiles for games like Overwatch 2, Valorant, CS2, and osu! default to Competitive. League of Legends and single-player titles default to Casual. You can change the intensity for any profile from the dropdown in the profile editor.
 </details>
 
 <details>
