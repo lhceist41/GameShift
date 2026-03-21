@@ -43,6 +43,7 @@ public class TrayIconManager : IDisposable
     private double _sessionDpcSum;
     private int _sessionDpcSampleCount;
     private int _sessionOptimizationCount;
+    private int _sessionFailedCount;
 
     /// <summary>
     /// Gets whether game monitoring is currently paused by the user.
@@ -93,6 +94,7 @@ public class TrayIconManager : IDisposable
         // Subscribe to engine events for icon state changes
         _engine.OptimizationApplied += OnOptimizationApplied;
         _engine.OptimizationReverted += OnOptimizationReverted;
+        _engine.OptimizationFailed += OnOptimizationFailed;
 
         // Subscribe to detector events for notifications
         _detector.GameStarted += OnGameStarted;
@@ -294,6 +296,18 @@ public class TrayIconManager : IDisposable
         }
     }
 
+    private void OnOptimizationFailed(object? sender, OptimizationAppliedEventArgs e)
+    {
+        try
+        {
+            _sessionFailedCount++;
+        }
+        catch (Exception ex)
+        {
+            _logger.Warning(ex, "Failed to track optimization failure");
+        }
+    }
+
     private void OnOptimizationReverted(object? sender, OptimizationRevertedEventArgs e)
     {
         try
@@ -319,6 +333,7 @@ public class TrayIconManager : IDisposable
                 _sessionDpcSum = 0;
                 _sessionDpcSampleCount = 0;
                 _sessionOptimizationCount = 0;
+                _sessionFailedCount = 0;
             }
 
             if (_settings.ShowNotifications && _settings.ShowGameDetectedToast)
@@ -394,14 +409,15 @@ public class TrayIconManager : IDisposable
             var peakDpc = _sessionPeakDpc;
             var gameName = _sessionGameName ?? "Unknown Game";
             var optCount = _sessionOptimizationCount;
+            var failedCount = _sessionFailedCount;
 
             var toast = new ToastNotificationWindow();
-            toast.SetSessionData(gameName, duration, optCount, avgDpc, peakDpc);
+            toast.SetSessionData(gameName, duration, optCount, failedCount, avgDpc, peakDpc);
             toast.Show();
 
             _logger.Information(
-                "Post-session toast shown for {GameName}: duration={Duration}, opts={OptCount}, avgDpc={AvgDpc:F0}us, peakDpc={PeakDpc:F0}us",
-                gameName, duration, optCount, avgDpc, peakDpc);
+                "Post-session toast shown for {GameName}: duration={Duration}, opts={OptCount}, failed={FailedCount}, avgDpc={AvgDpc:F0}us, peakDpc={PeakDpc:F0}us",
+                gameName, duration, optCount, failedCount, avgDpc, peakDpc);
         }
         catch (Exception ex)
         {
@@ -439,6 +455,7 @@ public class TrayIconManager : IDisposable
             _sessionDpcSum = 0;
             _sessionDpcSampleCount = 0;
             _sessionOptimizationCount = 0;
+            _sessionFailedCount = 0;
 
             Application.Current.Dispatcher.Invoke(UpdateTrayState);
         }
@@ -607,6 +624,7 @@ public class TrayIconManager : IDisposable
 
         _engine.OptimizationApplied -= OnOptimizationApplied;
         _engine.OptimizationReverted -= OnOptimizationReverted;
+        _engine.OptimizationFailed -= OnOptimizationFailed;
 
         _detector.GameStarted -= OnGameStarted;
         _detector.GameStopped -= OnGameStopped;
