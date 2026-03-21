@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Management;
 using GameShift.Core.Config;
+using GameShift.Core.GameProfiles;
 using Serilog;
 
 namespace GameShift.Core.Detection;
@@ -318,6 +319,35 @@ public class GameDetector : IDisposable
                 if (string.Equals(normalizedPath, game.ExecutablePath, StringComparison.OrdinalIgnoreCase))
                 {
                     return OnGameMatched(processId, normalizedPath, game);
+                }
+            }
+        }
+
+        // Tertiary matching strategy: check exe name against BuiltInProfiles ProcessNames.
+        // Catches games installed outside of scanned launcher directories (standalone launchers, etc.)
+        var exeName = Path.GetFileName(normalizedPath);
+        foreach (var builtIn in BuiltInProfiles.GetAll())
+        {
+            foreach (var pn in builtIn.ProcessNames)
+            {
+                if (string.Equals(exeName, pn, StringComparison.OrdinalIgnoreCase))
+                {
+                    var autoGame = new GameInfo
+                    {
+                        Id = GameInfo.GenerateId("builtin", builtIn.Id),
+                        GameName = builtIn.DisplayName,
+                        ExecutablePath = normalizedPath,
+                        InstallDirectory = Path.GetDirectoryName(normalizedPath) ?? "",
+                        LauncherSource = "BuiltIn"
+                    };
+
+                    // Add to known games so future launches are matched immediately
+                    _knownGames.Add(autoGame);
+                    _logger.Information(
+                        "Auto-detected built-in profile game via process name: {GameName} ({ExeName})",
+                        builtIn.DisplayName, exeName);
+
+                    return OnGameMatched(processId, normalizedPath, autoGame);
                 }
             }
         }
