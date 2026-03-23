@@ -61,6 +61,9 @@ public class PowerPlanConfigurator
     private const string SubInterruptSteering = "48672f38-7a9a-4bb2-8bf8-3d85be19de4e";
     private const string SubGlobal = "fea3413e-7e05-4911-9a71-700331f1c294";
     private const string SubIntelGraphics = "44f3beca-a7c0-460e-9df2-bb8b99e0cba6";
+    private const string SubDisplay = "7516b95f-f776-4464-8c53-06167f40cc99";
+    private const string SubSleep = "238c9fa8-0aad-41ed-83f4-97be242c8f20";
+    private const string SubMultimedia = "9596fb26-9850-41fd-ac3e-f7c3c00afd4b";
 
     /// <summary>
     /// Returns all powercfg overrides to apply when creating the GameShift Performance plan.
@@ -347,6 +350,48 @@ public class PowerPlanConfigurator
             // Device idle policy = Performance (0)
             new(SubGlobal, "4faab71a-92e5-4726-b531-224559672d19", 0,
                 Description: "Device idle policy"),
+
+            // === DISPLAY ===
+
+            // Turn off display after = 0 (never, prevents monitor blanking mid-session)
+            new(SubDisplay, "3c0bc021-c8a8-4e07-a973-6b14cbcb2b7e", 0,
+                Description: "Turn off display after"),
+
+            // Adaptive brightness = Off (0)
+            new(SubDisplay, "fbd9aa66-9553-4097-ba44-ed6e9d65eab8", 0,
+                Description: "Adaptive brightness"),
+
+            // === SLEEP ===
+
+            // Sleep after = 0 (never)
+            new(SubSleep, "29f6c1db-86da-48c5-9fdb-f2b67b1f44da", 0,
+                Description: "Sleep after"),
+
+            // Hibernate after = 0 (never)
+            new(SubSleep, "9d7815a6-7ee4-497e-8888-515a05f02364", 0,
+                Description: "Hibernate after"),
+
+            // Allow hybrid sleep = Off (0)
+            new(SubSleep, "94ac6d29-73ce-41a6-809f-6363ba21b47e", 0,
+                Description: "Allow hybrid sleep"),
+
+            // Allow wake timers = Disable (0)
+            new(SubSleep, "bd3b718a-0680-4d9d-8ab2-e1d2b4ac806d", 0,
+                Description: "Allow wake timers"),
+
+            // === MULTIMEDIA ===
+
+            // When sharing media = Prevent idling to sleep (1)
+            new(SubMultimedia, "03680956-93bc-4294-bba6-4e0f09bb717f", 1,
+                Description: "When sharing media"),
+
+            // Video playback quality bias = Performance (1)
+            new(SubMultimedia, "10778347-1370-4ee0-8bbd-33bdacaade49", 1,
+                Description: "Video playback quality bias"),
+
+            // When playing video = Optimize video quality (0)
+            new(SubMultimedia, "34c7b99f-9a6d-4b3c-8dc7-b6693b78cef4", 0,
+                Description: "When playing video"),
         };
     }
 

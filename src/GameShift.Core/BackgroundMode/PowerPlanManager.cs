@@ -300,9 +300,10 @@ public class PowerPlanManager : IDisposable
 
         // === Original 6 core overrides (kept for clarity) ===
 
-        // Processor performance boost mode = Aggressive (SUB_PROCESSOR / PERFBOOSTMODE = 2)
-        RunPowercfg($"/setacvalueindex {plan} 54533251-82be-4824-96c1-47b60b740d00 be337238-0d82-4146-a960-4f3749d470c7 2");
-        RunPowercfg($"/setdcvalueindex {plan} 54533251-82be-4824-96c1-47b60b740d00 be337238-0d82-4146-a960-4f3749d470c7 2");
+        // Processor performance boost mode = Efficient Aggressive (4)
+        // Better sustained performance than Aggressive (2) by respecting thermal/power limits
+        RunPowercfg($"/setacvalueindex {plan} 54533251-82be-4824-96c1-47b60b740d00 be337238-0d82-4146-a960-4f3749d470c7 4");
+        RunPowercfg($"/setdcvalueindex {plan} 54533251-82be-4824-96c1-47b60b740d00 be337238-0d82-4146-a960-4f3749d470c7 4");
 
         // Minimum processor state = 100%
         RunPowercfg($"/setacvalueindex {plan} 54533251-82be-4824-96c1-47b60b740d00 893dee8e-2bef-41e0-89c6-b55d0929964c 100");
