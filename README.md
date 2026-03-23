@@ -69,7 +69,7 @@ These run 24/7 when Background Mode is enabled, independent of gaming sessions.
 |:--------|:-------------|
 | **Standby List Cleaner** | Polls available RAM every 10 seconds and purges the standby list when it drops below a configurable threshold. |
 | **Timer Resolution Lock** | Maintains high timer resolution at all times (0.5ms default). |
-| **Custom Power Plan** | Creates a "GameShift Performance" plan cloned from Ultimate Performance with 62+ aggressive overrides covering processor tuning, storage, USB, wireless, idle resiliency, interrupt steering, and vendor-aware heterogeneous scheduling (Intel hybrid, AMD single/dual-CCD). Includes 3-state management: Gaming, Desktop, and Idle (auto-switches to Balanced after configurable idle timeout). |
+| **Custom Power Plan** | Creates a "GameShift Performance" plan cloned from Ultimate Performance with 72+ aggressive overrides covering processor tuning, storage, USB, wireless, idle resiliency, interrupt steering, display, sleep/hibernate, multimedia, and vendor-aware heterogeneous scheduling (Intel hybrid, AMD single/dual-CCD). Includes 3-state management: Gaming, Desktop, and Idle (auto-switches to Balanced after configurable idle timeout). |
 | **Task Deferral** | Defers Windows scheduled tasks during active gaming sessions. |
 | **Process Priority Persistence** | Applies persistent priority rules to background processes (e.g., always keep Chrome at BelowNormal). Respects active Game Profile sessions. |
 
@@ -249,7 +249,7 @@ All original values are saved to <code>%AppData%/GameShift/active_session.json</
 <details>
 <summary><strong>What is the "GameShift Performance" power plan?</strong></summary>
 <br/>
-When Background Mode is enabled, GameShift creates a custom power plan cloned from Ultimate Performance with 62+ aggressive overrides. These cover processor boost mode, minimum processor state, USB selective suspend, PCI Express link state, hard disk timeout, NVMe power management, wireless adapter power saving, idle resiliency, interrupt steering, and vendor-aware heterogeneous scheduling for Intel hybrid and AMD single/dual-CCD processors. The plan is managed with a 3-state system: Gaming (idle disabled), Desktop (custom plan active), and Idle (auto-switches to Balanced after configurable timeout).
+When Background Mode is enabled, GameShift creates a custom power plan cloned from Ultimate Performance with 72+ aggressive overrides. These cover processor boost mode (Efficient Aggressive for sustained performance), minimum processor state, USB selective suspend, PCI Express link state, hard disk timeout, NVMe power management, wireless adapter power saving, idle resiliency, interrupt steering, display timeout (never), sleep and hibernate (disabled), multimedia playback bias (performance), and vendor-aware heterogeneous scheduling for Intel hybrid and AMD single/dual-CCD processors. The plan is managed with a 3-state system: Gaming (idle disabled), Desktop (custom plan active), and Idle (auto-switches to Balanced after configurable timeout).
 </details>
 
 <details>
