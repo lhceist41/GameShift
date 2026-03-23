@@ -37,9 +37,9 @@
     <Description>Automatic gaming performance optimizer for Windows</Description>
     <Company>GameShift</Company>
     <Copyright>Copyright (c) 2026 GameShift Contributors. MIT License.</Copyright>
-    <Version>3.0.3</Version>
-    <AssemblyVersion>3.0.3.0</AssemblyVersion>
-    <FileVersion>3.0.3.0</FileVersion>
+    <Version>3.0.4</Version>
+    <AssemblyVersion>3.0.4.0</AssemblyVersion>
+    <FileVersion>3.0.4.0</FileVersion>
 
     <!-- Publish configuration for single-file self-contained exe -->
     <!-- RuntimeIdentifier is NOT set here to avoid changing debug output paths. -->
