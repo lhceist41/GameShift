@@ -1,11 +1,14 @@
+using GameShift.Core.Journal;
 using GameShift.Watchdog;
 using Serilog;
 using Serilog.Events;
 
-// ── CLI install/uninstall ─────────────────────────────────────────────────────
+// ── CLI dispatch ──────────────────────────────────────────────────────────────
 // Run from an elevated command prompt:
-//   GameShift.Watchdog.exe --install     sc create + description
-//   GameShift.Watchdog.exe --uninstall   sc stop + sc delete
+//   GameShift.Watchdog.exe --install        sc create + description
+//   GameShift.Watchdog.exe --uninstall      sc stop + sc delete
+//   GameShift.Watchdog.exe --boot-recovery  run once: revert journal + update check
+//   GameShift.Watchdog.exe                  run as Windows Service (normal mode)
 
 if (args.Length > 0)
 {
@@ -16,6 +19,9 @@ if (args.Length > 0)
             return;
         case "--uninstall":
             UninstallService();
+            return;
+        case "--boot-recovery":
+            RunBootRecovery();
             return;
     }
 }
@@ -66,6 +72,41 @@ catch (Exception ex)
 finally
 {
     Log.CloseAndFlush();
+}
+
+// ── Boot recovery ─────────────────────────────────────────────────────────────
+
+/// <summary>
+/// Runs the boot-recovery sequence:
+///   1. Configures Serilog → %ProgramData%\GameShift\watchdog.log (same sink as the service)
+///   2. Delegates to BootRecoveryHandler.Run() which handles crash recovery + update detection
+///   3. Exits when done (no long-running host required)
+/// </summary>
+static void RunBootRecovery()
+{
+    var logDir = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+        "GameShift");
+    Directory.CreateDirectory(logDir);
+
+    Log.Logger = new LoggerConfiguration()
+        .MinimumLevel.Information()
+        .WriteTo.File(
+            Path.Combine(logDir, "watchdog.log"),
+            rollingInterval: RollingInterval.Day,
+            retainedFileCountLimit: 7,
+            outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff} [{Level:u3}] {Message:lj}{NewLine}{Exception}")
+        .CreateLogger();
+
+    try
+    {
+        Log.Information("GameShift.Watchdog --boot-recovery started (PID {Pid})", Environment.ProcessId);
+        BootRecoveryHandler.Run(Log.Logger);
+    }
+    finally
+    {
+        Log.CloseAndFlush();
+    }
 }
 
 // ── sc.exe helpers ────────────────────────────────────────────────────────────

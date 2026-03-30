@@ -10,6 +10,7 @@ using GameShift.Core.Monitoring;
 using GameShift.Core.Optimization;
 using GameShift.Core.Profiles;
 using GameShift.Core.Profiles.GameActions;
+using GameShift.Core.Journal;
 using GameShift.Core.System;
 using GameShift.Core.SystemTweaks;
 using GameShift.Core.Watchdog;
@@ -587,6 +588,12 @@ public partial class App : Application
             _watchdogHeartbeat = new WatchdogHeartbeatClient();
             _watchdogHeartbeat.Start();
             WriteDiag("Watchdog heartbeat client started");
+
+            // Register boot-recovery scheduled task — idempotent, skipped silently if
+            // GameShift.Watchdog.exe is not present alongside the app (e.g. dev builds).
+            var watchdogExe = Path.Combine(AppContext.BaseDirectory, "GameShift.Watchdog.exe");
+            BootRecoveryTaskManager.EnsureRegistered(watchdogExe);
+            WriteDiag($"Boot recovery task registration attempted (watchdog={watchdogExe})");
 
             // Shutdown mode depends on tray availability.
             // With tray: OnExplicitShutdown keeps app alive when window hides.
