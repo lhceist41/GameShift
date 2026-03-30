@@ -2,6 +2,7 @@ using GameShift.Core.Config;
 using GameShift.Core.Journal;
 using GameShift.Core.Profiles;
 using GameShift.Core.System;
+using GameShift.Core.Watchdog;
 using Serilog;
 
 namespace GameShift.Core.Optimization;
@@ -45,6 +46,7 @@ public class OptimizationEngine : IDisposable
     private readonly ILogger _logger;
     private readonly List<IOptimization> _optimizations;
     private readonly JournalManager _journal;
+    private readonly RegistryChangeMonitor _registryMonitor;
 
     /// <summary>
     /// Number of optimizations currently applied (used by SessionTracker for session stats).
@@ -80,6 +82,7 @@ public class OptimizationEngine : IDisposable
         _semaphore = new SemaphoreSlim(1, 1); // Allow one thread at a time
         _logger = SettingsManager.Logger; // Use centralized logger from Phase 1
         _journal = new JournalManager();
+        _registryMonitor = new RegistryChangeMonitor(_journal, _logger);
     }
 
     /// <summary>
@@ -178,6 +181,11 @@ public class OptimizationEngine : IDisposable
 
             _logger.Information("Profile activation complete. Applied {AppliedCount}, skipped {SkippedCount} (disabled in profile or Background Mode).",
                 _appliedOptimizations.Count, skippedCount);
+
+            // Start registry change monitoring so external modifications are detected
+            // during the gaming session (e.g. Windows Update agent, other apps).
+            if (_appliedOptimizations.Count > 0)
+                _registryMonitor.StartSession();
         }
         finally
         {
@@ -226,6 +234,9 @@ public class OptimizationEngine : IDisposable
         {
             _logger.Information("Deactivating profile. Reverting {Count} optimizations in LIFO order.",
                 _appliedOptimizations.Count);
+
+            // Stop registry watchers before reverting so they don't fire on our own writes
+            _registryMonitor.StopSession();
 
             // Revert in reverse order (LIFO via Stack)
             while (_appliedOptimizations.TryPop(out var optimization))
@@ -288,6 +299,7 @@ public class OptimizationEngine : IDisposable
 
     public void Dispose()
     {
+        _registryMonitor.Dispose();
         _semaphore.Dispose();
     }
 }
