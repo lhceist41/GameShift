@@ -112,6 +112,8 @@ public class BackgroundModeService : IDisposable
         if (bgSettings.PowerPlanEnabled)
             _powerPlan.OnGamingStart();
 
+        _standbyListCleaner.SetGamingActive(true);
+
         SettingsManager.Logger.Information("[BackgroundMode] Gaming session started — task deferral and power plan adjusted");
     }
 
@@ -125,6 +127,7 @@ public class BackgroundModeService : IDisposable
 
         _taskDeferral.RestoreTasks();
         _powerPlan.OnGamingStop();
+        _standbyListCleaner.SetGamingActive(false);
 
         SettingsManager.Logger.Information("[BackgroundMode] Gaming session ended — tasks restored, power plan adjusted");
     }
@@ -153,6 +156,8 @@ public class BackgroundModeService : IDisposable
         // Granular toggle: stop/start individual services as needed
         if (bgSettings.StandbyListCleanerEnabled && !_standbyListCleaner.IsRunning)
             _standbyListCleaner.Start(bgSettings);
+        else if (bgSettings.StandbyListCleanerEnabled && _standbyListCleaner.IsRunning)
+            _standbyListCleaner.Reconfigure(bgSettings); // apply threshold/interval changes live
         else if (!bgSettings.StandbyListCleanerEnabled && _standbyListCleaner.IsRunning)
             _standbyListCleaner.Stop();
 

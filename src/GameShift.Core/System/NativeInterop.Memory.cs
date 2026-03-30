@@ -40,6 +40,41 @@ internal static partial class NativeInterop
     internal const int MemoryPurgeStandbyList = 4;
 
     // ============================================================
+    // ntdll.dll - Memory List Query
+    // ============================================================
+
+    /// <summary>
+    /// Queries system information. Used here with SystemMemoryListInformation (0x50)
+    /// to retrieve exact standby list page counts by priority.
+    /// https://learn.microsoft.com/windows-hardware/drivers/ddi/ntddk/nf-ntddk-zwquerysysteminformation
+    /// </summary>
+    [DllImport("ntdll.dll")]
+    internal static extern int NtQuerySystemInformation(
+        int SystemInformationClass,
+        IntPtr SystemInformation,
+        int SystemInformationLength,
+        out int ReturnLength);
+
+    /// <summary>
+    /// Memory list information returned by NtQuerySystemInformation(SystemMemoryListInformation).
+    /// Contains page counts for each memory list category.
+    /// Total standby = sum of PageCountByPriority[0..7] * 4096 bytes.
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct SYSTEM_MEMORY_LIST_INFORMATION
+    {
+        public ulong ZeroPageCount;
+        public ulong FreePageCount;
+        public ulong ModifiedPageCount;
+        public ulong ModifiedNoWritePageCount;
+        public ulong BadPageCount;
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 8)]
+        public ulong[] PageCountByPriority; // Standby pages by priority 0-7
+        public ulong RepurposedPageCount;
+        public ulong ModifiedPageCountPageFile;
+    }
+
+    // ============================================================
     // kernel32.dll - Memory Status Query
     // ============================================================
 

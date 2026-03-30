@@ -50,8 +50,10 @@ public class SettingsViewModel : INotifyPropertyChanged
     // Background Mode fields
     private bool _bgEnabled;
     private bool _bgStandbyListEnabled;
-    private int _bgStandbyListThresholdMB;
-    private int _bgStandbyListPollSeconds;
+    private int _bgStandbyListStandbyThresholdMB;
+    private int _bgStandbyListFreeMemoryMinMB;
+    private int _bgStandbyListPollIntervalMs;
+    private bool _bgStandbyListOnlyDuringGaming;
     private bool _bgTimerEnabled;
     private int _bgTimerResolution100ns;
     private bool _bgPowerPlanEnabled;
@@ -133,17 +135,35 @@ public class SettingsViewModel : INotifyPropertyChanged
         set { if (_bgStandbyListEnabled != value) { _bgStandbyListEnabled = value; IsDirty = true; OnPropertyChanged(); } }
     }
 
-    public int BgStandbyListThresholdMB
+    public int BgStandbyListStandbyThresholdMB
     {
-        get => _bgStandbyListThresholdMB;
-        set { if (_bgStandbyListThresholdMB != value) { _bgStandbyListThresholdMB = value; IsDirty = true; OnPropertyChanged(); } }
+        get => _bgStandbyListStandbyThresholdMB;
+        set { if (_bgStandbyListStandbyThresholdMB != value) { _bgStandbyListStandbyThresholdMB = value; IsDirty = true; OnPropertyChanged(); } }
     }
 
-    public int BgStandbyListPollSeconds
+    public int BgStandbyListFreeMemoryMinMB
     {
-        get => _bgStandbyListPollSeconds;
-        set { if (_bgStandbyListPollSeconds != value) { _bgStandbyListPollSeconds = value; IsDirty = true; OnPropertyChanged(); } }
+        get => _bgStandbyListFreeMemoryMinMB;
+        set { if (_bgStandbyListFreeMemoryMinMB != value) { _bgStandbyListFreeMemoryMinMB = value; IsDirty = true; OnPropertyChanged(); } }
     }
+
+    public int BgStandbyListPollIntervalMs
+    {
+        get => _bgStandbyListPollIntervalMs;
+        set { if (_bgStandbyListPollIntervalMs != value) { _bgStandbyListPollIntervalMs = value; IsDirty = true; OnPropertyChanged(); } }
+    }
+
+    public bool BgStandbyListOnlyDuringGaming
+    {
+        get => _bgStandbyListOnlyDuringGaming;
+        set { if (_bgStandbyListOnlyDuringGaming != value) { _bgStandbyListOnlyDuringGaming = value; IsDirty = true; OnPropertyChanged(); } }
+    }
+
+    /// <summary>
+    /// Read-only hint showing auto-scaled defaults based on detected total RAM.
+    /// Shown in the UI next to the threshold fields to guide manual overrides.
+    /// </summary>
+    public string BgStandbyListAutoHint { get; private set; } = "";
 
     public bool BgTimerEnabled
     {
@@ -293,8 +313,15 @@ public class SettingsViewModel : INotifyPropertyChanged
         var bg = settings.BackgroundMode ?? new BackgroundModeSettings();
         _bgEnabled = bg.Enabled;
         _bgStandbyListEnabled = bg.StandbyListCleanerEnabled;
-        _bgStandbyListThresholdMB = bg.StandbyListThresholdMB;
-        _bgStandbyListPollSeconds = bg.StandbyListPollSeconds;
+        _bgStandbyListStandbyThresholdMB = bg.StandbyListStandbyThresholdMB;
+        _bgStandbyListFreeMemoryMinMB = bg.StandbyListFreeMemoryMinMB;
+        _bgStandbyListPollIntervalMs = bg.StandbyListPollIntervalMs > 0 ? bg.StandbyListPollIntervalMs : 1000;
+        _bgStandbyListOnlyDuringGaming = bg.StandbyListOnlyDuringGaming;
+
+        // Compute auto-scale hint for display
+        var (autoStandby, autoFree) = GameShift.Core.BackgroundMode.StandbyListCleaner.ComputeDefaults();
+        BgStandbyListAutoHint = $"Auto: Standby={autoStandby} MB, FreeMin={autoFree} MB  (0 = use auto)";
+
         _bgTimerEnabled = bg.TimerResolutionEnabled;
         _bgTimerResolution100ns = bg.TimerResolution100ns;
         _bgPowerPlanEnabled = bg.PowerPlanEnabled;
@@ -327,8 +354,11 @@ public class SettingsViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(PingTarget));
         OnPropertyChanged(nameof(BgEnabled));
         OnPropertyChanged(nameof(BgStandbyListEnabled));
-        OnPropertyChanged(nameof(BgStandbyListThresholdMB));
-        OnPropertyChanged(nameof(BgStandbyListPollSeconds));
+        OnPropertyChanged(nameof(BgStandbyListStandbyThresholdMB));
+        OnPropertyChanged(nameof(BgStandbyListFreeMemoryMinMB));
+        OnPropertyChanged(nameof(BgStandbyListPollIntervalMs));
+        OnPropertyChanged(nameof(BgStandbyListOnlyDuringGaming));
+        OnPropertyChanged(nameof(BgStandbyListAutoHint));
         OnPropertyChanged(nameof(BgTimerEnabled));
         OnPropertyChanged(nameof(BgTimerResolution100ns));
         OnPropertyChanged(nameof(BgPowerPlanEnabled));
@@ -368,8 +398,10 @@ public class SettingsViewModel : INotifyPropertyChanged
         settings.BackgroundMode ??= new BackgroundModeSettings();
         settings.BackgroundMode.Enabled = BgEnabled;
         settings.BackgroundMode.StandbyListCleanerEnabled = BgStandbyListEnabled;
-        settings.BackgroundMode.StandbyListThresholdMB = BgStandbyListThresholdMB;
-        settings.BackgroundMode.StandbyListPollSeconds = BgStandbyListPollSeconds;
+        settings.BackgroundMode.StandbyListStandbyThresholdMB = BgStandbyListStandbyThresholdMB;
+        settings.BackgroundMode.StandbyListFreeMemoryMinMB = BgStandbyListFreeMemoryMinMB;
+        settings.BackgroundMode.StandbyListPollIntervalMs = BgStandbyListPollIntervalMs;
+        settings.BackgroundMode.StandbyListOnlyDuringGaming = BgStandbyListOnlyDuringGaming;
         settings.BackgroundMode.TimerResolutionEnabled = BgTimerEnabled;
         settings.BackgroundMode.TimerResolution100ns = BgTimerResolution100ns;
         settings.BackgroundMode.PowerPlanEnabled = BgPowerPlanEnabled;

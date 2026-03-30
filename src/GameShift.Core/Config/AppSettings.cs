@@ -264,10 +264,22 @@ public class BackgroundModeSettings
     // -- StandbyListCleaner --
     /// <summary>Enable always-on standby list cleaning.</summary>
     public bool StandbyListCleanerEnabled { get; set; } = true;
-    /// <summary>Poll interval in seconds for memory checks.</summary>
-    public int StandbyListPollSeconds { get; set; } = 10;
-    /// <summary>Free RAM threshold in MB — purge when available RAM drops below this.</summary>
-    public int StandbyListThresholdMB { get; set; } = 1024;
+    /// <summary>
+    /// Standby list size threshold in MB. Purge is triggered only when standby exceeds this
+    /// AND free memory drops below StandbyListFreeMemoryMinMB simultaneously.
+    /// 0 = auto-scale based on total RAM (see StandbyListCleaner.ComputeDefaults).
+    /// </summary>
+    public int StandbyListStandbyThresholdMB { get; set; } = 0;
+    /// <summary>
+    /// Minimum free physical memory in MB. Purge is triggered only when free RAM drops below
+    /// this AND standby list exceeds StandbyListStandbyThresholdMB simultaneously.
+    /// 0 = auto-scale based on total RAM.
+    /// </summary>
+    public int StandbyListFreeMemoryMinMB { get; set; } = 0;
+    /// <summary>Poll interval in milliseconds for memory checks. Default 1000ms.</summary>
+    public int StandbyListPollIntervalMs { get; set; } = 1000;
+    /// <summary>When true, standby list purging only occurs during active gaming sessions.</summary>
+    public bool StandbyListOnlyDuringGaming { get; set; } = true;
 
     // -- TimerResolutionService --
     /// <summary>Enable always-on timer resolution lock.</summary>
