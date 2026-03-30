@@ -8,11 +8,12 @@ using Timer = System.Threading.Timer;
 namespace GameShift.Core.Optimization;
 
 /// <summary>
-/// Memory Optimizer - Purges standby list and modified page list, manages memory priority.
-/// Monitors available physical memory every 5 seconds during gaming and purges cached memory
-/// from the standby list when available RAM falls below configured threshold.
-/// Additionally flushes modified pages to prevent I/O storm buildup and lowers memory priority
-/// of background processes so the OS preferentially evicts their pages under memory pressure.
+/// Memory Optimizer — targeted per-session memory management.
+/// On session start: demotes background processes to MEMORY_PRIORITY_VERY_LOW, trims their
+/// working sets via EmptyWorkingSet, and sets a hard minimum working set on the game process.
+/// During the session: rescans for new background processes every 5 seconds and applies the
+/// same demotions. Purges the standby list only when both the standby threshold and the free
+/// memory minimum are breached simultaneously.
 /// </summary>
 public class MemoryOptimizer : IOptimization
 {
@@ -25,7 +26,6 @@ public class MemoryOptimizer : IOptimization
     private int _thresholdMB = 1024; // Default, overridden by profile in ApplyAsync
     private volatile bool _isMonitoring;
     private bool _isApplied;
-    private bool _flushModifiedPages;
     private bool _manageMemoryPriority;
     private bool _emptyWorkingSets;
     private int _hardMinWorkingSetMB;
@@ -54,10 +54,10 @@ public class MemoryOptimizer : IOptimization
     public bool IsAvailable => true; // Memory purge works on all Windows versions with admin rights
 
     /// <summary>
-    /// Applies memory optimization by immediately purging standby list and starting periodic monitoring.
-    /// Also flushes modified pages and demotes background process memory priority if enabled.
+    /// Applies memory optimization: demotes background processes, trims their working sets,
+    /// sets a hard minimum on the game process, then starts periodic monitoring.
     /// </summary>
-    /// <param name="snapshot">Snapshot to record original state (not used - memory purge is non-destructive)</param>
+    /// <param name="snapshot">Snapshot to record original state (not used — memory ops are non-destructive)</param>
     /// <param name="profile">Game profile containing process info and settings</param>
     /// <returns>True if optimization applied successfully, false otherwise</returns>
     public Task<bool> ApplyAsync(SystemStateSnapshot snapshot, GameProfile profile)
@@ -71,19 +71,12 @@ public class MemoryOptimizer : IOptimization
             }
 
             // Read sub-toggles from profile
-            _flushModifiedPages = profile.FlushModifiedPages;
             _manageMemoryPriority = profile.ManageMemoryPriority;
             _emptyWorkingSets = profile.EmptyWorkingSets;
             _hardMinWorkingSetMB = profile.HardMinWorkingSetMB;
             _activeGameProcessNames = ResolveGameProcessNames(profile);
 
             SettingsManager.Logger.Information("[MemoryOptimizer] Applying memory optimization");
-
-            // Initial flush of modified pages at session start (clears accumulated dirty pages)
-            if (_flushModifiedPages)
-            {
-                FlushModifiedPages();
-            }
 
             // Perform immediate standby list purge
             bool purgeSuccess = PurgeStandbyList();
@@ -168,9 +161,8 @@ public class MemoryOptimizer : IOptimization
     }
 
     /// <summary>
-    /// Periodic callback that checks available memory and purges standby list if below threshold.
-    /// Also flushes modified pages and rescans for newly spawned background processes.
-    /// Called every 5 seconds by the monitoring timer.
+    /// Periodic callback: rescans for new background processes to demote, then checks memory
+    /// and purges the standby list if below threshold. Called every 5 seconds.
     /// </summary>
     private void CheckAndPurge()
     {
@@ -210,12 +202,6 @@ public class MemoryOptimizer : IOptimization
                     availableMB, _thresholdMB);
 
                 PurgeStandbyList();
-
-                // Also flush modified pages to prevent I/O storm buildup
-                if (_flushModifiedPages)
-                {
-                    FlushModifiedPages();
-                }
             }
         }
         catch (Exception ex)
@@ -267,47 +253,6 @@ public class MemoryOptimizer : IOptimization
         finally
         {
             // Always free allocated memory
-            if (bufferPtr != IntPtr.Zero)
-            {
-                Marshal.FreeHGlobal(bufferPtr);
-            }
-        }
-    }
-
-    /// <summary>
-    /// Flushes the Windows modified page list by calling NtSetSystemInformation.
-    /// Modified pages are dirty memory pages waiting to be written to disk.
-    /// Flushing proactively prevents I/O storms from coinciding with gameplay.
-    /// </summary>
-    private void FlushModifiedPages()
-    {
-        IntPtr bufferPtr = IntPtr.Zero;
-
-        try
-        {
-            bufferPtr = Marshal.AllocHGlobal(sizeof(int));
-            Marshal.WriteInt32(bufferPtr, NativeInterop.MemoryFlushModifiedList);
-
-            int status = NativeInterop.NtSetSystemInformation(
-                NativeInterop.SystemMemoryListInformation,
-                bufferPtr,
-                sizeof(int));
-
-            if (status == 0)
-            {
-                SettingsManager.Logger.Debug("[MemoryOptimizer] Modified page list flushed successfully");
-            }
-            else
-            {
-                SettingsManager.Logger.Warning("[MemoryOptimizer] Modified page flush failed with NTSTATUS: 0x{Status:X8}", status);
-            }
-        }
-        catch (Exception ex)
-        {
-            SettingsManager.Logger.Error(ex, "[MemoryOptimizer] Exception during modified page flush");
-        }
-        finally
-        {
             if (bufferPtr != IntPtr.Zero)
             {
                 Marshal.FreeHGlobal(bufferPtr);

@@ -129,12 +129,6 @@ internal static partial class NativeInterop
     /// </summary>
     internal const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
 
-    /// <summary>
-    /// Memory flush modified list command for NtSetSystemInformation.
-    /// Flushes dirty pages from the modified page list to disk.
-    /// </summary>
-    internal const int MemoryFlushModifiedList = 3;
-
     // ============================================================
     // kernel32.dll - CPU Set APIs (Hybrid CPU support)
     // ============================================================

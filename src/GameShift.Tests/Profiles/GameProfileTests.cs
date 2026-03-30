@@ -151,7 +151,6 @@ public class GameProfileTests
             UnparkCpuCores = true,
             ManageIoPriority = false,
             EnableEfficiencyMode = true,
-            FlushModifiedPages = false,
             ManageMemoryPriority = true,
             PinToVCacheCcd = false,
             SuppressTier2Services = true,
@@ -183,7 +182,6 @@ public class GameProfileTests
         Assert.Equal(original.UnparkCpuCores, deserialized.UnparkCpuCores);
         Assert.Equal(original.ManageIoPriority, deserialized.ManageIoPriority);
         Assert.Equal(original.EnableEfficiencyMode, deserialized.EnableEfficiencyMode);
-        Assert.Equal(original.FlushModifiedPages, deserialized.FlushModifiedPages);
         Assert.Equal(original.ManageMemoryPriority, deserialized.ManageMemoryPriority);
         Assert.Equal(original.PinToVCacheCcd, deserialized.PinToVCacheCcd);
         Assert.Equal(original.SuppressTier2Services, deserialized.SuppressTier2Services);

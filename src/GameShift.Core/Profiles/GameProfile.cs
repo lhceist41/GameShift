@@ -118,13 +118,6 @@ public class GameProfile
     public bool EnableEfficiencyMode { get; set; } = true;
 
     /// <summary>
-    /// Whether to flush modified (dirty) pages alongside standby list purging.
-    /// Sub-toggle of OptimizeMemory — only active when memory optimization is enabled.
-    /// Default true — prevents I/O storms from dirty page write-back during gameplay.
-    /// </summary>
-    public bool FlushModifiedPages { get; set; } = true;
-
-    /// <summary>
     /// Whether to lower memory priority of background processes during gameplay.
     /// Sub-toggle of OptimizeMemory — only active when memory optimization is enabled.
     /// Causes OS to preferentially evict background process pages under memory pressure.
