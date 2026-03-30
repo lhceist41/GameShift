@@ -173,7 +173,6 @@ public static class CompetitivePresets
         // v4 toggles
         ManageIoPriority = true,
         EnableEfficiencyMode = true,
-        FlushModifiedPages = true,
         ManageMemoryPriority = true,
         // v5 toggles
         PinToVCacheCcd = true,
@@ -266,7 +265,6 @@ public static class CompetitivePresets
         // v4 toggles
         ManageIoPriority = true,
         EnableEfficiencyMode = true,
-        FlushModifiedPages = true,
         ManageMemoryPriority = true,
         // v5 toggles
         PinToVCacheCcd = true,
@@ -344,7 +342,6 @@ public static class CompetitivePresets
         // v4 toggles
         ManageIoPriority = true,
         EnableEfficiencyMode = true,
-        FlushModifiedPages = true,
         ManageMemoryPriority = true,
         // v5 toggles
         PinToVCacheCcd = true,
@@ -420,7 +417,6 @@ public static class CompetitivePresets
         // v4 toggles
         ManageIoPriority = true,
         EnableEfficiencyMode = true,
-        FlushModifiedPages = true,
         ManageMemoryPriority = true,
         // v5 toggles
         PinToVCacheCcd = true,
@@ -500,7 +496,6 @@ public static class CompetitivePresets
         // v4 toggles
         ManageIoPriority = true,
         EnableEfficiencyMode = true,
-        FlushModifiedPages = true,
         ManageMemoryPriority = true,
         // v5 toggles
         PinToVCacheCcd = true,
