@@ -41,6 +41,28 @@ public class SessionJournalData
     public bool SessionActive { get; set; }
     public ActiveGameInfo? ActiveGame { get; set; }
     public List<JournalEntry> Optimizations { get; set; } = new();
+
+    // ── Boot recovery metadata ────────────────────────────────────────────────
+
+    /// <summary>
+    /// Set by boot recovery when the Windows build number differs from the value
+    /// recorded at the start of the last session. Signals that a Windows Update
+    /// occurred between the last session and this boot, and that all persistent
+    /// registry-backed optimizations should be re-verified.
+    /// </summary>
+    public bool BuildChangedWarning { get; set; }
+
+    /// <summary>
+    /// The Windows build string recorded in the journal when the session started.
+    /// Populated only when <see cref="BuildChangedWarning"/> is true.
+    /// </summary>
+    public string? BuildAtLastSession { get; set; }
+
+    /// <summary>
+    /// The Windows build string read from the registry during boot recovery.
+    /// Populated only when <see cref="BuildChangedWarning"/> is true.
+    /// </summary>
+    public string? BuildAtRecovery { get; set; }
 }
 
 // ── JournalManager ────────────────────────────────────────────────────────────
@@ -139,6 +161,19 @@ public class JournalManager
     public void EndSession()
     {
         _current.SessionActive = false;
+        Save();
+    }
+
+    /// <summary>
+    /// Records a Windows Update warning in the journal.
+    /// Called by boot recovery when the build stored in the journal differs from the
+    /// current OS build, indicating that a Windows Update occurred since the last session.
+    /// </summary>
+    public void RecordBuildChanged(string buildAtLastSession, string buildAtRecovery)
+    {
+        _current.BuildChangedWarning = true;
+        _current.BuildAtLastSession = buildAtLastSession;
+        _current.BuildAtRecovery = buildAtRecovery;
         Save();
     }
 
