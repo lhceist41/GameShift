@@ -34,6 +34,25 @@ public class MpoToggle : IOptimization
 
     public const string OptimizationId = "MPO Toggle";
 
+    /// <summary>
+    /// Reads the OS build number from the registry. More reliable than Environment.OSVersion
+    /// which can return wrong values without a compatibility manifest on older .NET hosts.
+    /// </summary>
+    private static int GetWindowsBuildNumber()
+    {
+        try
+        {
+            var val = Registry.GetValue(
+                @"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion",
+                "CurrentBuildNumber", "0");
+            return int.TryParse(val?.ToString(), out var build) ? build : 0;
+        }
+        catch
+        {
+            return 0;
+        }
+    }
+
     public string Name => OptimizationId;
 
     public string Description => "Disables Multiplane Overlay to reduce frame pacing issues";
@@ -94,6 +113,7 @@ public class MpoToggle : IOptimization
 
             // Set OverlayTestMode = 5 to disable MPO
             key.SetValue(OverlayTestModeValue, 5, RegistryValueKind.DWord);
+            VerifyRegistryValue(DwmRegistryPath, OverlayTestModeValue, 5);
 
             _logger.Information(
                 "[MpoToggle] Set {RegistryPath}\\{ValueName} = 5 (was: {OldValue})",
@@ -108,13 +128,14 @@ public class MpoToggle : IOptimization
             // ── Windows 11 24H2+ fallback (build 26100+) ──
             // On 24H2, OverlayTestMode=5 alone no longer fully disables MPO.
             // Two additional registry keys are required.
-            _is24H2OrLater = Environment.OSVersion.Version.Build >= 26100;
+            var buildNumber = GetWindowsBuildNumber();
+            _is24H2OrLater = buildNumber >= 26100;
 
             if (_is24H2OrLater)
             {
                 _logger.Information(
                     "[MpoToggle] Windows 11 24H2+ detected (build {Build}), applying extended MPO disable",
-                    Environment.OSVersion.Version.Build);
+                    buildNumber);
 
                 // EnableOverlay = 0 in same DWM key
                 var existingEnableOverlay = key.GetValue(EnableOverlayValue);
@@ -129,6 +150,7 @@ public class MpoToggle : IOptimization
                 }
 
                 key.SetValue(EnableOverlayValue, 0, RegistryValueKind.DWord);
+                VerifyRegistryValue(DwmRegistryPath, EnableOverlayValue, 0);
                 snapshot.RecordRegistryValue(@"HKLM\" + DwmRegistryPath, EnableOverlayValue,
                     _enableOverlayPreviouslyExisted ? _enableOverlayPreviousValue : (object)"<not set>");
 
@@ -154,6 +176,7 @@ public class MpoToggle : IOptimization
                     }
 
                     gfxKey.SetValue(DisableOverlaysValue, 1, RegistryValueKind.DWord);
+                    VerifyRegistryValue(GraphicsDriversPath, DisableOverlaysValue, 1);
                     snapshot.RecordRegistryValue(@"HKLM\" + GraphicsDriversPath, DisableOverlaysValue,
                         _disableOverlaysPreviouslyExisted ? _disableOverlaysPreviousValue : (object)"<not set>");
 
@@ -291,6 +314,37 @@ public class MpoToggle : IOptimization
                 ex,
                 "[MpoToggle] Failed to revert MPO Toggle");
             return Task.FromResult(false);
+        }
+    }
+
+    /// <summary>
+    /// Re-reads a DWORD registry value and confirms it matches the expected value.
+    /// Logs a warning if mismatch detected (another process may be reverting).
+    /// </summary>
+    private bool VerifyRegistryValue(string keyPath, string valueName, int expected)
+    {
+        try
+        {
+            using var key = Registry.LocalMachine.OpenSubKey(keyPath);
+            var actual = key?.GetValue(valueName);
+            if (actual is int intVal && intVal == expected)
+            {
+                _logger.Debug("[MpoToggle] Verified {Path}\\{Name} = {Value}",
+                    keyPath, valueName, expected);
+                return true;
+            }
+
+            _logger.Warning(
+                "[MpoToggle] Verification FAILED: {Path}\\{Name} expected {Expected}, got {Actual}. " +
+                "Another process may have reverted the value.",
+                keyPath, valueName, expected, actual ?? "<not set>");
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _logger.Warning(ex, "[MpoToggle] Verification read failed for {Path}\\{Name}",
+                keyPath, valueName);
+            return false;
         }
     }
 
