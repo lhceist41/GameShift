@@ -132,6 +132,21 @@ public class GameProfile
     /// </summary>
     public bool ManageMemoryPriority { get; set; } = true;
 
+    /// <summary>
+    /// Whether to call EmptyWorkingSet on background processes at session start.
+    /// Moves background process pages to the standby list without destroying game assets.
+    /// Sub-toggle of OptimizeMemory — only active when ManageMemoryPriority is enabled.
+    /// Default true.
+    /// </summary>
+    public bool EmptyWorkingSets { get; set; } = true;
+
+    /// <summary>
+    /// Hard minimum working set size for the game process, in MB.
+    /// The memory manager will not trim game pages below this amount.
+    /// 0 = disabled. Default 2048 (2 GB) — protects game pages under system pressure.
+    /// </summary>
+    public int HardMinWorkingSetMB { get; set; } = 2048;
+
     // ── v5 Platform Coverage toggles ───────────────────────────────
 
     /// <summary>

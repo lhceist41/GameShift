@@ -75,6 +75,62 @@ internal static partial class NativeInterop
     }
 
     // ============================================================
+    // psapi.dll - Working Set Management
+    // ============================================================
+
+    /// <summary>
+    /// Removes as many pages as possible from the working set of a process.
+    /// Moved pages go to the standby list — not freed — so the process can
+    /// refault them cheaply. Safe to call on background processes during gaming
+    /// to push their pages to the standby list and free physical RAM for the game.
+    /// https://learn.microsoft.com/windows/win32/api/psapi/nf-psapi-emptyworkingset
+    /// </summary>
+    /// <param name="hProcess">Handle with PROCESS_QUERY_INFORMATION | PROCESS_SET_QUOTA</param>
+    [DllImport("psapi.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool EmptyWorkingSet(IntPtr hProcess);
+
+    // ============================================================
+    // kernel32.dll - Working Set Size Control
+    // ============================================================
+
+    /// <summary>
+    /// Sets the minimum and maximum working set sizes for the specified process.
+    /// Use QUOTA_LIMITS_HARDWS_MIN_ENABLE to set a hard (non-trimmable) minimum
+    /// on the game process so the memory manager cannot evict game pages.
+    /// Pass (IntPtr)(-1) for max to impose no upper limit.
+    /// Pass IntPtr.Zero sizes with Flags=0 to clear a previously set minimum.
+    /// https://learn.microsoft.com/windows/win32/api/memoryapi/nf-memoryapi-setprocessworkingsetsizeex
+    /// </summary>
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool SetProcessWorkingSetSizeEx(
+        IntPtr hProcess,
+        IntPtr dwMinimumWorkingSetSize,
+        IntPtr dwMaximumWorkingSetSize,
+        uint Flags);
+
+    /// <summary>
+    /// Process access right for setting working set quota.
+    /// Required for EmptyWorkingSet and SetProcessWorkingSetSizeEx.
+    /// PROCESS_SET_QUOTA = 0x0100
+    /// </summary>
+    internal const uint PROCESS_SET_QUOTA = 0x0100;
+
+    /// <summary>
+    /// Flag for SetProcessWorkingSetSizeEx: enforce minimum as a hard limit.
+    /// The memory manager will not trim the process below this minimum.
+    /// QUOTA_LIMITS_HARDWS_MIN_ENABLE = 0x00000001
+    /// </summary>
+    internal const uint QUOTA_LIMITS_HARDWS_MIN_ENABLE = 0x00000001;
+
+    /// <summary>
+    /// Flag for SetProcessWorkingSetSizeEx: disable a previously set hard minimum.
+    /// QUOTA_LIMITS_HARDWS_MIN_DISABLE = 0x00000002
+    /// </summary>
+    internal const uint QUOTA_LIMITS_HARDWS_MIN_DISABLE = 0x00000002;
+
+    // ============================================================
     // kernel32.dll - Memory Status Query
     // ============================================================
 

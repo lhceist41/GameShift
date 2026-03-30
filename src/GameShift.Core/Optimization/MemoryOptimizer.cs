@@ -27,11 +27,17 @@ public class MemoryOptimizer : IOptimization
     private bool _isApplied;
     private bool _flushModifiedPages;
     private bool _manageMemoryPriority;
+    private bool _emptyWorkingSets;
+    private int _hardMinWorkingSetMB;
     private string[] _activeGameProcessNames = Array.Empty<string>();
 
     private readonly List<MemPriorityOriginalState> _demotedProcesses = new();
     private readonly HashSet<int> _demotedPids = new();
     private readonly object _memPriorityLock = new();
+
+    // Hard-min working set tracking
+    private int _hardMinGamePid;
+    private bool _hardMinApplied;
 
     public const string OptimizationId = "Memory Optimizer";
 
@@ -67,6 +73,8 @@ public class MemoryOptimizer : IOptimization
             // Read sub-toggles from profile
             _flushModifiedPages = profile.FlushModifiedPages;
             _manageMemoryPriority = profile.ManageMemoryPriority;
+            _emptyWorkingSets = profile.EmptyWorkingSets;
+            _hardMinWorkingSetMB = profile.HardMinWorkingSetMB;
             _activeGameProcessNames = ResolveGameProcessNames(profile);
 
             SettingsManager.Logger.Information("[MemoryOptimizer] Applying memory optimization");
@@ -84,13 +92,19 @@ public class MemoryOptimizer : IOptimization
                 SettingsManager.Logger.Warning("[MemoryOptimizer] Initial standby list purge failed, but continuing with monitoring");
             }
 
-            // Demote background process memory priority
+            // Demote background process memory priority + empty their working sets
             if (_manageMemoryPriority)
             {
                 DemoteBackgroundMemoryPriority();
                 SettingsManager.Logger.Information(
                     "[MemoryOptimizer] Memory priority demoted on {Count} background processes",
                     _demotedProcesses.Count);
+            }
+
+            // Set hard minimum working set on the game process
+            if (_hardMinWorkingSetMB > 0)
+            {
+                ApplyHardMinWorkingSet(profile.ProcessId);
             }
 
             // Start periodic memory monitoring (check every 5 seconds)
@@ -134,6 +148,12 @@ public class MemoryOptimizer : IOptimization
             if (_manageMemoryPriority)
             {
                 RestoreMemoryPriorities();
+            }
+
+            // Release the hard minimum working set on the game process
+            if (_hardMinApplied)
+            {
+                ReleaseHardMinWorkingSet();
             }
 
             _isApplied = false;
@@ -298,13 +318,24 @@ public class MemoryOptimizer : IOptimization
     // ── Memory Priority Management ─────────────────────────────────────
 
     /// <summary>
-    /// Lowers memory priority of targeted background processes to Low (2).
-    /// Lower-priority pages are reclaimed first under memory pressure, protecting game pages.
+    /// Lowers memory priority of targeted background processes to VERY_LOW (1) and,
+    /// when EmptyWorkingSets is enabled, trims their working sets to the standby list.
+    ///
+    /// MEMORY_PRIORITY_VERY_LOW (1): pages become first candidates for reclamation under
+    /// memory pressure. Lower than Low (2) — the old setting — so game pages are protected
+    /// more aggressively.
+    ///
+    /// EmptyWorkingSet: moves background process pages to the standby list immediately,
+    /// freeing physical RAM for the game WITHOUT destroying the game's own cached assets.
+    /// Pages refault cheaply from standby on next access; this is a targeted trim, not a purge.
+    ///
     /// Thread-safe via _memPriorityLock.
     /// </summary>
     private void DemoteBackgroundMemoryPriority()
     {
+        const uint MemPriorityVeryLow = 1;
         int newlyDemoted = 0;
+        int emptyCount = 0;
 
         try
         {
@@ -318,14 +349,36 @@ public class MemoryOptimizer : IOptimization
                     if (!BackgroundProcessTargets.ShouldDemote(name, _activeGameProcessNames))
                         continue;
 
+                    bool alreadyDemoted;
                     lock (_memPriorityLock)
                     {
-                        // Skip if already demoted in this session
-                        if (_demotedPids.Contains(process.Id))
-                            continue;
+                        alreadyDemoted = _demotedPids.Contains(process.Id);
                     }
 
-                    // Query current memory priority
+                    // Technique 1: EmptyWorkingSet — runs every scan, not just on first demote,
+                    // because background processes spawn new threads that fault in new pages.
+                    if (_emptyWorkingSets)
+                    {
+                        IntPtr hEmpty = NativeInterop.OpenProcess(
+                            NativeInterop.PROCESS_QUERY_INFORMATION | NativeInterop.PROCESS_SET_QUOTA,
+                            false, process.Id);
+                        if (hEmpty != IntPtr.Zero)
+                        {
+                            try
+                            {
+                                if (NativeInterop.EmptyWorkingSet(hEmpty))
+                                    emptyCount++;
+                            }
+                            finally
+                            {
+                                NativeInterop.CloseHandle(hEmpty);
+                            }
+                        }
+                    }
+
+                    if (alreadyDemoted) continue; // Priority already set for this PID
+
+                    // Technique 2: MEMORY_PRIORITY_VERY_LOW (1)
                     var currentInfo = new NativeInterop.MEMORY_PRIORITY_INFORMATION();
                     int size = Marshal.SizeOf<NativeInterop.MEMORY_PRIORITY_INFORMATION>();
                     IntPtr ptr = Marshal.AllocHGlobal(size);
@@ -344,10 +397,9 @@ public class MemoryOptimizer : IOptimization
                         currentInfo = Marshal.PtrToStructure<NativeInterop.MEMORY_PRIORITY_INFORMATION>(ptr);
                         uint originalPriority = currentInfo.MemoryPriority;
 
-                        if (originalPriority <= 2) continue; // Already low, skip
+                        if (originalPriority <= MemPriorityVeryLow) continue; // Already at or below target
 
-                        // Set to Low (2)
-                        var newInfo = new NativeInterop.MEMORY_PRIORITY_INFORMATION { MemoryPriority = 2 };
+                        var newInfo = new NativeInterop.MEMORY_PRIORITY_INFORMATION { MemoryPriority = MemPriorityVeryLow };
                         Marshal.StructureToPtr(newInfo, ptr, false);
 
                         if (NativeInterop.SetProcessInformation(
@@ -365,7 +417,7 @@ public class MemoryOptimizer : IOptimization
 
                             newlyDemoted++;
                             SettingsManager.Logger.Debug(
-                                "[MemoryOptimizer] Memory priority lowered: {Name} (PID {Pid}) {From} → Low",
+                                "[MemoryOptimizer] Memory priority VERY_LOW: {Name} (PID {Pid}) {From} → 1",
                                 name, process.Id, originalPriority);
                         }
                     }
@@ -380,7 +432,7 @@ public class MemoryOptimizer : IOptimization
                     if (ex is not global::System.ComponentModel.Win32Exception { NativeErrorCode: 5 })
                     {
                         SettingsManager.Logger.Debug(
-                            "[MemoryOptimizer] Could not adjust memory priority for {Name}: {Error}",
+                            "[MemoryOptimizer] Could not demote {Name}: {Error}",
                             process.ProcessName, ex.Message);
                     }
                 }
@@ -390,10 +442,11 @@ public class MemoryOptimizer : IOptimization
                 }
             }
 
-            if (newlyDemoted > 0)
+            if (newlyDemoted > 0 || emptyCount > 0)
             {
                 SettingsManager.Logger.Debug(
-                    "[MemoryOptimizer] Memory priority demoted on {Count} new processes", newlyDemoted);
+                    "[MemoryOptimizer] Background process demote — {Demoted} priority set to VERY_LOW, {Empty} working sets trimmed",
+                    newlyDemoted, emptyCount);
             }
         }
         catch (Exception ex)
@@ -471,6 +524,99 @@ public class MemoryOptimizer : IOptimization
         SettingsManager.Logger.Information(
             "[MemoryOptimizer] Memory priority revert — {Restored} restored, {Skipped} skipped",
             restoredCount, skippedCount);
+    }
+
+    // ── Hard minimum working set ─────────────────────────────────────────
+
+    /// <summary>
+    /// Sets a hard minimum working set on the game process.
+    /// The memory manager will not trim game pages below HardMinWorkingSetMB.
+    /// Uses QUOTA_LIMITS_HARDWS_MIN_ENABLE so the limit is enforced even under pressure.
+    /// No-ops if the process handle cannot be opened (e.g., process already exited).
+    /// </summary>
+    private void ApplyHardMinWorkingSet(int gamePid)
+    {
+        if (gamePid <= 0) return;
+
+        IntPtr handle = NativeInterop.OpenProcess(
+            NativeInterop.PROCESS_QUERY_INFORMATION | NativeInterop.PROCESS_SET_QUOTA,
+            false, gamePid);
+
+        if (handle == IntPtr.Zero)
+        {
+            SettingsManager.Logger.Debug(
+                "[MemoryOptimizer] Could not open game process PID {Pid} for hard-min working set", gamePid);
+            return;
+        }
+
+        try
+        {
+            long minBytes = (long)_hardMinWorkingSetMB * 1024 * 1024;
+
+            bool ok = NativeInterop.SetProcessWorkingSetSizeEx(
+                handle,
+                (IntPtr)minBytes,
+                (IntPtr)(-1),                          // no upper limit
+                NativeInterop.QUOTA_LIMITS_HARDWS_MIN_ENABLE);
+
+            if (ok)
+            {
+                _hardMinGamePid = gamePid;
+                _hardMinApplied = true;
+                SettingsManager.Logger.Information(
+                    "[MemoryOptimizer] Hard minimum working set set to {MB}MB on game PID {Pid}",
+                    _hardMinWorkingSetMB, gamePid);
+            }
+            else
+            {
+                SettingsManager.Logger.Warning(
+                    "[MemoryOptimizer] SetProcessWorkingSetSizeEx failed for PID {Pid} — error {Error}",
+                    gamePid, Marshal.GetLastWin32Error());
+            }
+        }
+        finally
+        {
+            NativeInterop.CloseHandle(handle);
+        }
+    }
+
+    /// <summary>
+    /// Clears the hard minimum working set on the game process.
+    /// Passes QUOTA_LIMITS_HARDWS_MIN_DISABLE so the OS can resume normal trimming.
+    /// </summary>
+    private void ReleaseHardMinWorkingSet()
+    {
+        if (!_hardMinApplied || _hardMinGamePid <= 0) return;
+
+        IntPtr handle = NativeInterop.OpenProcess(
+            NativeInterop.PROCESS_QUERY_INFORMATION | NativeInterop.PROCESS_SET_QUOTA,
+            false, _hardMinGamePid);
+
+        if (handle == IntPtr.Zero)
+        {
+            // Process already exited — nothing to revert
+            _hardMinApplied = false;
+            _hardMinGamePid = 0;
+            return;
+        }
+
+        try
+        {
+            NativeInterop.SetProcessWorkingSetSizeEx(
+                handle,
+                (IntPtr)(-1),
+                (IntPtr)(-1),
+                NativeInterop.QUOTA_LIMITS_HARDWS_MIN_DISABLE);
+
+            SettingsManager.Logger.Information(
+                "[MemoryOptimizer] Hard minimum working set cleared on game PID {Pid}", _hardMinGamePid);
+        }
+        finally
+        {
+            NativeInterop.CloseHandle(handle);
+            _hardMinApplied = false;
+            _hardMinGamePid = 0;
+        }
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────
