@@ -75,4 +75,12 @@ public interface IJournaledOptimization
     /// Returns false if the change has been undone by another process or a Windows Update.
     /// </summary>
     bool Verify();
+
+    /// <summary>
+    /// Called by the watchdog recovery path to revert without any live instance state.
+    /// <paramref name="originalValueJson"/> is the <see cref="OptimizationResult.OriginalValue"/>
+    /// string persisted in the journal at apply time.
+    /// Implementations must parse this JSON and restore the system to the original state.
+    /// </summary>
+    OptimizationResult RevertFromRecord(string originalValueJson);
 }

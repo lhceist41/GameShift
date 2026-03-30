@@ -12,6 +12,7 @@ using GameShift.Core.Profiles;
 using GameShift.Core.Profiles.GameActions;
 using GameShift.Core.System;
 using GameShift.Core.SystemTweaks;
+using GameShift.Core.Watchdog;
 using GameShift.App.Services;
 using GameShift.App.Views;
 using GameShift.App.Views.Pages;
@@ -32,6 +33,7 @@ public partial class App : Application
     private MainWindow? _mainWindow;
     private GlobalHotkeyService? _hotkeyService;
     private SingleInstancePipe? _singleInstancePipe;
+    private WatchdogHeartbeatClient? _watchdogHeartbeat;
 
     // Stored event handlers for proper unsubscription in OnExit
     private EventHandler<GameDetectedEventArgs>? _bgModeGameStarted;
@@ -581,6 +583,11 @@ public partial class App : Application
             _singleInstancePipe.StartServer();
             WriteDiag("Single-instance pipe server started");
 
+            // Start watchdog heartbeat — best-effort, silent if watchdog service not installed
+            _watchdogHeartbeat = new WatchdogHeartbeatClient();
+            _watchdogHeartbeat.Start();
+            WriteDiag("Watchdog heartbeat client started");
+
             // Shutdown mode depends on tray availability.
             // With tray: OnExplicitShutdown keeps app alive when window hides.
             // Without tray (Win10): OnMainWindowClose lets the app exit normally.
@@ -796,6 +803,10 @@ public partial class App : Application
 
         // Stop single-instance pipe server
         _singleInstancePipe?.Dispose();
+
+        // Stop watchdog heartbeat — do this after deactivation so the watchdog sees
+        // sessionActive=false before the heartbeat drops and doesn't trigger recovery
+        _watchdogHeartbeat?.Dispose();
 
         // Dispose tray icon
         _trayManager?.Dispose();

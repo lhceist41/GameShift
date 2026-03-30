@@ -142,6 +142,31 @@ public class JournalManager
         Save();
     }
 
+    /// <summary>
+    /// Reads and deserializes the journal from disk. Returns null if the file does not exist or
+    /// cannot be parsed. Also updates internal state so that EndSession() can be called after
+    /// a successful load (used by the watchdog recovery path).
+    /// </summary>
+    public SessionJournalData? LoadJournal()
+    {
+        try
+        {
+            if (!File.Exists(_journalPath))
+                return null;
+
+            var json = File.ReadAllText(_journalPath);
+            var data = JsonSerializer.Deserialize<SessionJournalData>(json, _writeOptions);
+            if (data != null)
+                _current = data;
+            return data;
+        }
+        catch (Exception ex)
+        {
+            _logger.Warning(ex, "[JournalManager] Failed to load journal from {Path}", _journalPath);
+            return null;
+        }
+    }
+
     // ── Atomic write ──────────────────────────────────────────────────────────
 
     private void Save()
