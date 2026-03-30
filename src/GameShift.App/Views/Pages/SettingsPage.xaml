@@ -176,25 +176,45 @@
                                   IsChecked="{Binding BgStandbyListEnabled, Mode=TwoWay}"
                                   Foreground="{DynamicResource GS.Text.Primary}"
                                   IsEnabled="{Binding BgEnabled}"
-                                  Margin="20,0,0,6"/>
+                                  Margin="20,0,0,4"/>
+                        <TextBlock Text="{Binding BgStandbyListAutoHint, Mode=OneWay}"
+                                   FontSize="11" Foreground="{DynamicResource GS.Text.Secondary}"
+                                   Margin="20,0,0,8"/>
                         <StackPanel Orientation="Horizontal" Margin="20,0,0,6">
-                            <TextBlock Text="Threshold (MB):" VerticalAlignment="Center"
-                                       Foreground="{DynamicResource GS.Text.Primary}" Margin="0,0,8,0"/>
-                            <TextBox Text="{Binding BgStandbyListThresholdMB, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                            <TextBlock Text="Standby threshold (MB):" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource GS.Text.Primary}" Margin="0,0,8,0" Width="160"/>
+                            <TextBox Text="{Binding BgStandbyListStandbyThresholdMB, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                      Width="80" Background="{DynamicResource GS.Surface.Base}"
                                      Foreground="{DynamicResource GS.Text.Primary}"
                                      BorderBrush="{DynamicResource GS.Surface.Border}" Padding="6,4"
                                      IsEnabled="{Binding BgEnabled}"/>
                         </StackPanel>
-                        <StackPanel Orientation="Horizontal" Margin="20,0,0,12">
-                            <TextBlock Text="Poll interval (sec):" VerticalAlignment="Center"
-                                       Foreground="{DynamicResource GS.Text.Primary}" Margin="0,0,8,0"/>
-                            <TextBox Text="{Binding BgStandbyListPollSeconds, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                        <StackPanel Orientation="Horizontal" Margin="20,0,0,6">
+                            <TextBlock Text="Free memory minimum (MB):" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource GS.Text.Primary}" Margin="0,0,8,0" Width="160"/>
+                            <TextBox Text="{Binding BgStandbyListFreeMemoryMinMB, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                      Width="80" Background="{DynamicResource GS.Surface.Base}"
                                      Foreground="{DynamicResource GS.Text.Primary}"
                                      BorderBrush="{DynamicResource GS.Surface.Border}" Padding="6,4"
                                      IsEnabled="{Binding BgEnabled}"/>
                         </StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="20,0,0,6">
+                            <TextBlock Text="Poll interval (ms):" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource GS.Text.Primary}" Margin="0,0,8,0" Width="160"/>
+                            <TextBox Text="{Binding BgStandbyListPollIntervalMs, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                     Width="80" Background="{DynamicResource GS.Surface.Base}"
+                                     Foreground="{DynamicResource GS.Text.Primary}"
+                                     BorderBrush="{DynamicResource GS.Surface.Border}" Padding="6,4"
+                                     IsEnabled="{Binding BgEnabled}"/>
+                        </StackPanel>
+                        <CheckBox Content="Only purge during active gaming sessions"
+                                  IsChecked="{Binding BgStandbyListOnlyDuringGaming, Mode=TwoWay}"
+                                  Foreground="{DynamicResource GS.Text.Primary}"
+                                  IsEnabled="{Binding BgEnabled}"
+                                  Margin="20,0,0,4"/>
+                        <TextBlock Text="When enabled, standby list is never purged while you are not in a game."
+                                   FontSize="11" Foreground="{DynamicResource GS.Text.Secondary}"
+                                   Margin="40,0,0,12" TextWrapping="Wrap"/>
 
                         <!-- Timer Resolution -->
                         <TextBlock Text="Timer Resolution" FontSize="11" FontWeight="SemiBold"
