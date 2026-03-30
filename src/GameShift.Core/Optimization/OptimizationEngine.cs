@@ -1,4 +1,5 @@
 using GameShift.Core.Config;
+using GameShift.Core.Journal;
 using GameShift.Core.Profiles;
 using GameShift.Core.System;
 using Serilog;
@@ -43,6 +44,7 @@ public class OptimizationEngine : IDisposable
     private readonly SemaphoreSlim _semaphore;
     private readonly ILogger _logger;
     private readonly List<IOptimization> _optimizations;
+    private readonly JournalManager _journal;
 
     /// <summary>
     /// Number of optimizations currently applied (used by SessionTracker for session stats).
@@ -77,6 +79,7 @@ public class OptimizationEngine : IDisposable
         _appliedOptimizations = new Stack<IOptimization>();
         _semaphore = new SemaphoreSlim(1, 1); // Allow one thread at a time
         _logger = SettingsManager.Logger; // Use centralized logger from Phase 1
+        _journal = new JournalManager();
     }
 
     /// <summary>
@@ -97,6 +100,9 @@ public class OptimizationEngine : IDisposable
             // Capture system state BEFORE applying any optimization
             _snapshot = SystemStateSnapshot.Capture();
             _logger.Debug("System state snapshot captured at {CaptureTime}", _snapshot.CaptureTime);
+
+            // Open session journal
+            _journal.StartSession(profile);
 
             // Load BackgroundMode settings once for all optimizations
             var bgExclusions = BuildBackgroundModeExclusions();
@@ -123,7 +129,28 @@ public class OptimizationEngine : IDisposable
                 {
                     _logger.Debug("Applying optimization: {OptimizationName}", optimization.Name);
 
-                    bool success = await optimization.ApplyAsync(_snapshot, profile);
+                    bool success;
+
+                    if (optimization is IJournaledOptimization journaled)
+                    {
+                        var context = new SystemContext { Profile = profile, Snapshot = _snapshot };
+                        if (!journaled.CanApply(context))
+                        {
+                            _logger.Information("Skipped (CanApply returned false): {OptimizationName}", optimization.Name);
+                            skippedCount++;
+                            continue;
+                        }
+
+                        var result = journaled.Apply();
+                        success = result.State == OptimizationState.Applied;
+
+                        if (success)
+                            _journal.RecordApplied(result);
+                    }
+                    else
+                    {
+                        success = await optimization.ApplyAsync(_snapshot, profile);
+                    }
 
                     if (success)
                     {
@@ -213,7 +240,18 @@ public class OptimizationEngine : IDisposable
                         continue;
                     }
 
-                    bool success = await optimization.RevertAsync(_snapshot);
+                    bool success;
+
+                    if (optimization is IJournaledOptimization journaled)
+                    {
+                        var result = journaled.Revert();
+                        success = result.State == OptimizationState.Reverted;
+                        _journal.RecordReverted(optimization.Name, result.State);
+                    }
+                    else
+                    {
+                        success = await optimization.RevertAsync(_snapshot);
+                    }
 
                     if (success)
                     {
@@ -234,6 +272,9 @@ public class OptimizationEngine : IDisposable
                     _logger.Error(ex, "Revert threw exception: {OptimizationName}", optimization.Name);
                 }
             }
+
+            // Close the journal — session ended cleanly
+            _journal.EndSession();
 
             // Clear snapshot after all reverts complete
             _snapshot = null;

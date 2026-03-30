@@ -1,6 +1,8 @@
 using System.Runtime.InteropServices;
+using System.Text.Json;
 using Microsoft.Win32;
 using GameShift.Core.Config;
+using GameShift.Core.Journal;
 using GameShift.Core.Profiles;
 using GameShift.Core.System;
 using Serilog;
@@ -11,20 +13,26 @@ namespace GameShift.Core.Optimization;
 /// Disables Multiplane Overlay (MPO) via DWM registry setting during gaming sessions.
 /// MPO can cause frame pacing issues, especially on multi-monitor setups with mismatched refresh rates.
 /// Handles apply, revert, multi-monitor suggestions, and profile toggle for MPO.
+///
+/// Implements IJournaledOptimization as the Sprint 3A proof-of-concept. Apply() and Revert()
+/// contain the core logic; ApplyAsync/RevertAsync delegate to them for IOptimization compatibility.
 /// </summary>
-public class MpoToggle : IOptimization
+public class MpoToggle : IOptimization, IJournaledOptimization
 {
     private readonly ILogger _logger = SettingsManager.Logger;
     private bool _isApplied;
+
+    // State captured during Apply() for use in Revert()
     private bool _previousValueExisted;
     private int _previousValue;
-
-    // 24H2 fallback state
     private bool _is24H2OrLater;
     private bool _enableOverlayPreviouslyExisted;
     private int _enableOverlayPreviousValue;
     private bool _disableOverlaysPreviouslyExisted;
     private int _disableOverlaysPreviousValue;
+
+    // Context stored by CanApply() for use by Apply()
+    private SystemContext? _context;
 
     private const string DwmRegistryPath = @"SOFTWARE\Microsoft\Windows\Dwm";
     private const string OverlayTestModeValue = "OverlayTestMode";
@@ -53,10 +61,10 @@ public class MpoToggle : IOptimization
         }
     }
 
+    // ── IOptimization ─────────────────────────────────────────────────────────
+
     public string Name => OptimizationId;
-
     public string Description => "Disables Multiplane Overlay to reduce frame pacing issues";
-
     public bool IsApplied => _isApplied;
 
     /// <summary>
@@ -66,20 +74,55 @@ public class MpoToggle : IOptimization
     public bool IsAvailable => true;
 
     /// <summary>
-    /// Disables MPO by setting OverlayTestMode=5 in the DWM registry key.
-    /// Records existing value for clean revert. Logs multi-monitor refresh rate advisory.
+    /// Delegates to the journaled Apply() path. Stores context first via CanApply().
     /// </summary>
     public Task<bool> ApplyAsync(SystemStateSnapshot snapshot, GameProfile profile)
     {
+        var context = new SystemContext { Profile = profile, Snapshot = snapshot };
+        if (!CanApply(context))
+        {
+            _logger.Information("[MpoToggle] Skipping MPO disable for Casual intensity profile");
+            return Task.FromResult(true);
+        }
+
+        var result = Apply();
+        return Task.FromResult(result.State == OptimizationState.Applied);
+    }
+
+    /// <summary>
+    /// Delegates to the journaled Revert() path.
+    /// </summary>
+    public Task<bool> RevertAsync(SystemStateSnapshot snapshot)
+    {
+        if (!_isApplied)
+            return Task.FromResult(true);
+
+        var result = Revert();
+        return Task.FromResult(result.State == OptimizationState.Reverted);
+    }
+
+    // ── IJournaledOptimization ────────────────────────────────────────────────
+
+    /// <summary>
+    /// Pre-flight check. Stores context for use in Apply().
+    /// Returns false for Casual intensity profiles — MPO disable is competitive-only.
+    /// </summary>
+    public bool CanApply(SystemContext context)
+    {
+        _context = context;
+        return context.Profile.Intensity != OptimizationIntensity.Casual;
+    }
+
+    /// <summary>
+    /// Disables MPO by writing registry values. Records original state for clean revert.
+    /// Returns OptimizationResult with serialized original/applied registry values.
+    /// </summary>
+    public OptimizationResult Apply()
+    {
+        var snapshot = _context?.Snapshot;
+
         try
         {
-            // MPO disable is only beneficial for competitive gaming — skip for casual games
-            if (profile.Intensity == OptimizationIntensity.Casual)
-            {
-                _logger.Information("[MpoToggle] Skipping MPO disable for Casual intensity profile");
-                return Task.FromResult(true);
-            }
-
             _logger.Information(
                 "[MpoToggle] Applying MPO Toggle — disabling Multiplane Overlay via registry");
 
@@ -89,7 +132,7 @@ public class MpoToggle : IOptimization
                 _logger.Error(
                     "[MpoToggle] Failed to open registry key {RegistryPath} for writing",
                     DwmRegistryPath);
-                return Task.FromResult(false);
+                return Fail("Failed to open DWM registry key");
             }
 
             // Read and store existing value for clean revert
@@ -100,8 +143,7 @@ public class MpoToggle : IOptimization
                 _previousValue = (int)existingValue;
                 _logger.Debug(
                     "[MpoToggle] Existing {ValueName} = {OldValue}, will restore on revert",
-                    OverlayTestModeValue,
-                    _previousValue);
+                    OverlayTestModeValue, _previousValue);
             }
             else
             {
@@ -111,23 +153,30 @@ public class MpoToggle : IOptimization
                     OverlayTestModeValue);
             }
 
+            // Build original state snapshot for journal
+            var originalState = new Dictionary<string, object?>
+            {
+                [OverlayTestModeValue] = _previousValueExisted ? _previousValue : null
+            };
+
             // Set OverlayTestMode = 5 to disable MPO
             key.SetValue(OverlayTestModeValue, 5, RegistryValueKind.DWord);
             VerifyRegistryValue(DwmRegistryPath, OverlayTestModeValue, 5);
 
             _logger.Information(
                 "[MpoToggle] Set {RegistryPath}\\{ValueName} = 5 (was: {OldValue})",
-                @"HKLM\" + DwmRegistryPath,
-                OverlayTestModeValue,
+                @"HKLM\" + DwmRegistryPath, OverlayTestModeValue,
                 _previousValueExisted ? _previousValue.ToString() : "<not set>");
 
-            // Record in snapshot for crash recovery
-            snapshot.RecordRegistryValue(@"HKLM\" + DwmRegistryPath, OverlayTestModeValue,
+            snapshot?.RecordRegistryValue(@"HKLM\" + DwmRegistryPath, OverlayTestModeValue,
                 _previousValueExisted ? _previousValue : (object)"<not set>");
 
+            var appliedState = new Dictionary<string, object?>
+            {
+                [OverlayTestModeValue] = 5
+            };
+
             // ── Windows 11 24H2+ fallback (build 26100+) ──
-            // On 24H2, OverlayTestMode=5 alone no longer fully disables MPO.
-            // Two additional registry keys are required.
             var buildNumber = GetWindowsBuildNumber();
             _is24H2OrLater = buildNumber >= 26100;
 
@@ -149,15 +198,18 @@ public class MpoToggle : IOptimization
                     _enableOverlayPreviouslyExisted = false;
                 }
 
+                originalState[EnableOverlayValue] = _enableOverlayPreviouslyExisted ? _enableOverlayPreviousValue : null;
+
                 key.SetValue(EnableOverlayValue, 0, RegistryValueKind.DWord);
                 VerifyRegistryValue(DwmRegistryPath, EnableOverlayValue, 0);
-                snapshot.RecordRegistryValue(@"HKLM\" + DwmRegistryPath, EnableOverlayValue,
+                snapshot?.RecordRegistryValue(@"HKLM\" + DwmRegistryPath, EnableOverlayValue,
                     _enableOverlayPreviouslyExisted ? _enableOverlayPreviousValue : (object)"<not set>");
+
+                appliedState[EnableOverlayValue] = 0;
 
                 _logger.Information(
                     "[MpoToggle] Set {RegistryPath}\\{ValueName} = 0 (was: {OldValue})",
-                    @"HKLM\" + DwmRegistryPath,
-                    EnableOverlayValue,
+                    @"HKLM\" + DwmRegistryPath, EnableOverlayValue,
                     _enableOverlayPreviouslyExisted ? _enableOverlayPreviousValue.ToString() : "<not set>");
 
                 // DisableOverlays = 1 in GraphicsDrivers key
@@ -175,15 +227,18 @@ public class MpoToggle : IOptimization
                         _disableOverlaysPreviouslyExisted = false;
                     }
 
+                    originalState[DisableOverlaysValue] = _disableOverlaysPreviouslyExisted ? _disableOverlaysPreviousValue : null;
+
                     gfxKey.SetValue(DisableOverlaysValue, 1, RegistryValueKind.DWord);
                     VerifyRegistryValue(GraphicsDriversPath, DisableOverlaysValue, 1);
-                    snapshot.RecordRegistryValue(@"HKLM\" + GraphicsDriversPath, DisableOverlaysValue,
+                    snapshot?.RecordRegistryValue(@"HKLM\" + GraphicsDriversPath, DisableOverlaysValue,
                         _disableOverlaysPreviouslyExisted ? _disableOverlaysPreviousValue : (object)"<not set>");
+
+                    appliedState[DisableOverlaysValue] = 1;
 
                     _logger.Information(
                         "[MpoToggle] Set {RegistryPath}\\{ValueName} = 1 (was: {OldValue})",
-                        @"HKLM\" + GraphicsDriversPath,
-                        DisableOverlaysValue,
+                        @"HKLM\" + GraphicsDriversPath, DisableOverlaysValue,
                         _disableOverlaysPreviouslyExisted ? _disableOverlaysPreviousValue.ToString() : "<not set>");
                 }
                 else
@@ -198,27 +253,24 @@ public class MpoToggle : IOptimization
             CheckMultiMonitorSuggestion();
 
             _isApplied = true;
-            return Task.FromResult(true);
+            return new OptimizationResult(
+                Name: OptimizationId,
+                OriginalValue: JsonSerializer.Serialize(originalState),
+                AppliedValue: JsonSerializer.Serialize(appliedState),
+                State: OptimizationState.Applied);
         }
         catch (Exception ex)
         {
-            _logger.Error(
-                ex,
-                "[MpoToggle] Failed to apply MPO Toggle");
-            return Task.FromResult(false);
+            _logger.Error(ex, "[MpoToggle] Failed to apply MPO Toggle");
+            return Fail(ex.Message);
         }
     }
 
     /// <summary>
-    /// Reverts MPO by restoring the previous registry value or deleting it.
+    /// Reverts MPO by restoring the previous registry values or deleting them.
     /// </summary>
-    public Task<bool> RevertAsync(SystemStateSnapshot snapshot)
+    public OptimizationResult Revert()
     {
-        if (!_isApplied)
-        {
-            return Task.FromResult(true); // No-op if not applied
-        }
-
         try
         {
             _logger.Information(
@@ -230,52 +282,42 @@ public class MpoToggle : IOptimization
                 _logger.Error(
                     "[MpoToggle] Failed to open registry key {RegistryPath} for writing during revert",
                     DwmRegistryPath);
-                return Task.FromResult(false);
+                return RevertFail("Failed to open DWM registry key");
             }
 
             if (_previousValueExisted)
             {
-                // Restore previous value
                 key.SetValue(OverlayTestModeValue, _previousValue, RegistryValueKind.DWord);
                 _logger.Information(
                     "[MpoToggle] Restored {RegistryPath}\\{ValueName} = {RestoredValue}",
-                    @"HKLM\" + DwmRegistryPath,
-                    OverlayTestModeValue,
-                    _previousValue);
+                    @"HKLM\" + DwmRegistryPath, OverlayTestModeValue, _previousValue);
             }
             else
             {
-                // Delete the value (it didn't exist before)
                 key.DeleteValue(OverlayTestModeValue, throwOnMissingValue: false);
                 _logger.Information(
                     "[MpoToggle] Deleted {RegistryPath}\\{ValueName} (was not present before apply)",
-                    @"HKLM\" + DwmRegistryPath,
-                    OverlayTestModeValue);
+                    @"HKLM\" + DwmRegistryPath, OverlayTestModeValue);
             }
 
             // ── Revert 24H2 extended keys ──
             if (_is24H2OrLater)
             {
-                // Revert EnableOverlay in DWM key
                 if (_enableOverlayPreviouslyExisted)
                 {
                     key.SetValue(EnableOverlayValue, _enableOverlayPreviousValue, RegistryValueKind.DWord);
                     _logger.Information(
                         "[MpoToggle] Restored {RegistryPath}\\{ValueName} = {RestoredValue}",
-                        @"HKLM\" + DwmRegistryPath,
-                        EnableOverlayValue,
-                        _enableOverlayPreviousValue);
+                        @"HKLM\" + DwmRegistryPath, EnableOverlayValue, _enableOverlayPreviousValue);
                 }
                 else
                 {
                     key.DeleteValue(EnableOverlayValue, throwOnMissingValue: false);
                     _logger.Information(
                         "[MpoToggle] Deleted {RegistryPath}\\{ValueName} (was not present before apply)",
-                        @"HKLM\" + DwmRegistryPath,
-                        EnableOverlayValue);
+                        @"HKLM\" + DwmRegistryPath, EnableOverlayValue);
                 }
 
-                // Revert DisableOverlays in GraphicsDrivers key
                 using var gfxKey = Registry.LocalMachine.OpenSubKey(GraphicsDriversPath, writable: true);
                 if (gfxKey != null)
                 {
@@ -284,17 +326,14 @@ public class MpoToggle : IOptimization
                         gfxKey.SetValue(DisableOverlaysValue, _disableOverlaysPreviousValue, RegistryValueKind.DWord);
                         _logger.Information(
                             "[MpoToggle] Restored {RegistryPath}\\{ValueName} = {RestoredValue}",
-                            @"HKLM\" + GraphicsDriversPath,
-                            DisableOverlaysValue,
-                            _disableOverlaysPreviousValue);
+                            @"HKLM\" + GraphicsDriversPath, DisableOverlaysValue, _disableOverlaysPreviousValue);
                     }
                     else
                     {
                         gfxKey.DeleteValue(DisableOverlaysValue, throwOnMissingValue: false);
                         _logger.Information(
                             "[MpoToggle] Deleted {RegistryPath}\\{ValueName} (was not present before apply)",
-                            @"HKLM\" + GraphicsDriversPath,
-                            DisableOverlaysValue);
+                            @"HKLM\" + GraphicsDriversPath, DisableOverlaysValue);
                     }
                 }
                 else
@@ -306,16 +345,58 @@ public class MpoToggle : IOptimization
             }
 
             _isApplied = false;
-            return Task.FromResult(true);
+            return new OptimizationResult(
+                Name: OptimizationId,
+                OriginalValue: string.Empty,
+                AppliedValue: string.Empty,
+                State: OptimizationState.Reverted);
         }
         catch (Exception ex)
         {
-            _logger.Error(
-                ex,
-                "[MpoToggle] Failed to revert MPO Toggle");
-            return Task.FromResult(false);
+            _logger.Error(ex, "[MpoToggle] Failed to revert MPO Toggle");
+            return RevertFail(ex.Message);
         }
     }
+
+    /// <summary>
+    /// Confirms the applied MPO registry changes are still in effect.
+    /// </summary>
+    public bool Verify()
+    {
+        if (!_isApplied)
+            return false;
+
+        try
+        {
+            using var key = Registry.LocalMachine.OpenSubKey(DwmRegistryPath);
+            if (key?.GetValue(OverlayTestModeValue) is not int otm || otm != 5)
+                return false;
+
+            if (_is24H2OrLater)
+            {
+                if (key.GetValue(EnableOverlayValue) is not int eo || eo != 0)
+                    return false;
+
+                using var gfxKey = Registry.LocalMachine.OpenSubKey(GraphicsDriversPath);
+                if (gfxKey?.GetValue(DisableOverlaysValue) is not int dov || dov != 1)
+                    return false;
+            }
+
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private static OptimizationResult Fail(string error) =>
+        new(OptimizationId, string.Empty, string.Empty, OptimizationState.Failed, error);
+
+    private static OptimizationResult RevertFail(string error) =>
+        new(OptimizationId, string.Empty, string.Empty, OptimizationState.Failed, error);
 
     /// <summary>
     /// Re-reads a DWORD registry value and confirms it matches the expected value.
@@ -348,7 +429,7 @@ public class MpoToggle : IOptimization
         }
     }
 
-    // ── Multi-monitor advisory ──────────────────────────────
+    // ── Multi-monitor advisory ────────────────────────────────────────────────
 
     /// <summary>
     /// Detects multi-monitor setups with mismatched refresh rates and logs an advisory.
@@ -367,7 +448,6 @@ public class MpoToggle : IOptimization
             uint deviceIndex = 0;
             while (EnumDisplayDevicesW(null, deviceIndex, ref displayDevice, 0))
             {
-                // Only check active (attached) monitors
                 if ((displayDevice.StateFlags & DISPLAY_DEVICE_ACTIVE) != 0)
                 {
                     var devMode = new DEVMODE();
@@ -376,9 +456,7 @@ public class MpoToggle : IOptimization
                     if (EnumDisplaySettingsW(displayDevice.DeviceName, ENUM_CURRENT_SETTINGS, ref devMode))
                     {
                         if (devMode.dmDisplayFrequency > 0)
-                        {
                             refreshRates.Add((displayDevice.DeviceName, (int)devMode.dmDisplayFrequency));
-                        }
                     }
                 }
 
@@ -405,30 +483,25 @@ public class MpoToggle : IOptimization
                 {
                     _logger.Debug(
                         "[MpoToggle] Multi-monitor setup detected ({Count} monitors) with matching refresh rates ({Rate}Hz)",
-                        refreshRates.Count,
-                        distinctRates[0]);
+                        refreshRates.Count, distinctRates[0]);
                 }
             }
             else
             {
                 _logger.Debug(
                     "[MpoToggle] Single monitor detected ({Count} active display{Plural})",
-                    refreshRates.Count,
-                    refreshRates.Count == 1 ? "" : "s");
+                    refreshRates.Count, refreshRates.Count == 1 ? "" : "s");
             }
         }
         catch (Exception ex)
         {
-            // Advisory only — failure to detect monitors should not block the optimization
             _logger.Debug(
                 ex,
                 "[MpoToggle] Could not enumerate monitors for refresh rate check (advisory only)");
         }
     }
 
-    // ── Private P/Invoke declarations for monitor enumeration ────────
-    // These are specific to MpoToggle's multi-monitor detection and not
-    // general-purpose, so they are declared here rather than in NativeInterop.
+    // ── P/Invoke for monitor enumeration ─────────────────────────────────────
 
     private const uint DISPLAY_DEVICE_ACTIVE = 0x00000001;
     private const int ENUM_CURRENT_SETTINGS = -1;
@@ -436,73 +509,49 @@ public class MpoToggle : IOptimization
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool EnumDisplayDevicesW(
-        string? lpDevice,
-        uint iDevNum,
-        ref DISPLAY_DEVICE lpDisplayDevice,
-        uint dwFlags);
+        string? lpDevice, uint iDevNum, ref DISPLAY_DEVICE lpDisplayDevice, uint dwFlags);
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool EnumDisplaySettingsW(
-        string lpszDeviceName,
-        int iModeNum,
-        ref DEVMODE lpDevMode);
+        string lpszDeviceName, int iModeNum, ref DEVMODE lpDevMode);
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     private struct DISPLAY_DEVICE
     {
         public uint cb;
-
-        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)]
-        public string DeviceName;
-
-        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)]
-        public string DeviceString;
-
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string DeviceName;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string DeviceString;
         public uint StateFlags;
-
-        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)]
-        public string DeviceID;
-
-        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)]
-        public string DeviceKey;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string DeviceID;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string DeviceKey;
     }
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     private struct DEVMODE
     {
-        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)]
-        public string dmDeviceName;
-
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string dmDeviceName;
         public ushort dmSpecVersion;
         public ushort dmDriverVersion;
         public ushort dmSize;
         public ushort dmDriverExtra;
         public uint dmFields;
-
-        // Position union (POINTL or display orientation fields)
         public int dmPositionX;
         public int dmPositionY;
         public uint dmDisplayOrientation;
         public uint dmDisplayFixedOutput;
-
         public short dmColor;
         public short dmDuplex;
         public short dmYResolution;
         public short dmTTOption;
         public short dmCollate;
-
-        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)]
-        public string dmFormName;
-
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string dmFormName;
         public ushort dmLogPixels;
         public uint dmBitsPerPel;
         public uint dmPelsWidth;
         public uint dmPelsHeight;
         public uint dmDisplayFlags;
         public uint dmDisplayFrequency;
-
-        // ICM fields (not used but needed for correct struct size)
         public uint dmICMMethod;
         public uint dmICMIntent;
         public uint dmMediaType;
