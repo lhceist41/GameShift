@@ -54,7 +54,7 @@ These activate when a game launches and revert when the game closes.
 | **CPU Core Unparking** | Unparks all cores, disables processor idle in Competitive mode (forces C0 state). Vendor-aware parking values for AMD X3D dual-CCD. |
 | **Hybrid CPU Scheduling** | Detects P-cores vs E-cores on Intel 12th-15th gen and AMD hybrid CPUs via CPU Sets API. Assigns the game to P-cores and background processes to E-cores using soft affinity that cooperates with Intel Thread Director. Disables power throttling on the game (HighQoS) and enables EcoQoS on background processes. Falls back gracefully on non-hybrid CPUs. |
 | **Core Isolation** | Advanced opt-in feature: reserves specific P-cores exclusively for gaming via `ReservedCpuSets`. No other process can schedule onto reserved cores - OS-enforced. Visual core map in the UI for selecting which cores to reserve. Requires reboot. |
-| **MPO Disable** | Disables Multiplane Overlay to fix micro-stutter on multi-monitor setups. Includes Windows 11 24H2/25H2 fix using `DisableOverlays` - the legacy `OverlayTestMode` key is no longer honored on recent builds. Competitive mode only. |
+| **MPO Disable** | Disables Multiplane Overlay to fix micro-stutter on multi-monitor setups. Includes Windows 11 24H2/25H2 fix using `DisableOverlays`  - the legacy `OverlayTestMode` key is no longer honored on recent builds. Competitive mode only. |
 | **Visual Effect Reducer** | Disables transparency and animations during gameplay. |
 | **Efficiency Mode Control** | Applies Windows 11 EcoQoS to background processes, constraining them to E-cores. Rescans every 30 seconds to catch newly spawned processes. |
 | **I/O Priority Manager** | Lowers I/O priority of background processes to reduce disk contention. PID reuse safety prevents accidental priority changes. |
@@ -193,18 +193,18 @@ dotnet run --project src/GameShift.App
 
 ### Three-layer crash recovery
 
-1. **State Journal** - Every optimization writes its original and applied values to `%ProgramData%\GameShift\state.json` using atomic writes (temp file → rename). Reverts happen in LIFO order with post-revert verification.
-2. **Watchdog Service** - A lightweight Windows Service (`GameShift.Watchdog`) monitors the main app via named pipe heartbeat. If GameShift crashes, the watchdog detects it within 15 seconds and reverts all active optimizations from the journal.
-3. **Boot Recovery** - A scheduled task runs at startup. If the journal shows an active session (meaning a BSOD or power loss occurred), it reverts all optimizations. Also detects Windows Update build changes and flags settings for re-verification.
+1. **State Journal**  - Every optimization writes its original and applied values to `%ProgramData%\GameShift\state.json` using atomic writes (temp file → rename). Reverts happen in LIFO order with post-revert verification.
+2. **Watchdog Service**  - A lightweight Windows Service (`GameShift.Watchdog`) monitors the main app via named pipe heartbeat. If GameShift crashes, the watchdog detects it within 15 seconds and reverts all active optimizations from the journal.
+3. **Boot Recovery**  - A scheduled task runs at startup. If the journal shows an active session (meaning a BSOD or power loss occurred), it reverts all optimizations. Also detects Windows Update build changes and flags settings for re-verification.
 
 ### What GameShift changes (and how it reverts)
 
-- **Services** - Temporarily pauses non-essential services. Original start types recorded in journal, restored on session end.
-- **Registry keys** - Writes timer resolution, GPU driver settings, network tuning, power settings, and IFEO entries. All original values captured before any write and verified after revert.
-- **Power plans** - Creates or switches to Ultimate Performance (or the custom "GameShift Performance" plan). Your original plan GUID is saved and restored.
-- **Process priority & scheduling** - Elevates game priority, assigns CPU sets, manages memory priority and working sets. All released on game exit.
-- **BCD settings** - Optional kernel tuning (timer, APIC, TSC) via BCDEdit with one-click revert. Tracked in pending reboot fixes.
-- **Interrupt affinity** - Optional GPU and USB interrupt routing changes with rollback to default Windows assignment.
+- **Services**  - Temporarily pauses non-essential services. Original start types recorded in journal, restored on session end.
+- **Registry keys**  - Writes timer resolution, GPU driver settings, network tuning, power settings, and IFEO entries. All original values captured before any write and verified after revert.
+- **Power plans**  - Creates or switches to Ultimate Performance (or the custom "GameShift Performance" plan). Your original plan GUID is saved and restored.
+- **Process priority & scheduling**  - Elevates game priority, assigns CPU sets, manages memory priority and working sets. All released on game exit.
+- **BCD settings**  - Optional kernel tuning (timer, APIC, TSC) via BCDEdit with one-click revert. Tracked in pending reboot fixes.
+- **Interrupt affinity**  - Optional GPU and USB interrupt routing changes with rollback to default Windows assignment.
 
 ### Why administrator privileges are required
 
