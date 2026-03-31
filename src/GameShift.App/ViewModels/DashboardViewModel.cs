@@ -286,6 +286,25 @@ public class DashboardViewModel : INotifyPropertyChanged
         private set { _gpuOptimizationState = value; OnPropertyChanged(); }
     }
 
+    // ── HAGS / ReBAR status (Sprint 8D/8E) ────────────────────────────────
+
+    private string _hagsStatus = "Unknown";
+    private string _hagsAdvisory = "";
+    private bool _showHagsAdvisory;
+    private string _reBarStatus = "Unknown";
+    private string _reBarAdvisory = "";
+    private bool _showReBarAdvisory;
+
+    /// <summary>HAGS state: "Enabled", "Disabled", or "Unknown".</summary>
+    public string HagsStatus { get => _hagsStatus; private set { _hagsStatus = value; OnPropertyChanged(); } }
+    public string HagsAdvisory { get => _hagsAdvisory; private set { _hagsAdvisory = value; OnPropertyChanged(); } }
+    public bool ShowHagsAdvisory { get => _showHagsAdvisory; private set { _showHagsAdvisory = value; OnPropertyChanged(); } }
+
+    /// <summary>ReBAR/SAM state: "Enabled", "Not detected", or "Unknown".</summary>
+    public string ReBarStatus { get => _reBarStatus; private set { _reBarStatus = value; OnPropertyChanged(); } }
+    public string ReBarAdvisory { get => _reBarAdvisory; private set { _reBarAdvisory = value; OnPropertyChanged(); } }
+    public bool ShowReBarAdvisory { get => _showReBarAdvisory; private set { _showReBarAdvisory = value; OnPropertyChanged(); } }
+
     /// <summary>
     /// Average DPC latency in microseconds from the monitor.
     /// Updated in real-time from LatencySampled events.
@@ -553,6 +572,9 @@ public class DashboardViewModel : INotifyPropertyChanged
 
         // Set GPU info from live WMI detection (single source of truth)
         _gpuInfo = GpuDetector.GetGpuName();
+
+        // Populate HAGS / ReBAR status from hardware scan
+        UpdateGpuFeatureStatus();
 
         // Set initial state
         RefreshStatus();
@@ -1476,6 +1498,62 @@ public class DashboardViewModel : INotifyPropertyChanged
         if (_sessionTracker != null) _sessionTracker.SessionEnded -= OnSessionEnded;
 
         AllActivities.CollectionChanged -= _activitiesChangedHandler;
+    }
+
+    // ── GPU Feature Status (8D HAGS / 8E ReBAR) ─────────────────────────
+
+    /// <summary>
+    /// Reads HAGS and ReBAR state from HardwareScanResult (if available) and populates
+    /// the dashboard status properties + advisory messages.
+    /// </summary>
+    private void UpdateGpuFeatureStatus()
+    {
+        try
+        {
+            var scan = App.HardwareScan;
+            if (scan == null) return;
+
+            // ── HAGS ──
+            HagsStatus = scan.IsHagsEnabled ? "Enabled" : "Disabled";
+
+            if (!scan.IsHagsEnabled)
+            {
+                // Recommend HAGS for modern GPUs (RTX 30/40/50, RX 7000+, RDNA4)
+                bool shouldRecommend = scan.GpuGeneration is
+                    GpuGeneration.NvidiaRtx30 or GpuGeneration.NvidiaRtx40 or GpuGeneration.NvidiaRtx50 or
+                    GpuGeneration.AmdRdna3 or GpuGeneration.AmdRdna4;
+
+                if (shouldRecommend)
+                {
+                    ShowHagsAdvisory = true;
+                    HagsAdvisory = "HAGS is off but recommended for your GPU. " +
+                        "Required for DLSS 3.5+ Frame Generation and AMD Fluid Motion. " +
+                        "Enable in Settings > Display > Graphics > Change default graphics settings.";
+                }
+            }
+
+            // ── ReBAR ──
+            ReBarStatus = scan.IsReBarEnabled ? "Enabled" : "Not detected";
+
+            if (!scan.IsReBarEnabled && scan.GpuVendor != GpuVendor.Unknown)
+            {
+                bool gpuSupportsReBar = scan.GpuGeneration is
+                    GpuGeneration.NvidiaRtx30 or GpuGeneration.NvidiaRtx40 or GpuGeneration.NvidiaRtx50 or
+                    GpuGeneration.AmdRdna2 or GpuGeneration.AmdRdna3 or GpuGeneration.AmdRdna4;
+
+                if (gpuSupportsReBar)
+                {
+                    ShowReBarAdvisory = true;
+                    ReBarAdvisory = "Resizable BAR / Smart Access Memory is supported by your GPU but not detected. " +
+                        "Enable in BIOS (may require Above 4G Decoding + Re-Size BAR Support). " +
+                        "Can improve performance 5-10% in some titles.";
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Warning(ex, "[DashboardViewModel] Failed to update GPU feature status");
+        }
     }
 
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null)

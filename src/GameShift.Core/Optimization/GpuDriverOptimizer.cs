@@ -100,6 +100,9 @@ public class GpuDriverOptimizer : IOptimization
                 _ => false
             };
 
+            // ── Step 3: TDR timeout extension (all vendors) ──
+            ApplyTdrTweaks(snapshot);
+
             if (success)
             {
                 _isApplied = true;
@@ -379,6 +382,37 @@ public class GpuDriverOptimizer : IOptimization
             _logger.Warning(ex, "[GpuDriverOptimizer] NvAPI DRS profile application failed");
         }
 
+        // ── NVIDIA nvlddmkm kernel driver tweaks ──
+        const string nvlddmkmPath = @"HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\nvlddmkm";
+
+        // Force P-State 0 — prevent clock ramping during gaming for consistent frame times
+        try
+        {
+            SnapshotAndSetRegistryValue(
+                snapshot, nvlddmkmPath,
+                "DisableDynamicPstate", 1, RegistryValueKind.DWord,
+                "NVIDIA Force P-State 0");
+            anySuccess = true;
+        }
+        catch (Exception ex)
+        {
+            _logger.Warning(ex, "[GpuDriverOptimizer] Failed to set DisableDynamicPstate");
+        }
+
+        // CUDA spin mode — lowest latency scheduling for compute/shader work
+        try
+        {
+            SnapshotAndSetRegistryValue(
+                snapshot, nvlddmkmPath,
+                "RmCudaSchedulingMode", 1, RegistryValueKind.DWord,
+                "NVIDIA CUDA Spin Scheduling");
+            anySuccess = true;
+        }
+        catch (Exception ex)
+        {
+            _logger.Warning(ex, "[GpuDriverOptimizer] Failed to set RmCudaSchedulingMode");
+        }
+
         return anySuccess;
     }
 
@@ -575,6 +609,49 @@ public class GpuDriverOptimizer : IOptimization
         }
 
         return anySuccess;
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    // Registry Helpers
+    // ════════════════════════════════════════════════════════════════════
+
+    // ════════════════════════════════════════════════════════════════════
+    // TDR Timeout Extension (All Vendors)
+    // ════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Extends TDR (Timeout Detection and Recovery) delays to prevent false GPU timeout resets
+    /// during heavy shader compilation in modern games. Applied for all GPU vendors.
+    /// </summary>
+    private void ApplyTdrTweaks(SystemStateSnapshot snapshot)
+    {
+        const string tdrPath = @"HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\GraphicsDrivers";
+
+        // TdrDelay: seconds before GPU timeout reset (default 2, extended to 8)
+        try
+        {
+            SnapshotAndSetRegistryValue(
+                snapshot, tdrPath,
+                "TdrDelay", 8, RegistryValueKind.DWord,
+                "TDR Delay 8s (prevent false GPU resets)");
+        }
+        catch (Exception ex)
+        {
+            _logger.Warning(ex, "[GpuDriverOptimizer] Failed to set TdrDelay");
+        }
+
+        // TdrDdiDelay: DDI timeout in seconds (default 5, extended to 10)
+        try
+        {
+            SnapshotAndSetRegistryValue(
+                snapshot, tdrPath,
+                "TdrDdiDelay", 10, RegistryValueKind.DWord,
+                "TDR DDI Delay 10s (prevent false resets during shader compile)");
+        }
+        catch (Exception ex)
+        {
+            _logger.Warning(ex, "[GpuDriverOptimizer] Failed to set TdrDdiDelay");
+        }
     }
 
     // ════════════════════════════════════════════════════════════════════

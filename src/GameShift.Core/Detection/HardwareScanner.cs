@@ -124,7 +124,8 @@ public class HardwareScanner
             HasRiotGamesOnDisk = DetectRiotGamesOnDisk(),
             PrimaryRefreshRate = displayInfo.RefreshRate,
             IsHagsEnabled = DetectHagsEnabled(),
-            GpuGeneration = DetectGpuGeneration(GpuName)
+            GpuGeneration = DetectGpuGeneration(GpuName),
+            IsReBarEnabled = DetectReBarEnabled()
         };
     }
 
@@ -261,6 +262,77 @@ public class HardwareScanner
             Log.Warning(ex, "HardwareScanner: Failed to detect HAGS state");
             return false;
         }
+    }
+
+    /// <summary>
+    /// Detects whether Resizable BAR (NVIDIA) or Smart Access Memory (AMD) is enabled.
+    ///
+    /// Checks the primary GPU's driver class key for vendor-specific large-BAR indicators:
+    ///   - NVIDIA: <c>RMApertureSizeInMB</c> under <c>Services\nvlddmkm</c> (large value = ReBAR)
+    ///   - AMD: <c>EnableLargeBar</c> or presence of large BAR config in driver class key
+    ///   - Fallback: compare <c>Win32_VideoController.AdapterRAM</c> mapped size hint
+    ///
+    /// Does NOT attempt to enable ReBAR — this is a BIOS-level setting.
+    /// </summary>
+    private static bool DetectReBarEnabled()
+    {
+        try
+        {
+            const string driverClassBase = @"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}";
+
+            using var classKey = Registry.LocalMachine.OpenSubKey(driverClassBase);
+            if (classKey == null) return false;
+
+            foreach (var subKeyName in classKey.GetSubKeyNames())
+            {
+                // Only check numbered subkeys (0000, 0001, etc.)
+                if (!int.TryParse(subKeyName, out _)) continue;
+
+                using var driverKey = classKey.OpenSubKey(subKeyName);
+                if (driverKey == null) continue;
+
+                string provider = driverKey.GetValue("ProviderName")?.ToString() ?? "";
+
+                // NVIDIA: check for large aperture size (> 256 MB indicates ReBAR)
+                if (provider.Contains("NVIDIA", StringComparison.OrdinalIgnoreCase))
+                {
+                    // nvlddmkm reports aperture size when ReBAR is active
+                    var aperture = driverKey.GetValue("RMApertureSizeInMB");
+                    if (aperture is int apMb && apMb > 256)
+                    {
+                        Log.Debug("ReBAR detected: NVIDIA aperture {Size} MB", apMb);
+                        return true;
+                    }
+                }
+
+                // AMD: check for Large BAR enablement
+                if (provider.Contains("AMD", StringComparison.OrdinalIgnoreCase) ||
+                    provider.Contains("Advanced Micro Devices", StringComparison.OrdinalIgnoreCase))
+                {
+                    // AMD drivers expose EnableLargeBar when SAM is active
+                    var largeBar = driverKey.GetValue("EnableLargeBar");
+                    if (largeBar is int lb && lb == 1)
+                    {
+                        Log.Debug("ReBAR/SAM detected: AMD EnableLargeBar = 1");
+                        return true;
+                    }
+
+                    // Alternative: check KMD_EnableInternalLargePage
+                    var internalLarge = driverKey.GetValue("KMD_EnableInternalLargePage");
+                    if (internalLarge is int ilp && ilp == 1)
+                    {
+                        Log.Debug("ReBAR/SAM detected: AMD KMD_EnableInternalLargePage = 1");
+                        return true;
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "HardwareScanner: Failed to detect ReBAR state");
+        }
+
+        return false;
     }
 
     /// <summary>

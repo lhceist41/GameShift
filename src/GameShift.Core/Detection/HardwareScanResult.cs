@@ -37,6 +37,9 @@ public class HardwareScanResult
     // GPU Generation (Sprint 7 — HAGS recommendation engine)
     public GpuGeneration GpuGeneration { get; set; } = GpuGeneration.Unknown;
 
+    // Resizable BAR / Smart Access Memory (Sprint 8E)
+    public bool IsReBarEnabled { get; set; }
+
     // Convenience
     public bool HasSufficientVram(double requiredGb) => GpuVramGb >= requiredGb;
 }
