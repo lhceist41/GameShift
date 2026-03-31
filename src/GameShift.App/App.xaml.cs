@@ -391,7 +391,8 @@ public partial class App : Application
                 new CpuParkingManager(),         // 12 - v3 (after PowerPlanSwitcher)
                 new IoPriorityManager(),         // 13 - v4 (after GpuDriverOptimizer)
                 new EfficiencyModeController(),  // 14 - v4 (process-level)
-                new CpuSchedulingOptimizer()     // 15 - v4 (last — E-core routing + HighQoS, reverts first)
+                new CpuSchedulingOptimizer(),    // 15 - v4 (E-core routing + HighQoS)
+                new SessionSystemTweaksOptimizer() // 16 - v4 (last — MMCSS + USB + ASPM, reverts first)
             };
 
             Engine = new OptimizationEngine(Optimizations);
