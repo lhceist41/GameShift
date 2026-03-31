@@ -102,4 +102,35 @@ public partial class DpcDoctorPage : Page
             vm.ToggleKernelTuningSetting(item);
         }
     }
+
+    // ── Core Isolation handlers ───────────────────────────────────────────
+
+    private void OnCoreMapItemClicked(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (sender is System.Windows.Controls.Border border &&
+            border.Tag is ViewModels.CoreMapItemViewModel core &&
+            core.CanSelect)
+        {
+            core.IsSelected = !core.IsSelected;
+        }
+    }
+
+    private void OnSelectDefaultCoresClicked(object sender, RoutedEventArgs e)
+    {
+        (DataContext as DpcDoctorViewModel)?.SelectDefaultCores();
+    }
+
+    private void OnApplyCoreIsolationClicked(object sender, RoutedEventArgs e)
+    {
+        if (sender is System.Windows.Controls.Button btn && DataContext is DpcDoctorViewModel vm)
+        {
+            bool restartNow = btn.Tag?.ToString() == "true";
+            vm.ApplyCoreIsolation(restartNow);
+        }
+    }
+
+    private void OnRemoveCoreIsolationClicked(object sender, RoutedEventArgs e)
+    {
+        (DataContext as DpcDoctorViewModel)?.RemoveCoreIsolation();
+    }
 }

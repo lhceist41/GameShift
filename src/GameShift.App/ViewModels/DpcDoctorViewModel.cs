@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Threading;
 using GameShift.Core.Config;
 using GameShift.Core.Monitoring;
+using GameShift.Core.Optimization;
 using GameShift.Core.System;
 using GameShift.Core.SystemTweaks;
 using Serilog;
@@ -142,6 +143,29 @@ public class KernelTuningItemViewModel : INotifyPropertyChanged
 }
 
 /// <summary>
+/// ViewModel for a single core in the Core Isolation visual map.
+/// </summary>
+public class CoreMapItemViewModel : INotifyPropertyChanged
+{
+    private bool _isSelected;
+
+    public uint CpuSetId { get; init; }
+    public string Label { get; init; } = "";
+    public bool IsPCore { get; init; }
+    public bool CanSelect { get; init; } // Only P-cores can be selected
+
+    public bool IsSelected
+    {
+        get => _isSelected;
+        set { _isSelected = value; OnPropertyChanged(); }
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+    protected void OnPropertyChanged([CallerMemberName] string? name = null) =>
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+}
+
+/// <summary>
 /// ViewModel for the DPC Doctor page.
 /// Manages ETW trace capture, diagnosed issues, and quick fixes.
 /// </summary>
@@ -247,6 +271,22 @@ public class DpcDoctorViewModel : INotifyPropertyChanged
     /// <summary>Kernel tuning BCD settings with current/recommended values and apply/revert actions.</summary>
     public ObservableCollection<KernelTuningItemViewModel> KernelTuningItems { get; } = new();
 
+    // ── Core Isolation (Sprint 5C) ────────────────────────────────────────────
+
+    private string _coreIsolationStatus = "Loading...";
+    private string _coreIsolationWarning = "";
+    private bool _showCoreIsolationWarning;
+    private bool _isCoreIsolationAvailable;
+    private CoreIsolationStatus? _coreIsolationData;
+
+    public string CoreIsolationStatus { get => _coreIsolationStatus; set { _coreIsolationStatus = value; OnPropertyChanged(); } }
+    public string CoreIsolationWarning { get => _coreIsolationWarning; set { _coreIsolationWarning = value; OnPropertyChanged(); } }
+    public bool ShowCoreIsolationWarning { get => _showCoreIsolationWarning; set { _showCoreIsolationWarning = value; OnPropertyChanged(); } }
+    public bool IsCoreIsolationAvailable { get => _isCoreIsolationAvailable; set { _isCoreIsolationAvailable = value; OnPropertyChanged(); } }
+
+    /// <summary>Core map items for the visual display.</summary>
+    public ObservableCollection<CoreMapItemViewModel> CoreMapItems { get; } = new();
+
     public DpcDoctorViewModel(
         DpcTraceEngine? traceEngine,
         DpcFixEngine? fixEngine,
@@ -275,6 +315,7 @@ public class DpcDoctorViewModel : INotifyPropertyChanged
 
         InitializeQuickFixes();
         InitializeKernelTuning();
+        InitializeCoreIsolation();
         CheckPendingRebootComparison();
         RefreshInterruptAffinityStatus();
     }
@@ -760,6 +801,116 @@ public class DpcDoctorViewModel : INotifyPropertyChanged
                 });
                 _saveSettings();
             }
+        }
+    }
+
+    // ── Core Isolation (Sprint 5C) ──────────────────────────────────────────
+
+    private void InitializeCoreIsolation()
+    {
+        try
+        {
+            var mgr = new GameShift.Core.Optimization.CoreIsolationManager();
+            _coreIsolationData = mgr.GetStatus();
+
+            IsCoreIsolationAvailable = _coreIsolationData.IsHybridCpu;
+            CoreIsolationStatus = _coreIsolationData.Message;
+
+            if (!_coreIsolationData.IsHybridCpu)
+                return;
+
+            if (_coreIsolationData.PCoreTotalCount < 4)
+            {
+                ShowCoreIsolationWarning = true;
+                CoreIsolationWarning = "Your CPU has fewer than 4 P-cores. Core reservation may not be beneficial.";
+            }
+
+            // Build core map
+            CoreMapItems.Clear();
+            foreach (var core in _coreIsolationData.AllCores)
+            {
+                CoreMapItems.Add(new CoreMapItemViewModel
+                {
+                    CpuSetId = core.CpuSetId,
+                    Label = core.Label,
+                    IsPCore = core.IsPCore,
+                    CanSelect = core.IsPCore, // Only P-cores can be reserved
+                    IsSelected = _coreIsolationData.ReservedCpuSetIds.Contains(core.CpuSetId)
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "[DpcDoctorViewModel] Failed to initialize core isolation");
+            CoreIsolationStatus = "Failed to detect CPU topology.";
+        }
+    }
+
+    /// <summary>
+    /// Applies the current core map selection as a reservation. Requires reboot.
+    /// </summary>
+    public void ApplyCoreIsolation(bool restartNow)
+    {
+        var selected = CoreMapItems.Where(c => c.IsSelected && c.IsPCore).Select(c => c.CpuSetId).ToList();
+
+        var mgr = new GameShift.Core.Optimization.CoreIsolationManager();
+        var error = mgr.ApplyReservation(selected);
+
+        if (error != null)
+        {
+            CoreIsolationStatus = $"Error: {error}";
+            return;
+        }
+
+        CoreIsolationStatus = $"{selected.Count} P-core(s) reserved. Reboot required.";
+        ShowRebootPrompt = true;
+        RebootFixName = "Core Isolation";
+
+        if (restartNow)
+        {
+            global::System.Diagnostics.Process.Start(new global::System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "shutdown", Arguments = "/r /t 10",
+                UseShellExecute = false, CreateNoWindow = true
+            });
+        }
+    }
+
+    /// <summary>
+    /// Removes the core reservation (deletes ReservedCpuSets). Requires reboot.
+    /// </summary>
+    public void RemoveCoreIsolation()
+    {
+        var mgr = new GameShift.Core.Optimization.CoreIsolationManager();
+        var error = mgr.RemoveReservation();
+
+        if (error != null)
+        {
+            CoreIsolationStatus = $"Error: {error}";
+            return;
+        }
+
+        CoreIsolationStatus = "Reservation removed. Reboot required to restore default scheduling.";
+        ShowRebootPrompt = true;
+        RebootFixName = "Core Isolation removal";
+
+        // Deselect all in core map
+        foreach (var item in CoreMapItems)
+            item.IsSelected = false;
+    }
+
+    /// <summary>
+    /// Selects the default recommended cores (all P-cores except last).
+    /// </summary>
+    public void SelectDefaultCores()
+    {
+        var mgr = new GameShift.Core.Optimization.CoreIsolationManager();
+        var defaults = new HashSet<uint>(mgr.GetDefaultSuggestion());
+
+        foreach (var item in CoreMapItems)
+        {
+            if (item.IsPCore)
+                item.IsSelected = defaults.Contains(item.CpuSetId);
         }
     }
 
