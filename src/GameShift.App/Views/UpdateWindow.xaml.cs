@@ -42,11 +42,9 @@ public partial class UpdateWindow : Window
             ReleaseNotesText.Text = "No release notes available.";
         }
 
-        // If no direct download URL, hide the Download button and show "View Release" instead
-        if (string.IsNullOrEmpty(updateInfo.DownloadUrl) && !alreadyStaged)
-        {
-            DownloadButton.Content = "View Release";
-        }
+        // If no download URL at all, fall back to opening the release page in the browser.
+        // The button always says "Download & Install" — the fallback is transparent to the user.
+        // (UpdateChecker now resolves .exe > .zip > zipball, so this is rare.)
 
         // If update is already staged, go straight to Ready state
         if (alreadyStaged)

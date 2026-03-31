@@ -64,24 +64,71 @@ public static class UpdateChecker
                     "UpdateChecker: Update available — current {Current}, latest {Latest}",
                     currentVersion, latestVersion);
 
-                // Parse download URL from release assets
+                // Parse download URL from release assets.
+                // Priority: exact exe match > any .exe asset > any .zip asset > source zipball.
                 string? downloadUrl = null;
                 long downloadSize = 0;
 
                 if (root.TryGetProperty("assets", out var assetsArray))
                 {
+                    string? fallbackExeUrl = null;
+                    long fallbackExeSize = 0;
+                    string? fallbackZipUrl = null;
+                    long fallbackZipSize = 0;
+
                     foreach (var asset in assetsArray.EnumerateArray())
                     {
                         var assetName = asset.GetProperty("name").GetString();
-                        if (assetName != null &&
-                            (assetName.Equals("GameShift.App.exe", StringComparison.OrdinalIgnoreCase) ||
-                             assetName.Equals("GameShift.exe", StringComparison.OrdinalIgnoreCase)))
+                        if (string.IsNullOrEmpty(assetName)) continue;
+
+                        var url = asset.GetProperty("browser_download_url").GetString();
+                        var size = asset.GetProperty("size").GetInt64();
+
+                        // Priority 1: exact name match
+                        if (assetName.Equals("GameShift.App.exe", StringComparison.OrdinalIgnoreCase) ||
+                            assetName.Equals("GameShift.exe", StringComparison.OrdinalIgnoreCase))
                         {
-                            downloadUrl = asset.GetProperty("browser_download_url").GetString();
-                            downloadSize = asset.GetProperty("size").GetInt64();
+                            downloadUrl = url;
+                            downloadSize = size;
                             break;
                         }
+
+                        // Priority 2: any .exe asset
+                        if (fallbackExeUrl == null &&
+                            assetName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+                        {
+                            fallbackExeUrl = url;
+                            fallbackExeSize = size;
+                        }
+
+                        // Priority 3: any .zip asset
+                        if (fallbackZipUrl == null &&
+                            assetName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+                        {
+                            fallbackZipUrl = url;
+                            fallbackZipSize = size;
+                        }
                     }
+
+                    // Use fallbacks if no exact match found
+                    if (downloadUrl == null && fallbackExeUrl != null)
+                    {
+                        downloadUrl = fallbackExeUrl;
+                        downloadSize = fallbackExeSize;
+                    }
+                    else if (downloadUrl == null && fallbackZipUrl != null)
+                    {
+                        downloadUrl = fallbackZipUrl;
+                        downloadSize = fallbackZipSize;
+                    }
+                }
+
+                // Last resort: use GitHub's auto-generated source zipball
+                if (downloadUrl == null)
+                {
+                    downloadUrl = root.TryGetProperty("zipball_url", out var zipballProp)
+                        ? zipballProp.GetString()
+                        : null;
                 }
 
                 return new UpdateInfo
