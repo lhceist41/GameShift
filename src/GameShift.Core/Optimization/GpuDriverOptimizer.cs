@@ -2,6 +2,7 @@ using System.Management;
 using Microsoft.Win32;
 using GameShift.Core.Config;
 using GameShift.Core.Detection;
+using GameShift.Core.Optimization.Gpu;
 using GameShift.Core.Profiles;
 using GameShift.Core.System;
 using Serilog;
@@ -33,6 +34,11 @@ public class GpuDriverOptimizer : IOptimization
 
     // Track all registry changes for clean revert
     private readonly List<RegistryChange> _registryChanges = new();
+
+    // Vendor-specific SDK managers (loaded lazily based on detected vendor)
+    private NvApiDrsManager? _nvApiDrs;
+    private AdlxManager? _adlx;
+    private Dictionary<uint, uint?>? _nvApiDrsBackup;
 
     // ── Display Adapter Class GUID (standard for all GPUs) ───────────
     private const string DisplayAdapterClassGuid = "{4d36e968-e325-11ce-bfc1-08002be10318}";
@@ -178,6 +184,39 @@ public class GpuDriverOptimizer : IOptimization
             }
 
             _registryChanges.Clear();
+
+            // Restore NvAPI DRS settings
+            if (_nvApiDrs != null && _nvApiDrsBackup != null)
+            {
+                try
+                {
+                    _nvApiDrs.RestoreSettings(_nvApiDrsBackup);
+                    _logger.Information("[GpuDriverOptimizer] NvAPI DRS settings restored");
+                }
+                catch (Exception ex)
+                {
+                    _logger.Warning(ex, "[GpuDriverOptimizer] Failed to restore NvAPI DRS settings");
+                }
+                _nvApiDrs.Dispose();
+                _nvApiDrs = null;
+                _nvApiDrsBackup = null;
+            }
+
+            // Revert ADLX Anti-Lag
+            if (_adlx != null)
+            {
+                try
+                {
+                    _adlx.DisableAntiLag();
+                }
+                catch (Exception ex)
+                {
+                    _logger.Warning(ex, "[GpuDriverOptimizer] Failed to revert ADLX Anti-Lag");
+                }
+                _adlx.Dispose();
+                _adlx = null;
+            }
+
             _isApplied = false;
             _detectedVendor = GpuVendor.Unknown;
             _detectedGpuName = null;
@@ -314,20 +353,30 @@ public class GpuDriverOptimizer : IOptimization
             }
         }
 
-        // ── Power Management Max Performance (DRS profile) ──
-        if (profile.ForceMaxPerformancePowerMode)
+        // ── NvAPI DRS Profile Settings (power management, pre-render, shader cache, latency) ──
+        try
         {
-            // NVIDIA power management, threaded optimization, and texture filtering quality
-            // are controlled via DRS (Driver Runtime Settings) profiles. These settings are
-            // stored in nvdrsdb.bin and are not reliably accessible via direct registry writes.
-            // Users should configure these in NVIDIA Control Panel > Manage 3D Settings:
-            //   - Power management mode: Prefer maximum performance
-            //   - Threaded optimization: On
-            //   - Texture filtering - Quality: High performance
-            _logger.Information(
-                "[GpuDriverOptimizer] NVIDIA power management, threaded optimization, and texture filtering " +
-                "are DRS profile settings — configure via NVIDIA Control Panel > Manage 3D Settings for best results. " +
-                "Registry-accessible settings (Low Latency, Shader Cache) have been applied.");
+            _nvApiDrs = new NvApiDrsManager();
+            if (_nvApiDrs.IsAvailable)
+            {
+                _nvApiDrsBackup = _nvApiDrs.ApplyGamingSettings();
+                if (_nvApiDrsBackup.Count > 0)
+                {
+                    anySuccess = true;
+                    _logger.Information(
+                        "[GpuDriverOptimizer] Applied {Count} NVIDIA DRS profile settings via NvAPI",
+                        _nvApiDrsBackup.Count);
+                }
+            }
+            else
+            {
+                _logger.Information(
+                    "[GpuDriverOptimizer] NvAPI not available — DRS settings require NVIDIA Control Panel");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.Warning(ex, "[GpuDriverOptimizer] NvAPI DRS profile application failed");
         }
 
         return anySuccess;
@@ -432,7 +481,6 @@ public class GpuDriverOptimizer : IOptimization
         {
             try
             {
-                // ShaderCache = 1 enables shader cache
                 SnapshotAndSetRegistryValue(
                     snapshot,
                     amdUmdPath,
@@ -448,6 +496,82 @@ public class GpuDriverOptimizer : IOptimization
                     ex,
                     "[GpuDriverOptimizer] Failed to enable AMD Shader Cache");
             }
+        }
+
+        // ── FlipQueueSize = 1 (pre-rendered frames) ──
+        try
+        {
+            // UMD\FlipQueueSize = REG_BINARY [0x31, 0x00] represents "1" as a wide-char string
+            SnapshotAndSetRegistryValue(
+                snapshot,
+                amdUmdPath,
+                "FlipQueueSize",
+                new byte[] { 0x31, 0x00 },
+                RegistryValueKind.Binary,
+                "AMD Pre-Rendered Frames = 1");
+            anySuccess = true;
+        }
+        catch (Exception ex)
+        {
+            _logger.Warning(ex, "[GpuDriverOptimizer] Failed to set AMD FlipQueueSize");
+        }
+
+        // ── Driver class key tweaks (EnableUlps, PP_SclkDeepSleepDisable) ──
+        string amdDriverClassPath = $@"HKEY_LOCAL_MACHINE\{amdDriverSubkey}";
+
+        // Disable Ultra Low Power State — prevents aggressive clock gating during gaming
+        try
+        {
+            SnapshotAndSetRegistryValue(
+                snapshot,
+                amdDriverClassPath,
+                "EnableUlps",
+                0,
+                RegistryValueKind.DWord,
+                "AMD ULPS Disabled");
+            anySuccess = true;
+        }
+        catch (Exception ex)
+        {
+            _logger.Warning(ex, "[GpuDriverOptimizer] Failed to disable AMD ULPS");
+        }
+
+        // Disable deep clock sleep — prevents latency spikes from clock ramp-up
+        try
+        {
+            SnapshotAndSetRegistryValue(
+                snapshot,
+                amdDriverClassPath,
+                "PP_SclkDeepSleepDisable",
+                1,
+                RegistryValueKind.DWord,
+                "AMD Deep Clock Sleep Disabled");
+            anySuccess = true;
+        }
+        catch (Exception ex)
+        {
+            _logger.Warning(ex, "[GpuDriverOptimizer] Failed to disable AMD deep clock sleep");
+        }
+
+        // ── ADLX Anti-Lag (try SDK first, fall back to registry above) ──
+        try
+        {
+            _adlx = new AdlxManager();
+            if (_adlx.IsAvailable && profile.EnableLowLatencyMode)
+            {
+                if (_adlx.EnableAntiLag())
+                {
+                    _logger.Information("[GpuDriverOptimizer] AMD Anti-Lag enabled via ADLX");
+                }
+            }
+            else if (!_adlx.IsAvailable)
+            {
+                _logger.Debug("[GpuDriverOptimizer] ADLX not available — Anti-Lag controlled via registry");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.Warning(ex, "[GpuDriverOptimizer] ADLX Anti-Lag setup failed");
         }
 
         return anySuccess;
