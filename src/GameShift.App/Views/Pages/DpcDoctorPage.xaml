@@ -580,6 +580,89 @@ This is how long this driver locked up your CPU, in microseconds (&#x00B5;s).
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
 
+                    <!-- Section 5: Core Isolation (Sprint 5C) -->
+                    <Border Visibility="{Binding IsCoreIsolationAvailable, Converter={StaticResource BoolToVisibility}}"
+                            Margin="0,20,0,0">
+                        <StackPanel>
+                            <TextBlock Text="Core Isolation (Advanced)" FontSize="18" FontWeight="Bold"
+                                       Foreground="{DynamicResource GS.Text.Primary}" Margin="0,0,0,4"/>
+                            <TextBlock Text="Reserve specific P-cores exclusively for games. Background processes cannot schedule onto reserved cores. Requires reboot."
+                                       Foreground="{DynamicResource GS.Text.Secondary}" FontSize="12" Margin="0,0,0,8" TextWrapping="Wrap"/>
+
+                            <!-- Warning banner -->
+                            <Border Visibility="{Binding ShowCoreIsolationWarning, Converter={StaticResource BoolToVisibility}}"
+                                    Background="#2D2006" CornerRadius="6" Padding="12,8" Margin="0,0,0,8">
+                                <TextBlock Text="{Binding CoreIsolationWarning}" Foreground="#F59E0B" FontSize="12" TextWrapping="Wrap"/>
+                            </Border>
+
+                            <!-- Status -->
+                            <TextBlock Text="{Binding CoreIsolationStatus}" Foreground="{DynamicResource GS.Text.Secondary}"
+                                       FontSize="12" Margin="0,0,0,12"/>
+
+                            <!-- Core map -->
+                            <ItemsControl ItemsSource="{Binding CoreMapItems}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <WrapPanel/>
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate DataType="{x:Type vm:CoreMapItemViewModel}">
+                                        <Border Width="56" Height="44" Margin="4" CornerRadius="6"
+                                                BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1"
+                                                Background="{DynamicResource GS.Surface.Card}"
+                                                Cursor="Hand" MouseLeftButtonUp="OnCoreMapItemClicked" Tag="{Binding}">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                            <Setter Property="Background" Value="#1A3A6B"/>
+                                                            <Setter Property="BorderBrush" Value="#3B82F6"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+                                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding Label}" HorizontalAlignment="Center"
+                                                           FontWeight="SemiBold" FontSize="13"
+                                                           Foreground="{DynamicResource GS.Text.Primary}"/>
+                                                <TextBlock HorizontalAlignment="Center" FontSize="9"
+                                                           Foreground="#94A3B8">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock">
+                                                            <Setter Property="Text" Value="E-core"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsPCore}" Value="True">
+                                                                    <Setter Property="Text" Value="P-core"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <!-- Action buttons -->
+                            <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                                <Button Content="Select Recommended" Padding="12,6" Margin="0,0,8,0"
+                                        FontSize="12" Cursor="Hand" Click="OnSelectDefaultCoresClicked"
+                                        Foreground="{DynamicResource GS.Text.Primary}"/>
+                                <Button Content="Apply &amp; Restart Later" Padding="12,6" Margin="0,0,8,0"
+                                        FontSize="12" Cursor="Hand" Click="OnApplyCoreIsolationClicked"
+                                        Tag="false" Foreground="{DynamicResource GS.Text.Primary}"/>
+                                <Button Content="Apply &amp; Restart Now" Padding="12,6" Margin="0,0,8,0"
+                                        FontSize="12" Cursor="Hand" Click="OnApplyCoreIsolationClicked"
+                                        Tag="true" Foreground="#F59E0B"/>
+                                <Button Content="Remove Isolation" Padding="12,6"
+                                        FontSize="12" Cursor="Hand" Click="OnRemoveCoreIsolationClicked"
+                                        Foreground="#EF4444"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
                 </StackPanel>
             </ScrollViewer>
         </DockPanel>

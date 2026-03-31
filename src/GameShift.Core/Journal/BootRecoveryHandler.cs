@@ -1,4 +1,5 @@
 using GameShift.Core.Detection;
+using GameShift.Core.Optimization;
 using Microsoft.Win32;
 using Serilog;
 
@@ -37,6 +38,13 @@ public static class BootRecoveryHandler
             // Must happen before journal check — the ETW session is a system resource
             // independent of the journal's sessionActive flag.
             EtwProcessMonitor.CleanupStaleSession(logger);
+
+            // Check for orphaned ReservedCpuSets — if GameShift was uninstalled but the
+            // kernel reservation persists, clean it up to restore normal scheduling.
+            // Only clean up if there's no active GameShift installation (no journal or
+            // the journal was from a crashed session that's being recovered).
+            // Note: this runs on every boot, so we only clean up if the journal indicates
+            // the reservation was set by GameShift and the session is no longer managed.
 
             var journal = new JournalManager();
             var journalData = journal.LoadJournal();

@@ -45,8 +45,11 @@ public class CpuSchedulingOptimizer : IOptimization
 
     private bool _isHybrid;
     private bool _hasCpuSetMasksApi; // Win11 22H2+
+    private bool _hasReservedCores; // ReservedCpuSets active (reboot-applied)
     private NativeInterop.GROUP_AFFINITY[]? _pCoreMasks;
     private NativeInterop.GROUP_AFFINITY[]? _eCoreMasks;
+    private NativeInterop.GROUP_AFFINITY[]? _reservedMasks; // Cores reserved for game
+    private NativeInterop.GROUP_AFFINITY[]? _unreservedMasks; // Non-reserved for background
 
     // ── Applied state for revert ──────────────────────────────────────────────
 
@@ -70,6 +73,11 @@ public class CpuSchedulingOptimizer : IOptimization
                 _logger.Information(
                     "[CpuSchedulingOptimizer] Non-hybrid CPU — skipping CPU Set assignment, applying HighQoS only");
             }
+            else if (_hasReservedCores)
+            {
+                _logger.Information(
+                    "[CpuSchedulingOptimizer] Reserved cores active — game→reserved P-cores, background→unreserved cores");
+            }
             else
             {
                 _logger.Information(
@@ -92,18 +100,26 @@ public class CpuSchedulingOptimizer : IOptimization
                     {
                         try
                         {
-                            // P-core CPU Sets (hybrid only)
-                            if (_isHybrid && _hasCpuSetMasksApi && _pCoreMasks != null && _pCoreMasks.Length > 0)
+                            // CPU Set assignment (hybrid only)
+                            if (_isHybrid && _hasCpuSetMasksApi)
                             {
-                                if (NativeInterop.SetProcessDefaultCpuSetMasks(
-                                        hGame, _pCoreMasks, (ushort)_pCoreMasks.Length))
+                                // Use reserved cores if active, otherwise all P-cores
+                                var gameMasks = _hasReservedCores && _reservedMasks?.Length > 0
+                                    ? _reservedMasks
+                                    : _pCoreMasks;
+
+                                if (gameMasks != null && gameMasks.Length > 0 &&
+                                    NativeInterop.SetProcessDefaultCpuSetMasks(
+                                        hGame, gameMasks, (ushort)gameMasks.Length))
                                 {
                                     _gameCpuSetApplied = true;
                                     _logger.Information(
-                                        "[CpuSchedulingOptimizer] Game (PID {Pid}) → P-core CPU Sets ({Count} groups)",
-                                        _gamePid, _pCoreMasks.Length);
+                                        "[CpuSchedulingOptimizer] Game (PID {Pid}) → {Type} CPU Sets ({Count} groups)",
+                                        _gamePid,
+                                        _hasReservedCores ? "reserved P-core" : "P-core",
+                                        gameMasks.Length);
                                 }
-                                else
+                                else if (gameMasks?.Length > 0)
                                 {
                                     _logger.Warning(
                                         "[CpuSchedulingOptimizer] SetProcessDefaultCpuSetMasks failed for game (error {Err})",
@@ -267,8 +283,8 @@ public class CpuSchedulingOptimizer : IOptimization
             if (!NativeInterop.GetSystemCpuSetInformation(buffer, requiredSize, out _, IntPtr.Zero, 0))
                 return;
 
-            var pCores = new List<(ushort Group, byte LogicalIndex)>();
-            var eCores = new List<(ushort Group, byte LogicalIndex)>();
+            var pCores = new List<(ushort Group, byte LogicalIndex, uint CpuSetId)>();
+            var eCores = new List<(ushort Group, byte LogicalIndex, uint CpuSetId)>();
             var allEfficiencyClasses = new HashSet<byte>();
 
             int offset = 0;
@@ -280,11 +296,10 @@ public class CpuSchedulingOptimizer : IOptimization
                 {
                     allEfficiencyClasses.Add(info.EfficiencyClass);
 
-                    // EfficiencyClass 0 = P-core (Performance), 1+ = E-core (Efficiency)
                     if (info.EfficiencyClass == 0)
-                        pCores.Add((info.Group, info.LogicalProcessorIndex));
+                        pCores.Add((info.Group, info.LogicalProcessorIndex, info.Id));
                     else
-                        eCores.Add((info.Group, info.LogicalProcessorIndex));
+                        eCores.Add((info.Group, info.LogicalProcessorIndex, info.Id));
                 }
 
                 offset += (int)info.Size;
@@ -296,8 +311,33 @@ public class CpuSchedulingOptimizer : IOptimization
 
             if (_isHybrid)
             {
-                _pCoreMasks = BuildGroupAffinityMasks(pCores);
-                _eCoreMasks = BuildGroupAffinityMasks(eCores);
+                _pCoreMasks = BuildGroupAffinityMasks(
+                    pCores.Select(c => (c.Group, c.LogicalIndex)).ToList());
+                _eCoreMasks = BuildGroupAffinityMasks(
+                    eCores.Select(c => (c.Group, c.LogicalIndex)).ToList());
+
+                // Check for active core reservation (Sprint 5C)
+                var reservedIds = CoreIsolationManager.ReadCurrentReservation();
+                if (reservedIds.Count > 0)
+                {
+                    // Match by CpuSetId (the bitmask bit positions correspond to CPU Set IDs)
+                    var reservedCores = pCores.Where(c => reservedIds.Contains(c.CpuSetId)).ToList();
+                    var unreservedCores = pCores.Where(c => !reservedIds.Contains(c.CpuSetId))
+                        .Concat(eCores).ToList();
+
+                    if (reservedCores.Count > 0)
+                    {
+                        _hasReservedCores = true;
+                        _reservedMasks = BuildGroupAffinityMasks(
+                            reservedCores.Select(c => (c.Group, c.LogicalIndex)).ToList());
+                        _unreservedMasks = BuildGroupAffinityMasks(
+                            unreservedCores.Select(c => (c.Group, c.LogicalIndex)).ToList());
+
+                        _logger.Information(
+                            "[CpuSchedulingOptimizer] Core reservation active: {Reserved} reserved, {Unreserved} unreserved",
+                            reservedCores.Count, unreservedCores.Count);
+                    }
+                }
 
                 _logger.Information(
                     "[CpuSchedulingOptimizer] Topology: {P} P-cores, {E} E-cores, {PGroups} P-groups, {EGroups} E-groups",
@@ -356,11 +396,14 @@ public class CpuSchedulingOptimizer : IOptimization
 
                 try
                 {
-                    // E-core CPU Sets (hybrid only)
-                    if (_isHybrid && _hasCpuSetMasksApi && _eCoreMasks != null && _eCoreMasks.Length > 0)
+                    // Background → E-cores (or unreserved cores when reservation active)
+                    var bgMasks = _hasReservedCores && _unreservedMasks?.Length > 0
+                        ? _unreservedMasks
+                        : _eCoreMasks;
+                    if (_isHybrid && _hasCpuSetMasksApi && bgMasks != null && bgMasks.Length > 0)
                     {
                         if (NativeInterop.SetProcessDefaultCpuSetMasks(
-                                hProc, _eCoreMasks, (ushort)_eCoreMasks.Length))
+                                hProc, bgMasks, (ushort)bgMasks.Length))
                         {
                             lock (_lock) { _bgCpuSetPids.Add(process.Id); }
                             cpuSetCount++;
