@@ -1,6 +1,5 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
-using System.Management;
 using GameShift.Core.Config;
 using GameShift.Core.GameProfiles;
 using Serilog;
@@ -25,9 +24,9 @@ public class ProcessSpawnedEventArgs : EventArgs
 }
 
 /// <summary>
-/// Core game detection engine that monitors process creation/termination via WMI.
+/// Core game detection engine that monitors process creation/termination.
 /// Matches running processes against known game install directories.
-/// Monitors process creation/termination via WMI for game detection.
+/// Uses ETW for sub-ms latency with WMI fallback via <see cref="ProcessMonitorFactory"/>.
 /// </summary>
 public class GameDetector : IDisposable
 {
@@ -37,8 +36,7 @@ public class GameDetector : IDisposable
     private readonly object _lock = new();
     private readonly ILogger _logger;
 
-    private ManagementEventWatcher? _startWatcher;
-    private ManagementEventWatcher? _stopWatcher;
+    private IProcessMonitor? _processMonitor;
     private bool _disposed;
 
     /// <summary>
@@ -159,90 +157,78 @@ public class GameDetector : IDisposable
     }
 
     /// <summary>
-    /// Starts monitoring for process creation and termination via WMI.
-    /// Handles WMI failures gracefully (logs error, doesn't throw).
+    /// Starts monitoring for process creation and termination.
+    /// Uses ETW (sub-ms latency) with WMI fallback via <see cref="ProcessMonitorFactory"/>.
+    /// Handles failures gracefully (logs error, doesn't throw).
     /// </summary>
     public void StartMonitoring()
     {
         try
         {
-            _startWatcher = new ManagementEventWatcher(
-                new WqlEventQuery("SELECT * FROM Win32_ProcessStartTrace"));
-            _startWatcher.EventArrived += OnProcessStarted;
-            _startWatcher.Start();
-
-            _stopWatcher = new ManagementEventWatcher(
-                new WqlEventQuery("SELECT * FROM Win32_ProcessStopTrace"));
-            _stopWatcher.EventArrived += OnProcessStopped;
-            _stopWatcher.Start();
-
-            _logger.Information("Process monitoring started via WMI");
+            _processMonitor = ProcessMonitorFactory.Create(_logger);
+            _processMonitor.ProcessStarted += OnProcessStarted;
+            _processMonitor.ProcessStopped += OnProcessStopped;
         }
         catch (Exception ex)
         {
-            _logger.Error(ex, "Failed to start WMI process monitoring. " +
+            _logger.Error(ex, "Failed to start process monitoring. " +
                 "Application may require administrator privileges. " +
                 "Manual triggering will still be available.");
         }
     }
 
     /// <summary>
-    /// Stops monitoring for process events and cleans up WMI watchers.
+    /// Stops monitoring for process events and disposes the underlying monitor.
     /// </summary>
     public void StopMonitoring()
     {
-        if (_startWatcher != null)
+        if (_processMonitor != null)
         {
-            _startWatcher.Stop();
-            _startWatcher.Dispose();
-            _startWatcher = null;
-        }
-
-        if (_stopWatcher != null)
-        {
-            _stopWatcher.Stop();
-            _stopWatcher.Dispose();
-            _stopWatcher = null;
+            _processMonitor.Stop();
+            _processMonitor.Dispose();
+            _processMonitor = null;
         }
 
         _logger.Information("Process monitoring stopped");
     }
 
     /// <summary>
-    /// Handles process start events from WMI.
-    /// Resolves the full executable path and attempts to match against known games.
+    /// Handles process start events from the active <see cref="IProcessMonitor"/>.
+    /// ETW provides the full image path; WMI provides only the filename so we fall back
+    /// to <see cref="Process.GetProcessById"/> to resolve the full path.
     /// </summary>
-    private void OnProcessStarted(object sender, EventArrivedEventArgs e)
+    private void OnProcessStarted(ProcessStartEventData data)
     {
         try
         {
-            var processId = Convert.ToInt32(e.NewEvent.Properties["ProcessID"].Value);
-            var processName = e.NewEvent.Properties["ProcessName"].Value.ToString() ?? string.Empty;
+            var processName = Path.GetFileName(data.ImageFileName);
 
             // Notify all subscribers of process spawn (before game matching filter)
-            ProcessSpawned?.Invoke(this, new ProcessSpawnedEventArgs(processId, processName));
+            ProcessSpawned?.Invoke(this, new ProcessSpawnedEventArgs(data.ProcessId, processName));
 
-            // Resolve full executable path
-            string? executablePath = null;
-            try
+            // ETW provides the full path directly; WMI provides only the filename.
+            // Use the image path when it is rooted, otherwise resolve via Process handle.
+            string? executablePath = data.ImageFileName;
+
+            if (string.IsNullOrEmpty(executablePath) || !Path.IsPathRooted(executablePath))
             {
-                using var process = Process.GetProcessById(processId);
-                executablePath = process.MainModule?.FileName;
-            }
-            catch
-            {
-                // Process may have already exited, or access denied for system processes
-                // This is normal - skip silently
-                return;
+                try
+                {
+                    using var process = Process.GetProcessById(data.ProcessId);
+                    executablePath = process.MainModule?.FileName;
+                }
+                catch
+                {
+                    // Process may have already exited, or access denied for system processes
+                    return;
+                }
             }
 
             if (string.IsNullOrEmpty(executablePath))
-            {
                 return;
-            }
 
             // Try to match against known games
-            MatchProcess(processId, executablePath);
+            MatchProcess(data.ProcessId, executablePath);
         }
         catch (Exception ex)
         {
@@ -251,26 +237,24 @@ public class GameDetector : IDisposable
     }
 
     /// <summary>
-    /// Handles process stop events from WMI.
+    /// Handles process stop events from the active <see cref="IProcessMonitor"/>.
     /// Checks if the stopped process was a tracked game and fires appropriate events.
     /// </summary>
-    private void OnProcessStopped(object sender, EventArrivedEventArgs e)
+    private void OnProcessStopped(ProcessStopEventData data)
     {
         try
         {
-            var processId = Convert.ToInt32(e.NewEvent.Properties["ProcessID"].Value);
-
-            if (_activeGames.TryRemove(processId, out var gameInfo))
+            if (_activeGames.TryRemove(data.ProcessId, out var gameInfo))
             {
                 _logger.Information("Game exited: {GameName} (PID: {ProcessId})",
-                    gameInfo.GameName, processId);
+                    gameInfo.GameName, data.ProcessId);
 
                 // Fire GameStopped event
                 GameStopped?.Invoke(this, new GameDetectedEventArgs(
                     gameInfo.Id,
                     gameInfo.GameName,
                     gameInfo.ExecutablePath,
-                    processId,
+                    data.ProcessId,
                     gameInfo.LauncherSource));
 
                 // Check if all games have stopped

@@ -1,3 +1,4 @@
+using GameShift.Core.Detection;
 using GameShift.Core.Optimization;
 using Serilog;
 
@@ -36,6 +37,9 @@ public class WatchdogRevertEngine
     /// </summary>
     public void RevertFromJournal(SessionJournalData journalData, JournalManager journal)
     {
+        // Clean up any orphaned ETW session from the crashed GameShift instance
+        EtwProcessMonitor.CleanupStaleSession(_logger);
+
         var toRevert = journalData.Optimizations
             .AsEnumerable()
             .Reverse()

@@ -1,3 +1,4 @@
+using GameShift.Core.Detection;
 using Microsoft.Win32;
 using Serilog;
 
@@ -32,6 +33,11 @@ public static class BootRecoveryHandler
 
         try
         {
+            // Clean up any orphaned ETW session from a crashed GameShift instance.
+            // Must happen before journal check — the ETW session is a system resource
+            // independent of the journal's sessionActive flag.
+            EtwProcessMonitor.CleanupStaleSession(logger);
+
             var journal = new JournalManager();
             var journalData = journal.LoadJournal();
 
