@@ -297,6 +297,14 @@ public class BackgroundModeSettings
     /// <summary>Enable Windows scheduled task deferral during gaming.</summary>
     public bool TaskDeferralEnabled { get; set; } = true;
 
+    // -- ProBalance --
+    /// <summary>
+    /// Enable dynamic background CPU restraint during gaming sessions.
+    /// Demotes background processes that exceed 15% CPU for 3 consecutive samples
+    /// to BelowNormal priority, restores them when they drop below threshold.
+    /// </summary>
+    public bool ProBalanceEnabled { get; set; } = true;
+
     // -- ProcessPriorityPersistence --
     /// <summary>Enable persistent process priority rules.</summary>
     public bool ProcessPriorityEnabled { get; set; } = false;
