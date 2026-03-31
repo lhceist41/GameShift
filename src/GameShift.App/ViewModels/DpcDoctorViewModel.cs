@@ -195,6 +195,21 @@ public class DpcDoctorViewModel : INotifyPropertyChanged
     private double _fallbackDpcValue;
     public double FallbackDpcValue { get => _fallbackDpcValue; set { _fallbackDpcValue = value; OnPropertyChanged(); } }
 
+    // ── Interrupt affinity status (Sprint 6) ──────────────────────────────────
+
+    private string _gpuInterruptInfo = "Not scanned";
+    private string _gpuMsiInfo = "Not scanned";
+    private string _usbAffinityInfo = "Not scanned";
+
+    /// <summary>Current GPU interrupt core (e.g. "Core 11" or "Default (OS-managed)").</summary>
+    public string GpuInterruptInfo { get => _gpuInterruptInfo; set { _gpuInterruptInfo = value; OnPropertyChanged(); } }
+
+    /// <summary>GPU MSI mode status (e.g. "Enabled" or "Disabled").</summary>
+    public string GpuMsiInfo { get => _gpuMsiInfo; set { _gpuMsiInfo = value; OnPropertyChanged(); } }
+
+    /// <summary>USB controller interrupt affinity (e.g. "Core 11" or "Default").</summary>
+    public string UsbAffinityInfo { get => _usbAffinityInfo; set { _usbAffinityInfo = value; OnPropertyChanged(); } }
+
     public ObservableCollection<DriverRowViewModel> DriverRows { get; } = new();
     public ObservableCollection<DiagnosedIssueViewModel> DiagnosedIssues { get; } = new();
     public ObservableCollection<QuickFixViewModel> QuickFixes { get; } = new();
@@ -228,6 +243,7 @@ public class DpcDoctorViewModel : INotifyPropertyChanged
 
         InitializeQuickFixes();
         CheckPendingRebootComparison();
+        RefreshInterruptAffinityStatus();
     }
 
     // -- Commands
@@ -619,6 +635,59 @@ public class DpcDoctorViewModel : INotifyPropertyChanged
 
         _countdownTimer?.Stop();
         _successBannerTimer?.Stop();
+    }
+
+    // ── Interrupt affinity status ────────────────────────────────────────────
+
+    /// <summary>
+    /// Scans GPU and USB controller interrupt configuration and populates the status properties.
+    /// Called once at construction and can be called again after applying/reverting fixes.
+    /// </summary>
+    public void RefreshInterruptAffinityStatus()
+    {
+        try
+        {
+            var scanner = new GameShift.Core.SystemTweaks.Tweaks.OptimizeInterruptHandling();
+            scanner.ScanDevices();
+
+            // GPU interrupt core
+            if (scanner.PrimaryGpu != null)
+            {
+                var gpuCore = scanner.CurrentGpuInterruptCore;
+                GpuInterruptInfo = gpuCore != null
+                    ? $"Core {gpuCore} ({scanner.PrimaryGpu.DisplayName})"
+                    : $"Default ({scanner.PrimaryGpu.DisplayName})";
+
+                GpuMsiInfo = scanner.PrimaryGpu.MsiEnabled
+                    ? "Enabled"
+                    : scanner.PrimaryGpu.MsiSupported ? "Disabled (can enable)" : "Not supported";
+            }
+            else
+            {
+                GpuInterruptInfo = "No GPU detected";
+                GpuMsiInfo = "N/A";
+            }
+
+            // USB controller
+            if (scanner.PrimaryUsb != null)
+            {
+                var usbCore = scanner.CurrentUsbInterruptCore;
+                UsbAffinityInfo = usbCore != null
+                    ? $"Core {usbCore} ({scanner.PrimaryUsb.DisplayName})"
+                    : $"Default ({scanner.PrimaryUsb.DisplayName})";
+            }
+            else
+            {
+                UsbAffinityInfo = "No USB controller detected";
+            }
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Warning(ex, "[DpcDoctorViewModel] Failed to refresh interrupt affinity status");
+            GpuInterruptInfo = "Scan failed";
+            GpuMsiInfo = "Scan failed";
+            UsbAffinityInfo = "Scan failed";
+        }
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;

@@ -31,11 +31,62 @@ public class OptimizeInterruptHandling : ISystemTweak
     /// <summary>The primary GPU found during scan.</summary>
     public PciDeviceInterruptInfo? PrimaryGpu { get; private set; }
 
+    // ── Status summary for DPC Doctor integration ─────────────────────
+
+    /// <summary>
+    /// Returns the current GPU interrupt core index, or null if not pinned.
+    /// Call <see cref="ScanDevices"/> first to populate <see cref="PrimaryGpu"/>.
+    /// </summary>
+    public int? CurrentGpuInterruptCore
+    {
+        get
+        {
+            if (PrimaryGpu?.CurrentAffinityMask == null) return null;
+            return AffinityMaskToCore(PrimaryGpu.CurrentAffinityMask);
+        }
+    }
+
+    /// <summary>
+    /// Returns the current USB controller interrupt core index, or null if not pinned.
+    /// </summary>
+    public int? CurrentUsbInterruptCore
+    {
+        get
+        {
+            if (PrimaryUsb?.CurrentAffinityMask == null) return null;
+            return AffinityMaskToCore(PrimaryUsb.CurrentAffinityMask);
+        }
+    }
+
+    /// <summary>
+    /// Returns the GPU MSI mode status: true if enabled, false if disabled, null if no GPU.
+    /// </summary>
+    public bool? GpuMsiEnabled => PrimaryGpu?.MsiEnabled;
+
+    private static int? AffinityMaskToCore(byte[] mask)
+    {
+        // Find the lowest set bit in the KAFFINITY bitmask
+        for (int byteIdx = 0; byteIdx < mask.Length; byteIdx++)
+        {
+            if (mask[byteIdx] == 0) continue;
+            for (int bit = 0; bit < 8; bit++)
+            {
+                if ((mask[byteIdx] & (1 << bit)) != 0)
+                    return byteIdx * 8 + bit;
+            }
+        }
+        return null;
+    }
+
     private const string PciEnumPath = @"SYSTEM\CurrentControlSet\Enum\PCI";
 
     // Class GUIDs
     private const string DisplayAdapterClassGuid = "{4d36e968-e325-11ce-bfc1-08002bfe1801}";
     private const string NetworkAdapterClassGuid = "{4d36e972-e325-11ce-bfc1-08002be10318}";
+    private const string UsbControllerClassGuid = "{36fc9e60-c465-11cf-8056-444553540000}";
+
+    /// <summary>The primary USB host controller found during scan.</summary>
+    public PciDeviceInterruptInfo? PrimaryUsb { get; private set; }
 
     // Virtual/software adapter keywords to filter out
     private static readonly string[] VirtualAdapterKeywords = new[]
@@ -57,8 +108,11 @@ public class OptimizeInterruptHandling : ISystemTweak
             ScanDevices();
             if (PrimaryGpu == null) return false;
 
-            // Applied if MSI is enabled AND affinity is pinned (DevicePolicy = 4)
-            return PrimaryGpu.MsiEnabled && PrimaryGpu.DevicePolicy == 4;
+            // Applied if GPU affinity is pinned (DevicePolicy = 4)
+            bool gpuApplied = PrimaryGpu.MsiEnabled && PrimaryGpu.DevicePolicy == 4;
+
+            // USB affinity is a bonus — GPU is the primary indicator
+            return gpuApplied;
         }
         catch
         {
@@ -100,10 +154,38 @@ public class OptimizeInterruptHandling : ISystemTweak
         if (SetInterruptAffinity(PrimaryGpu, RecommendedCore))
             changed = true;
 
+        // ── USB host controller affinity (same core as GPU for input latency) ──
+        if (PrimaryUsb != null)
+        {
+            if (SetInterruptAffinity(PrimaryUsb, RecommendedCore))
+            {
+                changed = true;
+                Log.Information(
+                    "[InterruptAffinity] USB controller {Device} affinity set to Core {Core}",
+                    PrimaryUsb.DisplayName, RecommendedCore);
+            }
+
+            // Enable MSI on USB host controller if supported
+            if (PrimaryUsb.ShouldEnableMsi)
+            {
+                if (EnableMsi(PrimaryUsb))
+                    changed = true;
+            }
+
+            backup.UsbDeviceId = PrimaryUsb.DeviceId;
+            backup.UsbInstanceId = PrimaryUsb.InstanceId;
+            backup.UsbOriginalDevicePolicy = PrimaryUsb.DevicePolicy;
+            backup.UsbOriginalAffinityMask = PrimaryUsb.CurrentAffinityMask;
+            backup.UsbOriginalMsiEnabled = PrimaryUsb.MsiEnabled;
+        }
+
         if (changed)
         {
-            Log.Information("[InterruptAffinity] Optimized {Device} — MSI: {Msi}, Affinity: Core {Core} — reboot required",
-                PrimaryGpu.DisplayName, PrimaryGpu.MsiEnabled || PrimaryGpu.ShouldEnableMsi, RecommendedCore);
+            Log.Information(
+                "[InterruptAffinity] Optimized GPU ({Gpu}) + USB ({Usb}) — Core {Core} — reboot required",
+                PrimaryGpu.DisplayName,
+                PrimaryUsb?.DisplayName ?? "none",
+                RecommendedCore);
         }
 
         return JsonSerializer.Serialize(backup);
@@ -165,6 +247,47 @@ public class OptimizeInterruptHandling : ISystemTweak
                 Log.Warning(ex, "[InterruptAffinity] Failed to restore affinity");
             }
 
+            // Restore USB controller state
+            if (!string.IsNullOrEmpty(backup.UsbDeviceId) && !string.IsNullOrEmpty(backup.UsbInstanceId))
+            {
+                string usbAffinityPath = $@"{PciEnumPath}\{backup.UsbDeviceId}\{backup.UsbInstanceId}\Device Parameters\Interrupt Management\Affinity Policy";
+                try
+                {
+                    using var usbKey = Registry.LocalMachine.OpenSubKey(usbAffinityPath, writable: true);
+                    if (usbKey != null)
+                    {
+                        if (backup.UsbOriginalDevicePolicy != null)
+                            usbKey.SetValue("DevicePolicy", backup.UsbOriginalDevicePolicy.Value, RegistryValueKind.DWord);
+                        else
+                            usbKey.DeleteValue("DevicePolicy", throwOnMissingValue: false);
+
+                        if (backup.UsbOriginalAffinityMask != null)
+                            usbKey.SetValue("AssignmentSetOverride", backup.UsbOriginalAffinityMask, RegistryValueKind.Binary);
+                        else
+                            usbKey.DeleteValue("AssignmentSetOverride", throwOnMissingValue: false);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning(ex, "[InterruptAffinity] Failed to restore USB affinity");
+                }
+
+                // Restore USB MSI
+                if (backup.UsbOriginalMsiEnabled.HasValue)
+                {
+                    string usbMsiPath = $@"{PciEnumPath}\{backup.UsbDeviceId}\{backup.UsbInstanceId}\Device Parameters\Interrupt Management\MessageSignaledInterruptProperties";
+                    try
+                    {
+                        using var usbMsiKey = Registry.LocalMachine.OpenSubKey(usbMsiPath, writable: true);
+                        usbMsiKey?.SetValue("MSISupported", backup.UsbOriginalMsiEnabled.Value ? 1 : 0, RegistryValueKind.DWord);
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Warning(ex, "[InterruptAffinity] Failed to restore USB MSI state");
+                    }
+                }
+            }
+
             Log.Information("[InterruptAffinity] Reverted interrupt optimization — reboot required");
             return true;
         }
@@ -185,6 +308,7 @@ public class OptimizeInterruptHandling : ISystemTweak
     {
         DetectedDevices.Clear();
         PrimaryGpu = null;
+        PrimaryUsb = null;
 
         try
         {
@@ -207,8 +331,9 @@ public class OptimizeInterruptHandling : ISystemTweak
 
                     bool isGpu = classGuid.Equals(DisplayAdapterClassGuid, StringComparison.OrdinalIgnoreCase);
                     bool isNic = classGuid.Equals(NetworkAdapterClassGuid, StringComparison.OrdinalIgnoreCase);
+                    bool isUsb = classGuid.Equals(UsbControllerClassGuid, StringComparison.OrdinalIgnoreCase);
 
-                    if (!isGpu && !isNic) continue;
+                    if (!isGpu && !isNic && !isUsb) continue;
 
                     // Clean up DeviceDesc (format: "@<inf>,<section>;<description>" or plain)
                     string cleanDesc = deviceDesc;
@@ -243,6 +368,7 @@ public class OptimizeInterruptHandling : ISystemTweak
                         FriendlyName = friendlyName,
                         IsGpu = isGpu,
                         IsNic = isNic,
+                        IsUsb = isUsb,
                         MsiEnabled = msiSupported == 1,
                         MsiSupported = msiKey != null,
                         MessageNumberLimit = messageNumberLimit,
@@ -255,6 +381,7 @@ public class OptimizeInterruptHandling : ISystemTweak
 
             // Set primary GPU (first non-virtual GPU found)
             PrimaryGpu = DetectedDevices.FirstOrDefault(d => d.IsGpu);
+            PrimaryUsb = DetectedDevices.FirstOrDefault(d => d.IsUsb);
         }
         catch (Exception ex)
         {
@@ -337,18 +464,17 @@ public class OptimizeInterruptHandling : ISystemTweak
     }
 
     /// <summary>
-    /// Recommends the best core for GPU interrupts based on CPU topology.
+    /// Recommends the best core for GPU/USB interrupts based on CPU topology.
     /// Rules:
     ///   1. Never Core 0 (system work, mouse input, scheduler)
     ///   2. P-core on hybrid CPUs (never E-core for GPU interrupts)
-    ///   3. Not the HT sibling of Core 0 (avoid shared physical core contention)
-    ///   4. Typically Core 2 (second physical core on most configurations)
+    ///   3. Last P-core (highest index) that is NOT core 0 — dedicated to interrupt work
+    ///   4. Fallback: core 2 on non-hybrid CPUs
     /// </summary>
     private static int RecommendInterruptCore()
     {
         try
         {
-            // Check if hybrid CPU via registry EfficiencyClass
             const string cpuRegPath = @"HARDWARE\DESCRIPTION\System\CentralProcessor";
             using var cpuKey = Registry.LocalMachine.OpenSubKey(cpuRegPath);
             if (cpuKey != null)
@@ -367,27 +493,31 @@ public class OptimizeInterruptHandling : ISystemTweak
 
                     var effClass = core.GetValue("EfficiencyClass");
                     if (effClass is int eff && eff == 0)
-                    {
                         pCoreIndices.Add(idx);
-                    }
                 }
 
                 bool isHybrid = pCoreIndices.Count > 0 && pCoreIndices.Count < allIndices.Count;
 
                 if (isHybrid && pCoreIndices.Count > 1)
                 {
-                    // Second P-core (first non-Core-0 P-core)
+                    // Last P-core (highest index) that is not core 0
+                    var last = pCoreIndices.Last();
+                    if (last != 0)
+                        return last;
+
+                    // Extremely unlikely: all P-cores except 0 were filtered?
+                    // Fall back to second P-core
                     return pCoreIndices[1];
                 }
             }
         }
         catch (Exception ex)
         {
-            Log.Warning(ex, "[InterruptAffinity] Failed to detect CPU topology, defaulting to Core 2");
+            Log.Warning(ex, "[InterruptAffinity] Failed to detect CPU topology, defaulting to last core");
         }
 
-        // Non-hybrid: use core 2 (skip core 0 and its HT sibling core 1)
-        return Math.Min(2, Environment.ProcessorCount - 1);
+        // Non-hybrid: use the last core (avoids core 0 and its HT sibling)
+        return Math.Max(2, Environment.ProcessorCount - 1);
     }
 }
 
@@ -396,9 +526,17 @@ public class OptimizeInterruptHandling : ISystemTweak
 /// </summary>
 public class InterruptBackupState
 {
+    // GPU
     public string DeviceId { get; set; } = "";
     public string InstanceId { get; set; } = "";
     public bool OriginalMsiEnabled { get; set; }
     public int? OriginalDevicePolicy { get; set; }
     public byte[]? OriginalAffinityMask { get; set; }
+
+    // USB host controller
+    public string? UsbDeviceId { get; set; }
+    public string? UsbInstanceId { get; set; }
+    public int? UsbOriginalDevicePolicy { get; set; }
+    public byte[]? UsbOriginalAffinityMask { get; set; }
+    public bool? UsbOriginalMsiEnabled { get; set; }
 }
