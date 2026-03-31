@@ -588,6 +588,63 @@
             </UniformGrid>
 
             <!-- ═══════════════════════════════════════════════════════════
+                 Hardware Advisories Section
+                 ═══════════════════════════════════════════════════════════ -->
+            <StackPanel Margin="0,12,0,0">
+                <!-- HAGS status + advisory -->
+                <Border Background="{DynamicResource GS.Surface.Card}" CornerRadius="8"
+                        Padding="14" Margin="0,0,0,8"
+                        BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1">
+                    <DockPanel>
+                        <StackPanel DockPanel.Dock="Right" VerticalAlignment="Center" HorizontalAlignment="Right">
+                            <Border CornerRadius="4" Padding="8,3"
+                                    Background="#1E293B">
+                                <TextBlock Text="{Binding HagsStatus}" FontSize="11" FontWeight="SemiBold"
+                                           Foreground="#94A3B8"/>
+                            </Border>
+                        </StackPanel>
+                        <StackPanel>
+                            <TextBlock Text="Hardware Accelerated GPU Scheduling (HAGS)"
+                                       Foreground="{DynamicResource GS.Text.Primary}"
+                                       FontWeight="SemiBold" FontSize="13"/>
+                            <!-- Advisory banner (only shown when HAGS is off on a supported GPU) -->
+                            <Border Visibility="{Binding ShowHagsAdvisory, Converter={StaticResource BoolToVisibility}}"
+                                    Background="#2D2006" CornerRadius="4" Padding="10,6" Margin="0,6,0,0">
+                                <TextBlock Text="{Binding HagsAdvisory}" Foreground="#F59E0B"
+                                           FontSize="11" TextWrapping="Wrap"/>
+                            </Border>
+                        </StackPanel>
+                    </DockPanel>
+                </Border>
+
+                <!-- ReBAR / SAM status + advisory -->
+                <Border Background="{DynamicResource GS.Surface.Card}" CornerRadius="8"
+                        Padding="14" Margin="0,0,0,8"
+                        BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1">
+                    <DockPanel>
+                        <StackPanel DockPanel.Dock="Right" VerticalAlignment="Center" HorizontalAlignment="Right">
+                            <Border CornerRadius="4" Padding="8,3"
+                                    Background="#1E293B">
+                                <TextBlock Text="{Binding ReBarStatus}" FontSize="11" FontWeight="SemiBold"
+                                           Foreground="#94A3B8"/>
+                            </Border>
+                        </StackPanel>
+                        <StackPanel>
+                            <TextBlock Text="Resizable BAR / Smart Access Memory"
+                                       Foreground="{DynamicResource GS.Text.Primary}"
+                                       FontWeight="SemiBold" FontSize="13"/>
+                            <!-- Advisory banner (only shown when ReBAR supported but not enabled) -->
+                            <Border Visibility="{Binding ShowReBarAdvisory, Converter={StaticResource BoolToVisibility}}"
+                                    Background="#2D2006" CornerRadius="4" Padding="10,6" Margin="0,6,0,0">
+                                <TextBlock Text="{Binding ReBarAdvisory}" Foreground="#F59E0B"
+                                           FontSize="11" TextWrapping="Wrap"/>
+                            </Border>
+                        </StackPanel>
+                    </DockPanel>
+                </Border>
+            </StackPanel>
+
+            <!-- ═══════════════════════════════════════════════════════════
                  Performance Graphs Section
                  ═══════════════════════════════════════════════════════════ -->
             <TextBlock Text="PERFORMANCE GRAPHS" FontSize="11" FontWeight="Bold"
