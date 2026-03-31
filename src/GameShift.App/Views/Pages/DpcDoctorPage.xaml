@@ -507,6 +507,79 @@ This is how long this driver locked up your CPU, in microseconds (&#x00B5;s).
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
 
+                    <!-- Section 4: Kernel Tuning (Sprint 7) -->
+                    <TextBlock Text="Kernel Tuning" FontSize="18" FontWeight="Bold"
+                               Foreground="{DynamicResource GS.Text.Primary}" Margin="0,20,0,4"/>
+                    <TextBlock Text="BCD settings that improve timer precision and interrupt routing. All changes require a reboot."
+                               Foreground="{DynamicResource GS.Text.Secondary}" FontSize="12" Margin="0,0,0,12" TextWrapping="Wrap"/>
+
+                    <ItemsControl ItemsSource="{Binding KernelTuningItems}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type vm:KernelTuningItemViewModel}">
+                                <Border Background="{DynamicResource GS.Surface.Card}" CornerRadius="8"
+                                        Padding="14" Margin="0,0,0,8"
+                                        BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1">
+                                    <DockPanel>
+                                        <!-- Apply / Revert button -->
+                                        <Button DockPanel.Dock="Right" VerticalAlignment="Center"
+                                                Content="{Binding ActionLabel}" Padding="12,6"
+                                                Tag="{Binding}" Click="OnToggleKernelTuningClicked"
+                                                Foreground="{DynamicResource GS.Text.Primary}"
+                                                FontSize="12" Cursor="Hand"/>
+                                        <StackPanel>
+                                            <DockPanel>
+                                                <TextBlock Text="{Binding Setting.DisplayName}"
+                                                           Foreground="{DynamicResource GS.Text.Primary}"
+                                                           FontWeight="SemiBold" FontSize="13"/>
+                                                <!-- Risk badge -->
+                                                <Border CornerRadius="4" Padding="6,2" Margin="8,0,0,0"
+                                                        Background="#1E293B" VerticalAlignment="Center">
+                                                    <TextBlock FontSize="10" FontWeight="SemiBold"
+                                                               Foreground="#94A3B8">
+                                                        <Run Text="{Binding Setting.Risk, Mode=OneWay}"/>
+                                                        <Run Text=" risk"/>
+                                                    </TextBlock>
+                                                </Border>
+                                                <!-- Tier badge -->
+                                                <Border CornerRadius="4" Padding="6,2" Margin="4,0,0,0"
+                                                        Background="#1E293B" VerticalAlignment="Center">
+                                                    <TextBlock FontSize="10" Foreground="#94A3B8"
+                                                               Text="{Binding Setting.Tier}"/>
+                                                </Border>
+                                            </DockPanel>
+                                            <TextBlock Text="{Binding Setting.Description}"
+                                                       Foreground="{DynamicResource GS.Text.Secondary}"
+                                                       TextWrapping="Wrap" FontSize="11" Margin="0,4,0,0"/>
+                                            <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                                <TextBlock FontSize="11" Foreground="#94A3B8">
+                                                    <Run Text="Current: "/><Run Text="{Binding CurrentValue, Mode=OneWay}"/>
+                                                    <Run Text="  |  Recommended: "/><Run Text="{Binding Setting.RecommendedValue, Mode=OneWay}"/>
+                                                </TextBlock>
+                                            </StackPanel>
+                                            <!-- Warning (hypervisor dependencies) -->
+                                            <TextBlock Text="{Binding WarningMessage}" FontSize="11"
+                                                       Foreground="#F59E0B" Margin="0,4,0,0" TextWrapping="Wrap"
+                                                       Visibility="{Binding HasWarning, Converter={StaticResource BoolToVisibility}}"/>
+                                            <!-- Status message (visible only when non-empty) -->
+                                            <TextBlock Text="{Binding StatusMessage}" FontSize="11"
+                                                       Foreground="#4ADE80" Margin="0,4,0,0">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding StatusMessage}" Value="">
+                                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                        </StackPanel>
+                                    </DockPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
                 </StackPanel>
             </ScrollViewer>
         </DockPanel>
