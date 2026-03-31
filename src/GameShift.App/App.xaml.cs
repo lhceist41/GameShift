@@ -390,7 +390,8 @@ public partial class App : Application
                 new ScheduledTaskSuppressor(),   // 11 - v3 (after ServiceSuppressor)
                 new CpuParkingManager(),         // 12 - v3 (after PowerPlanSwitcher)
                 new IoPriorityManager(),         // 13 - v4 (after GpuDriverOptimizer)
-                new EfficiencyModeController()   // 14 - v4 (last — process-level, reverts first)
+                new EfficiencyModeController(),  // 14 - v4 (process-level)
+                new CpuSchedulingOptimizer()     // 15 - v4 (last — E-core routing + HighQoS, reverts first)
             };
 
             Engine = new OptimizationEngine(Optimizations);

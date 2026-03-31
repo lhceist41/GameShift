@@ -163,6 +163,33 @@ internal static partial class NativeInterop
         uint cpuSetIdCount);
 
     /// <summary>
+    /// Sets default CPU Set masks for a process using GROUP_AFFINITY arrays.
+    /// Windows 11 22H2+ (build 22621). Supports multi-group systems (&gt;64 logical processors).
+    /// Pass CpuSetMaskCount=0 and CpuSetMasks=null to clear all restrictions.
+    /// https://learn.microsoft.com/windows/win32/api/processthreadsapi/nf-processthreadsapi-setprocessdefaultcpusetmasks
+    /// </summary>
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool SetProcessDefaultCpuSetMasks(
+        IntPtr process,
+        [In] GROUP_AFFINITY[]? cpuSetMasks,
+        ushort cpuSetMaskCount);
+
+    /// <summary>
+    /// Processor group affinity structure for CPU Set Masks APIs.
+    /// Mask contains a bitmask of logical processors within the specified Group.
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct GROUP_AFFINITY
+    {
+        public UIntPtr Mask;
+        public ushort Group;
+        public ushort Reserved0;
+        public ushort Reserved1;
+        public ushort Reserved2;
+    }
+
+    /// <summary>
     /// SYSTEM_CPU_SET_INFORMATION structure returned by GetSystemCpuSetInformation.
     /// Contains CPU Set ID, efficiency class, core index, and cache topology for each logical processor.
     /// Layout follows the Windows SDK definition with union/struct nesting flattened.
