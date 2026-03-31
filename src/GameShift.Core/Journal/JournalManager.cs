@@ -63,6 +63,20 @@ public class SessionJournalData
     /// Populated only when <see cref="BuildChangedWarning"/> is true.
     /// </summary>
     public string? BuildAtRecovery { get; set; }
+
+    // ── Reboot-required fixes ─────────────────────────────────────────────────
+
+    /// <summary>
+    /// True when changes that require a reboot are pending (e.g., interrupt affinity,
+    /// MSI mode, BCD edits). Signals the main app to show a reboot prompt on launch.
+    /// Cleared after the system reboots (detected by comparing boot time vs apply time).
+    /// </summary>
+    public bool HasPendingRebootFixes { get; set; }
+
+    /// <summary>
+    /// Descriptions of pending reboot-required fixes for display in the UI.
+    /// </summary>
+    public List<string> PendingRebootFixDescriptions { get; set; } = new();
 }
 
 // ── JournalManager ────────────────────────────────────────────────────────────
@@ -161,6 +175,17 @@ public class JournalManager
     public void EndSession()
     {
         _current.SessionActive = false;
+        Save();
+    }
+
+    /// <summary>
+    /// Records a pending reboot-required fix in the journal.
+    /// Called after interrupt affinity, MSI mode, or BCD changes that need a reboot.
+    /// </summary>
+    public void RecordPendingRebootFix(string description)
+    {
+        _current.HasPendingRebootFixes = true;
+        _current.PendingRebootFixDescriptions.Add(description);
         Save();
     }
 

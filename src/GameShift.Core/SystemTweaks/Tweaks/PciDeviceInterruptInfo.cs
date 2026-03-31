@@ -24,6 +24,9 @@ public class PciDeviceInterruptInfo
     /// <summary>Whether this device is a network adapter (NIC).</summary>
     public bool IsNic { get; set; }
 
+    /// <summary>Whether this device is a USB host controller (xHCI/EHCI).</summary>
+    public bool IsUsb { get; set; }
+
     // ── MSI state ───────────────────────────────────────────────────────
 
     /// <summary>Hardware supports MSI (MessageSignaledInterruptProperties key exists).</summary>
