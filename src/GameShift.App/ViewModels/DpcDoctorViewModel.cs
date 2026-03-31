@@ -6,6 +6,7 @@ using System.Windows.Threading;
 using GameShift.Core.Config;
 using GameShift.Core.Monitoring;
 using GameShift.Core.System;
+using GameShift.Core.SystemTweaks;
 using Serilog;
 
 namespace GameShift.App.ViewModels;
@@ -106,6 +107,34 @@ public class QuickFixViewModel : INotifyPropertyChanged
         "Low" => "Small improvement",
         _ => ""
     };
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+    protected void OnPropertyChanged([CallerMemberName] string? name = null) =>
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+}
+
+/// <summary>
+/// ViewModel for a kernel tuning BCD setting in the DPC Doctor page.
+/// Shows current vs recommended value, risk badge, and apply/revert state.
+/// </summary>
+public class KernelTuningItemViewModel : INotifyPropertyChanged
+{
+    private string _currentValue = "<not set>";
+    private bool _isApplied;
+    private string _statusMessage = "";
+    private bool _hasWarning;
+    private string _warningMessage = "";
+
+    public KernelTuningSetting Setting { get; init; } = null!;
+    public string CurrentValue { get => _currentValue; set { _currentValue = value; OnPropertyChanged(); OnPropertyChanged(nameof(NeedsChange)); } }
+    public bool IsApplied { get => _isApplied; set { _isApplied = value; OnPropertyChanged(); OnPropertyChanged(nameof(ActionLabel)); } }
+    public string StatusMessage { get => _statusMessage; set { _statusMessage = value; OnPropertyChanged(); } }
+    public bool HasWarning { get => _hasWarning; set { _hasWarning = value; OnPropertyChanged(); } }
+    public string WarningMessage { get => _warningMessage; set { _warningMessage = value; OnPropertyChanged(); } }
+
+    public string ActionLabel => _isApplied ? "Revert" : "Apply";
+    public bool NeedsChange => !string.Equals(
+        _currentValue, Setting.RecommendedValue, StringComparison.OrdinalIgnoreCase);
 
     public event PropertyChangedEventHandler? PropertyChanged;
     protected void OnPropertyChanged([CallerMemberName] string? name = null) =>
@@ -215,6 +244,9 @@ public class DpcDoctorViewModel : INotifyPropertyChanged
     public ObservableCollection<QuickFixViewModel> QuickFixes { get; } = new();
     public ObservableCollection<string> RebootComparisonLines { get; } = new();
 
+    /// <summary>Kernel tuning BCD settings with current/recommended values and apply/revert actions.</summary>
+    public ObservableCollection<KernelTuningItemViewModel> KernelTuningItems { get; } = new();
+
     public DpcDoctorViewModel(
         DpcTraceEngine? traceEngine,
         DpcFixEngine? fixEngine,
@@ -242,6 +274,7 @@ public class DpcDoctorViewModel : INotifyPropertyChanged
             _dpcMon.LatencySampled += OnFallbackLatencySampled;
 
         InitializeQuickFixes();
+        InitializeKernelTuning();
         CheckPendingRebootComparison();
         RefreshInterruptAffinityStatus();
     }
@@ -635,6 +668,99 @@ public class DpcDoctorViewModel : INotifyPropertyChanged
 
         _countdownTimer?.Stop();
         _successBannerTimer?.Stop();
+    }
+
+    // ── Kernel tuning (Sprint 7) ─────────────────────────────────────────────
+
+    private void InitializeKernelTuning()
+    {
+        try
+        {
+            var mgr = new KernelTuningManager();
+            var currentValues = mgr.ReadCurrentValues();
+
+            foreach (var setting in KernelTuningManager.AllSettings)
+            {
+                var item = new KernelTuningItemViewModel
+                {
+                    Setting = setting,
+                    CurrentValue = currentValues.TryGetValue(setting.BcdKey, out var v) && v != null
+                        ? v
+                        : "<not set>",
+                };
+
+                // Check if the current value already matches the recommendation
+                item.IsApplied = !item.NeedsChange;
+
+                // Hypervisor: warn about dependencies
+                if (setting.Id == "hypervisorlaunchtype" && !item.IsApplied)
+                {
+                    var deps = mgr.CheckHypervisorDependencies();
+                    if (deps.HasDependencies)
+                    {
+                        item.HasWarning = true;
+                        item.WarningMessage = deps.Summary;
+                    }
+                }
+
+                KernelTuningItems.Add(item);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "[DpcDoctorViewModel] Failed to initialize kernel tuning");
+        }
+    }
+
+    /// <summary>
+    /// Toggles a kernel tuning setting: applies if not active, reverts if active.
+    /// </summary>
+    public void ToggleKernelTuningSetting(KernelTuningItemViewModel item)
+    {
+        if (_fixEngine == null) return;
+
+        var mgr = new KernelTuningManager();
+
+        if (item.IsApplied)
+        {
+            // Revert
+            var (success, msg) = mgr.Revert(item.Setting);
+            item.StatusMessage = msg;
+            if (success)
+            {
+                item.IsApplied = false;
+                item.CurrentValue = "<not set>";
+                ShowRebootPrompt = true;
+                RebootFixName = item.Setting.DisplayName;
+            }
+        }
+        else
+        {
+            // Apply
+            var (success, msg) = mgr.Apply(item.Setting, item.CurrentValue);
+            item.StatusMessage = msg;
+            if (success)
+            {
+                item.IsApplied = true;
+                item.CurrentValue = item.Setting.RecommendedValue;
+                ShowRebootPrompt = true;
+                RebootFixName = item.Setting.DisplayName;
+
+                // Persist in AppSettings for reboot tracking
+                _settings.PendingRebootFixes.Add($"bcd_{item.Setting.Id}");
+                _settings.AppliedDpcFixes.Add(new AppliedDpcFix
+                {
+                    FixId = $"bcd_{item.Setting.Id}",
+                    Description = item.Setting.DisplayName,
+                    ActionType = "BcdEdit",
+                    PreviousValue = item.Setting.RevertArgs,
+                    Target = item.Setting.ApplyArgs,
+                    AppliedAt = DateTime.Now,
+                    RequiresReboot = true
+                });
+                _saveSettings();
+            }
+        }
     }
 
     // ── Interrupt affinity status ────────────────────────────────────────────

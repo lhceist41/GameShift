@@ -92,4 +92,14 @@ public partial class DpcDoctorPage : Page
     {
         // Inline banner replaces the MessageBox — handled by ViewModel now
     }
+
+    private void OnToggleKernelTuningClicked(object sender, RoutedEventArgs e)
+    {
+        if (sender is System.Windows.Controls.Button btn &&
+            btn.Tag is ViewModels.KernelTuningItemViewModel item &&
+            DataContext is DpcDoctorViewModel vm)
+        {
+            vm.ToggleKernelTuningSetting(item);
+        }
+    }
 }
