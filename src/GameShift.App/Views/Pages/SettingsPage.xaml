@@ -264,6 +264,18 @@
                                    FontSize="11" Foreground="{DynamicResource GS.Text.Secondary}"
                                    Margin="40,0,0,12" TextWrapping="Wrap"/>
 
+                        <!-- ProBalance -->
+                        <TextBlock Text="ProBalance (CPU Restraint)" FontSize="11" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,0,0,6"/>
+                        <CheckBox Content="Dynamically restrain high-CPU background processes during gaming"
+                                  IsChecked="{Binding BgProBalanceEnabled, Mode=TwoWay}"
+                                  Foreground="{DynamicResource GS.Text.Primary}"
+                                  IsEnabled="{Binding BgEnabled}"
+                                  Margin="20,0,0,4"/>
+                        <TextBlock Text="Monitors background process CPU usage every 2 seconds. Processes exceeding 15% CPU for 3 consecutive samples are demoted to BelowNormal priority. Restored when CPU drops below threshold."
+                                   FontSize="11" Foreground="{DynamicResource GS.Text.Secondary}"
+                                   Margin="40,0,0,12" TextWrapping="Wrap"/>
+
                         <!-- Process Priority -->
                         <TextBlock Text="Process Priority" FontSize="11" FontWeight="SemiBold"
                                    Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,0,0,6"/>

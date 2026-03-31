@@ -47,6 +47,7 @@ public class OptimizationEngine : IDisposable
     private readonly List<IOptimization> _optimizations;
     private readonly JournalManager _journal;
     private readonly RegistryChangeMonitor _registryMonitor;
+    private readonly ProBalanceService _proBalance;
 
     /// <summary>
     /// Number of optimizations currently applied (used by SessionTracker for session stats).
@@ -83,6 +84,7 @@ public class OptimizationEngine : IDisposable
         _logger = SettingsManager.Logger; // Use centralized logger from Phase 1
         _journal = new JournalManager();
         _registryMonitor = new RegistryChangeMonitor(_journal, _logger);
+        _proBalance = new ProBalanceService();
     }
 
     /// <summary>
@@ -186,6 +188,13 @@ public class OptimizationEngine : IDisposable
             // during the gaming session (e.g. Windows Update agent, other apps).
             if (_appliedOptimizations.Count > 0)
                 _registryMonitor.StartSession();
+
+            // Start ProBalance dynamic CPU restraint if enabled in settings
+            var appSettings = SettingsManager.Load();
+            if (appSettings.BackgroundMode?.ProBalanceEnabled != false)
+            {
+                _proBalance.Start(profile.ProcessId, profile.ExecutableName);
+            }
         }
         finally
         {
@@ -234,6 +243,9 @@ public class OptimizationEngine : IDisposable
         {
             _logger.Information("Deactivating profile. Reverting {Count} optimizations in LIFO order.",
                 _appliedOptimizations.Count);
+
+            // Stop ProBalance — restore all restrained processes before reverting optimizations
+            _proBalance.Stop();
 
             // Stop registry watchers before reverting so they don't fire on our own writes
             _registryMonitor.StopSession();
@@ -299,6 +311,7 @@ public class OptimizationEngine : IDisposable
 
     public void Dispose()
     {
+        _proBalance.Dispose();
         _registryMonitor.Dispose();
         _semaphore.Dispose();
     }
