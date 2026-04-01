@@ -46,6 +46,13 @@ public partial class UpdateWindow : Window
         // The button always says "Download & Install" — the fallback is transparent to the user.
         // (UpdateChecker now resolves .exe > .zip > zipball, so this is rare.)
 
+        // Show urgent banner for critical updates (crash fixes, data loss, security)
+        if (IsCriticalUpdate(updateInfo.ReleaseNotes))
+        {
+            UrgentBanner.Visibility = System.Windows.Visibility.Visible;
+            UrgentBannerText.Text = "\u26a0 Critical update - fixes crashes and performance issues. Update strongly recommended.";
+        }
+
         // If update is already staged, go straight to Ready state
         if (alreadyStaged)
         {
@@ -224,6 +231,31 @@ public partial class UpdateWindow : Window
     private void OnCancelClicked(object sender, RoutedEventArgs e)
     {
         _downloadCts?.Cancel();
+    }
+
+    /// <summary>
+    /// Detects critical updates by scanning release notes for keywords indicating
+    /// crash fixes, data loss, security patches, or severe performance issues.
+    /// </summary>
+    private static bool IsCriticalUpdate(string? releaseNotes)
+    {
+        if (string.IsNullOrEmpty(releaseNotes)) return false;
+
+        var criticalKeywords = new[]
+        {
+            "crash", "critical", "urgent", "security",
+            "100% CPU", "data loss", "corruption",
+            "hotfix", "Hotfix", "native crash",
+            "access violation", "BSOD"
+        };
+
+        foreach (var keyword in criticalKeywords)
+        {
+            if (releaseNotes.Contains(keyword, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
     }
 
     private void Window_Closing(object? sender, System.ComponentModel.CancelEventArgs e)

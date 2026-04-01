@@ -2,6 +2,20 @@
 
 All notable changes to GameShift are documented here.
 
+## [3.5.1] - 2026-04-01
+
+### Fixed
+- **Native crash on game launch** - NvAPI DRS in-process calls caused access violations in nvapi64.dll due to struct layout mismatch with newer NVIDIA drivers. Disabled until struct validation is complete. Registry-based NVIDIA settings (Low Latency Mode, Shader Cache) still apply.
+- **100% CPU utilization during gaming** - `IDLEDISABLE=1` forced all cores to C0 state, causing Task Manager to report 100% CPU even when idle. Replaced with C-state depth limiting (C1 max, 2us wake latency) that preserves low latency without the side effects.
+- **ProBalance CPU overhead** - sampling interval increased from 2s to 5s, reducing kernel calls per cycle
+- **USB HID over-targeting** - session tweaks were writing to all 90 HID class subkeys instead of only actual USB devices
+- **Stale saved profiles** - existing profiles had `DisableProcessorIdle: true` from old default, causing the 100% CPU issue even after code fix
+
+### Changed
+- `DisableProcessorIdle` default changed from `true` to `false` (opt-in only)
+- When enabled, applies 8 hidden C-state limiting power settings instead of `IDLEDISABLE=1`: IDLESTATEMAX=1, IDLEPROMOTE=100, IDLEDEMOTE=100, IDLESCALING=0, CS_TIME_CHECK=20000, LATENCYHINTPERF=100, LATENCYHINTPERF1=100, latency unparked cores=100
+- Update popup always shows "Download & Install" button (asset resolution: .exe > .zip > zipball)
+
 ## [3.5.0] - 2026-03-31
 
 ### Added - Crash Recovery & State Journal

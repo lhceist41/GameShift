@@ -121,6 +121,15 @@
                        Foreground="#58A6FF"
                        Margin="0,0,0,4"/>
             <Rectangle Height="1" Fill="#30363D" Margin="0,10,0,0"/>
+
+            <!-- Urgent update banner (shown for critical fixes) -->
+            <Border x:Name="UrgentBanner" Visibility="Collapsed"
+                    Background="#3B1218" CornerRadius="6" Padding="12,8" Margin="0,10,0,0"
+                    BorderBrush="#F85149" BorderThickness="1">
+                <TextBlock x:Name="UrgentBannerText"
+                           FontSize="12" FontWeight="SemiBold"
+                           Foreground="#F85149" TextWrapping="Wrap"/>
+            </Border>
         </StackPanel>
 
         <!-- Row 1: Content area -->
