@@ -183,10 +183,12 @@ public class GameProfile
     /// Whether to disable processor idle (force C0 state) during gameplay.
     /// Eliminates C-state transition latency but doubles idle power consumption.
     /// Sub-toggle of UnparkCpuCores — only active when CPU core unparking is enabled.
-    /// Default true — most impactful single latency setting for gaming.
-    /// Laptop users or those with thermal concerns may want to disable this.
+    /// Forces all cores to C0 state (no idle sleep). Eliminates C-state transition
+    /// latency but causes Windows to report ~100% CPU utilization on multi-core systems.
+    /// Default false — opt-in only for users who specifically want sub-microsecond
+    /// C-state wakeup elimination at the cost of higher power and misleading utilization.
     /// </summary>
-    public bool DisableProcessorIdle { get; set; } = true;
+    public bool DisableProcessorIdle { get; set; } = false;
 
     // ── v2 Competitive Gaming toggles ────────────────────────────────
 
