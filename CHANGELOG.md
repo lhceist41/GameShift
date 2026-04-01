@@ -2,6 +2,14 @@
 
 All notable changes to GameShift are documented here.
 
+## [3.5.2] - 2026-04-01
+
+### Fixed
+- **ReBAR detection broken on NVIDIA GPUs** - the old approach checked `RMApertureSizeInMB` in the driver registry key which doesn't exist on modern NVIDIA drivers. Now uses `nvidia-smi -q` to read BAR1 total size directly (32768 MiB on RTX 4090 = ReBAR active, 256 = ReBAR off). AMD detection via registry (`EnableLargeBar`, `KMD_EnableInternalLargePage`) kept as-is.
+
+### Changed
+- **Tray icon single-click opens main window** - clicking the system tray icon now opens the GameShift dashboard directly instead of the small status flyout popup. Right-click context menu unchanged.
+
 ## [3.5.1] - 2026-04-01
 
 ### Fixed
