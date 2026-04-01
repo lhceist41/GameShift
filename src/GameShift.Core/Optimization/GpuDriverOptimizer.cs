@@ -188,13 +188,13 @@ public class GpuDriverOptimizer : IOptimization
 
             _registryChanges.Clear();
 
-            // Restore NvAPI DRS settings
-            if (_nvApiDrs != null && _nvApiDrsBackup != null)
+            // NvAPI DRS cleanup (disabled pending struct validation, but clean up if ever enabled)
+            if (_nvApiDrs != null)
             {
                 try
                 {
-                    _nvApiDrs.RestoreSettings(_nvApiDrsBackup);
-                    _logger.Information("[GpuDriverOptimizer] NvAPI DRS settings restored");
+                    if (_nvApiDrsBackup != null)
+                        _nvApiDrs.RestoreSettings(_nvApiDrsBackup);
                 }
                 catch (Exception ex)
                 {
@@ -356,31 +356,16 @@ public class GpuDriverOptimizer : IOptimization
             }
         }
 
-        // ── NvAPI DRS Profile Settings (power management, pre-render, shader cache, latency) ──
-        try
-        {
-            _nvApiDrs = new NvApiDrsManager();
-            if (_nvApiDrs.IsAvailable)
-            {
-                _nvApiDrsBackup = _nvApiDrs.ApplyGamingSettings();
-                if (_nvApiDrsBackup.Count > 0)
-                {
-                    anySuccess = true;
-                    _logger.Information(
-                        "[GpuDriverOptimizer] Applied {Count} NVIDIA DRS profile settings via NvAPI",
-                        _nvApiDrsBackup.Count);
-                }
-            }
-            else
-            {
-                _logger.Information(
-                    "[GpuDriverOptimizer] NvAPI not available — DRS settings require NVIDIA Control Panel");
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.Warning(ex, "[GpuDriverOptimizer] NvAPI DRS profile application failed");
-        }
+        // ── NvAPI DRS Profile Settings ──
+        // NvAPI DRS uses native P/Invoke with complex struct layouts that vary by driver
+        // version. Disabled until struct validation is complete — native access violations
+        // in nvapi64.dll cannot be caught by managed exception handlers and crash the app.
+        // The registry-based settings above (Low Latency, Shader Cache) cover the most
+        // impactful optimizations. DRS settings (power management, pre-render limit) can
+        // be configured via NVIDIA Control Panel > Manage 3D Settings.
+        _logger.Information(
+            "[GpuDriverOptimizer] NvAPI DRS is disabled pending struct layout validation. " +
+            "Power management and pre-render settings available in NVIDIA Control Panel.");
 
         // ── NVIDIA nvlddmkm kernel driver tweaks ──
         const string nvlddmkmPath = @"HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\nvlddmkm";
