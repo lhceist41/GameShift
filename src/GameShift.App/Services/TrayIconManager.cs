@@ -85,11 +85,8 @@ public class TrayIconManager : IDisposable
         _taskbarIcon.Icon = LoadIcon("tray-idle");
         _taskbarIcon.ContextMenu = BuildContextMenu();
 
-        // Double-click opens dashboard
-        _taskbarIcon.TrayMouseDoubleClick += OnTrayLeftDoubleClick;
-
-        // Left single-click opens/closes flyout
-        _taskbarIcon.TrayLeftMouseUp += OnTrayLeftClick;
+        // Single-click opens dashboard (same as double-click)
+        _taskbarIcon.TrayLeftMouseUp += OnTrayLeftDoubleClick;
 
         // Subscribe to engine events for icon state changes
         _engine.OptimizationApplied += OnOptimizationApplied;
@@ -642,8 +639,7 @@ public class TrayIconManager : IDisposable
             _flyoutWindow = null;
         }
 
-        _taskbarIcon.TrayLeftMouseUp -= OnTrayLeftClick;
-        _taskbarIcon.TrayMouseDoubleClick -= OnTrayLeftDoubleClick;
+        _taskbarIcon.TrayLeftMouseUp -= OnTrayLeftDoubleClick;
         _taskbarIcon.Dispose();
 
         _disposed = true;
