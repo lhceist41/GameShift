@@ -267,14 +267,128 @@ public class HardwareScanner
     /// <summary>
     /// Detects whether Resizable BAR (NVIDIA) or Smart Access Memory (AMD) is enabled.
     ///
-    /// Checks the primary GPU's driver class key for vendor-specific large-BAR indicators:
-    ///   - NVIDIA: <c>RMApertureSizeInMB</c> under <c>Services\nvlddmkm</c> (large value = ReBAR)
-    ///   - AMD: <c>EnableLargeBar</c> or presence of large BAR config in driver class key
-    ///   - Fallback: compare <c>Win32_VideoController.AdapterRAM</c> mapped size hint
+    /// Detection strategy (in priority order):
+    ///   1. NVIDIA: <c>nvidia-smi --query-gpu=bar1.total</c> - if BAR1 &gt; 256 MB, ReBAR is active.
+    ///      Always available when NVIDIA drivers are installed. Runs once at startup.
+    ///   2. AMD: Registry check for <c>EnableLargeBar=1</c> or <c>KMD_EnableInternalLargePage=1</c>
+    ///      in the display adapter class key.
+    ///   3. Fallback: <c>nvidia-smi</c> output parsing for any GPU vendor string match.
     ///
-    /// Does NOT attempt to enable ReBAR — this is a BIOS-level setting.
+    /// Does NOT attempt to enable ReBAR - this is a BIOS-level setting.
     /// </summary>
     private static bool DetectReBarEnabled()
+    {
+        try
+        {
+            // ── Strategy 1: nvidia-smi BAR1 query (NVIDIA GPUs) ──────────────
+            // nvidia-smi is always installed alongside NVIDIA drivers.
+            // Returns BAR1 size in MiB: 256 = ReBAR off, 16384/32768/65536 = ReBAR on.
+            if (DetectReBarViaNvidiaSmi())
+                return true;
+
+            // ── Strategy 2: AMD registry keys ────────────────────────────────
+            if (DetectReBarViaAmdRegistry())
+                return true;
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "HardwareScanner: Failed to detect ReBAR state");
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Queries nvidia-smi for BAR1 total size. If BAR1 &gt; 256 MB, ReBAR is active.
+    /// Returns false if nvidia-smi is not available (non-NVIDIA system) or BAR1 &lt;= 256.
+    /// </summary>
+    private static bool DetectReBarViaNvidiaSmi()
+    {
+        try
+        {
+            // Use nvidia-smi -q and parse the "BAR1 Memory Usage / Total" line.
+            // The --query-gpu=bar1.total CSV field doesn't exist on all driver versions,
+            // but the full query output always includes BAR1 info.
+            using var process = global::System.Diagnostics.Process.Start(
+                new global::System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "nvidia-smi",
+                    Arguments = "-q",
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                });
+
+            if (process == null) return false;
+
+            var output = process.StandardOutput.ReadToEnd();
+            process.WaitForExit(10000);
+
+            if (process.ExitCode != 0 || string.IsNullOrEmpty(output))
+                return false;
+
+            // Look for "BAR1 Memory Usage" section, then "Total : XXXXX MiB"
+            var lines = output.Split('\n');
+            bool inBar1Section = false;
+
+            foreach (var rawLine in lines)
+            {
+                var line = rawLine.Trim();
+
+                if (line.Contains("BAR1 Memory", StringComparison.OrdinalIgnoreCase))
+                {
+                    inBar1Section = true;
+                    continue;
+                }
+
+                if (inBar1Section && line.StartsWith("Total", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Parse "Total                      : 32768 MiB"
+                    var colonIdx = line.IndexOf(':');
+                    if (colonIdx < 0) break;
+
+                    var valuePart = line[(colonIdx + 1)..].Trim();
+                    // Extract the number before " MiB"
+                    var numStr = valuePart.Split(' ')[0].Trim();
+
+                    if (int.TryParse(numStr, out int bar1Mb))
+                    {
+                        // BAR1 = 256 means ReBAR off (standard 256MB aperture)
+                        // BAR1 > 256 means ReBAR on (typically 16384, 32768, or 65536 MiB)
+                        if (bar1Mb > 256)
+                        {
+                            Log.Debug("ReBAR detected via nvidia-smi: BAR1 Total = {Size} MiB", bar1Mb);
+                            return true;
+                        }
+
+                        Log.Debug("ReBAR not active via nvidia-smi: BAR1 Total = {Size} MiB", bar1Mb);
+                    }
+                    break;
+                }
+
+                // Exited BAR1 section without finding Total
+                if (inBar1Section && !string.IsNullOrEmpty(line) && !line.StartsWith("Total") && !line.StartsWith("Used") && !line.StartsWith("Free"))
+                    break;
+            }
+        }
+        catch (global::System.ComponentModel.Win32Exception)
+        {
+            // nvidia-smi not found - not an NVIDIA system or driver not installed
+            Log.Debug("HardwareScanner: nvidia-smi not found (non-NVIDIA system or driver missing)");
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "HardwareScanner: nvidia-smi BAR1 query failed");
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Checks AMD GPU driver class registry keys for ReBAR/SAM indicators.
+    /// </summary>
+    private static bool DetectReBarViaAmdRegistry()
     {
         try
         {
@@ -285,7 +399,6 @@ public class HardwareScanner
 
             foreach (var subKeyName in classKey.GetSubKeyNames())
             {
-                // Only check numbered subkeys (0000, 0001, etc.)
                 if (!int.TryParse(subKeyName, out _)) continue;
 
                 using var driverKey = classKey.OpenSubKey(subKeyName);
@@ -293,43 +406,28 @@ public class HardwareScanner
 
                 string provider = driverKey.GetValue("ProviderName")?.ToString() ?? "";
 
-                // NVIDIA: check for large aperture size (> 256 MB indicates ReBAR)
-                if (provider.Contains("NVIDIA", StringComparison.OrdinalIgnoreCase))
+                if (!provider.Contains("AMD", StringComparison.OrdinalIgnoreCase) &&
+                    !provider.Contains("Advanced Micro Devices", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                // EnableLargeBar = 1 indicates SAM is active
+                if (driverKey.GetValue("EnableLargeBar") is int lb && lb == 1)
                 {
-                    // nvlddmkm reports aperture size when ReBAR is active
-                    var aperture = driverKey.GetValue("RMApertureSizeInMB");
-                    if (aperture is int apMb && apMb > 256)
-                    {
-                        Log.Debug("ReBAR detected: NVIDIA aperture {Size} MB", apMb);
-                        return true;
-                    }
+                    Log.Debug("ReBAR/SAM detected: AMD EnableLargeBar = 1");
+                    return true;
                 }
 
-                // AMD: check for Large BAR enablement
-                if (provider.Contains("AMD", StringComparison.OrdinalIgnoreCase) ||
-                    provider.Contains("Advanced Micro Devices", StringComparison.OrdinalIgnoreCase))
+                // Alternative: KMD_EnableInternalLargePage
+                if (driverKey.GetValue("KMD_EnableInternalLargePage") is int ilp && ilp == 1)
                 {
-                    // AMD drivers expose EnableLargeBar when SAM is active
-                    var largeBar = driverKey.GetValue("EnableLargeBar");
-                    if (largeBar is int lb && lb == 1)
-                    {
-                        Log.Debug("ReBAR/SAM detected: AMD EnableLargeBar = 1");
-                        return true;
-                    }
-
-                    // Alternative: check KMD_EnableInternalLargePage
-                    var internalLarge = driverKey.GetValue("KMD_EnableInternalLargePage");
-                    if (internalLarge is int ilp && ilp == 1)
-                    {
-                        Log.Debug("ReBAR/SAM detected: AMD KMD_EnableInternalLargePage = 1");
-                        return true;
-                    }
+                    Log.Debug("ReBAR/SAM detected: AMD KMD_EnableInternalLargePage = 1");
+                    return true;
                 }
             }
         }
         catch (Exception ex)
         {
-            Log.Warning(ex, "HardwareScanner: Failed to detect ReBAR state");
+            Log.Debug(ex, "HardwareScanner: AMD ReBAR registry check failed");
         }
 
         return false;
