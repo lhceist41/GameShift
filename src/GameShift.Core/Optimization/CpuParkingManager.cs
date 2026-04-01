@@ -128,11 +128,19 @@ public class CpuParkingManager : IOptimization
                 }
             }
 
-            // === Processor Idle Disable (session toggle) ===
-            // Only apply for Competitive intensity — Casual games don't need C0 force
-            // (eliminates C-state transition overhead and doubles idle power consumption)
+            // === Processor Idle Disable ===
+            // Disabled — forcing C0 on all cores causes Windows to report ~100% CPU
+            // utilization on multi-core systems. MinProcessorState=100 keeps frequency
+            // at max without the misleading utilization. The DisableProcessorIdle profile
+            // flag is preserved for users who explicitly re-enable it in the profile
+            // editor, but the default is now false and this code path is intentionally
+            // not recommended.
             if (profile.DisableProcessorIdle && profile.Intensity == OptimizationIntensity.Competitive)
             {
+                SettingsManager.Logger.Information(
+                    "[CpuParkingManager] DisableProcessorIdle is enabled in profile — " +
+                    "this forces C0 on all cores and will show ~100%% CPU in Task Manager. " +
+                    "Consider disabling this in the profile editor.");
                 ApplyIdleDisable();
                 snapshot.RecordIdleDisableState(_activeSchemeGuid);
             }
