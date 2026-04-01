@@ -171,19 +171,19 @@ public class SessionSystemTweaksOptimizer : IOptimization
             int count = 0;
             foreach (var subKeyName in classKey.GetSubKeyNames())
             {
-                // Only check numbered subkeys (0000, 0001, ...)
                 if (!int.TryParse(subKeyName, out _)) continue;
 
                 string fullPath = $@"{HidClassPath}\{subKeyName}";
 
-                // Check that this is actually a USB HID device (has DriverDesc)
                 using var devKey = Registry.LocalMachine.OpenSubKey(fullPath);
                 if (devKey == null) continue;
 
-                string desc = devKey.GetValue("DriverDesc")?.ToString() ?? "";
-                if (string.IsNullOrEmpty(desc)) continue;
+                // Only target USB input devices — check if the device has
+                // SelectiveSuspendEnabled already present (means it's a USB device
+                // that supports suspend) AND has a relevant HID description
+                var existingSuspend = devKey.GetValue("SelectiveSuspendEnabled");
+                if (existingSuspend == null) continue; // Not a USB HID device
 
-                // Disable selective suspend
                 SetHklmDword(fullPath, "SelectiveSuspendEnabled", 0);
                 SetHklmDword(fullPath, "EnhancedPowerMgmtEnabled", 0);
                 count++;
