@@ -26,15 +26,40 @@ public class CpuParkingManager : IOptimization
     /// </summary>
     private const string ProcessorSubGroupGuid = "54533251-82be-4824-96c1-47b60b740d00";
 
-    /// <summary>
-    /// IDLEDISABLE setting GUID — forces all cores to C0 state when set to 1.
-    /// </summary>
-    private const string IdleDisableGuid = "5d76a2ca-e8c0-402f-a133-2158492d58ad";
+    // ── C-state depth limiting GUIDs (replaces IDLEDISABLE=1) ──────────
 
-    /// <summary>
-    /// Performance time check interval setting GUID.
-    /// </summary>
-    private const string TimeCheckIntervalGuid = "4d2b0152-7d5c-498b-88e2-34345392a2c5";
+    /// <summary>Max idle state depth: 1 = C1 only (2µs wake, HLT still runs so counters work).</summary>
+    private const string IdleStateMaxGuid       = "9943e905-9a30-4ec1-9b99-44dd3b76f7a2";
+    /// <summary>Idle promote threshold: 100 = never promote to deeper C-states.</summary>
+    private const string IdlePromoteGuid        = "7b224883-b3cc-4d79-819f-8374152cbe7c";
+    /// <summary>Idle demote threshold: 100 = aggressively return to shallowest state.</summary>
+    private const string IdleDemoteGuid         = "4b92d758-5a24-4851-a470-815d78aee119";
+    /// <summary>Idle scaling: 0 = disable auto threshold scaling.</summary>
+    private const string IdleScalingGuid         = "6c2993b0-8f48-481f-bcc6-00dd2742aa06";
+    /// <summary>C-state time check interval: ms between idle re-evaluation.</summary>
+    private const string CsTimeCheckGuid         = "c4581c31-89ab-4597-8e2b-9c9cab440e6b";
+    /// <summary>Latency hint perf response (primary): 100 = max CPU on input events.</summary>
+    private const string LatencyHintPerfGuid     = "619b7505-003b-4e82-b7a6-4dd29c300971";
+    /// <summary>Latency hint perf response (secondary).</summary>
+    private const string LatencyHintPerf1Guid    = "619b7505-003b-4e82-b7a6-4dd29c300972";
+    /// <summary>Latency-sensitive unparked cores hint: 100 = keep all cores unparked during hints.</summary>
+    private const string LatencyUnparkedGuid     = "616cdaa5-695e-4545-97ad-97dc2d1bdd88";
+
+    /// <summary>Performance time check interval setting GUID.</summary>
+    private const string TimeCheckIntervalGuid   = "4d2b0152-7d5c-498b-88e2-34345392a2c5";
+
+    /// <summary>All C-state limiting GUIDs in apply order.</summary>
+    private static readonly (string Guid, string Name, int Value)[] CStateLimitSettings =
+    [
+        (IdleStateMaxGuid,    "IDLESTATEMAX (C1 max depth)",     1),
+        (IdlePromoteGuid,     "IDLEPROMOTE (block deep sleep)", 100),
+        (IdleDemoteGuid,      "IDLEDEMOTE (fast wake)",         100),
+        (IdleScalingGuid,     "IDLESCALING (disable auto)",       0),
+        (CsTimeCheckGuid,     "CS_TIME_CHECK (20ms eval)",    20000),
+        (LatencyHintPerfGuid, "LATENCYHINTPERF (max on input)",  100),
+        (LatencyHintPerf1Guid,"LATENCYHINTPERF1 (secondary)",    100),
+        (LatencyUnparkedGuid, "Latency unparked cores hint",     100),
+    ];
 
     /// <summary>
     /// Records original AC and DC values for each setting.
@@ -128,20 +153,14 @@ public class CpuParkingManager : IOptimization
                 }
             }
 
-            // === Processor Idle Disable ===
-            // Disabled — forcing C0 on all cores causes Windows to report ~100% CPU
-            // utilization on multi-core systems. MinProcessorState=100 keeps frequency
-            // at max without the misleading utilization. The DisableProcessorIdle profile
-            // flag is preserved for users who explicitly re-enable it in the profile
-            // editor, but the default is now false and this code path is intentionally
-            // not recommended.
+            // === Low-Latency Idle Mode (C-state depth limiting) ===
+            // When enabled in a Competitive profile, limits C-states to C1 max depth
+            // instead of the old IDLEDISABLE=1 approach. C1 has 2µs wake latency (vs
+            // C6's 100µs+) while keeping the idle thread running so WMI counters report
+            // correct CPU utilization. Preserves thermal headroom for boost clocks.
             if (profile.DisableProcessorIdle && profile.Intensity == OptimizationIntensity.Competitive)
             {
-                SettingsManager.Logger.Information(
-                    "[CpuParkingManager] DisableProcessorIdle is enabled in profile — " +
-                    "this forces C0 on all cores and will show ~100%% CPU in Task Manager. " +
-                    "Consider disabling this in the profile editor.");
-                ApplyIdleDisable();
+                ApplyCStateLimiting();
                 snapshot.RecordIdleDisableState(_activeSchemeGuid);
             }
 
@@ -213,10 +232,10 @@ public class CpuParkingManager : IOptimization
                 }
             }
 
-            // === Revert Processor Idle Disable ===
+            // === Revert C-State Limiting ===
             if (_idleDisableApplied)
             {
-                RevertIdleDisable();
+                RevertCStateLimiting();
             }
 
             // Apply restored settings
@@ -278,79 +297,108 @@ public class CpuParkingManager : IOptimization
     {
         try
         {
-            // Re-enable processor idle (set IDLEDISABLE to 0)
-            RunPowercfg($"/setacvalueindex {schemeGuid} {ProcessorSubGroupGuid} {IdleDisableGuid} 0");
-            RunPowercfg($"/setdcvalueindex {schemeGuid} {ProcessorSubGroupGuid} {IdleDisableGuid} 0");
+            // Reset all C-state limiting settings to safe defaults
+            foreach (var (guid, _, _) in CStateLimitSettings)
+            {
+                // Re-hide the setting
+                RunPowercfg($"-attributes {ProcessorSubGroupGuid} {guid} +ATTRIB_HIDE");
+            }
 
-            // Restore time check interval to responsive value
+            // Restore time check interval
             RunPowercfg($"/setacvalueindex {schemeGuid} {ProcessorSubGroupGuid} {TimeCheckIntervalGuid} 15");
             RunPowercfg($"/setdcvalueindex {schemeGuid} {ProcessorSubGroupGuid} {TimeCheckIntervalGuid} 15");
 
             RunPowercfg($"/setactive {schemeGuid}");
 
             SettingsManager.Logger.Information(
-                "[CpuParkingManager] Cleaned up stale idle disable state for scheme {Guid}", schemeGuid);
+                "[CpuParkingManager] Cleaned up stale C-state limit state for scheme {Guid}", schemeGuid);
         }
         catch (Exception ex)
         {
             SettingsManager.Logger.Warning(ex,
-                "[CpuParkingManager] Failed to clean up stale idle disable state");
+                "[CpuParkingManager] Failed to clean up stale C-state limit state");
         }
     }
 
-    // ── Processor Idle Disable Helpers ─────────────────────────────────
+    // ── C-State Depth Limiting Helpers ──────────────────────────────────
+
+    /// <summary>Original values for C-state limiting settings, for revert.</summary>
+    private readonly List<(string Guid, string Name, string? OrigAc, string? OrigDc)> _cStateOriginals = new();
 
     /// <summary>
-    /// Disables processor idle (forces C0 state) and sets time check interval to 5000ms.
-    /// Called during gaming session start.
+    /// Limits C-state depth to C1 (2µs wake) and configures latency hints.
+    /// Replaces the old IDLEDISABLE=1 approach which caused 100% utilization.
+    /// Hidden power settings are unhidden before writing.
     /// </summary>
-    private void ApplyIdleDisable()
+    private void ApplyCStateLimiting()
     {
         if (_activeSchemeGuid == null) return;
 
         try
         {
-            // Disable processor idle (IDLEDISABLE = 1)
-            RunPowercfg($"/setacvalueindex {_activeSchemeGuid} {ProcessorSubGroupGuid} {IdleDisableGuid} 1");
-            RunPowercfg($"/setdcvalueindex {_activeSchemeGuid} {ProcessorSubGroupGuid} {IdleDisableGuid} 1");
+            _cStateOriginals.Clear();
 
-            // Set time check interval to 5000ms (CPU locked at max, no need for frequent checks)
-            RunPowercfg($"/setacvalueindex {_activeSchemeGuid} {ProcessorSubGroupGuid} {TimeCheckIntervalGuid} 5000");
-            RunPowercfg($"/setdcvalueindex {_activeSchemeGuid} {ProcessorSubGroupGuid} {TimeCheckIntervalGuid} 5000");
+            foreach (var (guid, name, targetValue) in CStateLimitSettings)
+            {
+                // Unhide the setting so powercfg can access it
+                RunPowercfg($"-attributes {ProcessorSubGroupGuid} {guid} -ATTRIB_HIDE");
 
+                // Read original values
+                string? origAc = QueryPowerSettingValue(_activeSchemeGuid, guid, "AC");
+                string? origDc = QueryPowerSettingValue(_activeSchemeGuid, guid, "DC");
+                _cStateOriginals.Add((guid, name, origAc, origDc));
+
+                // Apply gaming values
+                RunPowercfg($"/setacvalueindex {_activeSchemeGuid} {ProcessorSubGroupGuid} {guid} {targetValue}");
+                RunPowercfg($"/setdcvalueindex {_activeSchemeGuid} {ProcessorSubGroupGuid} {guid} {targetValue}");
+
+                SettingsManager.Logger.Debug(
+                    "[CpuParkingManager] C-state limit: {Name} = {Value} (was AC={Ac}, DC={Dc})",
+                    name, targetValue, origAc ?? "null", origDc ?? "null");
+            }
+
+            RunPowercfg($"/setactive {_activeSchemeGuid}");
             _idleDisableApplied = true;
-            SettingsManager.Logger.Information("[CpuParkingManager] Processor idle disabled (C0 forced) for gaming session");
+
+            SettingsManager.Logger.Information(
+                "[CpuParkingManager] Low-latency idle mode applied (C1 max depth, {Count} settings)",
+                CStateLimitSettings.Length);
         }
         catch (Exception ex)
         {
-            SettingsManager.Logger.Warning(ex, "[CpuParkingManager] Failed to disable processor idle");
+            SettingsManager.Logger.Warning(ex, "[CpuParkingManager] Failed to apply C-state limiting");
         }
     }
 
     /// <summary>
-    /// Re-enables processor idle and restores time check interval to 15ms.
-    /// Called when gaming session ends.
+    /// Restores all C-state limiting settings to their original values and re-hides them.
     /// </summary>
-    private void RevertIdleDisable()
+    private void RevertCStateLimiting()
     {
         if (_activeSchemeGuid == null) return;
 
         try
         {
-            // Re-enable processor idle (IDLEDISABLE = 0)
-            RunPowercfg($"/setacvalueindex {_activeSchemeGuid} {ProcessorSubGroupGuid} {IdleDisableGuid} 0");
-            RunPowercfg($"/setdcvalueindex {_activeSchemeGuid} {ProcessorSubGroupGuid} {IdleDisableGuid} 0");
+            foreach (var (guid, name, origAc, origDc) in _cStateOriginals)
+            {
+                if (origAc != null)
+                    RunPowercfg($"/setacvalueindex {_activeSchemeGuid} {ProcessorSubGroupGuid} {guid} {origAc}");
+                if (origDc != null)
+                    RunPowercfg($"/setdcvalueindex {_activeSchemeGuid} {ProcessorSubGroupGuid} {guid} {origDc}");
 
-            // Restore time check interval to 15ms (responsive frequency scaling in desktop mode)
-            RunPowercfg($"/setacvalueindex {_activeSchemeGuid} {ProcessorSubGroupGuid} {TimeCheckIntervalGuid} 15");
-            RunPowercfg($"/setdcvalueindex {_activeSchemeGuid} {ProcessorSubGroupGuid} {TimeCheckIntervalGuid} 15");
+                // Re-hide the setting
+                RunPowercfg($"-attributes {ProcessorSubGroupGuid} {guid} +ATTRIB_HIDE");
+            }
 
+            _cStateOriginals.Clear();
+            RunPowercfg($"/setactive {_activeSchemeGuid}");
             _idleDisableApplied = false;
-            SettingsManager.Logger.Information("[CpuParkingManager] Processor idle re-enabled (C-states restored)");
+
+            SettingsManager.Logger.Information("[CpuParkingManager] C-state limits reverted, settings re-hidden");
         }
         catch (Exception ex)
         {
-            SettingsManager.Logger.Warning(ex, "[CpuParkingManager] Failed to re-enable processor idle");
+            SettingsManager.Logger.Warning(ex, "[CpuParkingManager] Failed to revert C-state limiting");
         }
     }
 
