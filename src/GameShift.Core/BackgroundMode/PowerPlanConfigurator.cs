@@ -97,11 +97,11 @@ public class PowerPlanConfigurator
     {
         return new List<PowerOverride>
         {
-            // Processor idle disable — forces all cores to C0 state
-            new(SubProcessor, "5d76a2ca-e8c0-402f-a133-2158492d58ad", 1, RevertValue: 0,
-                Description: "Processor idle disable (C0 forced)"),
+            // Processor idle disable removed — forcing C0 on all cores causes Windows
+            // to report ~100% CPU utilization on multi-core systems even when idle.
+            // MinProcessorState=100 (max frequency) is sufficient for gaming performance.
 
-            // Time check interval = 5000ms during gaming (CPU locked at max, no need to check often)
+            // Time check interval = 5000ms during gaming (CPU at max freq, no need to check often)
             new(SubProcessor, "4d2b0152-7d5c-498b-88e2-34345392a2c5", 5000, RevertValue: 15,
                 Description: "Performance time check interval"),
         };
