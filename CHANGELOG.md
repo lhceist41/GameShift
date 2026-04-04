@@ -10,6 +10,7 @@ All notable changes to GameShift are documented here.
 - **VRAM showing as 0 or incorrect for GPUs with 8 GB+** - `Win32_VideoController.AdapterRAM` is a uint32 and overflows above 4 GB. Now reads the accurate QWORD `HardwareInformation.qwMemorySize` from the display adapter registry key, falling back to the WMI value for integrated GPUs.
 - **Disable Memory Integrity tweak not fully effective on Windows 11** - previously only set the HVCI scenario key, leaving VBS itself running. Now also disables `EnableVirtualizationBasedSecurity` and clears `RequirePlatformSecurityFeatures` to fully shut down VBS. Updated description to note that UEFI-locked VBS may require additional BIOS changes.
 - **Disable MPO tweak incomplete on 24H2+** - only set `OverlayTestMode = 5`, which is insufficient on newer Windows 11 builds. Now also sets `OverlayMinFPS = 0` (fixes 24H2 Chromium freezing) and `DisableOverlays = 1` under GraphicsDrivers (25H2 forward-compatibility). All values are properly backed up and reverted.
+- **Update window scrollbar clipped** - the scrollbar in the "What's new" release notes area was cut off when scrolling. Also made the update window larger (580x500) so content is less cramped.
 
 ## [3.5.2] - 2026-04-01
 
