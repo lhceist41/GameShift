@@ -81,7 +81,7 @@ public class OptimizeInterruptHandling : ISystemTweak
     private const string PciEnumPath = @"SYSTEM\CurrentControlSet\Enum\PCI";
 
     // Class GUIDs
-    private const string DisplayAdapterClassGuid = "{4d36e968-e325-11ce-bfc1-08002bfe1801}";
+    private const string DisplayAdapterClassGuid = "{4d36e968-e325-11ce-bfc1-08002be10318}";
     private const string NetworkAdapterClassGuid = "{4d36e972-e325-11ce-bfc1-08002be10318}";
     private const string UsbControllerClassGuid = "{36fc9e60-c465-11cf-8056-444553540000}";
 
