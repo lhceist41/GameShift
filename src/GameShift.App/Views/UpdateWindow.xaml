@@ -1,7 +1,7 @@
 <Window x:Class="GameShift.App.Views.UpdateWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="GameShift Update" Width="520" Height="420"
+        Title="GameShift Update" Width="580" Height="500"
         WindowStartupLocation="CenterScreen"
         ResizeMode="NoResize"
         Background="#0D1117"
@@ -140,10 +140,11 @@
                            FontSize="12" Foreground="#8B949E"
                            Margin="0,0,0,8"/>
                 <Border Background="#161B22" CornerRadius="8"
-                        BorderBrush="#30363D" BorderThickness="1">
+                        BorderBrush="#30363D" BorderThickness="1"
+                        Padding="16,14,0,14">
                     <ScrollViewer VerticalScrollBarVisibility="Auto"
-                                  Padding="16,14"
-                                  MaxHeight="180">
+                                  MaxHeight="240"
+                                  Padding="0,0,12,0">
                         <TextBlock x:Name="ReleaseNotesText"
                                    FontSize="13" LineHeight="20"
                                    Foreground="#C9D1D9"
