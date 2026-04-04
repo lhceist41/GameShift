@@ -91,6 +91,8 @@ public static class SystemInfoGatherer
         public int RefreshRate { get; init; }
     }
 
+    private const string DisplayClassBasePath = @"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}";
+
     public static GpuInfo GetGpuInfo()
     {
         try
@@ -104,11 +106,15 @@ public static class SystemInfoGatherer
                 var name = obj["Name"]?.ToString() ?? "";
                 if (name.Contains("Basic Display", StringComparison.OrdinalIgnoreCase)) continue;
 
+                long vramBytes = GetGpuVramFromRegistry(name);
+                if (vramBytes <= 0)
+                    vramBytes = (long)(uint)Convert.ToInt64(obj["AdapterRAM"]);
+
                 return new GpuInfo
                 {
                     Name = name.Trim(),
                     DriverVersion = obj["DriverVersion"]?.ToString() ?? "",
-                    AdapterRamBytes = Convert.ToInt64(obj["AdapterRAM"]),
+                    AdapterRamBytes = vramBytes,
                     CurrentResolutionWidth = Convert.ToInt32(obj["CurrentHorizontalResolution"]),
                     CurrentResolutionHeight = Convert.ToInt32(obj["CurrentVerticalResolution"]),
                     RefreshRate = Convert.ToInt32(obj["CurrentRefreshRate"])
@@ -120,6 +126,44 @@ public static class SystemInfoGatherer
             Log.Warning(ex, "SystemInfoGatherer: Failed to query GPU info");
         }
         return new GpuInfo();
+    }
+
+    /// <summary>
+    /// Reads accurate VRAM via the registry QWORD HardwareInformation.qwMemorySize,
+    /// which is not subject to the uint32 overflow in Win32_VideoController.AdapterRAM.
+    /// Falls back to 0 on integrated GPUs or if the key is absent.
+    /// </summary>
+    private static long GetGpuVramFromRegistry(string gpuName)
+    {
+        try
+        {
+            using var classKey = Registry.LocalMachine.OpenSubKey(DisplayClassBasePath);
+            if (classKey == null) return 0;
+
+            foreach (var subKeyName in classKey.GetSubKeyNames())
+            {
+                // Subkeys are "0000", "0001", etc.
+                if (!int.TryParse(subKeyName, out _)) continue;
+
+                using var adapterKey = classKey.OpenSubKey(subKeyName);
+                if (adapterKey == null) continue;
+
+                var desc = adapterKey.GetValue("DriverDesc")?.ToString() ?? "";
+                if (!desc.Contains(gpuName, StringComparison.OrdinalIgnoreCase) &&
+                    !gpuName.Contains(desc, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                var qwMemory = adapterKey.GetValue("HardwareInformation.qwMemorySize");
+                if (qwMemory is long l) return l;
+                if (qwMemory is byte[] bytes && bytes.Length >= 8)
+                    return BitConverter.ToInt64(bytes, 0);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "SystemInfoGatherer: Failed to read GPU VRAM from registry");
+        }
+        return 0;
     }
 
     // ── RAM Information ─────────────────────────────────────────────────────
