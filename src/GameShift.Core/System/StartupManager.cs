@@ -11,6 +11,7 @@ namespace GameShift.Core.System;
 public static class StartupManager
 {
     private const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
+    private const string StartupApprovedKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run";
     private const string AppName = "GameShift";
 
     /// <summary>
@@ -44,6 +45,7 @@ public static class StartupManager
             {
                 var exePath = GetExePath();
                 key.SetValue(AppName, $"\"{exePath}\"");
+                EnsureStartupApproved(true);
                 Log.Information("Registered GameShift for Windows startup: {Path}", exePath);
             }
             else
@@ -52,6 +54,7 @@ public static class StartupManager
                 if (key.GetValue(AppName) != null)
                 {
                     key.DeleteValue(AppName, throwOnMissingValue: false);
+                    EnsureStartupApproved(false);
                     Log.Information("Unregistered GameShift from Windows startup");
                 }
             }
@@ -79,6 +82,33 @@ public static class StartupManager
         {
             Log.Error(ex, "Failed to check Windows startup registration");
             return false;
+        }
+    }
+
+    /// <summary>
+    /// Windows 11 uses the StartupApproved\Run key to gate whether Run entries
+    /// actually launch. A missing or disabled entry silently blocks startup.
+    /// </summary>
+    private static void EnsureStartupApproved(bool enable)
+    {
+        try
+        {
+            if (enable)
+            {
+                using var key = Registry.CurrentUser.CreateSubKey(StartupApprovedKeyPath);
+                // 12-byte value: first DWORD 02 = enabled, remaining 8 bytes zero
+                byte[] enabled = [0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+                key.SetValue(AppName, enabled, RegistryValueKind.Binary);
+            }
+            else
+            {
+                using var key = Registry.CurrentUser.OpenSubKey(StartupApprovedKeyPath, writable: true);
+                key?.DeleteValue(AppName, throwOnMissingValue: false);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to update StartupApproved registry entry");
         }
     }
 }
