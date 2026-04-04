@@ -2,6 +2,15 @@
 
 All notable changes to GameShift are documented here.
 
+## [3.5.3] - 2026-04-04
+
+### Fixed
+- **Start with Windows not working on Windows 11** - the startup registration only wrote to `HKCU\...\CurrentVersion\Run`, but Windows 11 additionally gates startup apps via the `StartupApproved\Run` registry key. A missing or disabled entry there silently blocks launch. Now writes the enabled flag to `StartupApproved\Run` alongside the `Run` entry.
+- **Optimize Interrupt Handling tweak silently did nothing** - the Display Adapter class GUID had a typo (`bfe1801` instead of `be10318`), so the PCI device scan never matched any GPU. MSI mode and interrupt affinity pinning were never applied.
+- **VRAM showing as 0 or incorrect for GPUs with 8 GB+** - `Win32_VideoController.AdapterRAM` is a uint32 and overflows above 4 GB. Now reads the accurate QWORD `HardwareInformation.qwMemorySize` from the display adapter registry key, falling back to the WMI value for integrated GPUs.
+- **Disable Memory Integrity tweak not fully effective on Windows 11** - previously only set the HVCI scenario key, leaving VBS itself running. Now also disables `EnableVirtualizationBasedSecurity` and clears `RequirePlatformSecurityFeatures` to fully shut down VBS. Updated description to note that UEFI-locked VBS may require additional BIOS changes.
+- **Disable MPO tweak incomplete on 24H2+** - only set `OverlayTestMode = 5`, which is insufficient on newer Windows 11 builds. Now also sets `OverlayMinFPS = 0` (fixes 24H2 Chromium freezing) and `DisableOverlays = 1` under GraphicsDrivers (25H2 forward-compatibility). All values are properly backed up and reverted.
+
 ## [3.5.2] - 2026-04-01
 
 ### Fixed
