@@ -39,6 +39,13 @@
 > [!NOTE]
 > Every optimization is fully reversible. GameShift records original values in a state journal before applying changes, verifies each change took effect, and auto-reverts in LIFO order when your game exits. A watchdog service and boot recovery task ensure your system is restored even after a crash or blue screen.
 
+### Quick Start
+
+| Feature | Description |
+|:--------|:------------|
+| **One-Click Optimize** | Large "Optimize Now" button on the Dashboard applies all recommended system optimizations instantly. Shows a preview of what will be applied before clicking. Reverts with one click when done. |
+| **Easy Mode** | Toggle in the Dashboard top-right to simplify the UI. Hides advanced pages and settings, leaving only the Dashboard and Settings visible. Defaults to Advanced Mode (all pages) for new installs. |
+
 ### Session Optimizations
 
 These activate when a game launches and revert when the game closes.
