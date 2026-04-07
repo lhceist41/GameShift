@@ -15,6 +15,7 @@ namespace GameShift.Core.BackgroundMode;
 public class PowerPlanManager : IDisposable
 {
     private static readonly Guid UltimatePerformanceGuid = new("e9a42b02-d5df-448d-aa00-03f14749eb61");
+    private static readonly Guid HighPerformanceGuid = new("8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c");
     private static readonly Guid BalancedGuid = new("381b4222-f694-41f0-9685-ff5bb260df2e");
 
     private Timer? _idleTimer;
@@ -181,7 +182,7 @@ public class PowerPlanManager : IDisposable
 
             if (!_isIdle && idleMinutes >= _idleTimeoutMinutes)
             {
-                // Switch to Balanced
+                // Switch to Balanced (fall back to original plan if Balanced doesn't exist)
                 var balanced = BalancedGuid;
                 uint result = NativeInterop.PowerSetActiveScheme(IntPtr.Zero, ref balanced);
                 if (result == 0)
@@ -190,6 +191,16 @@ public class PowerPlanManager : IDisposable
                     SettingsManager.Logger.Information(
                         "[PowerPlanManager] User idle {Minutes:F0}min, switched to Balanced",
                         idleMinutes);
+                }
+                else if (_originalPlanGuid != Guid.Empty)
+                {
+                    var orig = _originalPlanGuid;
+                    if (NativeInterop.PowerSetActiveScheme(IntPtr.Zero, ref orig) == 0)
+                    {
+                        _isIdle = true;
+                        SettingsManager.Logger.Warning(
+                            "[PowerPlanManager] Balanced plan not available, fell back to original plan for idle");
+                    }
                 }
             }
             else if (_isIdle && idleMinutes < 1)
@@ -218,35 +229,21 @@ public class PowerPlanManager : IDisposable
     {
         try
         {
-            // Check if our custom plan already exists by listing plans
-            var listOutput = RunPowercfg("/list");
-            if (listOutput != null)
-            {
-                // Look for "GameShift Performance" in the output
-                foreach (var line in listOutput.Split('\n'))
-                {
-                    if (line.Contains("GameShift Performance", StringComparison.OrdinalIgnoreCase))
-                    {
-                        // Extract GUID from the line
-                        var guidStart = line.IndexOf(':') + 2;
-                        var guidEnd = line.IndexOf(' ', guidStart);
-                        if (guidEnd < 0) guidEnd = line.Length;
-                        var guidStr = line[guidStart..guidEnd].Trim();
-                        if (Guid.TryParse(guidStr, out var existingGuid))
-                        {
-                            SettingsManager.Logger.Information(
-                                "[PowerPlanManager] Found existing custom plan {Guid}", existingGuid);
-                            return existingGuid;
-                        }
-                    }
-                }
-            }
+            // Delete any existing "GameShift Performance" plans so we always
+            // start fresh with the latest overrides on each app launch.
+            DeleteExistingCustomPlans();
 
-            // Create by duplicating Ultimate Performance
+            // Create by duplicating Ultimate Performance (fall back to High Performance)
             var dupOutput = RunPowercfg($"/duplicatescheme {UltimatePerformanceGuid}");
             if (dupOutput == null)
             {
-                SettingsManager.Logger.Error("[PowerPlanManager] Failed to duplicate Ultimate Performance plan");
+                SettingsManager.Logger.Warning(
+                    "[PowerPlanManager] Ultimate Performance template unavailable, trying High Performance");
+                dupOutput = RunPowercfg($"/duplicatescheme {HighPerformanceGuid}");
+            }
+            if (dupOutput == null)
+            {
+                SettingsManager.Logger.Error("[PowerPlanManager] Failed to duplicate any performance plan");
                 return Guid.Empty;
             }
 
@@ -284,6 +281,46 @@ public class PowerPlanManager : IDisposable
         {
             SettingsManager.Logger.Error(ex, "[PowerPlanManager] Failed to create custom plan");
             return Guid.Empty;
+        }
+    }
+
+    /// <summary>
+    /// Deletes all existing "GameShift Performance" power plans.
+    /// Called before creating a new one to ensure users always get fresh overrides
+    /// when the app updates. Also cleans up duplicates from previous versions.
+    /// If the plan being deleted is currently active, switches to the original plan first.
+    /// </summary>
+    private void DeleteExistingCustomPlans()
+    {
+        var listOutput = RunPowercfg("/list");
+        if (listOutput == null) return;
+
+        foreach (var line in listOutput.Split('\n'))
+        {
+            if (!line.Contains("GameShift Performance", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            // Extract GUID
+            var parts = line.Split(' ');
+            foreach (var part in parts)
+            {
+                var trimmed = part.Trim();
+                if (trimmed.Length >= 36 && trimmed.Contains('-') &&
+                    Guid.TryParse(trimmed[..36], out var oldGuid))
+                {
+                    // If this plan is currently active, switch away first
+                    if (line.Contains('*'))
+                    {
+                        var orig = _originalPlanGuid != Guid.Empty ? _originalPlanGuid : BalancedGuid;
+                        NativeInterop.PowerSetActiveScheme(IntPtr.Zero, ref orig);
+                    }
+
+                    RunPowercfg($"/delete {oldGuid}");
+                    SettingsManager.Logger.Information(
+                        "[PowerPlanManager] Deleted old custom plan {Guid}", oldGuid);
+                    break;
+                }
+            }
         }
     }
 
