@@ -158,6 +158,12 @@ public class AppSettings
     public bool DpcDoctorSimpleMode { get; set; } = true;
 
     /// <summary>
+    /// Whether Advanced Mode is enabled. Default true (all pages visible).
+    /// Users can toggle Easy Mode from the Dashboard to simplify the UI.
+    /// </summary>
+    public bool AdvancedMode { get; set; } = true;
+
+    /// <summary>
     /// DPC fixes that have been applied, with their previous values for rollback.
     /// Persisted so fixes can be reverted even after app restart or crash.
     /// </summary>
