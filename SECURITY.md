@@ -62,4 +62,5 @@ GameShift operates with administrator privileges and modifies system-level setti
 - The watchdog named pipe accepts only heartbeat signals  - it does not accept or execute commands
 - BCDEdit modifications are gated behind user confirmation and tracked in pending reboot fixes
 - VBS/HVCI disable is blocked when Riot Vanguard is detected (safety interlock)
+- The "Disable Memory Integrity" system tweak now also disables VBS (`EnableVirtualizationBasedSecurity`) and clears `RequirePlatformSecurityFeatures`. UEFI-locked VBS may require additional BIOS changes.
 - Source code is fully open and auditable

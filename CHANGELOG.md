@@ -2,6 +2,39 @@
 
 All notable changes to GameShift are documented here.
 
+## [3.6.0] - 2026-04-07
+
+### Added
+- **One-click "Optimize Now" hero button on Dashboard** - prominent button at the top of the Dashboard applies all recommended optimizations in one click. Shows a preview of what will be applied (click to expand the full list). Automatically reflects current state on launch - if optimizations are already active, shows "Optimized" with a revert option.
+- **Easy Mode toggle** - "Easy Mode" checkbox on the Dashboard and Settings page. When enabled, hides advanced pages (DPC Doctor, Optimizations, Profiles, Game Library, System, Logs, Setup Wizard) and detailed settings sections for a simpler experience. App defaults to Advanced Mode (all pages visible) for new installs.
+
+### Fixed
+- **ProcessSnapshotService race condition** - callers could iterate disposed Process objects when a cache refresh happened concurrently. Replaced with ProcessSnapshot value objects that are safe to use from any thread.
+- **CompetitiveMode safety timer race** - the 6-hour safety timeout and normal revert could run simultaneously, corrupting the suspended process list. Added lock synchronization.
+- **NetworkOptimizer/DpcFixEngine process deadlock** - stderr was redirected but never read concurrently with stdout. If netsh/bcdedit wrote more than 4KB to stderr, the pipe buffer filled and the process hung. Now reads both streams concurrently.
+- **PowerShell commands fail on paths with apostrophes** - game paths containing single quotes (common with GOG, custom Steam libraries) broke firewall rules and Defender exclusions. Now escapes quotes in path strings.
+- **DpcTraceEngine thread safety** - per-driver DPC stats were mutated from the ETW thread and timer thread without synchronization. Added per-stats locking and Interlocked access for system peak value.
+- **Process handle leaks** - ProcessPriorityBooster and CompetitiveMode leaked Win32 process handles by not disposing Process objects from GetProcessById. Added `using` to all call sites.
+- **DpcLatencyMonitor duplicate alerts** - `_lastAlertTime` was written from two threads without synchronization, allowing multiple spike alerts within the 30-second cooldown. Protected with existing lock.
+- **6 optimization toggles silently did nothing** - Dashboard toggle switches for Scheduled Tasks, CPU Unparking, I/O Priority, Efficiency Mode, CPU Scheduling, and Session Tweaks changed visually but never persisted to the profile. Added missing cases to the switch statement.
+- **VbsHvciToggle bcdedit could freeze app** - bcdedit was called with no timeout. Added 10-second timeout with process kill on hang.
+- **SystemPerformanceMonitor not stopped on page navigate-away** - kept sampling at 1-second intervals when Dashboard was not visible. Now starts/stops with page lifecycle.
+- **Power plan not reverted after crash** - if GameShift crashed during a gaming session, the system stayed on Ultimate Performance indefinitely. Added crash recovery for the active power plan via `CleanupStalePowerPlan`, restoring the original plan (or falling back to Balanced) on next launch.
+- **PowerPlanSwitcher silently failed on OEM systems** - Ultimate Performance plan template missing on some OEM builds (Surface, Lenovo). Added 5-step fallback chain: Ultimate Performance -> High Performance -> scan existing plans -> duplicate Ultimate -> duplicate High Performance.
+- **PowerPlanSwitcher stdout pipe deadlock** - `RedirectStandardOutput=true` but never read before `WaitForExitAsync` during plan creation. Now reads both streams concurrently.
+- **Session optimizations applied no power sub-settings** - when Background Mode was off, switching to Ultimate Performance left all sub-settings at stock defaults. Now applies key session overrides (EPP=0, boost policy, USB suspend, USB 3 link power, PCIe ASPM, NVMe idle timeout, wireless power saving) and reverts them on session end.
+- **No fallback when reverting to a deleted original plan** - if the user's original power plan was removed during gaming, revert failed and left the system on Ultimate Performance. Now falls back to Balanced.
+- **DpcFixEngine GUID detection used brittle substring match** - `"e8bf"` substring check to distinguish plan GUIDs from sub-setting GUIDs replaced with proper `Guid.TryParse`.
+- **PowerPlanManager Balanced plan fallback** - idle timeout switching to Balanced now falls back to the original plan if Balanced is not available on the system (some OEM builds).
+- **PowerPlanManager custom plan creation fallback** - `FindOrCreateCustomPlan` now falls back to duplicating High Performance if Ultimate Performance template is missing.
+- **Custom power plan recreated on launch** - Background Mode now deletes and recreates the "GameShift Performance" power plan on every startup, ensuring existing users always get the latest sub-setting overrides after an update.
+
+### Changed
+- **Pinned all package versions** - replaced wildcard versions (`4.*`, `1.*`, `0.9.*`, `8.*`) with exact versions for reproducible builds: WPF-UI 4.0.3, Hardcodet.NotifyIcon.Wpf 2.0.1, CommunityToolkit.Mvvm 8.3.2, LibreHardwareMonitorLib 0.9.6.
+- **Extracted ServiceRegistry** - replaced 21 scattered `App.*` static properties with a single `App.Services` typed registry. All 15 consumer files updated.
+- **Split App.xaml.cs** (964 -> 528 lines) - extracted `CrashRecoveryHandler`, `ServiceFactory`, and `EventWiringHelper` into dedicated service classes under `Services/`.
+- **Split DashboardViewModel** (1887 -> 970 lines) - extracted 6 focused sub-ViewModels: `UpdateManagementViewModel`, `HeroOptimizeViewModel`, `DpcMonitoringViewModel`, `PerformanceMonitorViewModel`, `PingMonitorViewModel`, `VbsAdvisoryViewModel`. DashboardViewModel composes them via `Update`, `Hero`, `Dpc`, `Perf`, `Ping`, `Vbs` properties.
+
 ## [3.5.3] - 2026-04-04
 
 ### Fixed
