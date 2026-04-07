@@ -208,10 +208,10 @@ public class EfficiencyModeController : IOptimization
                     }
 
                     // Query current Efficiency Mode state
-                    bool wasAlreadyEfficient = IsEfficiencyModeEnabled(process.Handle);
+                    bool wasAlreadyEfficient = IsEfficiencyModeEnabled(process.ProcessHandle);
 
                     // Apply Efficiency Mode
-                    if (EnableEfficiencyMode(process.Handle))
+                    if (EnableEfficiencyMode(process.ProcessHandle))
                     {
                         lock (_lock)
                         {

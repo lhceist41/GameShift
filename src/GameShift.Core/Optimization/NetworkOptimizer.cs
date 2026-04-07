@@ -715,7 +715,12 @@ public class NetworkOptimizer : IOptimization
         if (process == null)
             return (-1, "");
 
+        // Read stdout and stderr concurrently to avoid pipe buffer deadlock
+        string stderr = "";
+        var stderrTask = Task.Run(() => { stderr = process.StandardError.ReadToEnd(); });
         string output = process.StandardOutput.ReadToEnd();
+        stderrTask.Wait(5000);
+
         process.WaitForExit(5000);
         return (process.ExitCode, output);
     }

@@ -186,7 +186,7 @@ public class IoPriorityManager : IOptimization
                     // Query current I/O priority
                     int currentPriority = 0;
                     int status = NativeInterop.NtQueryInformationProcess(
-                        process.Handle,
+                        process.ProcessHandle,
                         NativeInterop.ProcessIoPriority,
                         ref currentPriority,
                         sizeof(int),
@@ -198,7 +198,7 @@ public class IoPriorityManager : IOptimization
                     // Demote to Low
                     int newPriority = NativeInterop.IoPriorityLow;
                     status = NativeInterop.NtSetInformationProcess(
-                        process.Handle,
+                        process.ProcessHandle,
                         NativeInterop.ProcessIoPriority,
                         ref newPriority,
                         sizeof(int));

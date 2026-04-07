@@ -23,6 +23,7 @@ public enum DpcHealthStatus
 /// </summary>
 public class DriverDpcStats
 {
+    public readonly object SyncRoot = new();
     public string DriverFileName { get; set; } = "";
     public string FriendlyName { get; set; } = "";
     public string Category { get; set; } = "";
@@ -82,7 +83,7 @@ public class DpcTraceEngine : IDisposable
     public bool IsCapturing => _isCapturing;
 
     /// <summary>System-wide peak DPC value since capture started.</summary>
-    public double SystemPeakDpc => _systemPeakDpc;
+    public double SystemPeakDpc => Interlocked.CompareExchange(ref _systemPeakDpc, 0, 0);
 
     /// <summary>Overall system DPC health based on the highest driver peak.</summary>
     public DpcHealthStatus SystemHealth
@@ -276,17 +277,20 @@ public class DpcTraceEngine : IDisposable
             return s;
         });
 
-        stats.DpcCount++;
-        stats.TotalExecutionMicroseconds += microseconds;
+        lock (stats.SyncRoot)
+        {
+            stats.DpcCount++;
+            stats.TotalExecutionMicroseconds += microseconds;
 
-        if (microseconds > stats.HighestExecutionMicroseconds)
-            stats.HighestExecutionMicroseconds = microseconds;
+            if (microseconds > stats.HighestExecutionMicroseconds)
+                stats.HighestExecutionMicroseconds = microseconds;
 
-        if (microseconds > stats.CurrentWindowPeak)
-            stats.CurrentWindowPeak = microseconds;
+            if (microseconds > stats.CurrentWindowPeak)
+                stats.CurrentWindowPeak = microseconds;
+        }
 
-        if (microseconds > _systemPeakDpc)
-            _systemPeakDpc = microseconds;
+        if (microseconds > Interlocked.CompareExchange(ref _systemPeakDpc, 0, 0))
+            Interlocked.Exchange(ref _systemPeakDpc, microseconds);
     }
 
     private void OnTick(object? sender, global::System.Timers.ElapsedEventArgs e)
@@ -296,11 +300,14 @@ public class DpcTraceEngine : IDisposable
         // Roll sparkline history and reset current window peak
         foreach (var stats in _driverStats.Values)
         {
-            var idx = stats.HistoryIndex % 60;
-            stats.RecentHistory[idx] = stats.CurrentWindowPeak;
-            stats.HistoryIndex++;
-            if (stats.HistoryCount < 60) stats.HistoryCount++;
-            stats.CurrentWindowPeak = 0;
+            lock (stats.SyncRoot)
+            {
+                var idx = stats.HistoryIndex % 60;
+                stats.RecentHistory[idx] = stats.CurrentWindowPeak;
+                stats.HistoryIndex++;
+                if (stats.HistoryCount < 60) stats.HistoryCount++;
+                stats.CurrentWindowPeak = 0;
+            }
         }
 
         // Fire UI update event

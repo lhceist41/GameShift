@@ -383,11 +383,22 @@ public class VbsHvciToggle
             };
 
             using var process = Process.Start(psi);
-            var stdout = process?.StandardOutput.ReadToEnd() ?? "";
-            var stderr = process?.StandardError.ReadToEnd() ?? "";
-            process?.WaitForExit();
+            if (process == null) return;
 
-            if (process?.ExitCode == 0)
+            // Read stdout and stderr concurrently to avoid pipe deadlock
+            string stderr = "";
+            var stderrTask = Task.Run(() => { stderr = process.StandardError.ReadToEnd(); });
+            var stdout = process.StandardOutput.ReadToEnd();
+            stderrTask.Wait(10_000);
+
+            if (!process.WaitForExit(10_000))
+            {
+                _logger.Warning("VbsHvciToggle: bcdedit timed out after 10 seconds");
+                try { process.Kill(); } catch { }
+                return;
+            }
+
+            if (process.ExitCode == 0)
             {
                 _logger.Information(
                     "VbsHvciToggle: Set hypervisorlaunchtype={LaunchType}",
@@ -397,7 +408,7 @@ public class VbsHvciToggle
             {
                 _logger.Warning(
                     "VbsHvciToggle: bcdedit exited with code {ExitCode}: {StdOut} {StdErr}",
-                    process?.ExitCode, stdout.Trim(), stderr.Trim());
+                    process.ExitCode, stdout.Trim(), stderr.Trim());
             }
         }
         catch (Exception ex)
