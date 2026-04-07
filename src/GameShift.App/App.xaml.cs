@@ -2,17 +2,11 @@ using System;
 using System.IO;
 using System.Threading;
 using System.Windows;
-using GameShift.Core.BackgroundMode;
 using GameShift.Core.Config;
-using GameShift.Core.Detection;
-using GameShift.Core.GameProfiles;
 using GameShift.Core.Monitoring;
-using GameShift.Core.Optimization;
-using GameShift.Core.Profiles;
 using GameShift.Core.Profiles.GameActions;
 using GameShift.Core.Journal;
 using GameShift.Core.System;
-using GameShift.Core.SystemTweaks;
 using GameShift.Core.Watchdog;
 using GameShift.App.Services;
 using GameShift.App.Views;
@@ -36,12 +30,8 @@ public partial class App : Application
     private SingleInstancePipe? _singleInstancePipe;
     private WatchdogHeartbeatClient? _watchdogHeartbeat;
 
-    // Stored event handlers for proper unsubscription in OnExit
-    private EventHandler<GameDetectedEventArgs>? _bgModeGameStarted;
-    private EventHandler? _bgModeAllGamesStopped;
-    private EventHandler<GameDetectedEventArgs>? _monitorPauseGameStarted;
-    private EventHandler? _monitorResumeAllGamesStopped;
-    private EventHandler<ProcessSpawnedEventArgs>? _markDirtyHandler;
+    // Holds event subscriptions for clean unsubscription in OnExit
+    private EventSubscriptions? _eventSubs;
 
     /// <summary>
     /// True when the tray icon was created successfully. When false (tray creation failed),
@@ -49,72 +39,12 @@ public partial class App : Application
     /// </summary>
     internal static bool TrayAvailable { get; private set; }
 
-    // ── Static service properties for page ViewModel construction ────────────────
+    // ── Static service registry for page ViewModel construction ────────────────
     // Pages are instantiated by WPF UI NavigationView via parameterless constructors.
-    // They access these static properties in their Loaded event to create ViewModels.
+    // They access App.Services.* in their Loaded event to create ViewModels.
 
-    /// <summary>Detection orchestrator — game detection, known games, optimization lifecycle.</summary>
-    public static DetectionOrchestrator? Orchestrator { get; private set; }
-
-    /// <summary>Optimization engine — applies/reverts optimization profiles.</summary>
-    public static OptimizationEngine? Engine { get; private set; }
-
-    /// <summary>Game detector — scans for active game processes.</summary>
-    public static GameDetector? Detector { get; private set; }
-
-    /// <summary>Profile manager — loads and saves per-game optimization profiles.</summary>
-    public static ProfileManager? ProfileMgr { get; private set; }
-
-    /// <summary>All optimization modules registered in the engine.</summary>
-    public static IOptimization[]? Optimizations { get; private set; }
-
-    /// <summary>VBS/HVCI toggle — optional, null if unavailable.</summary>
-    public static VbsHvciToggle? VbsToggle { get; private set; }
-
-    /// <summary>DPC latency monitor — optional, null if ETW unavailable.</summary>
-    public static DpcLatencyMonitor? DpcMon { get; private set; }
-
-    /// <summary>System performance monitor (CPU/RAM/GPU) — created at startup.</summary>
-    public static SystemPerformanceMonitor? PerfMon { get; private set; }
-
-    /// <summary>Network ping monitor — created at startup, started from dashboard.</summary>
-    public static PingMonitor? PingMon { get; private set; }
-
-    /// <summary>Session history store — persists gaming sessions to JSON.</summary>
-    public static SessionHistoryStore? SessionStore { get; private set; }
-
-    /// <summary>Session tracker — records gaming sessions via GameDetector events.</summary>
-    public static SessionTracker? SessionTrk { get; private set; }
-
-    /// <summary>Temperature monitor — CPU/GPU temps via LibreHardwareMonitor.</summary>
-    public static TemperatureMonitor? TempMon { get; private set; }
-
-    /// <summary>Consolidated hardware scan result for conditional game optimizations.</summary>
-    public static HardwareScanResult? HardwareScan { get; private set; }
-
-    /// <summary>Known driver database — loaded once at startup, cached.</summary>
-    public static KnownDriverDatabase? DriverDb { get; private set; }
-
-    /// <summary>Background Mode service — always-on system optimizations.</summary>
-    public static BackgroundModeService? BackgroundMode { get; private set; }
-
-    /// <summary>DPC trace engine — ETW per-driver DPC attribution.</summary>
-    public static DpcTraceEngine? DpcTrace { get; private set; }
-
-    /// <summary>DPC fix engine — applies/reverts DPC latency fixes.</summary>
-    public static DpcFixEngine? DpcFix { get; private set; }
-
-    /// <summary>System Tweaks manager — one-time registry optimizations.</summary>
-    public static SystemTweaksManager? TweaksMgr { get; private set; }
-
-    /// <summary>Game Profile manager — per-game optimization profiles.</summary>
-    public static GameProfileManager? GameProfileMgr { get; private set; }
-
-    /// <summary>Driver version tracker — detects installed drivers and checks for advisories.</summary>
-    public static DriverVersionTracker? DriverTracker { get; private set; }
-
-    /// <summary>Benchmark service — PresentMon-based frame time capture.</summary>
-    public static BenchmarkService? Benchmark { get; private set; }
+    /// <summary>Centralised service registry — replaces individual static properties.</summary>
+    public static ServiceRegistry Services { get; } = new();
 
     /// <summary>
     /// Static constructor: registers global crash handlers as early as possible —
@@ -210,279 +140,13 @@ public partial class App : Application
             WriteDiag("Step b: Crash recovery check...");
             var appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
             var gameshiftPath = Path.Combine(appDataPath, "GameShift");
-            var lockfilePath = Path.Combine(gameshiftPath, "active_session.json");
+            CrashRecoveryHandler.RecoverIfNeeded(gameshiftPath);
 
-            // Ensure GameShift AppData directory exists
-            if (!Directory.Exists(gameshiftPath))
-            {
-                Directory.CreateDirectory(gameshiftPath);
-            }
+            // Steps c-d: Create all services, load settings
+            var settings = ServiceFactory.CreateAll(Services, WriteDiag);
 
-            if (File.Exists(lockfilePath))
-            {
-                try
-                {
-                    var snapshot = SystemStateSnapshot.LoadFromLockfile(lockfilePath);
-
-                    Log.Warning("Detected orphaned session lockfile - performing crash recovery");
-
-                    if (snapshot != null)
-                    {
-                        // Recover processor idle disable state (if GameShift crashed with IDLEDISABLE=1)
-                        if (snapshot.IdleDisableSchemeGuid != null)
-                        {
-                            Log.Information("Crash recovery: restoring processor idle state for scheme {Guid}",
-                                snapshot.IdleDisableSchemeGuid);
-                            GameShift.Core.Optimization.CpuParkingManager.CleanupStaleIdleDisable(
-                                snapshot.IdleDisableSchemeGuid);
-                        }
-
-                        // Restore CPU parking settings
-                        if (snapshot.CpuParkingSchemeGuid != null && snapshot.CpuParkingEntries.Count > 0)
-                        {
-                            Log.Information("Crash recovery: restoring CPU parking settings for scheme {Guid}",
-                                snapshot.CpuParkingSchemeGuid);
-                            GameShift.Core.Optimization.CpuParkingManager.CleanupStaleParkingState(
-                                snapshot.CpuParkingSchemeGuid, snapshot.CpuParkingEntries);
-                        }
-
-                        // Re-enable scheduled tasks that were disabled during gaming
-                        if (snapshot.DisabledScheduledTasks.Count > 0)
-                        {
-                            Log.Information("Crash recovery: re-enabling {Count} disabled scheduled tasks",
-                                snapshot.DisabledScheduledTasks.Count);
-                            GameShift.Core.Optimization.ScheduledTaskSuppressor.CleanupStaleDisabledTasks(
-                                snapshot.DisabledScheduledTasks);
-                        }
-
-                        // Clean up IFEO PerfOptions entries
-                        if (snapshot.IfeoEntries.Count > 0)
-                        {
-                            Log.Information("Crash recovery: cleaning up {Count} IFEO PerfOptions entries",
-                                snapshot.IfeoEntries.Count);
-                            SystemStateSnapshot.CleanupStaleIfeoEntries(snapshot);
-                        }
-
-                        // Restore registry values (GPU, visual effects, network optimizations)
-                        if (snapshot.RegistryValues.Count > 0)
-                        {
-                            Log.Information("Crash recovery: restoring {Count} registry values",
-                                snapshot.RegistryValues.Count);
-                            RestoreCrashRecoveryRegistryValues(snapshot.RegistryValues);
-                        }
-
-                        // Restore Win32PrioritySeparation
-                        if (snapshot.OriginalPrioritySeparation.HasValue)
-                        {
-                            Log.Information("Crash recovery: restoring Win32PrioritySeparation to {Value}",
-                                snapshot.OriginalPrioritySeparation.Value);
-                            try
-                            {
-                                using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(
-                                    @"SYSTEM\CurrentControlSet\Control\PriorityControl", writable: true);
-                                key?.SetValue("Win32PrioritySeparation",
-                                    snapshot.OriginalPrioritySeparation.Value,
-                                    Microsoft.Win32.RegistryValueKind.DWord);
-                            }
-                            catch (Exception ex)
-                            {
-                                Log.Warning(ex, "Crash recovery: failed to restore Win32PrioritySeparation");
-                            }
-                        }
-                    }
-
-                    MessageBox.Show(
-                        "GameShift recovered from an unexpected shutdown. All settings have been restored.",
-                        "Crash Recovery",
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Information);
-
-                    SystemStateSnapshot.DeleteLockfile(lockfilePath);
-                }
-                catch (Exception ex)
-                {
-                    Log.Error(ex, "Failed to perform crash recovery");
-                    // Still continue to main window even if recovery fails
-                }
-            }
-            else
-            {
-                Log.Information("No orphaned session detected, proceeding normally");
-            }
-
-            // Step b1.5: Clean up orphaned ETW DPC trace session from a previous crash
-            try
-            {
-                var zombieSession = Microsoft.Diagnostics.Tracing.Session.TraceEventSession
-                    .GetActiveSession("GameShift-DPC-Trace");
-                if (zombieSession != null)
-                {
-                    zombieSession.Stop();
-                    zombieSession.Dispose();
-                    Log.Information("Cleaned up orphaned DPC monitoring ETW session");
-                }
-            }
-            catch { /* Best-effort cleanup — session may not exist */ }
-
-            // Step b2: Clean up leftover update artifacts from a previous auto-update
-            GameShift.Core.Updates.UpdateApplier.CleanupPreviousUpdate();
-
-            // Step c: Load settings and log startup
-            WriteDiag("Step c: Loading settings...");
-            var settings = SettingsManager.Load();
-            Log.Information("GameShift started (Admin: {IsAdmin})", isAdmin);
-            WriteDiag("Settings loaded OK");
-
-            // Step c2: Apply startup registration from settings
-            // Ensures the registry matches settings.json even on first launch
-            StartupManager.SetStartWithWindows(settings.StartWithWindows);
-
-            // Step c3: Check VBS/HVCI state (advisory — not an optimization)
-            VbsToggle = new VbsHvciToggle();
-            VbsToggle.CheckState();
-
-            if (VbsToggle.ShouldShowBanner)
-            {
-                Log.Information("VBS/HVCI is enabled — dashboard banner will be shown");
-            }
-
-            // Step c4: Create DPC latency monitor (passive, not an IOptimization)
-            DpcMon = new DpcLatencyMonitor();
-
-            // Step c4b: Load known driver database and create DPC Doctor services
-            DriverDb = KnownDriverDatabase.Load();
-            DpcTrace = new DpcTraceEngine(DriverDb);
-            DpcFix = new DpcFixEngine(settings, () => SettingsManager.Save(settings));
-
-            // Step c5: Quick hardware detection for conditional game optimizations
-            // Fast (~200ms): GPU vendor, hybrid CPU, laptop, HAGS, Riot paths.
-            // Skips DPC baseline (3s) — that happens in full scan later.
-            WriteDiag("Step c5: Quick hardware detection...");
-            try
-            {
-                var hwScanner = new HardwareScanner();
-                hwScanner.DetectHardwareQuick(VbsToggle);
-                HardwareScan = hwScanner.Result;
-                WriteDiag($"Hardware detected: GPU={HardwareScan?.GpuVendor}, Hybrid={HardwareScan?.IsHybridCpu}, Laptop={HardwareScan?.IsLaptop}");
-            }
-            catch (Exception ex)
-            {
-                Log.Warning(ex, "Quick hardware detection failed — conditional filtering disabled");
-                WriteDiag($"Hardware detection FAILED: {ex.Message}");
-            }
-
-            // Step d: Wire core services
-            WriteDiag("Step d: Wiring core services...");
-            // Create all optimization modules (stored as static for page ViewModel construction)
-            Optimizations = new IOptimization[]
-            {
-                new ServiceSuppressor(),         // 0 - v1
-                new PowerPlanSwitcher(),         // 1 - v1
-                new TimerResolutionManager(),    // 2 - v1
-                new ProcessPriorityBooster(),    // 3 - v1
-                new MemoryOptimizer(),           // 4 - v1
-                new VisualEffectReducer(),       // 5 - v1
-                new NetworkOptimizer(),          // 6 - v1
-                new HybridCpuDetector(),         // 7 - v1
-                new MpoToggle(),                 // 8 - v2
-                new CompetitiveMode(),           // 9 - v2
-                new GpuDriverOptimizer(),        // 10 - v2
-                new ScheduledTaskSuppressor(),   // 11 - v3 (after ServiceSuppressor)
-                new CpuParkingManager(),         // 12 - v3 (after PowerPlanSwitcher)
-                new IoPriorityManager(),         // 13 - v4 (after GpuDriverOptimizer)
-                new EfficiencyModeController(),  // 14 - v4 (process-level)
-                new CpuSchedulingOptimizer(),    // 15 - v4 (E-core routing + HighQoS)
-                new SessionSystemTweaksOptimizer() // 16 - v4 (last — MMCSS + USB + ASPM, reverts first)
-            };
-
-            Engine = new OptimizationEngine(Optimizations);
-            ProfileMgr = new ProfileManager();
-
-            // Create library scanners
-            var scanners = new ILibraryScanner[]
-            {
-                new SteamLibraryScanner(),
-                new EpicLibraryScanner(),
-                new GogLibraryScanner(),
-                new XboxLibraryScanner()
-            };
-
-            Detector = new GameDetector(scanners);
-
-            // Wire process spawn events to shared cache invalidation
-            _markDirtyHandler = (_, _) => GameShift.Core.System.ProcessSnapshotService.MarkDirty();
-            Detector.ProcessSpawned += _markDirtyHandler;
-
-            var store = new KnownGamesStore();
-
-            Orchestrator = new DetectionOrchestrator(
-                Detector, Engine, store, scanners, ProfileMgr, DpcMon, HardwareScan);
-
-            // v2.3: Create performance and network monitors
-            PerfMon = new SystemPerformanceMonitor();
-            PingMon = new PingMonitor();
-
-            // v2.3: Create session history store and tracker
-            SessionStore = new SessionHistoryStore();
-            SessionStore.Load();
-            SessionTrk = new SessionTracker(Detector!, DpcMon, Engine!, SessionStore);
-
-            // v3: Create and start Background Mode service
-            BackgroundMode = new BackgroundModeService();
-            BackgroundMode.Start(Detector); // No-op if not enabled in settings
-            WriteDiag($"BackgroundMode initialized (enabled={BackgroundMode.IsEnabled})");
-
-            // v2.3: Create temperature monitor
-            TempMon = new TemperatureMonitor();
-
-            // Wire Background Mode gaming session hooks
-            if (Detector != null && BackgroundMode != null)
-            {
-                _bgModeGameStarted = (_, _) => BackgroundMode.OnGamingStart();
-                _bgModeAllGamesStopped = (object? _, EventArgs _2) => BackgroundMode.OnGamingStop();
-                Detector.GameStarted += _bgModeGameStarted;
-                Detector.AllGamesStopped += _bgModeAllGamesStopped;
-            }
-
-            // Pause dashboard monitors during gaming (they poll every 1-2s and the dashboard isn't visible)
-            if (Detector != null)
-            {
-                _monitorPauseGameStarted = (_, _) => { PerfMon?.Pause(); PingMon?.Pause(); TempMon?.Pause(); };
-                _monitorResumeAllGamesStopped = (object? _, EventArgs _2) => { PerfMon?.Resume(); PingMon?.Resume(); TempMon?.Resume(); };
-                Detector.GameStarted += _monitorPauseGameStarted;
-                Detector.AllGamesStopped += _monitorResumeAllGamesStopped;
-            }
-
-            // v6: Create driver version tracker and scan asynchronously
-            DriverTracker = new DriverVersionTracker();
-            _ = DriverTracker.ScanAndCheckAsync().ContinueWith(t =>
-            {
-                if (t.IsFaulted)
-                    Log.Warning(t.Exception?.InnerException, "DriverVersionTracker background scan failed");
-            }, TaskContinuationOptions.OnlyOnFaulted);
-            WriteDiag("DriverVersionTracker initialized (scanning in background)");
-
-            // v6: Create benchmark service
-            Benchmark = new BenchmarkService();
-            WriteDiag("BenchmarkService initialized");
-
-            // v4: Create System Tweaks manager (stateless — just detects and applies)
-            TweaksMgr = new SystemTweaksManager();
-            WriteDiag("SystemTweaksManager initialized");
-
-            // v4: Create and wire Game Profile manager
-            GameProfileMgr = new GameProfileManager();
-            if (Detector != null && GameProfileMgr != null)
-            {
-                Detector.GameStarted += GameProfileMgr.OnGameStarted;
-                Detector.AllGamesStopped += GameProfileMgr.OnAllGamesStopped;
-            }
-            // Wire conflict resolution: GameProfiles → ProcessPriorityPersistence
-            if (BackgroundMode?.ProcessPriority != null && GameProfileMgr != null)
-            {
-                BackgroundMode.ProcessPriority.GameProfileActiveProcesses = GameProfileMgr.ActiveSessionProcessNames;
-            }
-            WriteDiag($"GameProfileManager initialized (profiles={GameProfileMgr?.GetAllProfiles().Count})");
+            // Wire inter-service events (background mode, monitor pause, game profiles, etc.)
+            _eventSubs = EventWiringHelper.WireAll(Services);
 
             // Wire game tip notifications to snackbar toast
             OneTimeTipAction.TipTriggered += message =>
@@ -498,9 +162,9 @@ public partial class App : Application
             WriteDiag("Step e: Creating TrayIconManager...");
             try
             {
-                if (Detector != null)
+                if (Services.Detector != null)
                 {
-                    _trayManager = new TrayIconManager(Orchestrator, Engine, Detector, settings, DpcMon, ProfileMgr);
+                    _trayManager = new TrayIconManager(Services.Orchestrator!, Services.Engine!, Services.Detector, settings, Services.DpcMon, Services.ProfileMgr);
 
                     // Wire tray menu actions — show MainWindow and navigate to the requested page
                     _trayManager.DashboardRequested += () => ShowAndNavigate(typeof(DashboardPage));
@@ -522,7 +186,7 @@ public partial class App : Application
             WriteDiag($"TrayAvailable={TrayAvailable}");
 
             // Step e2: First-run wizard check
-            // Shown AFTER services and tray are wired (wizard's Scan button needs App.Detector),
+            // Shown AFTER services and tray are wired (wizard's Scan button needs App.Services.Detector),
             // BEFORE ShowAndNavigate so the wizard is the first thing the user sees.
             var settingsFilePath = Path.Combine(SettingsManager.GetAppDataPath(), "settings.json");
             if (!File.Exists(settingsFilePath))
@@ -572,9 +236,9 @@ public partial class App : Application
             await CheckAndShowUpdatePopupAsync(settings);
 
             // Wire DPC spike toast notifications
-            if (DpcMon != null)
+            if (Services.DpcMon != null)
             {
-                DpcMon.DpcSpikeDetected += OnDpcSpikeDetected;
+                Services.DpcMon.DpcSpikeDetected += OnDpcSpikeDetected;
             }
 
             // Start named pipe server for single-instance bring-to-front
@@ -607,7 +271,7 @@ public partial class App : Application
             // Step g: Initialize detection system asynchronously
             // Tray icon is already visible - this runs in background
             WriteDiag("Step g: Starting async initialization...");
-            await Orchestrator.InitializeAsync();
+            await Services.Orchestrator!.InitializeAsync();
 
             WriteDiag("Fully initialized. Monitoring for games.");
             Log.Information("GameShift fully initialized. Monitoring for games.");
@@ -712,7 +376,7 @@ public partial class App : Application
 
         var driverInfo = e.DriverName != null ? e.DriverName : "unknown driver";
         var fixSuggestion = e.DriverName != null
-            ? DpcMon?.GetFixSuggestion(e.DriverName)
+            ? Services.DpcMon?.GetFixSuggestion(e.DriverName)
             : null;
 
         var message = $"DPC latency spike: {e.LatencyMicroseconds:F0}\u00B5s ({driverInfo})";
@@ -749,11 +413,11 @@ public partial class App : Application
         Log.Information("GameShift shutting down normally");
 
         // Deactivate any active optimizations
-        if (Orchestrator?.IsOptimizing == true && Engine != null)
+        if (Services.Orchestrator?.IsOptimizing == true && Services.Engine != null)
         {
             try
             {
-                await Engine.DeactivateProfileAsync();
+                await Services.Engine.DeactivateProfileAsync();
                 Log.Information("Optimizations deactivated during shutdown");
             }
             catch (Exception ex)
@@ -763,48 +427,36 @@ public partial class App : Application
         }
 
         // Unsubscribe all event handlers from Detector before disposing
-        if (Detector != null)
-        {
-            if (_bgModeGameStarted != null) Detector.GameStarted -= _bgModeGameStarted;
-            if (_bgModeAllGamesStopped != null) Detector.AllGamesStopped -= _bgModeAllGamesStopped;
-            if (_monitorPauseGameStarted != null) Detector.GameStarted -= _monitorPauseGameStarted;
-            if (_monitorResumeAllGamesStopped != null) Detector.AllGamesStopped -= _monitorResumeAllGamesStopped;
-            if (_markDirtyHandler != null) Detector.ProcessSpawned -= _markDirtyHandler;
-            if (GameProfileMgr != null)
-            {
-                Detector.GameStarted -= GameProfileMgr.OnGameStarted;
-                Detector.AllGamesStopped -= GameProfileMgr.OnAllGamesStopped;
-            }
-        }
+        EventWiringHelper.UnwireAll(Services, _eventSubs);
 
         // Dispose Game Profile manager
-        GameProfileMgr?.Dispose();
+        Services.GameProfileMgr?.Dispose();
 
         // Stop Background Mode services
-        BackgroundMode?.Dispose();
+        Services.BackgroundMode?.Dispose();
 
         // Dispose optimization engine
-        Engine?.Dispose();
+        Services.Engine?.Dispose();
 
         // Stop game monitoring
-        Detector?.StopMonitoring();
-        Detector?.Dispose();
+        Services.Detector?.StopMonitoring();
+        Services.Detector?.Dispose();
 
         // Dispose performance and network monitors (v2.3)
-        PerfMon?.Dispose();
-        PingMon?.Dispose();
+        Services.PerfMon?.Dispose();
+        Services.PingMon?.Dispose();
 
         // Dispose temperature monitor (v2.3)
-        TempMon?.Dispose();
+        Services.TempMon?.Dispose();
 
         // Dispose DPC trace engine
-        DpcTrace?.Dispose();
+        Services.DpcTrace?.Dispose();
 
         // Unsubscribe and dispose DPC monitor
-        if (DpcMon != null)
+        if (Services.DpcMon != null)
         {
-            DpcMon.DpcSpikeDetected -= OnDpcSpikeDetected;
-            DpcMon.Dispose();
+            Services.DpcMon.DpcSpikeDetected -= OnDpcSpikeDetected;
+            Services.DpcMon.Dispose();
         }
 
         // Unregister global hotkey
@@ -858,85 +510,6 @@ public partial class App : Application
             File.AppendAllText("gameshift-diag.log", line + Environment.NewLine);
         }
         catch { }
-    }
-
-    /// <summary>
-    /// Restores registry values from a crash recovery snapshot.
-    /// Each key is "{RegistryKeyPath}\{ValueName}" and the value is the original data.
-    /// </summary>
-    private static void RestoreCrashRecoveryRegistryValues(Dictionary<string, object> registryValues)
-    {
-        foreach (var (compositeKey, originalValue) in registryValues)
-        {
-            try
-            {
-                // Split composite key into key path and value name
-                var lastSlash = compositeKey.LastIndexOf('\\');
-                if (lastSlash < 0) continue;
-
-                var keyPath = compositeKey[..lastSlash];
-                var valueName = compositeKey[(lastSlash + 1)..];
-
-                // Determine the root key
-                Microsoft.Win32.RegistryKey? rootKey = null;
-                string subKeyPath;
-
-                if (keyPath.StartsWith("HKEY_LOCAL_MACHINE\\", StringComparison.OrdinalIgnoreCase))
-                {
-                    rootKey = Microsoft.Win32.Registry.LocalMachine;
-                    subKeyPath = keyPath["HKEY_LOCAL_MACHINE\\".Length..];
-                }
-                else if (keyPath.StartsWith("HKEY_CURRENT_USER\\", StringComparison.OrdinalIgnoreCase))
-                {
-                    rootKey = Microsoft.Win32.Registry.CurrentUser;
-                    subKeyPath = keyPath["HKEY_CURRENT_USER\\".Length..];
-                }
-                else
-                {
-                    Log.Warning("Crash recovery: unrecognized registry root in key '{Key}'", keyPath);
-                    continue;
-                }
-
-                using var key = rootKey.OpenSubKey(subKeyPath, writable: true);
-                if (key == null)
-                {
-                    Log.Debug("Crash recovery: registry key '{Key}' no longer exists, skipping", keyPath);
-                    continue;
-                }
-
-                // Restore the original value
-                // originalValue comes from JSON deserialization and may be JsonElement
-                if (originalValue is System.Text.Json.JsonElement jsonElement)
-                {
-                    switch (jsonElement.ValueKind)
-                    {
-                        case System.Text.Json.JsonValueKind.Number:
-                            key.SetValue(valueName, jsonElement.GetInt32(), Microsoft.Win32.RegistryValueKind.DWord);
-                            break;
-                        case System.Text.Json.JsonValueKind.String:
-                            key.SetValue(valueName, jsonElement.GetString() ?? "", Microsoft.Win32.RegistryValueKind.String);
-                            break;
-                        default:
-                            Log.Debug("Crash recovery: unsupported JSON type for registry value '{Key}\\{Name}'", keyPath, valueName);
-                            break;
-                    }
-                }
-                else if (originalValue is int intVal)
-                {
-                    key.SetValue(valueName, intVal, Microsoft.Win32.RegistryValueKind.DWord);
-                }
-                else if (originalValue is string strVal)
-                {
-                    key.SetValue(valueName, strVal, Microsoft.Win32.RegistryValueKind.String);
-                }
-
-                Log.Debug("Crash recovery: restored registry value '{Key}\\{Name}'", keyPath, valueName);
-            }
-            catch (Exception ex)
-            {
-                Log.Warning(ex, "Crash recovery: failed to restore registry value '{Key}'", compositeKey);
-            }
-        }
     }
 
     private static void WriteCrashLog(string type, Exception? ex)
