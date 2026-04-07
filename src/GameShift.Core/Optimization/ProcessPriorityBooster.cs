@@ -83,36 +83,35 @@ public class ProcessPriorityBooster : IOptimization
             return false;
         }
 
-        Process? process;
         try
         {
-            process = Process.GetProcessById(profile.ProcessId);
+            using var process = Process.GetProcessById(profile.ProcessId);
+
+            // Record original priority before changing
+            var originalPriority = process.PriorityClass;
+            snapshot.RecordProcessPriority(profile.ProcessId, originalPriority);
+
+            // Set to High priority (NOT Realtime - per PRD decision)
+            process.PriorityClass = ProcessPriorityClass.High;
+
+            SettingsManager.Logger.Information(
+                "[ProcessPriorityBooster] Set process {ProcessName} (PID: {ProcessId}) priority from {Original} to High via runtime API",
+                process.ProcessName,
+                profile.ProcessId,
+                originalPriority);
+
+            _boostedProcessId = profile.ProcessId;
+            _usedIfeo = false;
+            IsApplied = true;
+            return true;
         }
         catch (ArgumentException)
         {
             SettingsManager.Logger.Warning(
-                "[ProcessPriorityBooster] Game process {ProcessId} not found — may have exited",
+                "[ProcessPriorityBooster] Game process {ProcessId} not found - may have exited",
                 profile.ProcessId);
             return false;
         }
-
-        // Record original priority before changing
-        var originalPriority = process.PriorityClass;
-        snapshot.RecordProcessPriority(profile.ProcessId, originalPriority);
-
-        // Set to High priority (NOT Realtime - per PRD decision)
-        process.PriorityClass = ProcessPriorityClass.High;
-
-        SettingsManager.Logger.Information(
-            "[ProcessPriorityBooster] Set process {ProcessName} (PID: {ProcessId}) priority from {Original} to High via runtime API",
-            process.ProcessName,
-            profile.ProcessId,
-            originalPriority);
-
-        _boostedProcessId = profile.ProcessId;
-        _usedIfeo = false;
-        IsApplied = true;
-        return true;
     }
 
     /// <summary>
@@ -253,10 +252,20 @@ public class ProcessPriorityBooster : IOptimization
             return true; // Not a fatal error
         }
 
-        Process? process;
         try
         {
-            process = Process.GetProcessById(_boostedProcessId);
+            using var process = Process.GetProcessById(_boostedProcessId);
+
+            // Restore original priority
+            process.PriorityClass = originalPriority;
+
+            SettingsManager.Logger.Information(
+                "[ProcessPriorityBooster] Reverted process {ProcessName} priority to {Original} via runtime API",
+                process.ProcessName,
+                originalPriority);
+
+            IsApplied = false;
+            return true;
         }
         catch (ArgumentException)
         {
@@ -264,19 +273,8 @@ public class ProcessPriorityBooster : IOptimization
                 "[ProcessPriorityBooster] Process {ProcessId} already exited, no revert needed",
                 _boostedProcessId);
             IsApplied = false;
-            return true; // Clean exit - process is gone, nothing to revert
+            return true;
         }
-
-        // Restore original priority
-        process.PriorityClass = originalPriority;
-
-        SettingsManager.Logger.Information(
-            "[ProcessPriorityBooster] Reverted process {ProcessName} priority to {Original} via runtime API",
-            process.ProcessName,
-            originalPriority);
-
-        IsApplied = false;
-        return true;
     }
 
     /// <summary>

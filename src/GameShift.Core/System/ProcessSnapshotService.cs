@@ -3,18 +3,29 @@ using System.Diagnostics;
 namespace GameShift.Core.System;
 
 /// <summary>
+/// Lightweight snapshot of a process for safe cross-thread use.
+/// Callers work with these value objects instead of live Process handles.
+/// </summary>
+public class ProcessSnapshot
+{
+    public int Id { get; init; }
+    public string ProcessName { get; init; } = "";
+    public long WorkingSet64 { get; init; }
+    public IntPtr ProcessHandle { get; init; }
+}
+
+/// <summary>
 /// Shared cached process snapshot to avoid redundant Process.GetProcesses() calls.
 /// Three periodic timers (MemoryOptimizer 5s, EfficiencyModeController 30s, IoPriorityManager 30s)
 /// were each independently enumerating all processes. This service caches the result
 /// with a 2-second TTL and a dirty flag triggered by GameDetector.ProcessSpawned.
 ///
-/// OWNERSHIP: This service owns the cached Process[] and disposes old snapshots on refresh.
-/// Callers must NOT dispose the returned Process objects — they belong to the cache.
-/// Copy any data you need (ProcessName, Id, WorkingSet64, etc.) before releasing the lock.
+/// Returns ProcessSnapshot[] (value objects) so callers can safely iterate without
+/// risk of disposed Process handles from a concurrent cache refresh.
 /// </summary>
 public static class ProcessSnapshotService
 {
-    private static Process[]? _cached;
+    private static ProcessSnapshot[]? _cached;
     private static DateTime _lastRefresh = DateTime.MinValue;
     private static volatile bool _dirty = true;
     private static readonly object _lock = new();
@@ -22,12 +33,10 @@ public static class ProcessSnapshotService
 
     /// <summary>
     /// Returns a cached process snapshot if still fresh (under 2 seconds old and not dirty).
-    /// Otherwise refreshes from Process.GetProcesses(), disposing the previous snapshot.
-    ///
-    /// IMPORTANT: Callers must NOT dispose the returned Process objects.
-    /// The cache owns them and will dispose them on the next refresh.
+    /// Otherwise refreshes from Process.GetProcesses() and captures scalar data.
+    /// The returned array contains value objects safe to use from any thread.
     /// </summary>
-    public static Process[] GetProcesses()
+    public static ProcessSnapshot[] GetProcesses()
     {
         lock (_lock)
         {
@@ -37,20 +46,35 @@ public static class ProcessSnapshotService
                 return _cached;
             }
 
-            var previous = _cached;
-            _cached = Process.GetProcesses();
-            _lastRefresh = now;
-            _dirty = false;
+            var live = Process.GetProcesses();
+            var snapshots = new List<ProcessSnapshot>(live.Length);
 
-            // Dispose the previous snapshot now that it's been replaced
-            if (previous != null)
+            foreach (var p in live)
             {
-                foreach (var p in previous)
+                try
+                {
+                    snapshots.Add(new ProcessSnapshot
+                    {
+                        Id = p.Id,
+                        ProcessName = p.ProcessName,
+                        WorkingSet64 = p.WorkingSet64,
+                        ProcessHandle = p.Handle
+                    });
+                }
+                catch
+                {
+                    // Process may have exited between enumeration and property access
+                }
+                finally
                 {
                     try { p.Dispose(); }
-                    catch { /* Process may already be disposed or exited */ }
+                    catch { }
                 }
             }
+
+            _cached = snapshots.ToArray();
+            _lastRefresh = now;
+            _dirty = false;
 
             return _cached;
         }

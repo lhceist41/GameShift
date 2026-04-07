@@ -332,7 +332,7 @@ public class MemoryOptimizer : IOptimization
                     {
                         Marshal.StructureToPtr(currentInfo, ptr, false);
                         bool querySuccess = NativeInterop.GetProcessInformation(
-                            process.Handle,
+                            process.ProcessHandle,
                             NativeInterop.ProcessMemoryPriority,
                             ptr,
                             size);
@@ -348,7 +348,7 @@ public class MemoryOptimizer : IOptimization
                         Marshal.StructureToPtr(newInfo, ptr, false);
 
                         if (NativeInterop.SetProcessInformation(
-                            process.Handle,
+                            process.ProcessHandle,
                             NativeInterop.ProcessMemoryPriority,
                             ptr,
                             size))

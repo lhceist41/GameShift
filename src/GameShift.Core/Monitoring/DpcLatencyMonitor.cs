@@ -290,12 +290,18 @@ public class DpcLatencyMonitor : IDisposable
 
             LatencySampled?.Invoke(this, value);
 
-            if (value > _thresholdMicroseconds &&
-                (DateTime.UtcNow - _lastAlertTime).TotalSeconds >= 30)
+            bool shouldAlert = false;
+            lock (_lock)
             {
-                _lastAlertTime = DateTime.UtcNow;
-                DpcSpikeDetected?.Invoke(this, new DpcSpikeEventArgs(value, null));
+                if (value > _thresholdMicroseconds &&
+                    (DateTime.UtcNow - _lastAlertTime).TotalSeconds >= 30)
+                {
+                    _lastAlertTime = DateTime.UtcNow;
+                    shouldAlert = true;
+                }
             }
+            if (shouldAlert)
+                DpcSpikeDetected?.Invoke(this, new DpcSpikeEventArgs(value, null));
         }
         catch (Exception ex)
         {
@@ -313,10 +319,18 @@ public class DpcLatencyMonitor : IDisposable
 
         // Check if any driver's highest DPC exceeds the threshold
         var topOffender = drivers[0]; // Already sorted by HighestExecutionMicroseconds
-        if (topOffender.HighestExecutionMicroseconds > _thresholdMicroseconds &&
-            (DateTime.UtcNow - _lastAlertTime).TotalSeconds >= 30)
+        bool shouldAlert = false;
+        lock (_lock)
         {
-            _lastAlertTime = DateTime.UtcNow;
+            if (topOffender.HighestExecutionMicroseconds > _thresholdMicroseconds &&
+                (DateTime.UtcNow - _lastAlertTime).TotalSeconds >= 30)
+            {
+                _lastAlertTime = DateTime.UtcNow;
+                shouldAlert = true;
+            }
+        }
+        if (shouldAlert)
+        {
             DpcSpikeDetected?.Invoke(this, new DpcSpikeEventArgs(
                 topOffender.HighestExecutionMicroseconds,
                 topOffender.FriendlyName));

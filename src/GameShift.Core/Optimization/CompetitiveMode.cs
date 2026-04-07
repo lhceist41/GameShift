@@ -23,6 +23,7 @@ namespace GameShift.Core.Optimization;
 public class CompetitiveMode : IOptimization
 {
     private readonly ILogger _logger = SettingsManager.Logger;
+    private readonly object _revertLock = new();
     private bool _isApplied;
     private readonly List<SuspendedProcessInfo> _suspendedProcesses = new();
     private readonly List<string> _killedProcessNames = new();
@@ -156,46 +157,49 @@ public class CompetitiveMode : IOptimization
     /// </summary>
     public Task<bool> RevertAsync(SystemStateSnapshot snapshot)
     {
-        if (!_isApplied)
+        lock (_revertLock)
         {
-            return Task.FromResult(true);
-        }
+            if (!_isApplied)
+            {
+                return Task.FromResult(true);
+            }
 
-        try
-        {
-            _logger.Information(
-                "[CompetitiveMode] Reverting competitive mode at {Timestamp}",
-                DateTime.UtcNow.ToString("o"));
+            try
+            {
+                _logger.Information(
+                    "[CompetitiveMode] Reverting competitive mode at {Timestamp}",
+                    DateTime.UtcNow.ToString("o"));
 
-            // ── Step 1: Dispose safety timer ──
-            _safetyTimer?.Dispose();
-            _safetyTimer = null;
+                // ── Step 1: Dispose safety timer ──
+                _safetyTimer?.Dispose();
+                _safetyTimer = null;
 
-            // ── Step 2: Resume all suspended processes ──
-            ResumeAllSuspended();
+                // ── Step 2: Resume all suspended processes ──
+                ResumeAllSuspended();
 
-            // ── Step 3: Restore Discord overlay registry ──
-            RestoreDiscordOverlayRegistry();
+                // ── Step 3: Restore Discord overlay registry ──
+                RestoreDiscordOverlayRegistry();
 
-            // ── Step 4: Delete frame cap hint file ──
-            DeleteFrameCapHint();
+                // ── Step 4: Delete frame cap hint file ──
+                DeleteFrameCapHint();
 
-            // Note: Killed processes (Widgets, SearchHost, msedgewebview2) are NOT restarted
-            // They restart naturally on their own or on next login
-            _killedProcessNames.Clear();
+                // Note: Killed processes (Widgets, SearchHost, msedgewebview2) are NOT restarted
+                // They restart naturally on their own or on next login
+                _killedProcessNames.Clear();
 
-            _logger.Information(
-                "[CompetitiveMode] Revert complete");
+                _logger.Information(
+                    "[CompetitiveMode] Revert complete");
 
-            _isApplied = false;
-            return Task.FromResult(true);
-        }
-        catch (Exception ex)
-        {
-            _logger.Error(
-                ex,
-                "[CompetitiveMode] Failed to revert competitive mode");
-            return Task.FromResult(false);
+                _isApplied = false;
+                return Task.FromResult(true);
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(
+                    ex,
+                    "[CompetitiveMode] Failed to revert competitive mode");
+                return Task.FromResult(false);
+            }
         }
     }
 
@@ -401,7 +405,7 @@ public class CompetitiveMode : IOptimization
                 // Verify process still exists before attempting resume
                 try
                 {
-                    Process.GetProcessById(info.ProcessId);
+                    using var check = Process.GetProcessById(info.ProcessId);
                 }
                 catch (ArgumentException)
                 {
@@ -751,22 +755,27 @@ public class CompetitiveMode : IOptimization
     /// </summary>
     private void SafetyTimeoutResumeAll()
     {
-        try
+        lock (_revertLock)
         {
-            _logger.Warning(
-                "[CompetitiveMode] Safety timeout triggered after 6 hours — resuming all suspended processes");
+            if (!_isApplied) return;
 
-            ResumeAllSuspended();
-            RestoreDiscordOverlayRegistry();
-            DeleteFrameCapHint();
-            _killedProcessNames.Clear();
-            _isApplied = false;
-        }
-        catch (Exception ex)
-        {
-            _logger.Error(
-                ex,
-                "[CompetitiveMode] Error during safety timeout resume");
+            try
+            {
+                _logger.Warning(
+                    "[CompetitiveMode] Safety timeout triggered after 6 hours - resuming all suspended processes");
+
+                ResumeAllSuspended();
+                RestoreDiscordOverlayRegistry();
+                DeleteFrameCapHint();
+                _killedProcessNames.Clear();
+                _isApplied = false;
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(
+                    ex,
+                    "[CompetitiveMode] Error during safety timeout resume");
+            }
         }
     }
 

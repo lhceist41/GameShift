@@ -53,9 +53,9 @@ public class FirewallRuleAction : GameAction
             // Create the firewall rule
             var psi = new ProcessStartInfo(
                 "powershell",
-                $"-Command \"New-NetFirewallRule -DisplayName '{_ruleName}' " +
+                $"-Command \"New-NetFirewallRule -DisplayName '{_ruleName.Replace("'", "''")}' " +
                 $"-Direction {_direction} -Action Allow " +
-                $"-Program '{_executablePath}' -Profile Any -Enabled True\"")
+                $"-Program '{_executablePath.Replace("'", "''")}' -Profile Any -Enabled True\"")
             {
                 CreateNoWindow = true,
                 UseShellExecute = false
@@ -95,7 +95,7 @@ public class FirewallRuleAction : GameAction
         {
             var psi = new ProcessStartInfo(
                 "powershell",
-                $"-Command \"Remove-NetFirewallRule -DisplayName '{_ruleName}'\"")
+                $"-Command \"Remove-NetFirewallRule -DisplayName '{_ruleName.Replace("'", "''")}'\"")
             {
                 CreateNoWindow = true,
                 UseShellExecute = false

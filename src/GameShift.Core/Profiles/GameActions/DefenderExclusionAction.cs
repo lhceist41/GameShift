@@ -34,7 +34,7 @@ public class DefenderExclusionAction : GameAction
             {
                 var psi = new ProcessStartInfo(
                     "powershell",
-                    $"-Command \"Add-MpPreference -ExclusionPath '{path}'\"")
+                    $"-Command \"Add-MpPreference -ExclusionPath '{path.Replace("'", "''")}'\"")
                 {
                     CreateNoWindow = true,
                     UseShellExecute = false
@@ -59,7 +59,7 @@ public class DefenderExclusionAction : GameAction
             {
                 var psi = new ProcessStartInfo(
                     "powershell",
-                    $"-Command \"Remove-MpPreference -ExclusionPath '{path}'\"")
+                    $"-Command \"Remove-MpPreference -ExclusionPath '{path.Replace("'", "''")}'\"")
                 {
                     CreateNoWindow = true,
                     UseShellExecute = false

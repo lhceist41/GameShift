@@ -380,7 +380,7 @@ public class DpcFixEngine
 
     private DpcFixResult RevertPowerPlanFix(AppliedDpcFix applied)
     {
-        if (applied.Target.Length == 36 || applied.Target.Contains("e8bf"))
+        if (Guid.TryParse(applied.Target, out _))
         {
             // Power plan GUID — revert to previous plan
             if (string.IsNullOrEmpty(applied.PreviousValue))
@@ -549,8 +549,11 @@ public class DpcFixEngine
             if (process == null)
                 return (false, "Failed to start process.");
 
+            // Read stdout and stderr concurrently to avoid pipe buffer deadlock
+            string stderr = "";
+            var stderrTask = Task.Run(() => { stderr = process.StandardError.ReadToEnd(); });
             var stdout = process.StandardOutput.ReadToEnd();
-            var stderr = process.StandardError.ReadToEnd();
+            stderrTask.Wait(10_000);
             process.WaitForExit(10_000);
 
             var output = string.IsNullOrWhiteSpace(stderr) ? stdout.Trim() : $"{stdout.Trim()}\n{stderr.Trim()}";
