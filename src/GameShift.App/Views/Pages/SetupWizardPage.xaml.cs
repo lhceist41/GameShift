@@ -63,7 +63,7 @@ public partial class SetupWizardPage : Page
         {
             LibraryScanProgress.Text = "Re-initializing game detection...";
 
-            var orchestrator = App.Orchestrator;
+            var orchestrator = App.Services.Orchestrator;
             if (orchestrator == null)
             {
                 LibraryScanProgress.Text = "Detection system not available.";

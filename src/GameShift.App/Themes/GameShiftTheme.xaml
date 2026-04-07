@@ -87,4 +87,37 @@
     <system:Double x:Key="GS.Spacing.SparklineWidth">120</system:Double>
     <system:Double x:Key="GS.Spacing.SparklineHeight">32</system:Double>
 
+    <!-- ============================================================
+         Hero Button Style
+         Large CTA button for one-click optimize. Green when idle,
+         outline when optimized (revert action).
+         ============================================================ -->
+    <Style x:Key="GS.Button.Hero" TargetType="Button">
+        <Setter Property="Background" Value="{DynamicResource GS.Accent.Primary}"/>
+        <Setter Property="Foreground" Value="#0D1117"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="10" Padding="24,0">
+                        <ContentPresenter HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter Property="Background" Value="{DynamicResource GS.Accent.Hover}"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Background" Value="{DynamicResource GS.Surface.Elevated}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource GS.Text.Disabled}"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
 </ResourceDictionary>

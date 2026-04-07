@@ -21,10 +21,10 @@ public partial class DpcDoctorPage : Page
 
         var settings = GameShift.Core.Config.SettingsManager.Load();
         var vm = new DpcDoctorViewModel(
-            App.DpcTrace,
-            App.DpcFix,
-            App.DriverDb,
-            App.DpcMon,
+            App.Services.DpcTrace,
+            App.Services.DpcFix,
+            App.Services.DriverDb,
+            App.Services.DpcMon,
             settings,
             () => GameShift.Core.Config.SettingsManager.Save(settings));
 

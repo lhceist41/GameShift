@@ -44,11 +44,11 @@ public partial class FirstRunWizardWindow : Window
 
         try
         {
-            // App.Detector is wired before wizard shows (after Step d in App.xaml.cs)
-            App.Detector?.ScanLibraries();
+            // App.Services.Detector is wired before wizard shows (after Step d in App.xaml.cs)
+            App.Services.Detector?.ScanLibraries();
 
             // Get discovered game count from Detector.GetKnownGames()
-            var knownGames = App.Detector?.GetKnownGames();
+            var knownGames = App.Services.Detector?.GetKnownGames();
             int gameCount = knownGames?.Count ?? 0;
 
             GamesCountText.Text = gameCount == 0

@@ -25,39 +25,39 @@
                         <ui:SymbolIcon Symbol="Home24"/>
                     </ui:NavigationViewItem.Icon>
                 </ui:NavigationViewItem>
-                <ui:NavigationViewItem Content="System" TargetPageType="{x:Type pages:SystemPage}">
+                <ui:NavigationViewItem x:Name="NavSystem" Content="System" TargetPageType="{x:Type pages:SystemPage}">
                     <ui:NavigationViewItem.Icon>
                         <ui:SymbolIcon Symbol="Desktop24"/>
                     </ui:NavigationViewItem.Icon>
                 </ui:NavigationViewItem>
-                <ui:NavigationViewItem Content="DPC Doctor" TargetPageType="{x:Type pages:DpcDoctorPage}">
+                <ui:NavigationViewItem x:Name="NavDpcDoctor" Content="DPC Doctor" TargetPageType="{x:Type pages:DpcDoctorPage}">
                     <ui:NavigationViewItem.Icon>
                         <ui:SymbolIcon Symbol="HeartPulse24"/>
                     </ui:NavigationViewItem.Icon>
                 </ui:NavigationViewItem>
-                <ui:NavigationViewItem Content="Optimizations" TargetPageType="{x:Type pages:OptimizationsPage}">
+                <ui:NavigationViewItem x:Name="NavOptimizations" Content="Optimizations" TargetPageType="{x:Type pages:OptimizationsPage}">
                     <ui:NavigationViewItem.Icon>
                         <ui:SymbolIcon Symbol="Rocket24"/>
                     </ui:NavigationViewItem.Icon>
                 </ui:NavigationViewItem>
-                <ui:NavigationViewItem Content="Profiles" TargetPageType="{x:Type pages:ProfilesPage}">
+                <ui:NavigationViewItem x:Name="NavProfiles" Content="Profiles" TargetPageType="{x:Type pages:ProfilesPage}">
                     <ui:NavigationViewItem.Icon>
                         <ui:SymbolIcon Symbol="Games24"/>
                     </ui:NavigationViewItem.Icon>
                 </ui:NavigationViewItem>
-                <ui:NavigationViewItem Content="Game Library" TargetPageType="{x:Type pages:GameLibraryPage}">
+                <ui:NavigationViewItem x:Name="NavGameLibrary" Content="Game Library" TargetPageType="{x:Type pages:GameLibraryPage}">
                     <ui:NavigationViewItem.Icon>
                         <ui:SymbolIcon Symbol="Library24"/>
                     </ui:NavigationViewItem.Icon>
                 </ui:NavigationViewItem>
             </ui:NavigationView.MenuItems>
             <ui:NavigationView.FooterMenuItems>
-                <ui:NavigationViewItem Content="Logs" TargetPageType="{x:Type pages:LogViewerPage}">
+                <ui:NavigationViewItem x:Name="NavLogs" Content="Logs" TargetPageType="{x:Type pages:LogViewerPage}">
                     <ui:NavigationViewItem.Icon>
                         <ui:SymbolIcon Symbol="Document24"/>
                     </ui:NavigationViewItem.Icon>
                 </ui:NavigationViewItem>
-                <ui:NavigationViewItem Content="Setup Wizard" TargetPageType="{x:Type pages:SetupWizardPage}">
+                <ui:NavigationViewItem x:Name="NavSetupWizard" Content="Setup Wizard" TargetPageType="{x:Type pages:SetupWizardPage}">
                     <ui:NavigationViewItem.Icon>
                         <ui:SymbolIcon Symbol="Wand24"/>
                     </ui:NavigationViewItem.Icon>

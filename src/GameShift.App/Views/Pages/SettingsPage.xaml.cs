@@ -26,7 +26,14 @@ public partial class SettingsPage : Page
         if (DataContext != null) return; // already set
 
         var vm = new SettingsViewModel();
-        vm.SetVbsHvciToggle(App.VbsToggle);
+        vm.SetVbsHvciToggle(App.Services.VbsToggle);
+
+        vm.AdvancedModeChanged += advanced =>
+        {
+            var mainWindow = Window.GetWindow(this) as MainWindow;
+            mainWindow?.ApplyAdvancedMode(advanced);
+        };
+
         DataContext = vm;
         vm.LoadSettings();
         PopulateTweaksList();
@@ -72,7 +79,7 @@ public partial class SettingsPage : Page
 
     private void PopulateTweaksList()
     {
-        var mgr = App.TweaksMgr;
+        var mgr = App.Services.TweaksMgr;
         if (mgr == null) return;
 
         TweaksList.Items.Clear();
@@ -220,7 +227,7 @@ public partial class SettingsPage : Page
     private void OnTweakButtonClicked(object sender, RoutedEventArgs e)
     {
         if (sender is not Button btn || btn.Tag is not ISystemTweak tweak) return;
-        var mgr = App.TweaksMgr;
+        var mgr = App.Services.TweaksMgr;
         if (mgr == null) return;
 
         var status = mgr.GetTweakStatus(tweak);
@@ -302,7 +309,7 @@ public partial class SettingsPage : Page
 
     private void OnApplyAllTweaksClicked(object sender, RoutedEventArgs e)
     {
-        var mgr = App.TweaksMgr;
+        var mgr = App.Services.TweaksMgr;
         if (mgr == null) return;
 
         int count = mgr.ApplyAllRecommended();
@@ -320,7 +327,7 @@ public partial class SettingsPage : Page
 
     private void PopulateProfilesList()
     {
-        var mgr = App.GameProfileMgr;
+        var mgr = App.Services.GameProfileMgr;
         if (mgr == null) return;
 
         ProfilesList.Items.Clear();
@@ -427,7 +434,7 @@ public partial class SettingsPage : Page
                 });
                 foreach (var tweakName in profile.RecommendedTweaks)
                 {
-                    var tweakMgr = App.TweaksMgr;
+                    var tweakMgr = App.Services.TweaksMgr;
                     var tweak = tweakMgr?.GetTweakByClassName(tweakName);
                     bool applied = tweak?.DetectIsApplied() == true;
 

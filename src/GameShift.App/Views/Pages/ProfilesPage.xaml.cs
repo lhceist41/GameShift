@@ -20,7 +20,7 @@ public partial class ProfilesPage : Page
     {
         if (DataContext != null) return; // already set
 
-        var vm = new ProfileEditorViewModel(App.ProfileMgr!, App.Orchestrator!);
+        var vm = new ProfileEditorViewModel(App.Services.ProfileMgr!, App.Services.Orchestrator!);
         DataContext = vm;
         vm.LoadProfiles();
     }

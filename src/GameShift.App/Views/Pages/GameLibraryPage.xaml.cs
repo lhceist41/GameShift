@@ -25,7 +25,7 @@ public partial class GameLibraryPage : Page
             return;
         }
 
-        var vm = new GameLibraryViewModel(App.Orchestrator!);
+        var vm = new GameLibraryViewModel(App.Services.Orchestrator!);
         DataContext = vm;
         vm.RefreshGames();
     }
