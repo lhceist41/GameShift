@@ -44,6 +44,9 @@ public class SettingsViewModel : INotifyPropertyChanged
     // v2.3 network field
     private string _pingTarget = "8.8.8.8";
 
+    // App mode
+    private bool _advancedMode;
+
     // Game Profiles fields
     private bool _gameProfilesEnabled;
 
@@ -68,6 +71,36 @@ public class SettingsViewModel : INotifyPropertyChanged
     public event PropertyChangedEventHandler? PropertyChanged;
 
     // ── AppSettings properties ────────────────────────────────────────
+
+    public event Action<bool>? AdvancedModeChanged;
+
+    public bool IsEasyMode
+    {
+        get => !_advancedMode;
+        set
+        {
+            AdvancedMode = !value;
+            OnPropertyChanged();
+        }
+    }
+
+    public bool AdvancedMode
+    {
+        get => _advancedMode;
+        set
+        {
+            if (_advancedMode == value) return;
+            _advancedMode = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsEasyMode));
+
+            var settings = SettingsManager.Load();
+            settings.AdvancedMode = value;
+            SettingsManager.Save(settings);
+
+            AdvancedModeChanged?.Invoke(value);
+        }
+    }
 
     public bool StartWithWindows
     {
@@ -337,6 +370,9 @@ public class SettingsViewModel : INotifyPropertyChanged
         _bgProBalanceEnabled = bg.ProBalanceEnabled;
         _bgProcessPriorityEnabled = bg.ProcessPriorityEnabled;
 
+        // App mode
+        _advancedMode = settings.AdvancedMode;
+
         // Game Profiles
         var gp = settings.GameProfiles ?? new GameProfileSettings();
         _gameProfilesEnabled = gp.Enabled;
@@ -428,7 +464,7 @@ public class SettingsViewModel : INotifyPropertyChanged
         StartupManager.SetStartWithWindows(settings.StartWithWindows);
 
         // Apply Background Mode changes live
-        App.BackgroundMode?.ApplySettings();
+        App.Services.BackgroundMode?.ApplySettings();
 
         IsDirty = false;
         StatusMessage = "Settings saved.";
@@ -454,7 +490,7 @@ public class SettingsViewModel : INotifyPropertyChanged
             if (dialog.ShowDialog() != true) return;
 
             var settings = SettingsManager.Load();
-            var profiles = App.ProfileMgr?.GetAllProfiles() ?? Array.Empty<GameProfile>();
+            var profiles = App.Services.ProfileMgr?.GetAllProfiles() ?? Array.Empty<GameProfile>();
 
             var exportData = new
             {
@@ -540,11 +576,11 @@ public class SettingsViewModel : INotifyPropertyChanged
             var profilesElement = root.GetProperty("profiles");
             var importedProfiles = System.Text.Json.JsonSerializer.Deserialize<GameProfile[]>(profilesElement.GetRawText());
 
-            if (importedProfiles != null && App.ProfileMgr != null)
+            if (importedProfiles != null && App.Services.ProfileMgr != null)
             {
                 foreach (var profile in importedProfiles)
                 {
-                    App.ProfileMgr.SaveProfile(profile);
+                    App.Services.ProfileMgr.SaveProfile(profile);
                 }
             }
 

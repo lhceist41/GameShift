@@ -92,6 +92,25 @@
                     </StackPanel>
                 </Border>
 
+                <!-- App Mode Section -->
+                <TextBlock Text="APP MODE" FontSize="11" FontWeight="Bold"
+                           Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,0,0,8"/>
+                <Border Background="{DynamicResource GS.Surface.Card}" CornerRadius="8"
+                        Padding="15" Margin="0,0,0,15"
+                        BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1">
+                    <StackPanel>
+                        <CheckBox Content="Easy Mode"
+                                  IsChecked="{Binding IsEasyMode, Mode=TwoWay}"
+                                  Foreground="{DynamicResource GS.Text.Primary}"
+                                  ToolTip="Simplify the interface - show only Dashboard and Settings"/>
+                        <TextBlock Text="Hide advanced pages and detailed settings for a simpler experience"
+                                   FontSize="11" Foreground="{DynamicResource GS.Text.Secondary}" Margin="20,2,0,0"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Advanced settings — only visible in Advanced Mode -->
+                <StackPanel Visibility="{Binding AdvancedMode, Converter={StaticResource BoolToVisibility}}">
+
                 <!-- Logging Section -->
                 <TextBlock Text="LOGGING" FontSize="11" FontWeight="Bold"
                            Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,0,0,8"/>
@@ -442,6 +461,8 @@
                                    FontSize="11" Foreground="{DynamicResource GS.Text.Secondary}" TextWrapping="Wrap"/>
                     </StackPanel>
                 </Border>
+
+                </StackPanel> <!-- End advanced settings -->
 
                 <!-- Export / Import Section -->
                 <TextBlock Text="EXPORT / IMPORT" FontSize="11" FontWeight="Bold"

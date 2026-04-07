@@ -421,13 +421,13 @@ public class ProfileEditorViewModel : INotifyPropertyChanged
     /// </summary>
     private void LoadPerGameStats(string gameId)
     {
-        if (App.SessionStore == null || string.IsNullOrEmpty(gameId))
+        if (App.Services.SessionStore == null || string.IsNullOrEmpty(gameId))
         {
             HasStats = false;
             return;
         }
 
-        var stats = App.SessionStore.GetStatsForGame(gameId);
+        var stats = App.Services.SessionStore.GetStatsForGame(gameId);
         if (stats == null)
         {
             HasStats = false;
@@ -473,7 +473,7 @@ public class ProfileEditorViewModel : INotifyPropertyChanged
         }
 
         var actions = CompetitivePresets.GetGameActions(exeName);
-        var hw = App.HardwareScan;
+        var hw = App.Services.HardwareScan;
 
         foreach (var action in actions)
         {

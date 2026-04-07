@@ -1,7 +1,9 @@
+using System.ComponentModel;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media.Animation;
 using GameShift.App.ViewModels;
 using GameShift.App.Views;
 
@@ -31,17 +33,28 @@ public partial class DashboardPage : Page
             return;
         }
 
-        DataContext = new DashboardViewModel(
-            App.Orchestrator!,
-            App.Engine!,
-            App.Detector!,
-            App.Optimizations!,
-            App.VbsToggle,
-            App.DpcMon,
-            App.PerfMon,
-            App.PingMon,
-            App.SessionStore,
-            App.SessionTrk);
+        var vm = new DashboardViewModel(
+            App.Services.Orchestrator!,
+            App.Services.Engine!,
+            App.Services.Detector!,
+            App.Services.Optimizations!,
+            App.Services.VbsToggle,
+            App.Services.DpcMon,
+            App.Services.PerfMon,
+            App.Services.PingMon,
+            App.Services.SessionStore,
+            App.Services.SessionTrk);
+
+        vm.AdvancedModeChanged += advanced =>
+        {
+            var mainWindow = Window.GetWindow(this) as MainWindow;
+            mainWindow?.ApplyAdvancedMode(advanced);
+        };
+
+        vm.PropertyChanged += OnViewModelPropertyChanged;
+        vm.Hero.PropertyChanged += OnHeroPropertyChanged;
+
+        DataContext = vm;
     }
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
@@ -52,12 +65,12 @@ public partial class DashboardPage : Page
 
     private void OnDismissVbsClicked(object sender, RoutedEventArgs e)
     {
-        (DataContext as DashboardViewModel)?.DismissVbsBanner();
+        (DataContext as DashboardViewModel)?.Vbs.DismissVbsBanner();
     }
 
     private void OnDismissDpcSpikeClicked(object sender, RoutedEventArgs e)
     {
-        (DataContext as DashboardViewModel)?.DismissDpcSpikeAlert();
+        (DataContext as DashboardViewModel)?.Dpc.DismissDpcSpikeAlert();
     }
 
     private void OnDisableVbsClicked(object sender, RoutedEventArgs e)
@@ -87,7 +100,7 @@ public partial class DashboardPage : Page
 
         if (result == MessageBoxResult.Yes)
         {
-            if (vm.DisableVbsHvci())
+            if (vm.Vbs.DisableVbsHvci())
             {
                 GameShift.Core.Optimization.VbsHvciToggle.ScheduleReboot();
             }
@@ -113,7 +126,7 @@ public partial class DashboardPage : Page
 
         if (result == MessageBoxResult.Yes)
         {
-            if (vm.ReEnableVbsHvci())
+            if (vm.Vbs.ReEnableVbsHvci())
             {
                 GameShift.Core.Optimization.VbsHvciToggle.ScheduleReboot();
             }
@@ -168,7 +181,7 @@ public partial class DashboardPage : Page
     /// </summary>
     private void OnTroubleshootDpcClicked(object sender, RoutedEventArgs e)
     {
-        (DataContext as DashboardViewModel)?.RunDpcAnalysisAsync();
+        (DataContext as DashboardViewModel)?.Dpc.RunDpcAnalysisAsync();
     }
 
     /// <summary>
@@ -176,7 +189,7 @@ public partial class DashboardPage : Page
     /// </summary>
     private void OnRescanDpcClicked(object sender, RoutedEventArgs e)
     {
-        (DataContext as DashboardViewModel)?.RunDpcAnalysisAsync();
+        (DataContext as DashboardViewModel)?.Dpc.RunDpcAnalysisAsync();
     }
 
     /// <summary>
@@ -185,7 +198,7 @@ public partial class DashboardPage : Page
     /// </summary>
     private void OnUpdateDownloadClicked(object sender, RoutedEventArgs e)
     {
-        (DataContext as DashboardViewModel)?.DownloadAndApplyUpdateAsync();
+        (DataContext as DashboardViewModel)?.Update.DownloadAndApplyUpdateAsync();
     }
 
     /// <summary>
@@ -193,7 +206,7 @@ public partial class DashboardPage : Page
     /// </summary>
     private void OnUpdateCancelClicked(object sender, RoutedEventArgs e)
     {
-        (DataContext as DashboardViewModel)?.CancelDownload();
+        (DataContext as DashboardViewModel)?.Update.CancelDownload();
     }
 
     /// <summary>
@@ -209,7 +222,7 @@ public partial class DashboardPage : Page
 
         if (result == System.Windows.MessageBoxResult.Yes)
         {
-            (DataContext as DashboardViewModel)?.ApplyUpdateAndRestart();
+            (DataContext as DashboardViewModel)?.Update.ApplyUpdateAndRestart();
         }
     }
 
@@ -230,5 +243,71 @@ public partial class DashboardPage : Page
     {
         var mainWindow = Window.GetWindow(this) as MainWindow;
         mainWindow?.NavigateTo(typeof(ActivityLogPage));
+    }
+
+    private void OnOptimizationPreviewClicked(object sender, MouseButtonEventArgs e)
+    {
+        PreviewList.Visibility = PreviewList.Visibility == Visibility.Visible
+            ? Visibility.Collapsed
+            : Visibility.Visible;
+    }
+
+    private Storyboard? _heroAnimationStoryboard;
+
+    private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        // IsApplyingHero now lives on the Hero sub-VM — but PropertyChanged fires
+        // on the DashboardViewModel when we subscribe vm.PropertyChanged. We need to
+        // subscribe to Hero.PropertyChanged instead for this specific property.
+    }
+
+    private void OnHeroPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(HeroOptimizeViewModel.IsApplyingHero)) return;
+        var hero = sender as HeroOptimizeViewModel;
+        if (hero == null) return;
+
+        if (hero.IsApplyingHero)
+            StartHeroAnimation();
+        else
+            StopHeroAnimation();
+    }
+
+    private void StartHeroAnimation()
+    {
+        HeroSpinner.Visibility = Visibility.Visible;
+
+        var sb = new Storyboard { RepeatBehavior = RepeatBehavior.Forever };
+
+        // Spin the arrow icon
+        var spin = new DoubleAnimation(0, 360, new Duration(System.TimeSpan.FromSeconds(1)))
+        {
+            RepeatBehavior = RepeatBehavior.Forever
+        };
+        Storyboard.SetTarget(spin, HeroSpinner);
+        Storyboard.SetTargetProperty(spin, new PropertyPath("(UIElement.RenderTransform).(RotateTransform.Angle)"));
+        sb.Children.Add(spin);
+
+        // Pulse the glow behind the button
+        var glowIn = new DoubleAnimation(0, 0.4, new Duration(System.TimeSpan.FromSeconds(0.8)))
+        {
+            AutoReverse = true,
+            RepeatBehavior = RepeatBehavior.Forever,
+            EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut }
+        };
+        Storyboard.SetTarget(glowIn, HeroGlow);
+        Storyboard.SetTargetProperty(glowIn, new PropertyPath("Opacity"));
+        sb.Children.Add(glowIn);
+
+        _heroAnimationStoryboard = sb;
+        sb.Begin();
+    }
+
+    private void StopHeroAnimation()
+    {
+        _heroAnimationStoryboard?.Stop();
+        _heroAnimationStoryboard = null;
+        HeroSpinner.Visibility = Visibility.Collapsed;
+        HeroGlow.Opacity = 0;
     }
 }

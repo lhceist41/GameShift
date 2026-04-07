@@ -129,7 +129,7 @@ public class TrayFlyoutViewModel : INotifyPropertyChanged, IDisposable
         }
 
         // Optimization count — count available (IsAvailable) optimizations when active
-        var optimizations = App.Optimizations;
+        var optimizations = App.Services.Optimizations;
         if (_orchestrator.IsOptimizing && optimizations != null)
         {
             int availableCount = optimizations.Count(opt => opt.IsAvailable);
@@ -156,11 +156,11 @@ public class TrayFlyoutViewModel : INotifyPropertyChanged, IDisposable
         }
 
         // Background Mode
-        var bg = App.BackgroundMode;
+        var bg = App.Services.BackgroundMode;
         BgModeText = bg != null && bg.IsEnabled ? "Active" : "Off";
 
         // Game Profile
-        var gpm = App.GameProfileMgr;
+        var gpm = App.Services.GameProfileMgr;
         ProfileText = gpm != null && gpm.HasActiveProfile ? gpm.ActiveProfile!.DisplayName : "None";
     }
 

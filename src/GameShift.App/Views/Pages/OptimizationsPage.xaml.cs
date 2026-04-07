@@ -21,7 +21,7 @@ public partial class OptimizationsPage : Page
         if (DataContext != null) return;
 
         DataContext = new OptimizationsViewModel(
-            App.Optimizations!,
-            App.Engine!);
+            App.Services.Optimizations!,
+            App.Services.Engine!);
     }
 }

@@ -97,7 +97,7 @@ public class SystemViewModel : INotifyPropertyChanged
     {
         _ = RefreshAsync();
 
-        _tempMonitor = App.TempMon;
+        _tempMonitor = App.Services.TempMon;
         if (_tempMonitor != null && _tempMonitor.IsAvailable)
         {
             TempAvailable = true;

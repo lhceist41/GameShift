@@ -6,6 +6,7 @@
       FontFamily="Segoe UI" FontSize="14">
     <Page.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
+        <BooleanToVisibilityConverter x:Key="AdvancedVisibility"/>
 
         <!-- Card Text Crossfade Animation (300ms, CubicEase) — Feature #5 -->
         <Style x:Key="AnimatedTextStyle" TargetType="TextBlock">
@@ -82,20 +83,35 @@
                   helpers:ScrollHelper.FixScrolling="True">
         <StackPanel Margin="24">
 
+            <!-- Easy Mode toggle — top-right -->
+            <CheckBox x:Name="EasyModeToggle"
+                      IsChecked="{Binding IsEasyMode, Mode=TwoWay}"
+                      HorizontalAlignment="Right" Margin="0,0,0,12"
+                      Foreground="{DynamicResource GS.Text.Secondary}"
+                      FontSize="12" Cursor="Hand"
+                      ToolTip="Simplify the interface - show only Dashboard and Settings">
+                <TextBlock Text="Easy Mode"
+                           Foreground="{DynamicResource GS.Text.Secondary}"
+                           FontSize="12"/>
+            </CheckBox>
+
             <!-- ═══════════════════════════════════════════════════════════
                  Alert Banners Section
                  Appears at top above the card grid — conditional visibility
                  ═══════════════════════════════════════════════════════════ -->
 
+            <!-- Alert banners — Advanced Mode only -->
+            <StackPanel Visibility="{Binding IsAdvancedMode, Converter={StaticResource AdvancedVisibility}}">
+
             <!-- VBS/HVCI Banner — amber (warning: VBS enabled, perf cost) or red (error: VBS disabled + AC conflict) -->
             <Border x:Name="VbsBanner" CornerRadius="8" Padding="15" Margin="0,0,0,12"
                     Background="{DynamicResource GS.Badge.Warning.Bg}"
                     BorderBrush="{DynamicResource GS.Status.Warning}" BorderThickness="1"
-                    Visibility="{Binding ShowVbsBanner, Converter={StaticResource BoolToVisibility}}">
+                    Visibility="{Binding Vbs.ShowVbsBanner, Converter={StaticResource BoolToVisibility}}">
                 <Border.Style>
                     <Style TargetType="Border" BasedOn="{StaticResource AnimatedBannerStyle}">
                         <Style.Triggers>
-                            <DataTrigger Binding="{Binding VbsBannerSeverity}" Value="error">
+                            <DataTrigger Binding="{Binding Vbs.VbsBannerSeverity}" Value="error">
                                 <Setter Property="Background" Value="{DynamicResource GS.Badge.Error.Bg}"/>
                                 <Setter Property="BorderBrush" Value="{DynamicResource GS.Status.Error}"/>
                             </DataTrigger>
@@ -114,7 +130,7 @@
                                 <Style TargetType="Button">
                                     <Setter Property="Visibility" Value="Visible"/>
                                     <Style.Triggers>
-                                        <DataTrigger Binding="{Binding IsVbsConflict}" Value="True">
+                                        <DataTrigger Binding="{Binding Vbs.IsVbsConflict}" Value="True">
                                             <Setter Property="Visibility" Value="Collapsed"/>
                                         </DataTrigger>
                                     </Style.Triggers>
@@ -130,7 +146,7 @@
                                 <Style TargetType="Button">
                                     <Setter Property="Visibility" Value="Collapsed"/>
                                     <Style.Triggers>
-                                        <DataTrigger Binding="{Binding IsVbsConflict}" Value="True">
+                                        <DataTrigger Binding="{Binding Vbs.IsVbsConflict}" Value="True">
                                             <Setter Property="Visibility" Value="Visible"/>
                                         </DataTrigger>
                                     </Style.Triggers>
@@ -152,7 +168,7 @@
                                     <Setter Property="Text" Value="Performance Warning"/>
                                     <Setter Property="Foreground" Value="{DynamicResource GS.Status.Warning}"/>
                                     <Style.Triggers>
-                                        <DataTrigger Binding="{Binding VbsBannerSeverity}" Value="error">
+                                        <DataTrigger Binding="{Binding Vbs.VbsBannerSeverity}" Value="error">
                                             <Setter Property="Text" Value="Anti-Cheat Conflict"/>
                                             <Setter Property="Foreground" Value="{DynamicResource GS.Status.Error}"/>
                                         </DataTrigger>
@@ -160,7 +176,7 @@
                                 </Style>
                             </TextBlock.Style>
                         </TextBlock>
-                        <TextBlock Text="{Binding VbsBannerMessage, Mode=OneWay}"
+                        <TextBlock Text="{Binding Vbs.VbsBannerMessage, Mode=OneWay}"
                                    FontSize="12" Foreground="{DynamicResource GS.Text.Primary}"
                                    TextWrapping="Wrap"/>
                     </StackPanel>
@@ -171,7 +187,7 @@
             <Border Background="{DynamicResource GS.Badge.Error.Bg}"
                     CornerRadius="8" Padding="15" Margin="0,0,0,12"
                     BorderBrush="{DynamicResource GS.Status.Error}" BorderThickness="1"
-                    Visibility="{Binding ShowDpcSpikeAlert, Converter={StaticResource BoolToVisibility}}"
+                    Visibility="{Binding Dpc.ShowDpcSpikeAlert, Converter={StaticResource BoolToVisibility}}"
                     Style="{StaticResource AnimatedBannerStyle}">
                 <DockPanel>
                     <StackPanel DockPanel.Dock="Right" Orientation="Horizontal"
@@ -194,7 +210,7 @@
                     <StackPanel VerticalAlignment="Center">
                         <TextBlock Text="DPC Latency Spike" FontWeight="Bold"
                                    Foreground="{DynamicResource GS.Status.Error}" FontSize="13"/>
-                        <TextBlock Text="{Binding DpcSpikeAlertMessage, Mode=OneWay}"
+                        <TextBlock Text="{Binding Dpc.DpcSpikeAlertMessage, Mode=OneWay}"
                                    FontSize="12" Foreground="{DynamicResource GS.Text.Primary}"
                                    TextWrapping="Wrap"/>
                     </StackPanel>
@@ -205,7 +221,7 @@
             <Border CornerRadius="8" Padding="15" Margin="0,0,0,12"
                     Background="{DynamicResource GS.Surface.Card}"
                     BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1"
-                    Visibility="{Binding ShowTroubleshooter, Converter={StaticResource BoolToVisibility}}"
+                    Visibility="{Binding Dpc.ShowTroubleshooter, Converter={StaticResource BoolToVisibility}}"
                     Style="{StaticResource AnimatedBannerStyle}">
                 <StackPanel>
                     <!-- Header row: title + summary + Re-scan button -->
@@ -215,12 +231,12 @@
                                 Foreground="{DynamicResource GS.Text.Primary}"
                                 BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1"
                                 Cursor="Hand" FontSize="11"
-                                IsEnabled="{Binding CanRescan}"
+                                IsEnabled="{Binding Dpc.CanRescan}"
                                 Click="OnRescanDpcClicked"/>
                         <StackPanel VerticalAlignment="Center">
                             <TextBlock Text="DPC Troubleshooter" FontWeight="Bold" FontSize="14"
                                        Foreground="{DynamicResource GS.Text.Primary}"/>
-                            <TextBlock Text="{Binding AnalysisSummary, Mode=OneWay}" FontSize="12"
+                            <TextBlock Text="{Binding Dpc.AnalysisSummary, Mode=OneWay}" FontSize="12"
                                        Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,2,0,0"/>
                         </StackPanel>
                     </DockPanel>
@@ -233,7 +249,7 @@
                             <Style TargetType="ProgressBar">
                                 <Setter Property="Visibility" Value="Collapsed"/>
                                 <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsAnalyzing}" Value="True">
+                                    <DataTrigger Binding="{Binding Dpc.IsAnalyzing}" Value="True">
                                         <Setter Property="Visibility" Value="Visible"/>
                                     </DataTrigger>
                                 </Style.Triggers>
@@ -242,7 +258,7 @@
                     </ProgressBar>
 
                     <!-- Results list: driver cards -->
-                    <ItemsControl ItemsSource="{Binding TroubleshooterResults}">
+                    <ItemsControl ItemsSource="{Binding Dpc.TroubleshooterResults}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <Border Background="{DynamicResource GS.Surface.Base}"
@@ -318,8 +334,8 @@
                                 <Style.Triggers>
                                     <MultiDataTrigger>
                                         <MultiDataTrigger.Conditions>
-                                            <Condition Binding="{Binding TroubleshooterResults.Count}" Value="0"/>
-                                            <Condition Binding="{Binding IsAnalyzing}" Value="False"/>
+                                            <Condition Binding="{Binding Dpc.TroubleshooterResults.Count}" Value="0"/>
+                                            <Condition Binding="{Binding Dpc.IsAnalyzing}" Value="False"/>
                                         </MultiDataTrigger.Conditions>
                                         <Setter Property="Visibility" Value="Visible"/>
                                     </MultiDataTrigger>
@@ -338,7 +354,7 @@
             <Border Background="{DynamicResource GS.Surface.Card}"
                     CornerRadius="8" Padding="15" Margin="0,0,0,12"
                     BorderBrush="{DynamicResource GS.Accent.Primary}" BorderThickness="1"
-                    Visibility="{Binding ShowUpdateBanner, Converter={StaticResource BoolToVisibility}}"
+                    Visibility="{Binding Update.ShowUpdateBanner, Converter={StaticResource BoolToVisibility}}"
                     Style="{StaticResource AnimatedBannerStyle}">
                 <DockPanel>
                     <!-- Right-side action area -->
@@ -353,10 +369,10 @@
                                 <Style TargetType="Button">
                                     <Setter Property="Visibility" Value="Visible"/>
                                     <Style.Triggers>
-                                        <DataTrigger Binding="{Binding IsDownloading}" Value="True">
+                                        <DataTrigger Binding="{Binding Update.IsDownloading}" Value="True">
                                             <Setter Property="Visibility" Value="Collapsed"/>
                                         </DataTrigger>
-                                        <DataTrigger Binding="{Binding IsUpdateReady}" Value="True">
+                                        <DataTrigger Binding="{Binding Update.IsUpdateReady}" Value="True">
                                             <Setter Property="Visibility" Value="Collapsed"/>
                                         </DataTrigger>
                                     </Style.Triggers>
@@ -370,18 +386,18 @@
                                 <Style TargetType="StackPanel">
                                     <Setter Property="Visibility" Value="Collapsed"/>
                                     <Style.Triggers>
-                                        <DataTrigger Binding="{Binding IsDownloading}" Value="True">
+                                        <DataTrigger Binding="{Binding Update.IsDownloading}" Value="True">
                                             <Setter Property="Visibility" Value="Visible"/>
                                         </DataTrigger>
                                     </Style.Triggers>
                                 </Style>
                             </StackPanel.Style>
                             <ProgressBar Width="120" Height="16" Minimum="0" Maximum="100"
-                                         Value="{Binding DownloadProgress, Mode=OneWay}"
+                                         Value="{Binding Update.DownloadProgress, Mode=OneWay}"
                                          VerticalAlignment="Center"
                                          Foreground="{DynamicResource GS.Accent.Primary}"
                                          Background="{DynamicResource GS.Surface.Base}"/>
-                            <TextBlock Text="{Binding DownloadProgress, Mode=OneWay, StringFormat={}{0:F0}%}"
+                            <TextBlock Text="{Binding Update.DownloadProgress, Mode=OneWay, StringFormat={}{0:F0}%}"
                                        FontSize="12" VerticalAlignment="Center" Margin="6,0,0,0"
                                        Foreground="{DynamicResource GS.Text.Primary}" MinWidth="32"/>
                             <Button Content="Cancel" Padding="6,2"
@@ -402,7 +418,7 @@
                                 <Style TargetType="Button">
                                     <Setter Property="Visibility" Value="Collapsed"/>
                                     <Style.Triggers>
-                                        <DataTrigger Binding="{Binding IsUpdateReady}" Value="True">
+                                        <DataTrigger Binding="{Binding Update.IsUpdateReady}" Value="True">
                                             <Setter Property="Visibility" Value="Visible"/>
                                         </DataTrigger>
                                     </Style.Triggers>
@@ -418,13 +434,13 @@
                         <TextBlock FontSize="12" Foreground="{DynamicResource GS.Text.Primary}" TextWrapping="Wrap">
                             <TextBlock.Style>
                                 <Style TargetType="TextBlock">
-                                    <Setter Property="Text" Value="{Binding UpdateMessage, Mode=OneWay}"/>
+                                    <Setter Property="Text" Value="{Binding Update.UpdateMessage, Mode=OneWay}"/>
                                     <Style.Triggers>
-                                        <DataTrigger Binding="{Binding IsDownloading}" Value="True">
-                                            <Setter Property="Text" Value="{Binding DownloadStatusText, Mode=OneWay}"/>
+                                        <DataTrigger Binding="{Binding Update.IsDownloading}" Value="True">
+                                            <Setter Property="Text" Value="{Binding Update.DownloadStatusText, Mode=OneWay}"/>
                                         </DataTrigger>
-                                        <DataTrigger Binding="{Binding IsUpdateReady}" Value="True">
-                                            <Setter Property="Text" Value="{Binding DownloadStatusText, Mode=OneWay}"/>
+                                        <DataTrigger Binding="{Binding Update.IsUpdateReady}" Value="True">
+                                            <Setter Property="Text" Value="{Binding Update.DownloadStatusText, Mode=OneWay}"/>
                                         </DataTrigger>
                                     </Style.Triggers>
                                 </Style>
@@ -434,12 +450,111 @@
                 </DockPanel>
             </Border>
 
+            </StackPanel> <!-- End alert banners (Advanced Mode only) -->
+
+            <!-- ═══════════════════════════════════════════════════════════
+                 Hero Section — One-Click Optimize
+                 ═══════════════════════════════════════════════════════════ -->
+            <Border Background="{DynamicResource GS.Surface.Card}"
+                    CornerRadius="12" Padding="32,28"
+                    BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1"
+                    Margin="0,0,0,24">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Left: Status + preview -->
+                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                            <Ellipse Width="12" Height="12" Margin="0,0,10,0"
+                                     VerticalAlignment="Center"
+                                     Fill="{Binding Hero.HeroStatusBrush}"/>
+                            <TextBlock Text="{Binding Hero.HeroStatusText}"
+                                       Style="{DynamicResource GS.Text.Hero}"
+                                       FontSize="24"
+                                       Foreground="{DynamicResource GS.Text.Primary}"/>
+                        </StackPanel>
+                        <TextBlock Text="{Binding Hero.HeroSubtitleText}"
+                                   FontSize="13"
+                                   Foreground="{DynamicResource GS.Text.Secondary}"
+                                   Margin="22,0,0,0"/>
+                        <!-- Preview: clickable line showing what will be applied -->
+                        <TextBlock x:Name="OptimizationPreviewLink"
+                                   Text="{Binding Hero.HeroPreviewText}"
+                                   FontSize="12" Cursor="Hand"
+                                   Foreground="{DynamicResource GS.Status.Info}"
+                                   Margin="22,8,0,0"
+                                   MouseLeftButtonUp="OnOptimizationPreviewClicked"
+                                   Visibility="{Binding Hero.ShowHeroPreview, Converter={StaticResource BoolToVisibility}}">
+                            <TextBlock.TextDecorations>
+                                <TextDecorationCollection>
+                                    <TextDecoration Location="Underline"/>
+                                </TextDecorationCollection>
+                            </TextBlock.TextDecorations>
+                        </TextBlock>
+                        <!-- Expandable preview list -->
+                        <ItemsControl x:Name="PreviewList"
+                                      ItemsSource="{Binding Hero.HeroPreviewItems}"
+                                      Margin="22,6,0,0"
+                                      Visibility="Collapsed">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding}" FontSize="12"
+                                               Foreground="{DynamicResource GS.Text.Secondary}"
+                                               Margin="0,2,0,0"/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+
+                    <!-- Right: CTA button with pulse animation during optimize -->
+                    <Grid Grid.Column="1" VerticalAlignment="Center">
+                        <!-- Glow layer behind button — visible only while applying -->
+                        <Border x:Name="HeroGlow" CornerRadius="10"
+                                MinWidth="180" Height="48" Opacity="0"
+                                IsHitTestVisible="False">
+                            <Border.Background>
+                                <SolidColorBrush Color="#4ADE80"/>
+                            </Border.Background>
+                            <Border.Effect>
+                                <BlurEffect Radius="20"/>
+                            </Border.Effect>
+                        </Border>
+
+                        <Button x:Name="HeroButton"
+                                Command="{Binding Hero.OptimizeNowCommand}"
+                                VerticalAlignment="Center"
+                                MinWidth="180" Height="48"
+                                FontSize="15" FontWeight="SemiBold"
+                                Cursor="Hand"
+                                Style="{DynamicResource GS.Button.Hero}">
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                <!-- Spinning icon during apply/revert -->
+                                <TextBlock x:Name="HeroSpinner" Text="&#x21BB;"
+                                           FontSize="16" Margin="0,0,8,0"
+                                           VerticalAlignment="Center"
+                                           Visibility="Collapsed"
+                                           RenderTransformOrigin="0.5,0.5">
+                                    <TextBlock.RenderTransform>
+                                        <RotateTransform x:Name="SpinnerRotation" Angle="0"/>
+                                    </TextBlock.RenderTransform>
+                                </TextBlock>
+                                <TextBlock Text="{Binding Hero.HeroButtonText}"
+                                           VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+                    </Grid>
+                </Grid>
+            </Border>
+
             <!-- ═══════════════════════════════════════════════════════════
                  Card Grid — 2x2 UniformGrid
                  Each card Border has Margin=8 (8+8=16px gaps between cards).
                  UniformGrid has Margin="-8" to compensate outer edges.
                  ═══════════════════════════════════════════════════════════ -->
-            <UniformGrid Rows="2" Columns="3" Margin="-8,0,-8,0">
+            <UniformGrid Rows="1" Columns="2" Margin="-8,0,-8,0">
 
                 <!-- Card 1: Game Status -->
                 <Border Background="{DynamicResource GS.Surface.Card}"
@@ -459,59 +574,7 @@
                     </StackPanel>
                 </Border>
 
-                <!-- Card 2: DPC Latency -->
-                <Border Background="{DynamicResource GS.Surface.Card}"
-                        CornerRadius="8" Padding="16" Margin="8"
-                        BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1">
-                    <StackPanel>
-                        <TextBlock Text="DPC Latency" FontSize="12"
-                                   Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,0,0,6"/>
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
-                            <Ellipse Width="10" Height="10" Margin="0,0,8,0" VerticalAlignment="Center"
-                                     Fill="{Binding DpcLatencyBrush, Mode=OneWay}"/>
-                            <TextBlock Text="{Binding DpcLatencyText, Mode=OneWay, NotifyOnTargetUpdated=True}" FontSize="22" FontWeight="Bold"
-                                       Foreground="{DynamicResource GS.Text.Primary}" Style="{StaticResource AnimatedTextStyle}"/>
-                        </StackPanel>
-                        <!-- Average latency or inactive placeholder -->
-                        <TextBlock FontSize="13" Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,0,0,4">
-                            <TextBlock.Style>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding ShowDpcIndicator}" Value="True">
-                                            <Setter Property="Visibility" Value="Visible"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </TextBlock.Style>
-                            <Run Text="Avg: "/>
-                            <Run Text="{Binding AverageDpcLatency, Mode=OneWay, StringFormat={}{0:F0}}"/>
-                            <Run Text="µs"/>
-                        </TextBlock>
-                        <TextBlock Text="Monitoring inactive" FontSize="13"
-                                   Foreground="{DynamicResource GS.Text.Disabled}" Margin="0,0,0,4">
-                            <TextBlock.Style>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding ShowDpcIndicator}" Value="False">
-                                            <Setter Property="Visibility" Value="Visible"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </TextBlock.Style>
-                        </TextBlock>
-                        <!-- Sparkline: 120x32 Canvas with Polyline bound to SparklinePoints -->
-                        <Canvas Width="120" Height="32" Margin="0,8,0,0"
-                                ClipToBounds="True" HorizontalAlignment="Left">
-                            <Polyline Points="{Binding SparklinePoints, Mode=OneWay}"
-                                      Stroke="{Binding SparklineBrush, Mode=OneWay}"
-                                      StrokeThickness="1.5" Fill="Transparent"/>
-                        </Canvas>
-                    </StackPanel>
-                </Border>
-
-                <!-- Card 3: Optimizations -->
+                <!-- Card 2: Optimizations -->
                 <Border Background="{DynamicResource GS.Surface.Card}"
                         CornerRadius="8" Padding="16" Margin="8"
                         BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1">
@@ -525,7 +588,65 @@
                     </StackPanel>
                 </Border>
 
-                <!-- Card 4: GPU -->
+            </UniformGrid>
+
+            <!-- Advanced cards — Advanced Mode only -->
+            <UniformGrid Rows="1" Columns="4" Margin="-8,8,-8,0"
+                         Visibility="{Binding IsAdvancedMode, Converter={StaticResource AdvancedVisibility}}">
+
+                <!-- Card 3: DPC Latency -->
+                <Border Background="{DynamicResource GS.Surface.Card}"
+                        CornerRadius="8" Padding="16" Margin="8"
+                        BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1">
+                    <StackPanel>
+                        <TextBlock Text="DPC Latency" FontSize="12"
+                                   Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,0,0,6"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                            <Ellipse Width="10" Height="10" Margin="0,0,8,0" VerticalAlignment="Center"
+                                     Fill="{Binding Dpc.DpcLatencyBrush, Mode=OneWay}"/>
+                            <TextBlock Text="{Binding Dpc.DpcLatencyText, Mode=OneWay, NotifyOnTargetUpdated=True}" FontSize="22" FontWeight="Bold"
+                                       Foreground="{DynamicResource GS.Text.Primary}" Style="{StaticResource AnimatedTextStyle}"/>
+                        </StackPanel>
+                        <!-- Average latency or inactive placeholder -->
+                        <TextBlock FontSize="13" Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,0,0,4">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Dpc.ShowDpcIndicator}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                            <Run Text="Avg: "/>
+                            <Run Text="{Binding Dpc.AverageDpcLatency, Mode=OneWay, StringFormat={}{0:F0}}"/>
+                            <Run Text="µs"/>
+                        </TextBlock>
+                        <TextBlock Text="Monitoring inactive" FontSize="13"
+                                   Foreground="{DynamicResource GS.Text.Disabled}" Margin="0,0,0,4">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Dpc.ShowDpcIndicator}" Value="False">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        <!-- Sparkline: 120x32 Canvas with Polyline bound to SparklinePoints -->
+                        <Canvas Width="120" Height="32" Margin="0,8,0,0"
+                                ClipToBounds="True" HorizontalAlignment="Left">
+                            <Polyline Points="{Binding Dpc.SparklinePoints, Mode=OneWay}"
+                                      Stroke="{Binding Dpc.SparklineBrush, Mode=OneWay}"
+                                      StrokeThickness="1.5" Fill="Transparent"/>
+                        </Canvas>
+                    </StackPanel>
+                </Border>
+
+                <!-- Card 5: GPU -->
                 <Border Background="{DynamicResource GS.Surface.Card}"
                         CornerRadius="8" Padding="16" Margin="8"
                         BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1">
@@ -547,15 +668,15 @@
                         <DockPanel Margin="0,0,0,6">
                             <TextBlock Text="Network Ping" FontSize="10" FontWeight="Bold"
                                        Foreground="{DynamicResource GS.Text.Secondary}"/>
-                            <Ellipse Width="8" Height="8" Fill="{Binding PingBrush}"
+                            <Ellipse Width="8" Height="8" Fill="{Binding Ping.PingBrush}"
                                      DockPanel.Dock="Right" HorizontalAlignment="Right" VerticalAlignment="Center"/>
                         </DockPanel>
-                        <TextBlock Text="{Binding PingText}" FontSize="20" FontWeight="Bold"
+                        <TextBlock Text="{Binding Ping.PingText}" FontSize="20" FontWeight="Bold"
                                    Foreground="{DynamicResource GS.Text.Primary}"/>
-                        <Polyline Points="{Binding PingSparklinePoints}" Stroke="{Binding PingBrush}"
+                        <Polyline Points="{Binding Ping.PingSparklinePoints}" Stroke="{Binding Ping.PingBrush}"
                                   StrokeThickness="1.5" Width="120" Height="32" Stretch="None"
                                   VerticalAlignment="Bottom" Margin="0,4,0,0"/>
-                        <TextBlock Text="{Binding PingStats}" FontSize="10"
+                        <TextBlock Text="{Binding Ping.PingStats}" FontSize="10"
                                    Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,4,0,0"/>
                     </StackPanel>
                 </Border>
@@ -569,23 +690,26 @@
                                    Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,0,0,6"/>
                         <DockPanel Margin="0,0,0,4">
                             <TextBlock Text="CPU" FontSize="11" Foreground="{DynamicResource GS.Text.Secondary}" Width="30"/>
-                            <TextBlock Text="{Binding CpuText}" FontSize="14" FontWeight="Bold"
+                            <TextBlock Text="{Binding Perf.CpuText}" FontSize="14" FontWeight="Bold"
                                        Foreground="{DynamicResource GS.Accent.Primary}" DockPanel.Dock="Right" HorizontalAlignment="Right"/>
                         </DockPanel>
                         <DockPanel Margin="0,0,0,4">
                             <TextBlock Text="RAM" FontSize="11" Foreground="{DynamicResource GS.Text.Secondary}" Width="30"/>
-                            <TextBlock Text="{Binding RamText}" FontSize="14" FontWeight="Bold"
+                            <TextBlock Text="{Binding Perf.RamText}" FontSize="14" FontWeight="Bold"
                                        Foreground="#A78BFA" DockPanel.Dock="Right" HorizontalAlignment="Right"/>
                         </DockPanel>
                         <DockPanel>
                             <TextBlock Text="GPU" FontSize="11" Foreground="{DynamicResource GS.Text.Secondary}" Width="30"/>
-                            <TextBlock Text="{Binding GpuUtilText}" FontSize="14" FontWeight="Bold"
+                            <TextBlock Text="{Binding Perf.GpuUtilText}" FontSize="14" FontWeight="Bold"
                                        Foreground="#FBBF24" DockPanel.Dock="Right" HorizontalAlignment="Right"/>
                         </DockPanel>
                     </StackPanel>
                 </Border>
 
             </UniformGrid>
+
+            <!-- Advanced-only sections below the card grid -->
+            <StackPanel Visibility="{Binding IsAdvancedMode, Converter={StaticResource AdvancedVisibility}}">
 
             <!-- ═══════════════════════════════════════════════════════════
                  Hardware Advisories Section
@@ -657,10 +781,10 @@
                     <StackPanel>
                         <DockPanel Margin="0,0,0,4">
                             <TextBlock Text="CPU" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource GS.Accent.Primary}"/>
-                            <TextBlock Text="{Binding CpuText}" DockPanel.Dock="Right" HorizontalAlignment="Right"
+                            <TextBlock Text="{Binding Perf.CpuText}" DockPanel.Dock="Right" HorizontalAlignment="Right"
                                        FontSize="14" FontWeight="Bold" Foreground="{DynamicResource GS.Accent.Primary}"/>
                         </DockPanel>
-                        <Polyline Points="{Binding CpuSparklinePoints}" Stroke="{DynamicResource GS.Accent.Primary}"
+                        <Polyline Points="{Binding Perf.CpuSparklinePoints}" Stroke="{DynamicResource GS.Accent.Primary}"
                                   StrokeThickness="1.5" Width="120" Height="48" Stretch="None"/>
                     </StackPanel>
                 </Border>
@@ -671,10 +795,10 @@
                     <StackPanel>
                         <DockPanel Margin="0,0,0,4">
                             <TextBlock Text="RAM" FontSize="11" FontWeight="Bold" Foreground="#A78BFA"/>
-                            <TextBlock Text="{Binding RamText}" DockPanel.Dock="Right" HorizontalAlignment="Right"
+                            <TextBlock Text="{Binding Perf.RamText}" DockPanel.Dock="Right" HorizontalAlignment="Right"
                                        FontSize="14" FontWeight="Bold" Foreground="#A78BFA"/>
                         </DockPanel>
-                        <Polyline Points="{Binding RamSparklinePoints}" Stroke="#A78BFA"
+                        <Polyline Points="{Binding Perf.RamSparklinePoints}" Stroke="#A78BFA"
                                   StrokeThickness="1.5" Width="120" Height="48" Stretch="None"/>
                     </StackPanel>
                 </Border>
@@ -685,10 +809,10 @@
                     <StackPanel>
                         <DockPanel Margin="0,0,0,4">
                             <TextBlock Text="GPU" FontSize="11" FontWeight="Bold" Foreground="#FBBF24"/>
-                            <TextBlock Text="{Binding GpuUtilText}" DockPanel.Dock="Right" HorizontalAlignment="Right"
+                            <TextBlock Text="{Binding Perf.GpuUtilText}" DockPanel.Dock="Right" HorizontalAlignment="Right"
                                        FontSize="14" FontWeight="Bold" Foreground="#FBBF24"/>
                         </DockPanel>
-                        <Polyline Points="{Binding GpuSparklinePoints}" Stroke="#FBBF24"
+                        <Polyline Points="{Binding Perf.GpuSparklinePoints}" Stroke="#FBBF24"
                                   StrokeThickness="1.5" Width="120" Height="48" Stretch="None"/>
                     </StackPanel>
                 </Border>
@@ -970,6 +1094,8 @@
                     </Style>
                 </TextBlock.Style>
             </TextBlock>
+
+            </StackPanel> <!-- End advanced-only sections -->
 
         </StackPanel>
     </ScrollViewer>

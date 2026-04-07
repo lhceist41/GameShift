@@ -56,6 +56,7 @@ public partial class MainWindow : Window
     {
         _snackbar = new Snackbar(SnackbarPresenter);
         RestoreWindowPosition();
+        ApplyAdvancedMode(SettingsManager.Load().AdvancedMode);
 
         // WPF-UI's NavigationView resets IsDynamicScrollViewerEnabled to true after
         // every page navigation during its internal layout pass. We must re-disable it
@@ -192,6 +193,22 @@ public partial class MainWindow : Window
     public void NavigateTo(Type pageType)
     {
         NavigationView.Navigate(pageType);
+    }
+
+    /// <summary>
+    /// Shows or hides navigation items based on Advanced Mode setting.
+    /// Simple Mode: only Dashboard and Settings visible.
+    /// </summary>
+    public void ApplyAdvancedMode(bool advanced)
+    {
+        var vis = advanced ? Visibility.Visible : Visibility.Collapsed;
+        NavSystem.Visibility = vis;
+        NavDpcDoctor.Visibility = vis;
+        NavOptimizations.Visibility = vis;
+        NavProfiles.Visibility = vis;
+        NavGameLibrary.Visibility = vis;
+        NavLogs.Visibility = vis;
+        NavSetupWizard.Visibility = vis;
     }
 
     /// <summary>

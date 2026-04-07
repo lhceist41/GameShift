@@ -28,7 +28,7 @@ public class OptimizationsViewModel : INotifyPropertyChanged
     /// <summary>
     /// Creates the ViewModel, categorizes optimizations, and subscribes to engine events.
     /// </summary>
-    /// <param name="optimizations">All 11 optimization modules from App.Optimizations.</param>
+    /// <param name="optimizations">All optimization modules from App.Services.Optimizations.</param>
     /// <param name="engine">Optimization engine for applying/reverting optimizations.</param>
     public OptimizationsViewModel(IReadOnlyList<IOptimization> optimizations, OptimizationEngine engine)
     {
