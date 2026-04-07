@@ -12,7 +12,7 @@
     <PackageReference Include="System.Management" Version="10.0.3" />
     <PackageReference Include="System.Diagnostics.PerformanceCounter" Version="10.0.3" />
     <PackageReference Include="System.ServiceProcess.ServiceController" Version="10.0.3" />
-    <PackageReference Include="LibreHardwareMonitorLib" Version="0.9.*" />
+    <PackageReference Include="LibreHardwareMonitorLib" Version="0.9.6" />
     <PackageReference Include="Microsoft.Diagnostics.Tracing.TraceEvent" Version="3.1.16" />
   </ItemGroup>
 
