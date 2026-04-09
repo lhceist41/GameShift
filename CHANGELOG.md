@@ -2,6 +2,11 @@
 
 All notable changes to GameShift are documented here.
 
+## [3.6.1] - 2026-04-07
+
+### Fixed
+- **Start with Windows not launching the app** - GameShift requires admin elevation, but `HKCU\Run` entries cannot trigger UAC prompts at logon, so Windows silently blocked the startup. Replaced the registry entry with a scheduled task that uses `HighestAvailable` run level, which launches elevated without a UAC prompt. Existing users will have their settings migrated automatically on next launch.
+
 ## [3.6.0] - 2026-04-07
 
 ### Added
