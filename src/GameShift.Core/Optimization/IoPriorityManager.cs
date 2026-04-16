@@ -183,39 +183,51 @@ public class IoPriorityManager : IOptimization
                             continue;
                     }
 
-                    // Query current I/O priority
-                    int currentPriority = 0;
-                    int status = NativeInterop.NtQueryInformationProcess(
-                        process.ProcessHandle,
-                        NativeInterop.ProcessIoPriority,
-                        ref currentPriority,
-                        sizeof(int),
-                        out _);
-
-                    if (status != 0) continue; // Query failed, skip
-                    if (currentPriority <= NativeInterop.IoPriorityLow) continue; // Already low, skip
-
-                    // Demote to Low
-                    int newPriority = NativeInterop.IoPriorityLow;
-                    status = NativeInterop.NtSetInformationProcess(
-                        process.ProcessHandle,
-                        NativeInterop.ProcessIoPriority,
-                        ref newPriority,
-                        sizeof(int));
-
-                    if (status == 0)
+                    // Open our own handle — ProcessSnapshot no longer carries OS handles
+                    var hProcess = NativeInterop.OpenProcess(
+                        NativeInterop.PROCESS_QUERY_INFORMATION | NativeInterop.PROCESS_SET_INFORMATION,
+                        false, process.Id);
+                    if (hProcess == IntPtr.Zero) continue;
+                    try
                     {
-                        lock (_lock)
-                        {
-                            _demotedProcesses.Add(new IoOriginalState(
-                                process.Id, name, currentPriority));
-                            _demotedPids.Add(process.Id);
-                        }
+                        // Query current I/O priority
+                        int currentPriority = 0;
+                        int status = NativeInterop.NtQueryInformationProcess(
+                            hProcess,
+                            NativeInterop.ProcessIoPriority,
+                            ref currentPriority,
+                            sizeof(int),
+                            out _);
 
-                        newlyDemoted++;
-                        SettingsManager.Logger.Debug(
-                            "[IoPriorityManager] I/O priority lowered: {Name} (PID {Pid}) {From} → {To}",
-                            name, process.Id, currentPriority, NativeInterop.IoPriorityLow);
+                        if (status != 0) continue; // Query failed, skip
+                        if (currentPriority <= NativeInterop.IoPriorityLow) continue; // Already low, skip
+
+                        // Demote to Low
+                        int newPriority = NativeInterop.IoPriorityLow;
+                        status = NativeInterop.NtSetInformationProcess(
+                            hProcess,
+                            NativeInterop.ProcessIoPriority,
+                            ref newPriority,
+                            sizeof(int));
+
+                        if (status == 0)
+                        {
+                            lock (_lock)
+                            {
+                                _demotedProcesses.Add(new IoOriginalState(
+                                    process.Id, name, currentPriority));
+                                _demotedPids.Add(process.Id);
+                            }
+
+                            newlyDemoted++;
+                            SettingsManager.Logger.Debug(
+                                "[IoPriorityManager] I/O priority lowered: {Name} (PID {Pid}) {From} → {To}",
+                                name, process.Id, currentPriority, NativeInterop.IoPriorityLow);
+                        }
+                    }
+                    finally
+                    {
+                        NativeInterop.CloseHandle(hProcess);
                     }
                 }
                 catch (Exception ex)

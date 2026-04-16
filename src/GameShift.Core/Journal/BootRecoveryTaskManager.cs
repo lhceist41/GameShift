@@ -163,9 +163,11 @@ public static class BootRecoveryTaskManager
             return;
         }
 
-        p.WaitForExit(30_000);
+        var stderr = "";
+        var stderrTask = Task.Run(() => { stderr = p.StandardError.ReadToEnd(); });
         var stdout = p.StandardOutput.ReadToEnd();
-        var stderr = p.StandardError.ReadToEnd();
+        stderrTask.Wait(30_000);
+        p.WaitForExit(30_000);
         output = stdout;
 
         if (p.ExitCode != 0 && !string.IsNullOrWhiteSpace(stderr))

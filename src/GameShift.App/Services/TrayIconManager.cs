@@ -545,7 +545,7 @@ public class TrayIconManager : IDisposable
     /// When pausing during an active optimization session, force-deactivates optimizations first.
     /// Must be called on the UI thread.
     /// </summary>
-    public void TogglePause()
+    public async void TogglePause()
     {
         try
         {
@@ -554,7 +554,7 @@ public class TrayIconManager : IDisposable
                 if (_orchestrator.IsOptimizing)
                 {
                     _logger.Information("Force-deactivating optimizations before pausing monitoring");
-                    _engine.DeactivateProfileAsync().Wait();
+                    await _engine.DeactivateProfileAsync();
                 }
 
                 _detector.StopMonitoring();

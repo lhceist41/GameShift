@@ -718,8 +718,10 @@ public class DashboardViewModel : INotifyPropertyChanged
     /// </summary>
     public void StartTimers()
     {
-        // Re-subscribe — safe to call even if already subscribed since handlers are idempotent
-        // (C# event handlers deduplicate by delegate reference)
+        // Unsubscribe first to prevent duplicate handlers accumulating on navigate-back
+        // (C# does NOT deduplicate event handlers — each += adds another invocation)
+        StopTimers();
+
         _engine.OptimizationApplied += OnOptimizationApplied;
         _engine.OptimizationReverted += OnOptimizationReverted;
         _engine.OptimizationFailed += OnOptimizationFailed;

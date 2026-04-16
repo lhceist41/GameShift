@@ -15,6 +15,7 @@ public partial class ActivityLogPage : Page
     {
         InitializeComponent();
         Loaded += OnLoaded;
+        Unloaded += OnUnloaded;
     }
 
     private void OnLoaded(object sender, RoutedEventArgs e)
@@ -24,5 +25,10 @@ public partial class ActivityLogPage : Page
         // Get activity entries from DashboardViewModel's static AllActivities collection
         var entries = DashboardViewModel.AllActivities;
         DataContext = new ActivityLogViewModel(entries);
+    }
+
+    private void OnUnloaded(object sender, RoutedEventArgs e)
+    {
+        (DataContext as ActivityLogViewModel)?.Cleanup();
     }
 }

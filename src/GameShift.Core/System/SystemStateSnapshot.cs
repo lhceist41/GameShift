@@ -49,7 +49,7 @@ public class SystemStateSnapshot
     /// Original process affinities before optimization.
     /// Key: Process ID, Value: Original affinity mask
     /// </summary>
-    public Dictionary<int, IntPtr> ProcessAffinities { get; set; } = new();
+    public Dictionary<int, long> ProcessAffinities { get; set; } = new();
 
     /// <summary>
     /// Original registry values before modification.
@@ -181,7 +181,7 @@ public class SystemStateSnapshot
     {
         if (!ProcessAffinities.ContainsKey(processId))
         {
-            ProcessAffinities[processId] = affinity;
+            ProcessAffinities[processId] = affinity.ToInt64();
         }
     }
 
@@ -207,7 +207,7 @@ public class SystemStateSnapshot
     /// <param name="resolution100ns">Original resolution in 100-nanosecond units</param>
     public void RecordTimerResolution(int resolution100ns)
     {
-        if (TimerResolution == 0)
+        if (TimerResolution == 156250 || TimerResolution == 0)
         {
             TimerResolution = resolution100ns;
         }

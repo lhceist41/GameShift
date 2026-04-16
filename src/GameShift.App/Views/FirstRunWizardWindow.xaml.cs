@@ -26,6 +26,7 @@ public partial class FirstRunWizardWindow : Window
     public FirstRunWizardWindow()
     {
         InitializeComponent();
+        VersionBadge.Text = $"v{System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "3.0"}";
         UpdateStepVisibility();
     }
 

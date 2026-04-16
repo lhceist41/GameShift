@@ -74,6 +74,15 @@ public partial class DpcDoctorPage : Page
 
     private void OnRestartNowClicked(object sender, RoutedEventArgs e)
     {
+        var result = MessageBox.Show(
+            "This will restart your computer in 10 seconds.\n\nAre you sure?",
+            "Restart Required",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+
+        if (result != MessageBoxResult.Yes)
+            return;
+
         System.Diagnostics.Process.Start("shutdown", "/r /t 10 /c \"GameShift DPC Doctor: Applying fix - restarting in 10 seconds\"");
     }
 

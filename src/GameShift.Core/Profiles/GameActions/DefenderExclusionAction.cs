@@ -40,7 +40,11 @@ public class DefenderExclusionAction : GameAction
                     UseShellExecute = false
                 };
                 using var process = Process.Start(psi);
-                process?.WaitForExit();
+                if (process != null && !process.WaitForExit(15_000))
+                {
+                    Log.Warning("DefenderExclusionAction: PowerShell timed out adding exclusion for {Path}, killing process", path);
+                    try { process.Kill(); } catch { }
+                }
                 Log.Information("DefenderExclusionAction: Added exclusion path {Path}", path);
             }
             catch (Exception ex)
@@ -65,7 +69,11 @@ public class DefenderExclusionAction : GameAction
                     UseShellExecute = false
                 };
                 using var process = Process.Start(psi);
-                process?.WaitForExit();
+                if (process != null && !process.WaitForExit(15_000))
+                {
+                    Log.Warning("DefenderExclusionAction: PowerShell timed out removing exclusion for {Path}, killing process", path);
+                    try { process.Kill(); } catch { }
+                }
                 Log.Information("DefenderExclusionAction: Removed exclusion path {Path}", path);
             }
             catch (Exception ex)

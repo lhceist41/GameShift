@@ -207,23 +207,35 @@ public class EfficiencyModeController : IOptimization
                             continue;
                     }
 
-                    // Query current Efficiency Mode state
-                    bool wasAlreadyEfficient = IsEfficiencyModeEnabled(process.ProcessHandle);
-
-                    // Apply Efficiency Mode
-                    if (EnableEfficiencyMode(process.ProcessHandle))
+                    // Open our own handle — ProcessSnapshot no longer carries OS handles
+                    var hProcess = NativeInterop.OpenProcess(
+                        NativeInterop.PROCESS_QUERY_INFORMATION | NativeInterop.PROCESS_SET_INFORMATION,
+                        false, process.Id);
+                    if (hProcess == IntPtr.Zero) continue;
+                    try
                     {
-                        lock (_lock)
-                        {
-                            _modifiedProcesses.Add(new EfficiencyOriginalState(
-                                process.Id, name, wasAlreadyEfficient));
-                            _modifiedPids.Add(process.Id);
-                        }
+                        // Query current Efficiency Mode state
+                        bool wasAlreadyEfficient = IsEfficiencyModeEnabled(hProcess);
 
-                        newlyApplied++;
-                        SettingsManager.Logger.Debug(
-                            "[EfficiencyModeController] Efficiency Mode applied: {Name} (PID {Pid}){WasAlready}",
-                            name, process.Id, wasAlreadyEfficient ? " (was already efficient)" : "");
+                        // Apply Efficiency Mode
+                        if (EnableEfficiencyMode(hProcess))
+                        {
+                            lock (_lock)
+                            {
+                                _modifiedProcesses.Add(new EfficiencyOriginalState(
+                                    process.Id, name, wasAlreadyEfficient));
+                                _modifiedPids.Add(process.Id);
+                            }
+
+                            newlyApplied++;
+                            SettingsManager.Logger.Debug(
+                                "[EfficiencyModeController] Efficiency Mode applied: {Name} (PID {Pid}){WasAlready}",
+                                name, process.Id, wasAlreadyEfficient ? " (was already efficient)" : "");
+                        }
+                    }
+                    finally
+                    {
+                        NativeInterop.CloseHandle(hProcess);
                     }
                 }
                 catch (Exception ex)

@@ -274,8 +274,10 @@ public class EnableLargePages : ISystemTweak
             using var process = Process.Start(psi);
             if (process == null) return (-1, "Failed to start process");
 
+            var error = "";
+            var stderrTask = Task.Run(() => { error = process.StandardError.ReadToEnd(); });
             var output = process.StandardOutput.ReadToEnd();
-            var error = process.StandardError.ReadToEnd();
+            stderrTask.Wait(15000);
             process.WaitForExit(15000);
 
             return (process.ExitCode, string.IsNullOrEmpty(output) ? error : output);

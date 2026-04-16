@@ -50,6 +50,10 @@ public static class UpdateApplier
 
             var currentDir = Path.GetDirectoryName(currentExe)!;
 
+            // Escape paths for safe interpolation into a batch script.
+            var safeUpdateFile = EscapeForBatch(updateFile);
+            var safeCurrentExe = EscapeForBatch(currentExe);
+
             // Batch script: wait for app to exit, replace exe, relaunch.
             // Uses ping for delay because timeout doesn't work in hidden cmd windows.
             var script = $"""
@@ -57,15 +61,15 @@ public static class UpdateApplier
                 echo Waiting for GameShift to exit...
                 ping 127.0.0.1 -n 3 > nul
                 echo Applying update...
-                move /y "{updateFile}" "{currentExe}"
+                move /y "{safeUpdateFile}" "{safeCurrentExe}"
                 if errorlevel 1 (
                     echo ERROR: Failed to replace executable.
-                    del "{updateFile}" 2>nul
-                    pause
+                    del "{safeUpdateFile}" 2>nul
+                    timeout /t 5
                     exit /b 1
                 )
                 echo Update applied. Relaunching...
-                start "" "{currentExe}"
+                start "" "{safeCurrentExe}"
                 exit
                 """;
 
@@ -123,4 +127,11 @@ public static class UpdateApplier
             Log.Debug(ex, "UpdateApplier: Cleanup failed (non-fatal)");
         }
     }
+
+    /// <summary>
+    /// Escapes a file path for safe use inside a double-quoted batch script string.
+    /// The % character is the only special char that is interpreted inside double quotes
+    /// by cmd.exe, so we escape it as %%.
+    /// </summary>
+    private static string EscapeForBatch(string path) => path.Replace("%", "%%");
 }

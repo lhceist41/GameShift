@@ -264,17 +264,18 @@ public class TimerResolutionManager : IOptimization
             }
             else
             {
-                // Win10 direct release
+                // Win10 direct release — must pass the resolution that was actually set,
+                // not the original snapshot value, to properly release the request
                 int setResult = NativeInterop.NtSetTimerResolution(
-                    snapshot.TimerResolution,
+                    _appliedResolution,
                     false, // Release the resolution request
                     out int actualResolution);
 
                 if (setResult == 0)
                 {
                     SettingsManager.Logger.Information(
-                        "[TimerResolutionManager] Reverted timer resolution to {Original} (actual: {Actual}) in 100ns units",
-                        snapshot.TimerResolution,
+                        "[TimerResolutionManager] Reverted timer resolution (released {Applied}, actual: {Actual}) in 100ns units",
+                        _appliedResolution,
                         actualResolution);
                 }
                 else

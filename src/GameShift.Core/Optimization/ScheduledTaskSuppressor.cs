@@ -279,8 +279,10 @@ public class ScheduledTaskSuppressor : IOptimization
             using var process = Process.Start(psi);
             if (process == null) return null;
 
+            var error = "";
+            var stderrTask = Task.Run(() => { error = process.StandardError.ReadToEnd(); });
             var output = process.StandardOutput.ReadToEnd();
-            var error = process.StandardError.ReadToEnd();
+            stderrTask.Wait(10000);
             process.WaitForExit(10000);
 
             return string.IsNullOrEmpty(error) ? output : $"ERROR: {error}";

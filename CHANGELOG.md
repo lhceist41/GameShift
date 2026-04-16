@@ -2,6 +2,43 @@
 
 All notable changes to GameShift are documented here.
 
+## [3.6.2] - 2026-04-16
+
+### Fixed
+- **Dashboard optimization toggles could not be clicked** - the CheckBox toggle on each optimization row was intercepted by a tunneling event handler that prevented the click from reaching the control. Users could not enable or disable individual optimizations from the Dashboard.
+- **NvAPI driver settings pointer truncation on 64-bit** - the `nvapi_QueryInterface` delegate returned `int` (32-bit) instead of `IntPtr`, truncating 64-bit function pointers and causing access violations. This was the root cause of NvAPI DRS being disabled. Fixed the delegate signature to return `IntPtr`.
+- **Game detection crash on built-in profile match** - when a game was detected via built-in profile name matching (tertiary strategy), the code added the game to the known games list while iterating it, throwing `InvalidOperationException`. Now defers the addition until after iteration completes.
+- **Game detection thread safety** - the known games list was accessed from both UI and ETW/WMI callback threads without synchronization, risking corruption or crashes under load. All access is now protected by a lock.
+- **Dangling process handles in ProcessSnapshotService** - captured OS process handles were invalidated immediately after the Process objects were disposed, leaving all callers (MemoryOptimizer, EfficiencyModeController, IoPriorityManager) operating on stale handles. Removed the cached handle; callers now open dedicated handles with correct access rights.
+- **Crash recovery lockfile failed to serialize** - `SystemStateSnapshot.ProcessAffinities` used `IntPtr` values which `System.Text.Json` cannot serialize. Changed to `long` so the crash recovery lockfile writes correctly.
+- **Process handle leaks in HybridCpuDetector** - both `ApplyViaCpuSets` and `ApplyWithFallback` obtained Process objects without disposing them, leaking native handles on every gaming session.
+- **Update installer path injection** - special characters (`%`, `&`, `^`) in the GameShift install path could break or exploit the update batch script. Paths are now escaped before interpolation, and the hidden-window error path uses `timeout` instead of `pause` (which would hang forever).
+- **UI deadlock on tray pause** - `TrayIconManager.TogglePause()` called `.Wait()` synchronously on the UI thread, risking deadlock if the async deactivation touched the Dispatcher. Changed to proper `async`/`await`.
+- **Deadlock game profile never applied** - `BuiltInProfiles` used `"deadlock.exe"` but the actual Valve executable is `"project8.exe"`. Session-level optimizations (priority, affinity, launcher demotion) were silently skipped. Now matches both names.
+- **Timer resolution lock not released on Background Mode stop** - `TimerResolutionService.Stop()` passed the original system resolution to `NtSetTimerResolution` instead of the resolution that was actually set, so the API failed to release the lock. Now correctly passes the applied resolution.
+- **DPC Doctor reboot without confirmation** - clicking "Restart Now" immediately executed `shutdown /r /t 10` with no confirmation dialog. Added a Yes/No prompt.
+- **Dashboard event handlers accumulated on page navigation** - navigating away from and back to the Dashboard added duplicate event subscriptions each time, causing redundant UI updates. `StartTimers()` now unsubscribes before re-subscribing.
+- **10 process-launching methods could deadlock** - `RunPowercfg`, `RunBcdedit`, `RunSchtasks`, `RunProcess`, and `RunPowerShell` helpers across the codebase redirected stderr but never drained it, risking deadlock when the pipe buffer filled. All 10 methods now read stderr concurrently in a background task.
+- **PingMonitor crash on stop** - a race between `Stop()` disposing the `Ping` object and the `async void` timer callback using it could throw `ObjectDisposedException` and crash the process. Added a `_stopping` flag and `ObjectDisposedException` guard.
+- **PingMonitor kept pinging after leaving Dashboard** - `PingMonitorViewModel.Stop()` unsubscribed the event but did not call `_pingMonitor.Stop()`, so ICMP pings continued indefinitely in the background.
+- **Journal file corruption under concurrent access** - `JournalManager` methods that mutate session state and write to disk had no synchronization. Concurrent calls (e.g., optimization engine + game detection) could produce corrupt JSON. Added lock protection to all public methods.
+- **Settings file race condition** - `SettingsManager.Load()` and `Save()` accessed the settings file without locking. Concurrent calls could lose writes. Added file-level lock synchronization.
+- **Logger reconfigured on every settings load** - `SettingsManager.Load()` called `ConfigureLogger()` unconditionally, creating a new Serilog logger (and leaking file handles) on every call. Now only reconfigures when logging settings actually change.
+- **Game directory prefix match too broad** - `D:\Games\Ark` would match `D:\Games\ArkSurvival\something.exe` because the install directory comparison lacked a trailing path separator. Now appends `\` before comparing.
+- **DPC fix revert assumed DWORD registry type** - reverting a DPC fix always wrote the previous value as `RegistryValueKind.DWord`, but some values are QWORD or String. Now detects the appropriate type.
+- **DPC net adapter fix hardcoded previous value** - `ApplyNetAdapterFix` assumed all adapter properties defaulted to `"1"`. Now queries the actual current value via PowerShell before overwriting.
+- **Game DVR revert failed on string registry values** - `DisableGameDvr.Revert` called `GetInt32()` on all original values. String-typed values threw `InvalidOperationException`, silently failing the entire revert. Now checks `ValueKind` first.
+- **Task deferral re-enabled user-disabled tasks** - `TaskDeferralService` did not check whether a scheduled task was already disabled before disabling it, then unconditionally re-enabled it after gaming. Now skips already-disabled tasks.
+- **PowerShell game actions could hang indefinitely** - `DefenderExclusionAction` and `FirewallRuleAction` called `WaitForExit()` with no timeout. Added 15-second timeout with process kill on hang.
+- **Firewall rule existence check missing quote escaping** - `RuleExists()` did not escape single quotes in rule names, unlike `Apply()` and `Revert()`.
+- **ActivityLogViewModel permanent event leak** - subscribed to a static `ObservableCollection.CollectionChanged` with a lambda that could never be unsubscribed, preventing GC of every ActivityLogViewModel instance. Now stores the handler in a field and unsubscribes on page unload.
+- **SystemViewModel temperature monitor leak** - never unsubscribed from `TemperatureMonitor.TemperatureUpdated`, accumulating stale subscriptions on each page navigation. Added `Cleanup()` called from page `Unloaded`.
+- **OptimizationsPage never cleaned up event subscriptions** - unlike DpcDoctorPage and DashboardPage, this page had no `Unloaded` handler to call `Cleanup()`. Added one.
+- **Crash log overwritten on double-crash** - `WriteCrashLog` used `File.WriteAllText`, so a crash during recovery overwrote the original crash log. Changed to `File.AppendAllText` to preserve all entries.
+- **FirstRunWizardWindow showed "v3.0"** - version badge was hardcoded instead of reading from the assembly. Now reads the version dynamically.
+- **Power plan activated as side effect of existence check** - `FindOrCreatePerformancePlan` called `PowerSetActiveScheme` to test if a plan existed, unintentionally switching the active plan. Now uses `powercfg /query` which has no side effects.
+- **TimerResolutionManager Win10 revert passed wrong resolution** - the Win10 revert path passed the original system resolution instead of the resolution that was applied, failing to release the timer lock.
+
 ## [3.6.1] - 2026-04-07
 
 ### Fixed

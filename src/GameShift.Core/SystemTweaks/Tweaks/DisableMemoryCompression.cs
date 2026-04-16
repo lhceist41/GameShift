@@ -153,8 +153,10 @@ public class DisableMemoryCompression : ISystemTweak
             using var process = Process.Start(psi);
             if (process == null) return (-1, "Failed to start PowerShell");
 
+            var error = "";
+            var stderrTask = Task.Run(() => { error = process.StandardError.ReadToEnd(); });
             var output = process.StandardOutput.ReadToEnd();
-            var error = process.StandardError.ReadToEnd();
+            stderrTask.Wait(10000);
             process.WaitForExit(10000);
 
             return (process.ExitCode, string.IsNullOrEmpty(output) ? error : output);

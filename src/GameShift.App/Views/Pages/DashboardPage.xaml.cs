@@ -29,7 +29,12 @@ public partial class DashboardPage : Page
         if (DataContext != null)
         {
             // Page navigated back — restart timers/events to resume live updates
-            (DataContext as DashboardViewModel)?.StartTimers();
+            var existing = DataContext as DashboardViewModel;
+            if (existing != null)
+            {
+                existing.Hero.PropertyChanged += OnHeroPropertyChanged;
+                existing.StartTimers();
+            }
             return;
         }
 
@@ -51,7 +56,6 @@ public partial class DashboardPage : Page
             mainWindow?.ApplyAdvancedMode(advanced);
         };
 
-        vm.PropertyChanged += OnViewModelPropertyChanged;
         vm.Hero.PropertyChanged += OnHeroPropertyChanged;
 
         DataContext = vm;
@@ -60,7 +64,12 @@ public partial class DashboardPage : Page
     private void OnUnloaded(object sender, RoutedEventArgs e)
     {
         // Stop event subscriptions when the page is not visible
-        (DataContext as DashboardViewModel)?.StopTimers();
+        var vm = DataContext as DashboardViewModel;
+        if (vm != null)
+        {
+            vm.Hero.PropertyChanged -= OnHeroPropertyChanged;
+            vm.StopTimers();
+        }
     }
 
     private void OnDismissVbsClicked(object sender, RoutedEventArgs e)
@@ -148,16 +157,6 @@ public partial class DashboardPage : Page
         {
             item.IsExpanded = !item.IsExpanded;
         }
-    }
-
-    /// <summary>
-    /// Prevents the toggle click from propagating to the row click handler (expand/collapse).
-    /// The PreviewMouseLeftButtonDown is marked Handled so the row's MouseLeftButtonUp
-    /// does not fire when the user clicks the CheckBox toggle.
-    /// </summary>
-    private void OnTogglePreviewClick(object sender, MouseButtonEventArgs e)
-    {
-        e.Handled = true;
     }
 
     /// <summary>
@@ -253,13 +252,6 @@ public partial class DashboardPage : Page
     }
 
     private Storyboard? _heroAnimationStoryboard;
-
-    private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        // IsApplyingHero now lives on the Hero sub-VM — but PropertyChanged fires
-        // on the DashboardViewModel when we subscribe vm.PropertyChanged. We need to
-        // subscribe to Hero.PropertyChanged instead for this specific property.
-    }
 
     private void OnHeroPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {

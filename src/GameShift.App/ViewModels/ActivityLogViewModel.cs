@@ -1,5 +1,6 @@
 using System;
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Linq;
 using System.Runtime.CompilerServices;
@@ -15,6 +16,7 @@ namespace GameShift.App.ViewModels;
 public class ActivityLogViewModel : INotifyPropertyChanged
 {
     private readonly ObservableCollection<ActivityEntry> _allEntries;
+    private readonly NotifyCollectionChangedEventHandler _collectionHandler;
     private string _searchText = "";
     private string _selectedFilter = "All";
 
@@ -56,8 +58,18 @@ public class ActivityLogViewModel : INotifyPropertyChanged
     public ActivityLogViewModel(ObservableCollection<ActivityEntry> allEntries)
     {
         _allEntries = allEntries;
-        _allEntries.CollectionChanged += (s, e) => ApplyFilters();
+        _collectionHandler = (s, e) => ApplyFilters();
+        _allEntries.CollectionChanged += _collectionHandler;
         ApplyFilters();
+    }
+
+    /// <summary>
+    /// Unsubscribes from the shared collection to prevent memory leaks.
+    /// Called by ActivityLogPage.Unloaded handler.
+    /// </summary>
+    public void Cleanup()
+    {
+        _allEntries.CollectionChanged -= _collectionHandler;
     }
 
     /// <summary>

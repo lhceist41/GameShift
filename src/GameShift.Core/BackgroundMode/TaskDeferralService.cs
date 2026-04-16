@@ -51,6 +51,9 @@ public class TaskDeferralService
                 var queryOutput = RunSchtasks($"/query /tn \"{task}\" /fo csv /nh");
                 if (queryOutput == null || queryOutput.Contains("ERROR")) continue;
 
+                // Skip tasks that are already disabled — don't re-enable them on restore
+                if (queryOutput.Contains("Disabled", StringComparison.OrdinalIgnoreCase)) continue;
+
                 // Disable the task
                 var result = RunSchtasks($"/change /tn \"{task}\" /disable");
                 if (result != null && !result.Contains("ERROR"))

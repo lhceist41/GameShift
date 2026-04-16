@@ -41,6 +41,7 @@ public class PingMonitor : IDisposable
     private readonly object _lock = new();
     private bool _isMonitoring;
     private bool _disposed;
+    private volatile bool _stopping;
     private readonly ILogger _logger;
     private int _totalSent;
     private int _totalLost;
@@ -130,6 +131,7 @@ public class PingMonitor : IDisposable
             _rttSamples.Clear();
         }
 
+        _stopping = false;
         _ping?.Dispose();
         _ping = new Ping();
 
@@ -143,6 +145,7 @@ public class PingMonitor : IDisposable
     /// <summary>Stop ping monitoring.</summary>
     public void Stop()
     {
+        _stopping = true;
         _timer.Enabled = false;
         _isMonitoring = false;
 
@@ -177,6 +180,7 @@ public class PingMonitor : IDisposable
 
     private async void OnTimerElapsed(object? sender, global::System.Timers.ElapsedEventArgs e)
     {
+        if (_stopping) return;
         if (_ping == null || _disposed) return;
 
         long rtt = -1;
@@ -196,6 +200,10 @@ public class PingMonitor : IDisposable
             {
                 _totalLost++;
             }
+        }
+        catch (ObjectDisposedException)
+        {
+            return;
         }
         catch (Exception ex)
         {

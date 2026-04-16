@@ -171,18 +171,12 @@ public class PowerPlanSwitcher : IOptimization
     /// </summary>
     private static async Task<Guid?> FindOrCreatePerformancePlan()
     {
-        // Step 1: Try Ultimate Performance
-        var guid = UltimatePerformanceGuid;
-        if (NativeInterop.PowerSetActiveScheme(IntPtr.Zero, ref guid) == 0)
-        {
-            // Revert immediately - we just wanted to test if it exists
-            // (it's now active, ApplyAsync will set it again, which is fine)
+        // Step 1: Try Ultimate Performance (query only — no side effects)
+        if (await PlanExistsAsync(UltimatePerformanceGuid))
             return UltimatePerformanceGuid;
-        }
 
-        // Step 2: Try High Performance
-        guid = HighPerformanceGuid;
-        if (NativeInterop.PowerSetActiveScheme(IntPtr.Zero, ref guid) == 0)
+        // Step 2: Try High Performance (query only — no side effects)
+        if (await PlanExistsAsync(HighPerformanceGuid))
         {
             SettingsManager.Logger.Information(
                 "[PowerPlanSwitcher] Ultimate Performance unavailable, using High Performance");
@@ -407,6 +401,16 @@ public class PowerPlanSwitcher : IOptimization
         {
             return (false, ex.Message);
         }
+    }
+
+    /// <summary>
+    /// Checks if a power plan GUID exists without activating it.
+    /// Uses 'powercfg /query {GUID}' which returns exit code 0 if the plan exists.
+    /// </summary>
+    private static async Task<bool> PlanExistsAsync(Guid planGuid)
+    {
+        var (ok, _) = await RunPowercfg($"/query {planGuid:D}");
+        return ok;
     }
 
     private static Guid? ExtractGuidFromLine(string line)

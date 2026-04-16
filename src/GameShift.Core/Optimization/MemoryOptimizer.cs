@@ -324,51 +324,63 @@ public class MemoryOptimizer : IOptimization
                     if (alreadyDemoted) continue; // Priority already set for this PID
 
                     // Technique 2: MEMORY_PRIORITY_VERY_LOW (1)
-                    var currentInfo = new NativeInterop.MEMORY_PRIORITY_INFORMATION();
-                    int size = Marshal.SizeOf<NativeInterop.MEMORY_PRIORITY_INFORMATION>();
-                    IntPtr ptr = Marshal.AllocHGlobal(size);
-
+                    // Open our own handle — ProcessSnapshot no longer carries OS handles
+                    IntPtr hMemPri = NativeInterop.OpenProcess(
+                        NativeInterop.PROCESS_QUERY_INFORMATION | NativeInterop.PROCESS_SET_INFORMATION,
+                        false, process.Id);
+                    if (hMemPri == IntPtr.Zero) continue;
                     try
                     {
-                        Marshal.StructureToPtr(currentInfo, ptr, false);
-                        bool querySuccess = NativeInterop.GetProcessInformation(
-                            process.ProcessHandle,
-                            NativeInterop.ProcessMemoryPriority,
-                            ptr,
-                            size);
+                        var currentInfo = new NativeInterop.MEMORY_PRIORITY_INFORMATION();
+                        int size = Marshal.SizeOf<NativeInterop.MEMORY_PRIORITY_INFORMATION>();
+                        IntPtr ptr = Marshal.AllocHGlobal(size);
 
-                        if (!querySuccess) continue;
-
-                        currentInfo = Marshal.PtrToStructure<NativeInterop.MEMORY_PRIORITY_INFORMATION>(ptr);
-                        uint originalPriority = currentInfo.MemoryPriority;
-
-                        if (originalPriority <= MemPriorityVeryLow) continue; // Already at or below target
-
-                        var newInfo = new NativeInterop.MEMORY_PRIORITY_INFORMATION { MemoryPriority = MemPriorityVeryLow };
-                        Marshal.StructureToPtr(newInfo, ptr, false);
-
-                        if (NativeInterop.SetProcessInformation(
-                            process.ProcessHandle,
-                            NativeInterop.ProcessMemoryPriority,
-                            ptr,
-                            size))
+                        try
                         {
-                            lock (_memPriorityLock)
-                            {
-                                _demotedProcesses.Add(new MemPriorityOriginalState(
-                                    process.Id, name, originalPriority));
-                                _demotedPids.Add(process.Id);
-                            }
+                            Marshal.StructureToPtr(currentInfo, ptr, false);
+                            bool querySuccess = NativeInterop.GetProcessInformation(
+                                hMemPri,
+                                NativeInterop.ProcessMemoryPriority,
+                                ptr,
+                                size);
 
-                            newlyDemoted++;
-                            SettingsManager.Logger.Debug(
-                                "[MemoryOptimizer] Memory priority VERY_LOW: {Name} (PID {Pid}) {From} → 1",
-                                name, process.Id, originalPriority);
+                            if (!querySuccess) continue;
+
+                            currentInfo = Marshal.PtrToStructure<NativeInterop.MEMORY_PRIORITY_INFORMATION>(ptr);
+                            uint originalPriority = currentInfo.MemoryPriority;
+
+                            if (originalPriority <= MemPriorityVeryLow) continue; // Already at or below target
+
+                            var newInfo = new NativeInterop.MEMORY_PRIORITY_INFORMATION { MemoryPriority = MemPriorityVeryLow };
+                            Marshal.StructureToPtr(newInfo, ptr, false);
+
+                            if (NativeInterop.SetProcessInformation(
+                                hMemPri,
+                                NativeInterop.ProcessMemoryPriority,
+                                ptr,
+                                size))
+                            {
+                                lock (_memPriorityLock)
+                                {
+                                    _demotedProcesses.Add(new MemPriorityOriginalState(
+                                        process.Id, name, originalPriority));
+                                    _demotedPids.Add(process.Id);
+                                }
+
+                                newlyDemoted++;
+                                SettingsManager.Logger.Debug(
+                                    "[MemoryOptimizer] Memory priority VERY_LOW: {Name} (PID {Pid}) {From} → 1",
+                                    name, process.Id, originalPriority);
+                            }
+                        }
+                        finally
+                        {
+                            Marshal.FreeHGlobal(ptr);
                         }
                     }
                     finally
                     {
-                        Marshal.FreeHGlobal(ptr);
+                        NativeInterop.CloseHandle(hMemPri);
                     }
                 }
                 catch (Exception ex)
