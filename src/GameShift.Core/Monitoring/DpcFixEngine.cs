@@ -210,7 +210,17 @@ public class DpcFixEngine
         }
         else
         {
-            key.SetValue(valueName, int.Parse(applied.PreviousValue), RegistryValueKind.DWord);
+            if (long.TryParse(applied.PreviousValue, out long numValue))
+            {
+                if (numValue >= int.MinValue && numValue <= int.MaxValue)
+                    key.SetValue(valueName, (int)numValue, RegistryValueKind.DWord);
+                else
+                    key.SetValue(valueName, numValue, RegistryValueKind.QWord);
+            }
+            else
+            {
+                key.SetValue(valueName, applied.PreviousValue, RegistryValueKind.String);
+            }
         }
 
         return new DpcFixResult { Success = true, Message = "Fix reverted.", RebootRequired = applied.RequiresReboot };
@@ -499,17 +509,20 @@ public class DpcFixEngine
         var property = fix.Property ?? "";
         var value = fix.Value ?? "0";
 
+        // Query current value from the first physical adapter that has this property
+        string previousValue = QueryNetAdapterPropertyValue(property) ?? "1";
+
         // Use PowerShell to set the property on all physical adapters
         var script = $"Get-NetAdapter -Physical | Set-NetAdapterAdvancedProperty -RegistryKeyword '{property}' -RegistryValue {value} -ErrorAction SilentlyContinue";
         var (success, output) = RunProcess("powershell.exe", $"-NoProfile -Command \"{script}\"");
 
-        // Store rollback (we'll revert to value "1" which is the default enabled state)
+        // Store rollback with the actual previous value
         _settings.AppliedDpcFixes.Add(new AppliedDpcFix
         {
             FixId = fix.Id,
             Description = fix.Name,
             ActionType = "SetNetAdapterProperty",
-            PreviousValue = "1",  // Most adapter properties default to enabled (1)
+            PreviousValue = previousValue,
             Target = property,
             AppliedAt = DateTime.Now,
             RequiresReboot = false
@@ -527,6 +540,34 @@ public class DpcFixEngine
         var script = $"Get-NetAdapter -Physical | Set-NetAdapterAdvancedProperty -RegistryKeyword '{applied.Target}' -RegistryValue {applied.PreviousValue ?? "1"} -ErrorAction SilentlyContinue";
         var (success, output) = RunProcess("powershell.exe", $"-NoProfile -Command \"{script}\"");
         return new DpcFixResult { Success = true, Message = "Network adapter property reverted." };
+    }
+
+    /// <summary>
+    /// Queries the current registry value of a net adapter advanced property.
+    /// Returns the first adapter's value, or null if the query fails.
+    /// </summary>
+    private static string? QueryNetAdapterPropertyValue(string registryKeyword)
+    {
+        try
+        {
+            var queryScript =
+                $"Get-NetAdapter -Physical | " +
+                $"Get-NetAdapterAdvancedProperty -RegistryKeyword '{registryKeyword}' -ErrorAction SilentlyContinue | " +
+                $"Select-Object -First 1 -ExpandProperty RegistryValue";
+            var (ok, output) = RunProcess("powershell.exe", $"-NoProfile -Command \"{queryScript}\"");
+            if (ok && !string.IsNullOrWhiteSpace(output))
+            {
+                var val = output.Trim().Split('\n')[0].Trim();
+                if (!string.IsNullOrEmpty(val))
+                    return val;
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "DpcFixEngine: failed to query net adapter property {Keyword}", registryKeyword);
+        }
+
+        return null;
     }
 
     // -- Process runner ────────────────────────────────────────────

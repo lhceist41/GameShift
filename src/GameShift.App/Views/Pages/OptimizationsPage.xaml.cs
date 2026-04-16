@@ -14,6 +14,7 @@ public partial class OptimizationsPage : Page
     {
         InitializeComponent();
         Loaded += OnLoaded;
+        Unloaded += OnUnloaded;
     }
 
     private void OnLoaded(object sender, RoutedEventArgs e)
@@ -23,5 +24,10 @@ public partial class OptimizationsPage : Page
         DataContext = new OptimizationsViewModel(
             App.Services.Optimizations!,
             App.Services.Engine!);
+    }
+
+    private void OnUnloaded(object sender, RoutedEventArgs e)
+    {
+        (DataContext as OptimizationsViewModel)?.Cleanup();
     }
 }

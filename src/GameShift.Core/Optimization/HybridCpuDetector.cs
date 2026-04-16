@@ -349,7 +349,7 @@ public class HybridCpuDetector : IOptimization
             return false;
         }
 
-        Process? process;
+        Process process;
         try
         {
             process = Process.GetProcessById(profile.ProcessId);
@@ -362,33 +362,36 @@ public class HybridCpuDetector : IOptimization
             return false;
         }
 
-        // Record original affinity for snapshot (legacy format for crash recovery compatibility)
-        snapshot.RecordProcessAffinity(profile.ProcessId, process.ProcessorAffinity);
-
-        bool success = NativeInterop.SetProcessDefaultCpuSets(
-            process.Handle,
-            targetCpuSets,
-            (uint)targetCpuSets.Length);
-
-        if (success)
+        using (process)
         {
-            _pinnedProcessId = profile.ProcessId;
-            _usedCpuSets = true;
-            _usedIfeo = false;
-            IsApplied = true;
+            // Record original affinity for snapshot (legacy format for crash recovery compatibility)
+            snapshot.RecordProcessAffinity(profile.ProcessId, process.ProcessorAffinity);
 
-            SettingsManager.Logger.Information(
-                "[HybridCpuDetector] Pinned {ProcessName} (PID {Pid}) to {Count} CPU Sets via SetProcessDefaultCpuSets",
-                process.ProcessName, profile.ProcessId, targetCpuSets.Length);
-        }
-        else
-        {
-            int error = Marshal.GetLastWin32Error();
-            SettingsManager.Logger.Warning(
-                "[HybridCpuDetector] SetProcessDefaultCpuSets failed with error {Error}", error);
-        }
+            bool success = NativeInterop.SetProcessDefaultCpuSets(
+                process.Handle,
+                targetCpuSets,
+                (uint)targetCpuSets.Length);
 
-        return success;
+            if (success)
+            {
+                _pinnedProcessId = profile.ProcessId;
+                _usedCpuSets = true;
+                _usedIfeo = false;
+                IsApplied = true;
+
+                SettingsManager.Logger.Information(
+                    "[HybridCpuDetector] Pinned {ProcessName} (PID {Pid}) to {Count} CPU Sets via SetProcessDefaultCpuSets",
+                    process.ProcessName, profile.ProcessId, targetCpuSets.Length);
+            }
+            else
+            {
+                int error = Marshal.GetLastWin32Error();
+                SettingsManager.Logger.Warning(
+                    "[HybridCpuDetector] SetProcessDefaultCpuSets failed with error {Error}", error);
+            }
+
+            return success;
+        }
     }
 
     /// <summary>
@@ -401,7 +404,7 @@ public class HybridCpuDetector : IOptimization
         {
             if (profile.ProcessId > 0)
             {
-                Process? process;
+                Process process;
                 try
                 {
                     process = Process.GetProcessById(profile.ProcessId);
@@ -415,24 +418,27 @@ public class HybridCpuDetector : IOptimization
                     return ApplyViaIfeo(snapshot, profile, targetCpuSets);
                 }
 
-                snapshot.RecordProcessAffinity(profile.ProcessId, process.ProcessorAffinity);
-
-                bool success = NativeInterop.SetProcessDefaultCpuSets(
-                    process.Handle,
-                    targetCpuSets,
-                    (uint)targetCpuSets.Length);
-
-                if (success)
+                using (process)
                 {
-                    _pinnedProcessId = profile.ProcessId;
-                    _usedCpuSets = true;
-                    _usedIfeo = false;
-                    IsApplied = true;
+                    snapshot.RecordProcessAffinity(profile.ProcessId, process.ProcessorAffinity);
 
-                    SettingsManager.Logger.Information(
-                        "[HybridCpuDetector] Pinned anti-cheat game {ProcessName} via SetProcessDefaultCpuSets (succeeded despite anti-cheat)",
-                        process.ProcessName);
-                    return true;
+                    bool success = NativeInterop.SetProcessDefaultCpuSets(
+                        process.Handle,
+                        targetCpuSets,
+                        (uint)targetCpuSets.Length);
+
+                    if (success)
+                    {
+                        _pinnedProcessId = profile.ProcessId;
+                        _usedCpuSets = true;
+                        _usedIfeo = false;
+                        IsApplied = true;
+
+                        SettingsManager.Logger.Information(
+                            "[HybridCpuDetector] Pinned anti-cheat game {ProcessName} via SetProcessDefaultCpuSets (succeeded despite anti-cheat)",
+                            process.ProcessName);
+                        return true;
+                    }
                 }
             }
         }

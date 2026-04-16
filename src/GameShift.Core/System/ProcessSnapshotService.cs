@@ -11,7 +11,6 @@ public class ProcessSnapshot
     public int Id { get; init; }
     public string ProcessName { get; init; } = "";
     public long WorkingSet64 { get; init; }
-    public IntPtr ProcessHandle { get; init; }
 }
 
 /// <summary>
@@ -57,8 +56,7 @@ public static class ProcessSnapshotService
                     {
                         Id = p.Id,
                         ProcessName = p.ProcessName,
-                        WorkingSet64 = p.WorkingSet64,
-                        ProcessHandle = p.Handle
+                        WorkingSet64 = p.WorkingSet64
                     });
                 }
                 catch

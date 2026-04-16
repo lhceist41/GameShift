@@ -14,12 +14,18 @@ public partial class SystemPage : Page
     {
         InitializeComponent();
         Loaded += OnLoaded;
+        Unloaded += OnUnloaded;
     }
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
         if (DataContext != null) return;
         DataContext = new SystemViewModel();
+    }
+
+    private void OnUnloaded(object sender, RoutedEventArgs e)
+    {
+        (DataContext as SystemViewModel)?.Cleanup();
     }
 
     private void OnRefreshClicked(object sender, RoutedEventArgs e)

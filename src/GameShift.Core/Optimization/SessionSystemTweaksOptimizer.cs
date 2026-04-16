@@ -338,8 +338,13 @@ public class SessionSystemTweaksOptimizer : IOptimization
             });
 
         if (process == null) return "";
+
+        var stderr = "";
+        var stderrTask = Task.Run(() => { stderr = process.StandardError.ReadToEnd(); });
+        var stdout = process.StandardOutput.ReadToEnd();
+        stderrTask.Wait(10_000);
         process.WaitForExit(10_000);
-        return process.StandardOutput.ReadToEnd();
+        return stdout;
     }
 
     // ── Backup record ─────────────────────────────────────────────────────────

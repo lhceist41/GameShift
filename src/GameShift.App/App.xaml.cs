@@ -519,9 +519,11 @@ public partial class App : Application
             var dir = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "GameShift");
             Directory.CreateDirectory(dir);
-            File.WriteAllText(
+            var separator = "\n\n" + new string('=', 80) + "\n";
+            var content = $"[{DateTime.Now}] {type} EXCEPTION:\n{ex}";
+            File.AppendAllText(
                 Path.Combine(dir, "crash.log"),
-                $"[{DateTime.Now}] {type} EXCEPTION:\n{ex}");
+                separator + content);
         }
         catch { }
     }

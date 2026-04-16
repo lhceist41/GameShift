@@ -15,6 +15,7 @@ public class TimerResolutionService : IDisposable
 
     private bool _isLocked;
     private int _originalResolution;
+    private int _appliedResolution;
 
     public bool IsLocked => _isLocked;
 
@@ -44,6 +45,8 @@ public class TimerResolutionService : IDisposable
                 return;
             }
 
+            _appliedResolution = actual;
+
             SettingsManager.Logger.Information(
                 "[TimerResolutionService] Locked timer to {Actual} (requested {Desired}) = {Ms}ms",
                 actual, desired, actual / 10000.0);
@@ -68,7 +71,7 @@ public class TimerResolutionService : IDisposable
 
         try
         {
-            NativeInterop.NtSetTimerResolution(_originalResolution, false, out _);
+            NativeInterop.NtSetTimerResolution(_appliedResolution, false, out _);
             SettingsManager.Logger.Information("[TimerResolutionService] Released timer lock");
         }
         catch (Exception ex)

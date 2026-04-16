@@ -109,7 +109,7 @@ public static class BuiltInProfiles
     {
         Id = "deadlock",
         DisplayName = "Deadlock",
-        ProcessNames = new[] { "deadlock.exe" },
+        ProcessNames = new[] { "project8.exe", "deadlock.exe" },
         LauncherProcessNames = Array.Empty<string>(),
         GamePriority = ProcessPriorityClass.High,
         LauncherPriority = null,

@@ -72,7 +72,7 @@ public sealed class NvApiDrsManager : IDisposable
     // ── Delegates ─────────────────────────────────────────────────────────────
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-    private delegate int NvAPI_QueryInterface_t(uint functionId);
+    private delegate IntPtr NvAPI_QueryInterface_t(uint functionId);
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate int NvAPI_Initialize_t();
@@ -405,7 +405,7 @@ public sealed class NvApiDrsManager : IDisposable
 
     private static T? GetDelegate<T>(NvAPI_QueryInterface_t qi, uint functionId) where T : Delegate
     {
-        var ptr = (IntPtr)qi(functionId);
+        var ptr = qi(functionId);
         return ptr == IntPtr.Zero ? null : Marshal.GetDelegateForFunctionPointer<T>(ptr);
     }
 

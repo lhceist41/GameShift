@@ -77,8 +77,10 @@ public class DisableGameDvr : ISystemTweak
 
                 if (originalValue.ValueKind == JsonValueKind.Null)
                     key.DeleteValue(valueName, throwOnMissingValue: false);
-                else
+                else if (originalValue.ValueKind == JsonValueKind.Number)
                     key.SetValue(valueName, originalValue.GetInt32(), RegistryValueKind.DWord);
+                else if (originalValue.ValueKind == JsonValueKind.String)
+                    key.SetValue(valueName, originalValue.GetString()!, RegistryValueKind.String);
             }
 
             return true;

@@ -90,6 +90,7 @@ public class JournalManager
 {
     private readonly string _journalPath;
     private readonly ILogger _logger;
+    private readonly object _lock = new();
     private SessionJournalData _current = new();
 
     private static readonly JsonSerializerOptions _writeOptions = new()
@@ -116,23 +117,26 @@ public class JournalManager
     /// </summary>
     public void StartSession(GameProfile profile)
     {
-        _current = new SessionJournalData
+        lock (_lock)
         {
-            Version = 2,
-            WindowsBuild = ReadWindowsBuildString(),
-            GameShiftVersion = ReadGameShiftVersion(),
-            Timestamp = DateTimeOffset.UtcNow,
-            SessionActive = true,
-            ActiveGame = new ActiveGameInfo
+            _current = new SessionJournalData
             {
-                Name = profile.GameName,
-                Executable = profile.ExecutableName,
-                Pid = profile.ProcessId,
-                StartTime = DateTimeOffset.UtcNow
-            },
-            Optimizations = new List<JournalEntry>()
-        };
-        Save();
+                Version = 2,
+                WindowsBuild = ReadWindowsBuildString(),
+                GameShiftVersion = ReadGameShiftVersion(),
+                Timestamp = DateTimeOffset.UtcNow,
+                SessionActive = true,
+                ActiveGame = new ActiveGameInfo
+                {
+                    Name = profile.GameName,
+                    Executable = profile.ExecutableName,
+                    Pid = profile.ProcessId,
+                    StartTime = DateTimeOffset.UtcNow
+                },
+                Optimizations = new List<JournalEntry>()
+            };
+            Save();
+        }
     }
 
     /// <summary>
@@ -140,15 +144,18 @@ public class JournalManager
     /// </summary>
     public void RecordApplied(OptimizationResult result)
     {
-        _current.Optimizations.Add(new JournalEntry
+        lock (_lock)
         {
-            Name = result.Name,
-            State = result.State.ToString(),
-            OriginalValue = result.OriginalValue,
-            AppliedValue = result.AppliedValue,
-            AppliedAt = DateTimeOffset.UtcNow
-        });
-        Save();
+            _current.Optimizations.Add(new JournalEntry
+            {
+                Name = result.Name,
+                State = result.State.ToString(),
+                OriginalValue = result.OriginalValue,
+                AppliedValue = result.AppliedValue,
+                AppliedAt = DateTimeOffset.UtcNow
+            });
+            Save();
+        }
     }
 
     /// <summary>
@@ -157,16 +164,19 @@ public class JournalManager
     /// </summary>
     public void RecordReverted(string name, OptimizationState state)
     {
-        // Walk in reverse to find the most-recently-applied entry
-        for (int i = _current.Optimizations.Count - 1; i >= 0; i--)
+        lock (_lock)
         {
-            if (_current.Optimizations[i].Name == name)
+            // Walk in reverse to find the most-recently-applied entry
+            for (int i = _current.Optimizations.Count - 1; i >= 0; i--)
             {
-                _current.Optimizations[i].State = state.ToString();
-                break;
+                if (_current.Optimizations[i].Name == name)
+                {
+                    _current.Optimizations[i].State = state.ToString();
+                    break;
+                }
             }
+            Save();
         }
-        Save();
     }
 
     /// <summary>
@@ -174,8 +184,11 @@ public class JournalManager
     /// </summary>
     public void EndSession()
     {
-        _current.SessionActive = false;
-        Save();
+        lock (_lock)
+        {
+            _current.SessionActive = false;
+            Save();
+        }
     }
 
     /// <summary>
@@ -184,9 +197,12 @@ public class JournalManager
     /// </summary>
     public void RecordPendingRebootFix(string description)
     {
-        _current.HasPendingRebootFixes = true;
-        _current.PendingRebootFixDescriptions.Add(description);
-        Save();
+        lock (_lock)
+        {
+            _current.HasPendingRebootFixes = true;
+            _current.PendingRebootFixDescriptions.Add(description);
+            Save();
+        }
     }
 
     /// <summary>
@@ -196,10 +212,13 @@ public class JournalManager
     /// </summary>
     public void RecordBuildChanged(string buildAtLastSession, string buildAtRecovery)
     {
-        _current.BuildChangedWarning = true;
-        _current.BuildAtLastSession = buildAtLastSession;
-        _current.BuildAtRecovery = buildAtRecovery;
-        Save();
+        lock (_lock)
+        {
+            _current.BuildChangedWarning = true;
+            _current.BuildAtLastSession = buildAtLastSession;
+            _current.BuildAtRecovery = buildAtRecovery;
+            Save();
+        }
     }
 
     /// <summary>
@@ -209,21 +228,24 @@ public class JournalManager
     /// </summary>
     public SessionJournalData? LoadJournal()
     {
-        try
+        lock (_lock)
         {
-            if (!File.Exists(_journalPath))
-                return null;
+            try
+            {
+                if (!File.Exists(_journalPath))
+                    return null;
 
-            var json = File.ReadAllText(_journalPath);
-            var data = JsonSerializer.Deserialize<SessionJournalData>(json, _writeOptions);
-            if (data != null)
-                _current = data;
-            return data;
-        }
-        catch (Exception ex)
-        {
-            _logger.Warning(ex, "[JournalManager] Failed to load journal from {Path}", _journalPath);
-            return null;
+                var json = File.ReadAllText(_journalPath);
+                var data = JsonSerializer.Deserialize<SessionJournalData>(json, _writeOptions);
+                if (data != null && !_current.SessionActive)
+                    _current = data;
+                return data;
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning(ex, "[JournalManager] Failed to load journal from {Path}", _journalPath);
+                return null;
+            }
         }
     }
 

@@ -98,12 +98,16 @@ public class GameDetector : IDisposable
         }
 
         // Deduplicate by ID
-        _knownGames.Clear();
-        var uniqueGames = allGames.GroupBy(g => g.Id).Select(g => g.First());
-        _knownGames.AddRange(uniqueGames);
+        var uniqueGames = allGames.GroupBy(g => g.Id).Select(g => g.First()).ToList();
+
+        lock (_lock)
+        {
+            _knownGames.Clear();
+            _knownGames.AddRange(uniqueGames);
+        }
 
         _logger.Information("Scanned {ScannerCount} launchers, found {GameCount} installed games",
-            _scanners.Count(), _knownGames.Count);
+            _scanners.Count(), uniqueGames.Count);
     }
 
     /// <summary>
@@ -113,15 +117,18 @@ public class GameDetector : IDisposable
     /// <param name="game">Game to add</param>
     public void AddKnownGame(GameInfo game)
     {
-        // Check for duplicates by ID
-        if (_knownGames.Any(g => g.Id == game.Id))
+        lock (_lock)
         {
-            _logger.Debug("Game already exists in known games list: {GameName}", game.GameName);
-            return;
-        }
+            // Check for duplicates by ID
+            if (_knownGames.Any(g => g.Id == game.Id))
+            {
+                _logger.Debug("Game already exists in known games list: {GameName}", game.GameName);
+                return;
+            }
 
-        _knownGames.Add(game);
-        _logger.Information("Manually added game: {GameName}", game.GameName);
+            _knownGames.Add(game);
+            _logger.Information("Manually added game: {GameName}", game.GameName);
+        }
     }
 
     /// <summary>
@@ -130,11 +137,14 @@ public class GameDetector : IDisposable
     /// <param name="gameId">ID of the game to remove</param>
     public void RemoveKnownGame(string gameId)
     {
-        var game = _knownGames.FirstOrDefault(g => g.Id == gameId);
-        if (game != null)
+        lock (_lock)
         {
-            _knownGames.Remove(game);
-            _logger.Information("Removed game: {GameName}", game.GameName);
+            var game = _knownGames.FirstOrDefault(g => g.Id == gameId);
+            if (game != null)
+            {
+                _knownGames.Remove(game);
+                _logger.Information("Removed game: {GameName}", game.GameName);
+            }
         }
     }
 
@@ -144,7 +154,10 @@ public class GameDetector : IDisposable
     /// <returns>Read-only list of known games</returns>
     public IReadOnlyList<GameInfo> GetKnownGames()
     {
-        return _knownGames.AsReadOnly();
+        lock (_lock)
+        {
+            return _knownGames.ToList().AsReadOnly();
+        }
     }
 
     /// <summary>
@@ -286,12 +299,21 @@ public class GameDetector : IDisposable
         // Normalize path for comparison
         var normalizedPath = Path.GetFullPath(executablePath);
 
-        foreach (var game in _knownGames)
+        // Take a snapshot under the lock so we can iterate safely without
+        // holding the lock for the entire matching duration.
+        List<GameInfo> snapshot;
+        lock (_lock)
+        {
+            snapshot = _knownGames.ToList();
+        }
+
+        foreach (var game in snapshot)
         {
             // Primary matching strategy: check if executable is under install directory
             if (!string.IsNullOrEmpty(game.InstallDirectory))
             {
-                if (normalizedPath.StartsWith(game.InstallDirectory, StringComparison.OrdinalIgnoreCase))
+                var installDir = game.InstallDirectory.TrimEnd('\\') + '\\';
+                if (normalizedPath.StartsWith(installDir, StringComparison.OrdinalIgnoreCase))
                 {
                     return OnGameMatched(processId, normalizedPath, game);
                 }
@@ -325,8 +347,13 @@ public class GameDetector : IDisposable
                         LauncherSource = "BuiltIn"
                     };
 
-                    // Add to known games so future launches are matched immediately
-                    _knownGames.Add(autoGame);
+                    // Add to known games so future launches are matched immediately.
+                    // Safe: we iterate 'snapshot', not '_knownGames'.
+                    lock (_lock)
+                    {
+                        _knownGames.Add(autoGame);
+                    }
+
                     _logger.Information(
                         "Auto-detected built-in profile game via process name: {GameName} ({ExeName})",
                         builtIn.DisplayName, exeName);

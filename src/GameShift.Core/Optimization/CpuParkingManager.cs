@@ -445,7 +445,10 @@ public class CpuParkingManager : IOptimization
             using var process = Process.Start(psi);
             if (process == null) return null;
 
+            var stderr = "";
+            var stderrTask = Task.Run(() => { stderr = process.StandardError.ReadToEnd(); });
             var output = process.StandardOutput.ReadToEnd();
+            stderrTask.Wait(5000);
             process.WaitForExit(5000);
             return output;
         }

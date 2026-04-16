@@ -311,10 +311,11 @@ public class KernelTuningManager
             if (process == null)
                 return (false, "Failed to start bcdedit.exe");
 
-            process.WaitForExit(15_000);
-
+            var stderr = "";
+            var stderrTask = Task.Run(() => { stderr = process.StandardError.ReadToEnd(); });
             var stdout = process.StandardOutput.ReadToEnd();
-            var stderr = process.StandardError.ReadToEnd();
+            stderrTask.Wait(15_000);
+            process.WaitForExit(15_000);
 
             return process.ExitCode == 0
                 ? (true, stdout)

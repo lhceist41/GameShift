@@ -62,7 +62,11 @@ public class FirewallRuleAction : GameAction
             };
 
             using var process = Process.Start(psi);
-            process?.WaitForExit();
+            if (process != null && !process.WaitForExit(15_000))
+            {
+                Log.Warning("FirewallRuleAction: PowerShell timed out creating rule '{RuleName}', killing process", _ruleName);
+                try { process.Kill(); } catch { }
+            }
 
             if (process?.ExitCode == 0)
             {
@@ -102,7 +106,11 @@ public class FirewallRuleAction : GameAction
             };
 
             using var process = Process.Start(psi);
-            process?.WaitForExit();
+            if (process != null && !process.WaitForExit(15_000))
+            {
+                Log.Warning("FirewallRuleAction: PowerShell timed out removing rule '{RuleName}', killing process", _ruleName);
+                try { process.Kill(); } catch { }
+            }
 
             Log.Information(
                 "FirewallRuleAction: Removed firewall rule '{RuleName}'",
@@ -127,7 +135,7 @@ public class FirewallRuleAction : GameAction
         {
             var psi = new ProcessStartInfo(
                 "powershell",
-                $"-Command \"Get-NetFirewallRule -DisplayName '{_ruleName}' -ErrorAction SilentlyContinue\"")
+                $"-Command \"Get-NetFirewallRule -DisplayName '{_ruleName.Replace("'", "''")}' -ErrorAction SilentlyContinue\"")
             {
                 CreateNoWindow = true,
                 UseShellExecute = false,
@@ -136,7 +144,11 @@ public class FirewallRuleAction : GameAction
 
             using var process = Process.Start(psi);
             var output = process?.StandardOutput.ReadToEnd() ?? "";
-            process?.WaitForExit();
+            if (process != null && !process.WaitForExit(15_000))
+            {
+                Log.Warning("FirewallRuleAction: PowerShell timed out checking rule '{RuleName}', killing process", _ruleName);
+                try { process.Kill(); } catch { }
+            }
 
             return !string.IsNullOrWhiteSpace(output);
         }

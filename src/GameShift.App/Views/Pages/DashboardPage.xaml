@@ -906,8 +906,7 @@
                                               VerticalAlignment="Center"
                                               Margin="8,0"
                                               Checked="OnOptimizationToggleChanged"
-                                              Unchecked="OnOptimizationToggleChanged"
-                                              PreviewMouseLeftButtonDown="OnTogglePreviewClick"/>
+                                              Unchecked="OnOptimizationToggleChanged"/>
 
                                     <!-- Expand/collapse chevron -->
                                     <TextBlock Grid.Column="3"

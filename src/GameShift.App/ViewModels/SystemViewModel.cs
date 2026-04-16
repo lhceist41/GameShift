@@ -236,6 +236,15 @@ public class SystemViewModel : INotifyPropertyChanged
         StartupAppManager.ToggleStartupApp(item.AppInfo, item.IsEnabled);
     }
 
+    public void Cleanup()
+    {
+        if (_tempMonitor != null)
+        {
+            _tempMonitor.TemperatureUpdated -= OnTemperatureUpdated;
+            _tempMonitor.Stop();
+        }
+    }
+
     // ── INotifyPropertyChanged ─────────────────────────────────────────────
 
     public event PropertyChangedEventHandler? PropertyChanged;

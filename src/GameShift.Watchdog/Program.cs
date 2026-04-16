@@ -167,10 +167,12 @@ static void RunSc(string arguments)
     });
 
     if (p == null) { Console.WriteLine("  (failed to start sc.exe)"); return; }
-    p.WaitForExit();
 
+    var stderr = "";
+    var stderrTask = Task.Run(() => { stderr = p.StandardError.ReadToEnd().Trim(); });
     var stdout = p.StandardOutput.ReadToEnd().Trim();
-    var stderr = p.StandardError.ReadToEnd().Trim();
+    stderrTask.Wait(30_000);
+    p.WaitForExit(30_000);
     if (!string.IsNullOrEmpty(stdout)) Console.WriteLine($"  {stdout}");
     if (!string.IsNullOrEmpty(stderr)) Console.WriteLine($"  ERROR: {stderr}");
 }

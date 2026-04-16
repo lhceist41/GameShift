@@ -93,7 +93,10 @@ public class PingMonitorViewModel : INotifyPropertyChanged
     public void Stop()
     {
         if (_pingMonitor != null)
+        {
             _pingMonitor.PingUpdated -= OnPingUpdated;
+            _pingMonitor.Stop();
+        }
     }
 
     public void Cleanup()
