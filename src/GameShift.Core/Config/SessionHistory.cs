@@ -113,7 +113,9 @@ public class SessionHistoryStore
                     Directory.CreateDirectory(dir);
 
                 var json = JsonSerializer.Serialize(_sessions, _jsonOptions);
-                File.WriteAllText(_filePath, json);
+                var tmpPath = _filePath + ".tmp";
+                File.WriteAllText(tmpPath, json);
+                File.Move(tmpPath, _filePath, overwrite: true);
             }
             catch (Exception ex)
             {

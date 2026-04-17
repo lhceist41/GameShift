@@ -101,7 +101,9 @@ public static class SettingsManager
                     WriteIndented = true
                 });
 
-                File.WriteAllText(SettingsFilePath, json);
+                var tmpPath = SettingsFilePath + ".tmp";
+                File.WriteAllText(tmpPath, json);
+                File.Move(tmpPath, SettingsFilePath, overwrite: true);
 
                 // Only reconfigure logger if logging settings actually changed
                 if (settings.EnableLogging != _lastLoggingEnabled || settings.LogLevel != _lastLogLevel)

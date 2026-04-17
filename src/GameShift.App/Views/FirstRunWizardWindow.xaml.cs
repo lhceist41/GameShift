@@ -89,13 +89,12 @@ public partial class FirstRunWizardWindow : Window
     {
         try
         {
-            // Read values from Step 3 controls
-            var settings = new AppSettings
-            {
-                StartWithWindows = StartWithWindowsCheckBox.IsChecked == true,
-                ShowNotifications = NotificationsCheckBox.IsChecked == true,
-                GpuVendorOverride = (GpuVendorComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Auto"
-            };
+            // Load existing settings first, then overlay wizard values to avoid
+            // resetting all other settings (BackgroundMode, profiles, etc.) to defaults
+            var settings = SettingsManager.Load();
+            settings.StartWithWindows = StartWithWindowsCheckBox.IsChecked == true;
+            settings.ShowNotifications = NotificationsCheckBox.IsChecked == true;
+            settings.GpuVendorOverride = (GpuVendorComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Auto";
 
             SettingsManager.Save(settings);
             WizardCompleted = true;
