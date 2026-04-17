@@ -4,6 +4,7 @@ using Serilog;
 
 namespace GameShift.Core.Optimization.Gpu;
 
+// Stub: ADLX integration not yet implemented. IsAvailable is always false.
 /// <summary>
 /// AMD ADLX integration for Anti-Lag and GPU metrics.
 ///

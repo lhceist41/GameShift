@@ -326,8 +326,20 @@ This is how long this driver locked up your CPU, in microseconds (&#x00B5;s).
 
                                                 <!-- Status badge -->
                                                 <Border Grid.Column="4" CornerRadius="4" Padding="6,2"
-                                                        HorizontalAlignment="Right" VerticalAlignment="Center"
-                                                        Background="#1C4A2E">
+                                                        HorizontalAlignment="Right" VerticalAlignment="Center">
+                                                    <Border.Style>
+                                                        <Style TargetType="Border">
+                                                            <Setter Property="Background" Value="#1C4A2E"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding StatusText}" Value="Warning">
+                                                                    <Setter Property="Background" Value="#2D2006"/>
+                                                                </DataTrigger>
+                                                                <DataTrigger Binding="{Binding StatusText}" Value="Critical">
+                                                                    <Setter Property="Background" Value="#7F1D1D"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Border.Style>
                                                     <TextBlock Text="{Binding StatusText}" FontSize="11"
                                                                FontWeight="SemiBold" HorizontalAlignment="Center"
                                                                Foreground="{Binding StatusColor}"/>

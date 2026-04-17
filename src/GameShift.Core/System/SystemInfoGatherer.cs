@@ -29,12 +29,19 @@ public static class SystemInfoGatherer
             using var results = searcher.Get();
             foreach (ManagementObject obj in results)
             {
-                return new OsInfo
+                try
                 {
-                    Caption = obj["Caption"]?.ToString()?.Trim() ?? "Unavailable",
-                    Version = obj["Version"]?.ToString() ?? "",
-                    BuildNumber = obj["BuildNumber"]?.ToString() ?? ""
-                };
+                    return new OsInfo
+                    {
+                        Caption = obj["Caption"]?.ToString()?.Trim() ?? "Unavailable",
+                        Version = obj["Version"]?.ToString() ?? "",
+                        BuildNumber = obj["BuildNumber"]?.ToString() ?? ""
+                    };
+                }
+                finally
+                {
+                    obj.Dispose();
+                }
             }
         }
         catch (Exception ex)
@@ -63,13 +70,20 @@ public static class SystemInfoGatherer
             using var results = searcher.Get();
             foreach (ManagementObject obj in results)
             {
-                return new CpuInfo
+                try
                 {
-                    Name = obj["Name"]?.ToString()?.Trim() ?? "Unavailable",
-                    Cores = Convert.ToInt32(obj["NumberOfCores"]),
-                    LogicalProcessors = Convert.ToInt32(obj["NumberOfLogicalProcessors"]),
-                    MaxClockSpeedMHz = Convert.ToInt32(obj["MaxClockSpeed"])
-                };
+                    return new CpuInfo
+                    {
+                        Name = obj["Name"]?.ToString()?.Trim() ?? "Unavailable",
+                        Cores = Convert.ToInt32(obj["NumberOfCores"]),
+                        LogicalProcessors = Convert.ToInt32(obj["NumberOfLogicalProcessors"]),
+                        MaxClockSpeedMHz = Convert.ToInt32(obj["MaxClockSpeed"])
+                    };
+                }
+                finally
+                {
+                    obj.Dispose();
+                }
             }
         }
         catch (Exception ex)
@@ -102,23 +116,30 @@ public static class SystemInfoGatherer
             using var results = searcher.Get();
             foreach (ManagementObject obj in results)
             {
-                // Skip Microsoft Basic Display Adapter
-                var name = obj["Name"]?.ToString() ?? "";
-                if (name.Contains("Basic Display", StringComparison.OrdinalIgnoreCase)) continue;
-
-                long vramBytes = GetGpuVramFromRegistry(name);
-                if (vramBytes <= 0)
-                    vramBytes = (long)(uint)Convert.ToInt64(obj["AdapterRAM"]);
-
-                return new GpuInfo
+                try
                 {
-                    Name = name.Trim(),
-                    DriverVersion = obj["DriverVersion"]?.ToString() ?? "",
-                    AdapterRamBytes = vramBytes,
-                    CurrentResolutionWidth = Convert.ToInt32(obj["CurrentHorizontalResolution"]),
-                    CurrentResolutionHeight = Convert.ToInt32(obj["CurrentVerticalResolution"]),
-                    RefreshRate = Convert.ToInt32(obj["CurrentRefreshRate"])
-                };
+                    // Skip Microsoft Basic Display Adapter
+                    var name = obj["Name"]?.ToString() ?? "";
+                    if (name.Contains("Basic Display", StringComparison.OrdinalIgnoreCase)) continue;
+
+                    long vramBytes = GetGpuVramFromRegistry(name);
+                    if (vramBytes <= 0)
+                        vramBytes = (long)(uint)Convert.ToInt64(obj["AdapterRAM"]);
+
+                    return new GpuInfo
+                    {
+                        Name = name.Trim(),
+                        DriverVersion = obj["DriverVersion"]?.ToString() ?? "",
+                        AdapterRamBytes = vramBytes,
+                        CurrentResolutionWidth = Convert.ToInt32(obj["CurrentHorizontalResolution"]),
+                        CurrentResolutionHeight = Convert.ToInt32(obj["CurrentVerticalResolution"]),
+                        RefreshRate = Convert.ToInt32(obj["CurrentRefreshRate"])
+                    };
+                }
+                finally
+                {
+                    obj.Dispose();
+                }
             }
         }
         catch (Exception ex)
@@ -188,7 +209,16 @@ public static class SystemInfoGatherer
             using (var results = searcher.Get())
             {
                 foreach (ManagementObject obj in results)
-                    totalBytes = Convert.ToInt64(obj["TotalPhysicalMemory"]);
+                {
+                    try
+                    {
+                        totalBytes = Convert.ToInt64(obj["TotalPhysicalMemory"]);
+                    }
+                    finally
+                    {
+                        obj.Dispose();
+                    }
+                }
             }
 
             // Speed and module count from PhysicalMemory
@@ -197,9 +227,16 @@ public static class SystemInfoGatherer
             {
                 foreach (ManagementObject obj in results)
                 {
-                    moduleCount++;
-                    if (speedMHz == 0)
-                        speedMHz = Convert.ToInt32(obj["Speed"]);
+                    try
+                    {
+                        moduleCount++;
+                        if (speedMHz == 0)
+                            speedMHz = Convert.ToInt32(obj["Speed"]);
+                    }
+                    finally
+                    {
+                        obj.Dispose();
+                    }
                 }
             }
 
@@ -233,12 +270,19 @@ public static class SystemInfoGatherer
             using var results = searcher.Get();
             foreach (ManagementObject obj in results)
             {
-                drives.Add(new DriveInfo2
+                try
                 {
-                    Model = obj["Model"]?.ToString()?.Trim() ?? "Unknown",
-                    MediaType = obj["MediaType"]?.ToString() ?? "",
-                    SizeBytes = Convert.ToInt64(obj["Size"])
-                });
+                    drives.Add(new DriveInfo2
+                    {
+                        Model = obj["Model"]?.ToString()?.Trim() ?? "Unknown",
+                        MediaType = obj["MediaType"]?.ToString() ?? "",
+                        SizeBytes = Convert.ToInt64(obj["Size"])
+                    });
+                }
+                finally
+                {
+                    obj.Dispose();
+                }
             }
 
             // Supplement with logical disk free space
@@ -280,15 +324,22 @@ public static class SystemInfoGatherer
             using var results = searcher.Get();
             foreach (ManagementObject obj in results)
             {
-                var w = Convert.ToInt32(obj["CurrentHorizontalResolution"]);
-                if (w > 0) // Skip adapters without active display
+                try
                 {
-                    return new DisplayInfo
+                    var w = Convert.ToInt32(obj["CurrentHorizontalResolution"]);
+                    if (w > 0) // Skip adapters without active display
                     {
-                        Width = w,
-                        Height = Convert.ToInt32(obj["CurrentVerticalResolution"]),
-                        RefreshRate = Convert.ToInt32(obj["CurrentRefreshRate"])
-                    };
+                        return new DisplayInfo
+                        {
+                            Width = w,
+                            Height = Convert.ToInt32(obj["CurrentVerticalResolution"]),
+                            RefreshRate = Convert.ToInt32(obj["CurrentRefreshRate"])
+                        };
+                    }
+                }
+                finally
+                {
+                    obj.Dispose();
                 }
             }
         }

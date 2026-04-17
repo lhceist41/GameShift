@@ -144,23 +144,30 @@ public class HardwareScanner
 
             foreach (ManagementObject obj in searcher.Get())
             {
-                var compat = obj["AdapterCompatibility"]?.ToString() ?? "";
-                var name = obj["Name"]?.ToString() ?? "";
+                try
+                {
+                    var compat = obj["AdapterCompatibility"]?.ToString() ?? "";
+                    var name = obj["Name"]?.ToString() ?? "";
 
-                // Skip virtual adapters
-                if (name.Contains("Microsoft Basic Display", StringComparison.OrdinalIgnoreCase))
-                    continue;
+                    // Skip virtual adapters
+                    if (name.Contains("Microsoft Basic Display", StringComparison.OrdinalIgnoreCase))
+                        continue;
 
-                if (ContainsIgnoreCase(compat, "NVIDIA") || ContainsIgnoreCase(name, "NVIDIA"))
-                    return GpuVendor.Nvidia;
+                    if (ContainsIgnoreCase(compat, "NVIDIA") || ContainsIgnoreCase(name, "NVIDIA"))
+                        return GpuVendor.Nvidia;
 
-                if (ContainsIgnoreCase(compat, "AMD") ||
-                    ContainsIgnoreCase(compat, "Advanced Micro Devices") ||
-                    ContainsIgnoreCase(name, "Radeon"))
-                    return GpuVendor.Amd;
+                    if (ContainsIgnoreCase(compat, "AMD") ||
+                        ContainsIgnoreCase(compat, "Advanced Micro Devices") ||
+                        ContainsIgnoreCase(name, "Radeon"))
+                        return GpuVendor.Amd;
 
-                if (ContainsIgnoreCase(compat, "Intel") || ContainsIgnoreCase(name, "Intel"))
-                    return GpuVendor.Intel;
+                    if (ContainsIgnoreCase(compat, "Intel") || ContainsIgnoreCase(name, "Intel"))
+                        return GpuVendor.Intel;
+                }
+                finally
+                {
+                    obj.Dispose();
+                }
             }
         }
         catch (Exception ex)
@@ -223,13 +230,22 @@ public class HardwareScanner
 
             foreach (ManagementObject obj in searcher.Get())
             {
-                if (obj["ChassisTypes"] is ushort[] types)
+                try
                 {
-                    foreach (var t in types)
+                    var raw = obj["ChassisTypes"];
+                    if (raw is Array arr)
                     {
-                        if (laptopTypes.Contains(t))
-                            return true;
+                        foreach (var item in arr)
+                        {
+                            int t = Convert.ToInt32(item);
+                            if (laptopTypes.Contains(t))
+                                return true;
+                        }
                     }
+                }
+                finally
+                {
+                    obj.Dispose();
                 }
             }
         }
@@ -437,11 +453,12 @@ public class HardwareScanner
     }
 
     /// <summary>
-    /// Checks if Riot Games executables exist on disk at common install paths.
-    /// Stronger check than just detecting running Vanguard service.
+    /// Checks if Riot Games executables exist on disk at common install paths,
+    /// via registry install location, or by detecting the Vanguard (vgc) service.
     /// </summary>
     private static bool DetectRiotGamesOnDisk()
     {
+        // Check common file paths on C:\
         try
         {
             var riotPaths = new[]
@@ -461,6 +478,27 @@ public class HardwareScanner
         {
             Log.Warning(ex, "HardwareScanner: Failed to check Riot game paths");
         }
+
+        // Check registry for actual Riot Client install location (works for non-C:\ installs)
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(
+                @"Software\Microsoft\Windows\CurrentVersion\Uninstall\Riot Game league_of_legends.live");
+            var installLocation = key?.GetValue("InstallLocation") as string;
+            if (!string.IsNullOrEmpty(installLocation) && Directory.Exists(installLocation))
+                return true;
+        }
+        catch { }
+
+        // Check for vgc (Vanguard anti-cheat) service as a definitive indicator.
+        // If the service exists at all, Riot games are installed regardless of drive.
+        try
+        {
+            using var sc = new global::System.ServiceProcess.ServiceController("vgc");
+            _ = sc.Status; // Accessing Status throws if the service doesn't exist
+            return true;
+        }
+        catch { }
 
         return false;
     }
@@ -518,8 +556,15 @@ public class HardwareScanner
 
             foreach (ManagementObject obj in searcher.Get())
             {
-                var bytes = Convert.ToDouble(obj["TotalPhysicalMemory"]);
-                return Math.Round(bytes / (1024.0 * 1024 * 1024), 1);
+                try
+                {
+                    var bytes = Convert.ToDouble(obj["TotalPhysicalMemory"]);
+                    return Math.Round(bytes / (1024.0 * 1024 * 1024), 1);
+                }
+                finally
+                {
+                    obj.Dispose();
+                }
             }
         }
         catch (Exception ex)
@@ -559,19 +604,6 @@ public class HardwareScanner
             Log.Warning(ex, "HardwareScanner: DPC baseline measurement failed");
             return 0;
         }
-    }
-
-    /// <summary>
-    /// Returns a human-readable summary of the scan results.
-    /// </summary>
-    public string GetSummary()
-    {
-        if (!IsComplete) return "Scan not yet completed.";
-
-        return $"GPU: {GpuName}\n" +
-               $"RAM: {TotalRamGb:F0} GB\n" +
-               $"VBS/HVCI: {(VbsEnabled ? "Enabled (impacts performance)" : "Disabled")}\n" +
-               $"DPC Baseline: {DpcBaselineUs:F0} µs {(DpcBaselineUs > 1000 ? "(High)" : "(Normal)")}";
     }
 
     private static bool ContainsIgnoreCase(string? source, string value)

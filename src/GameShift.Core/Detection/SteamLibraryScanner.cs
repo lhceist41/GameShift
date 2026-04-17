@@ -142,7 +142,8 @@ public class SteamLibraryScanner : ILibraryScanner
             {
                 // VDF uses escaped backslashes - unescape them
                 var unescapedPath = path.Replace(@"\\", @"\");
-                if (Directory.Exists(unescapedPath) && !libraryPaths.Contains(unescapedPath))
+                if (Directory.Exists(unescapedPath) &&
+                    !libraryPaths.Any(p => string.Equals(p, unescapedPath, StringComparison.OrdinalIgnoreCase)))
                 {
                     libraryPaths.Add(unescapedPath);
                     SettingsManager.Logger.Debug("Found additional library folder: {Path}", unescapedPath);

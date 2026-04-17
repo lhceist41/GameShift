@@ -47,12 +47,21 @@ public class SingleInstancePipe : IDisposable
                 await server.WaitForConnectionAsync(ct);
 
                 using var reader = new StreamReader(server);
-                var message = await reader.ReadLineAsync();
-
-                if (message == "show")
+                using var readCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                readCts.CancelAfter(5000); // 5 second timeout per read
+                try
                 {
-                    Log.Debug("SingleInstancePipe: Received 'show' from second instance");
-                    ShowRequested?.Invoke();
+                    var message = await reader.ReadLineAsync(readCts.Token);
+
+                    if (message == "show")
+                    {
+                        Log.Debug("SingleInstancePipe: Received 'show' from second instance");
+                        ShowRequested?.Invoke();
+                    }
+                }
+                catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+                {
+                    // Individual read timed out, continue listening for next connection
                 }
             }
             catch (OperationCanceledException)

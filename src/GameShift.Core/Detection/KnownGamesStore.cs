@@ -180,7 +180,7 @@ public class KnownGamesStore
     {
         lock (_lock)
         {
-            return _games.AsReadOnly();
+            return _games.ToList().AsReadOnly();
         }
     }
 

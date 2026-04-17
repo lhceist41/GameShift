@@ -68,13 +68,16 @@ public class DriverVersionTracker
     /// </summary>
     public void CheckForAdvisories()
     {
-        ActiveAdvisories.Clear();
-
         try
         {
             var database = LoadAdvisoryDatabase();
-            if (database == null || database.Advisories.Count == 0) return;
+            if (database == null || database.Advisories.Count == 0)
+            {
+                ActiveAdvisories = new List<DriverAdvisory>();
+                return;
+            }
 
+            var newAdvisories = new List<DriverAdvisory>();
             int windowsBuild = Environment.OSVersion.Version.Build;
 
             foreach (var advisory in database.Advisories)
@@ -95,13 +98,15 @@ public class DriverVersionTracker
                     !EvaluateWindowsCondition(advisory.WindowsVersionCondition, windowsBuild))
                     continue;
 
-                ActiveAdvisories.Add(advisory);
+                newAdvisories.Add(advisory);
             }
 
-            if (ActiveAdvisories.Count > 0)
+            ActiveAdvisories = newAdvisories;
+
+            if (newAdvisories.Count > 0)
             {
-                Log.Information("DriverVersionTracker: Found {Count} active advisories", ActiveAdvisories.Count);
-                AdvisoriesUpdated?.Invoke(ActiveAdvisories);
+                Log.Information("DriverVersionTracker: Found {Count} active advisories", newAdvisories.Count);
+                AdvisoriesUpdated?.Invoke(newAdvisories);
             }
         }
         catch (Exception ex)

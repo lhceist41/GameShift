@@ -271,9 +271,16 @@ public class HybridCpuDetector : IOptimization
         try
         {
             using var searcher = new ManagementObjectSearcher("SELECT Name FROM Win32_Processor");
-            foreach (var obj in searcher.Get())
+            foreach (ManagementObject obj in searcher.Get())
             {
-                return obj["Name"]?.ToString() ?? string.Empty;
+                try
+                {
+                    return obj["Name"]?.ToString() ?? string.Empty;
+                }
+                finally
+                {
+                    obj.Dispose();
+                }
             }
         }
         catch

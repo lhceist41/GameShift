@@ -1,6 +1,5 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-                    xmlns:system="clr-namespace:System;assembly=mscorlib">
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
     <!-- ============================================================
          GameShift Design Token System
@@ -67,25 +66,6 @@
         <Setter Property="FontWeight"  Value="SemiBold" />
         <Setter Property="Foreground"  Value="{DynamicResource GS.Text.Primary}" />
     </Style>
-
-    <!-- ============================================================
-         Spacing Constants (8px grid)
-         Access with: {DynamicResource GS.Spacing.CardRadius}
-         ============================================================ -->
-    <system:Double x:Key="GS.Spacing.CardRadius">8</system:Double>
-    <system:Double x:Key="GS.Spacing.CardPadding">16</system:Double>
-    <system:Double x:Key="GS.Spacing.CardGap">16</system:Double>
-    <system:Double x:Key="GS.Spacing.SectionGap">32</system:Double>
-    <system:Double x:Key="GS.Spacing.DashboardMargin">24</system:Double>
-    <system:Double x:Key="GS.Spacing.CompactRowHeight">44</system:Double>
-    <system:Double x:Key="GS.Spacing.BadgeHeight">24</system:Double>
-    <system:Double x:Key="GS.Spacing.BadgePaddingH">8</system:Double>
-    <system:Double x:Key="GS.Spacing.BadgePaddingV">4</system:Double>
-    <system:Double x:Key="GS.Spacing.BadgeRadius">12</system:Double>
-    <system:Double x:Key="GS.Spacing.IconInline">16</system:Double>
-    <system:Double x:Key="GS.Spacing.IconHero">24</system:Double>
-    <system:Double x:Key="GS.Spacing.SparklineWidth">120</system:Double>
-    <system:Double x:Key="GS.Spacing.SparklineHeight">32</system:Double>
 
     <!-- ============================================================
          Hero Button Style

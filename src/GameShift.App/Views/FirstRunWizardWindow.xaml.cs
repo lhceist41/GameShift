@@ -1,6 +1,8 @@
 using System;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Interop;
 using System.Windows.Media;
 using GameShift.Core.Config;
 using Serilog;
@@ -15,6 +17,9 @@ namespace GameShift.App.Views;
 /// </summary>
 public partial class FirstRunWizardWindow : Window
 {
+    [DllImport("dwmapi.dll", PreserveSig = true)]
+    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
+
     private int _currentStep = 0; // 0 = Welcome, 1 = Scan, 2 = Config
 
     /// <summary>
@@ -26,6 +31,7 @@ public partial class FirstRunWizardWindow : Window
     public FirstRunWizardWindow()
     {
         InitializeComponent();
+        ApplyDarkTitleBar();
         VersionBadge.Text = $"v{System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "3.0"}";
         UpdateStepVisibility();
     }
@@ -116,6 +122,21 @@ public partial class FirstRunWizardWindow : Window
     {
         _currentStep = step;
         UpdateStepVisibility();
+    }
+
+    private void ApplyDarkTitleBar()
+    {
+        try
+        {
+            var hwnd = new WindowInteropHelper(this).EnsureHandle();
+            if (hwnd == IntPtr.Zero) return;
+            int value = 1;
+            DwmSetWindowAttribute(hwnd, 20, ref value, sizeof(int));
+        }
+        catch
+        {
+            // Silently ignore on older Windows versions
+        }
     }
 
     private void UpdateStepVisibility()

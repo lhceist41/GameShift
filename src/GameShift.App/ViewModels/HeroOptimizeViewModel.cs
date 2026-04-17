@@ -168,18 +168,6 @@ public class HeroOptimizeViewModel : INotifyPropertyChanged
     private void OnOptimizationApplied(object? sender, OptimizationAppliedEventArgs e) => RefreshHeroState();
     private void OnOptimizationReverted(object? sender, OptimizationRevertedEventArgs e) => RefreshHeroState();
 
-    public void Start()
-    {
-        _engine.OptimizationApplied += OnOptimizationApplied;
-        _engine.OptimizationReverted += OnOptimizationReverted;
-    }
-
-    public void Stop()
-    {
-        _engine.OptimizationApplied -= OnOptimizationApplied;
-        _engine.OptimizationReverted -= OnOptimizationReverted;
-    }
-
     public void Cleanup()
     {
         _engine.OptimizationApplied -= OnOptimizationApplied;

@@ -124,8 +124,15 @@ public class DisableMemoryCompression : ISystemTweak
 
             foreach (ManagementObject obj in searcher.Get())
             {
-                var bytes = Convert.ToDouble(obj["TotalPhysicalMemory"]);
-                return Math.Round(bytes / (1024.0 * 1024 * 1024), 1);
+                try
+                {
+                    var bytes = Convert.ToDouble(obj["TotalPhysicalMemory"]);
+                    return Math.Round(bytes / (1024.0 * 1024 * 1024), 1);
+                }
+                finally
+                {
+                    obj.Dispose();
+                }
             }
         }
         catch (Exception ex)
