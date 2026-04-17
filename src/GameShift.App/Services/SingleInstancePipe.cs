@@ -1,6 +1,8 @@
 using System;
 using System.IO;
 using System.IO.Pipes;
+using System.Security.AccessControl;
+using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
 using Serilog;
@@ -37,12 +39,16 @@ public class SingleInstancePipe : IDisposable
         {
             try
             {
-                using var server = new NamedPipeServerStream(
+                var pipeSecurity = CreatePipeSecurity();
+                using var server = NamedPipeServerStreamAcl.Create(
                     PipeName,
                     PipeDirection.In,
                     1,
                     PipeTransmissionMode.Byte,
-                    PipeOptions.Asynchronous);
+                    PipeOptions.Asynchronous,
+                    0,
+                    0,
+                    pipeSecurity);
 
                 await server.WaitForConnectionAsync(ct);
 
@@ -97,6 +103,23 @@ public class SingleInstancePipe : IDisposable
         {
             return false;
         }
+    }
+
+    /// <summary>
+    /// Creates a PipeSecurity that restricts access to Administrators and SYSTEM only.
+    /// </summary>
+    private static PipeSecurity CreatePipeSecurity()
+    {
+        var pipeSecurity = new PipeSecurity();
+        pipeSecurity.AddAccessRule(new PipeAccessRule(
+            new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null),
+            PipeAccessRights.FullControl,
+            AccessControlType.Allow));
+        pipeSecurity.AddAccessRule(new PipeAccessRule(
+            new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null),
+            PipeAccessRights.FullControl,
+            AccessControlType.Allow));
+        return pipeSecurity;
     }
 
     public void Dispose()

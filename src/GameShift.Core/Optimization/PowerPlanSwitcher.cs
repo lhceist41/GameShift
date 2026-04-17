@@ -339,7 +339,7 @@ public class PowerPlanSwitcher : IOptimization
         {
             var psi = new ProcessStartInfo
             {
-                FileName = "powercfg",
+                FileName = NativeInterop.SystemExePath("powercfg.exe"),
                 Arguments = arguments,
                 UseShellExecute = false,
                 CreateNoWindow = true,
@@ -377,7 +377,7 @@ public class PowerPlanSwitcher : IOptimization
         {
             var psi = new ProcessStartInfo
             {
-                FileName = "powercfg",
+                FileName = NativeInterop.SystemExePath("powercfg.exe"),
                 Arguments = arguments,
                 UseShellExecute = false,
                 CreateNoWindow = true,

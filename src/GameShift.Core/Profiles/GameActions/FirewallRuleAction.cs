@@ -24,6 +24,9 @@ public class FirewallRuleAction : GameAction
     public FirewallRuleAction(string name, string ruleName,
         string executablePath, string direction = "Inbound")
     {
+        if (direction is not ("Inbound" or "Outbound"))
+            throw new ArgumentException($"Invalid firewall direction: {direction}", nameof(direction));
+
         _name = name;
         _ruleName = ruleName;
         _executablePath = executablePath;
@@ -52,9 +55,9 @@ public class FirewallRuleAction : GameAction
 
             // Create the firewall rule
             var psi = new ProcessStartInfo(
-                "powershell",
+                NativeInterop.SystemExePath("WindowsPowerShell\\v1.0\\powershell.exe"),
                 $"-Command \"New-NetFirewallRule -DisplayName '{_ruleName.Replace("'", "''")}' " +
-                $"-Direction {_direction} -Action Allow " +
+                $"-Direction '{_direction}' -Action Allow " +
                 $"-Program '{_executablePath.Replace("'", "''")}' -Profile Any -Enabled True\"")
             {
                 CreateNoWindow = true,
@@ -98,7 +101,7 @@ public class FirewallRuleAction : GameAction
         try
         {
             var psi = new ProcessStartInfo(
-                "powershell",
+                NativeInterop.SystemExePath("WindowsPowerShell\\v1.0\\powershell.exe"),
                 $"-Command \"Remove-NetFirewallRule -DisplayName '{_ruleName.Replace("'", "''")}'\"")
             {
                 CreateNoWindow = true,
@@ -134,7 +137,7 @@ public class FirewallRuleAction : GameAction
         try
         {
             var psi = new ProcessStartInfo(
-                "powershell",
+                NativeInterop.SystemExePath("WindowsPowerShell\\v1.0\\powershell.exe"),
                 $"-Command \"Get-NetFirewallRule -DisplayName '{_ruleName.Replace("'", "''")}' -ErrorAction SilentlyContinue\"")
             {
                 CreateNoWindow = true,

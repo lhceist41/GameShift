@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using GameShift.Core.Config;
+using GameShift.Core.System;
 
 namespace GameShift.Core.BackgroundMode;
 
@@ -103,7 +104,7 @@ public class TaskDeferralService
         {
             var psi = new ProcessStartInfo
             {
-                FileName = "schtasks.exe",
+                FileName = NativeInterop.SystemExePath("schtasks.exe"),
                 Arguments = arguments,
                 UseShellExecute = false,
                 CreateNoWindow = true,

@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using GameShift.Core.System;
 
 namespace GameShift.Core.SystemTweaks.Tweaks;
 
@@ -75,7 +76,7 @@ public class DisableLastAccessTimestamp : ISystemTweak
         {
             var psi = new ProcessStartInfo
             {
-                FileName = "fsutil",
+                FileName = NativeInterop.SystemExePath("fsutil.exe"),
                 Arguments = arguments,
                 UseShellExecute = false,
                 CreateNoWindow = true,

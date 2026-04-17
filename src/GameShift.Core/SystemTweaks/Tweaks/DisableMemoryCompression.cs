@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Management;
 using System.Text.Json;
+using GameShift.Core.System;
 using Serilog;
 
 namespace GameShift.Core.SystemTweaks.Tweaks;
@@ -149,7 +150,7 @@ public class DisableMemoryCompression : ISystemTweak
         {
             var psi = new ProcessStartInfo
             {
-                FileName = "powershell.exe",
+                FileName = NativeInterop.SystemExePath("WindowsPowerShell\\v1.0\\powershell.exe"),
                 Arguments = arguments,
                 UseShellExecute = false,
                 CreateNoWindow = true,

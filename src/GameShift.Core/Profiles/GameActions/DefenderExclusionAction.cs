@@ -33,7 +33,7 @@ public class DefenderExclusionAction : GameAction
             try
             {
                 var psi = new ProcessStartInfo(
-                    "powershell",
+                    NativeInterop.SystemExePath("WindowsPowerShell\\v1.0\\powershell.exe"),
                     $"-Command \"Add-MpPreference -ExclusionPath '{path.Replace("'", "''")}'\"")
                 {
                     CreateNoWindow = true,
@@ -62,7 +62,7 @@ public class DefenderExclusionAction : GameAction
             try
             {
                 var psi = new ProcessStartInfo(
-                    "powershell",
+                    NativeInterop.SystemExePath("WindowsPowerShell\\v1.0\\powershell.exe"),
                     $"-Command \"Remove-MpPreference -ExclusionPath '{path.Replace("'", "''")}'\"")
                 {
                     CreateNoWindow = true,

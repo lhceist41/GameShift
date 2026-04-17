@@ -329,7 +329,7 @@ public class SessionSystemTweaksOptimizer : IOptimization
         using var process = global::System.Diagnostics.Process.Start(
             new global::System.Diagnostics.ProcessStartInfo
             {
-                FileName = "powercfg",
+                FileName = NativeInterop.SystemExePath("powercfg.exe"),
                 Arguments = arguments,
                 UseShellExecute = false,
                 CreateNoWindow = true,
