@@ -261,30 +261,37 @@ public class GpuDriverOptimizer : IOptimization
 
             foreach (ManagementObject obj in searcher.Get())
             {
-                string? compatibility = obj["AdapterCompatibility"]?.ToString();
-                string? name = obj["Name"]?.ToString();
-
-                _logger.Debug(
-                    "[GpuDriverOptimizer] Found GPU — AdapterCompatibility: {Compatibility}, Name: {Name}",
-                    compatibility ?? "<null>",
-                    name ?? "<null>");
-
-                // Check for NVIDIA
-                if (ContainsIgnoreCase(compatibility, "NVIDIA") ||
-                    ContainsIgnoreCase(name, "NVIDIA"))
+                try
                 {
-                    _detectedGpuName = name;
-                    return GpuVendor.Nvidia;
+                    string? compatibility = obj["AdapterCompatibility"]?.ToString();
+                    string? name = obj["Name"]?.ToString();
+
+                    _logger.Debug(
+                        "[GpuDriverOptimizer] Found GPU — AdapterCompatibility: {Compatibility}, Name: {Name}",
+                        compatibility ?? "<null>",
+                        name ?? "<null>");
+
+                    // Check for NVIDIA
+                    if (ContainsIgnoreCase(compatibility, "NVIDIA") ||
+                        ContainsIgnoreCase(name, "NVIDIA"))
+                    {
+                        _detectedGpuName = name;
+                        return GpuVendor.Nvidia;
+                    }
+
+                    // Check for AMD
+                    if (ContainsIgnoreCase(compatibility, "AMD") ||
+                        ContainsIgnoreCase(compatibility, "Advanced Micro Devices") ||
+                        ContainsIgnoreCase(name, "AMD") ||
+                        ContainsIgnoreCase(name, "Radeon"))
+                    {
+                        _detectedGpuName = name;
+                        return GpuVendor.Amd;
+                    }
                 }
-
-                // Check for AMD
-                if (ContainsIgnoreCase(compatibility, "AMD") ||
-                    ContainsIgnoreCase(compatibility, "Advanced Micro Devices") ||
-                    ContainsIgnoreCase(name, "AMD") ||
-                    ContainsIgnoreCase(name, "Radeon"))
+                finally
                 {
-                    _detectedGpuName = name;
-                    return GpuVendor.Amd;
+                    obj.Dispose();
                 }
             }
         }

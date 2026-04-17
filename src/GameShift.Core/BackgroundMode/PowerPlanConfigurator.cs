@@ -498,15 +498,22 @@ public class PowerPlanConfigurator
 
             foreach (global::System.Management.ManagementObject obj in searcher.Get())
             {
-                var compat = obj["AdapterCompatibility"]?.ToString() ?? "";
-                var name = obj["Name"]?.ToString() ?? "";
+                try
+                {
+                    var compat = obj["AdapterCompatibility"]?.ToString() ?? "";
+                    var name = obj["Name"]?.ToString() ?? "";
 
-                if (name.Contains("Microsoft Basic Display", StringComparison.OrdinalIgnoreCase))
-                    continue;
+                    if (name.Contains("Microsoft Basic Display", StringComparison.OrdinalIgnoreCase))
+                        continue;
 
-                if (compat.Contains("Intel", StringComparison.OrdinalIgnoreCase) ||
-                    name.Contains("Intel", StringComparison.OrdinalIgnoreCase))
-                    return true;
+                    if (compat.Contains("Intel", StringComparison.OrdinalIgnoreCase) ||
+                        name.Contains("Intel", StringComparison.OrdinalIgnoreCase))
+                        return true;
+                }
+                finally
+                {
+                    obj.Dispose();
+                }
             }
         }
         catch (Exception ex)
@@ -526,7 +533,14 @@ public class PowerPlanConfigurator
 
             foreach (global::System.Management.ManagementObject obj in searcher.Get())
             {
-                return obj["Name"]?.ToString() ?? "Unknown";
+                try
+                {
+                    return obj["Name"]?.ToString() ?? "Unknown";
+                }
+                finally
+                {
+                    obj.Dispose();
+                }
             }
         }
         catch (Exception ex)
@@ -585,10 +599,17 @@ public class PowerPlanConfigurator
 
             foreach (global::System.Management.ManagementObject obj in searcher.Get())
             {
-                int cores = Convert.ToInt32(obj["NumberOfCores"]);
-                // AMD dual-CCD chips have 12+ cores (6+6, 8+8, or 16 cores)
-                // Single-CCD tops out at 8 cores
-                if (cores > 8) return true;
+                try
+                {
+                    int cores = Convert.ToInt32(obj["NumberOfCores"]);
+                    // AMD dual-CCD chips have 12+ cores (6+6, 8+8, or 16 cores)
+                    // Single-CCD tops out at 8 cores
+                    if (cores > 8) return true;
+                }
+                finally
+                {
+                    obj.Dispose();
+                }
             }
         }
         catch (Exception ex)

@@ -14,7 +14,7 @@ public static class AntiCheatDetector
 {
     // ── Detection results (cached) ──────────────────────────────────
 
-    private static bool _detected;
+    private static volatile bool _detected;
     private static List<DetectedAntiCheat> _detectedAntiCheats = new();
 
     /// <summary>
@@ -54,8 +54,8 @@ public static class AntiCheatDetector
         if (battleyeEvidence != null)
             results.Add(new DetectedAntiCheat(AntiCheatType.BattlEye, "BattlEye", battleyeEvidence));
 
-        _detectedAntiCheats = results;
-        _detected = true;
+        _detectedAntiCheats = results; // atomic reference swap — safe for concurrent readers
+        _detected = true;             // volatile write — publish after list is fully built
 
         SettingsManager.Logger.Information(
             "AntiCheatDetector: Detected {Count} anti-cheat system(s): [{Names}]",
@@ -218,8 +218,15 @@ public static class AntiCheatDetector
         try
         {
             var services = ServiceController.GetServices();
-            return services.Any(s =>
-                string.Equals(s.ServiceName, serviceName, StringComparison.OrdinalIgnoreCase));
+            try
+            {
+                return services.Any(s =>
+                    string.Equals(s.ServiceName, serviceName, StringComparison.OrdinalIgnoreCase));
+            }
+            finally
+            {
+                foreach (var s in services) s.Dispose();
+            }
         }
         catch
         {

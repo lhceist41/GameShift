@@ -454,6 +454,18 @@ public class DetectionOrchestrator
     }
 
     /// <summary>
+    /// Unsubscribes all event handlers registered during construction and InitializeAsync().
+    /// Call during application shutdown to prevent leaks and stale callbacks.
+    /// </summary>
+    public void Cleanup()
+    {
+        _detector.GameStarted -= OnGameStarted;
+        _detector.GameStopped -= OnGameStopped;
+        _detector.AllGamesStopped -= OnAllGamesStopped;
+        if (_dpcMonitor != null) _dpcMonitor.DpcSpikeDetected -= OnDpcSpikeDetected;
+    }
+
+    /// <summary>
     /// Maps executable names to optimization intensity tiers.
     /// Competitive: FPS, arena shooters, rhythm games (latency-critical).
     /// Casual: RPGs, MOBAs, open-world (default for all unknown games).

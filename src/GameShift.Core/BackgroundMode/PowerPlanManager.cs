@@ -158,9 +158,11 @@ public class PowerPlanManager : IDisposable
         return Guid.Empty;
     }
 
+    // Duplicated from SystemStateSnapshot.cs -- kept private to avoid exposing P/Invoke as public API
     [DllImport("powrprof.dll")]
     private static extern uint PowerGetActiveScheme(IntPtr UserRootPowerKey, out IntPtr ActivePolicyGuid);
 
+    // Duplicated from SystemStateSnapshot.cs -- kept private to avoid exposing P/Invoke as public API
     [DllImport("kernel32.dll")]
     private static extern IntPtr LocalFree(IntPtr hMem);
 
@@ -177,7 +179,10 @@ public class PowerPlanManager : IDisposable
 
             if (!NativeInterop.GetLastInputInfo(ref lastInput)) return;
 
-            uint idleMs = (uint)Environment.TickCount - lastInput.dwTime;
+            // Use lower 32 bits of TickCount64 to match LASTINPUTINFO.dwTime's range
+            // (GetTickCount is 32-bit). Unsigned subtraction handles wrapping correctly.
+            uint tickCount = (uint)(Environment.TickCount64 & 0xFFFFFFFF);
+            uint idleMs = tickCount - lastInput.dwTime;
             double idleMinutes = idleMs / 60000.0;
 
             if (!_isIdle && idleMinutes >= _idleTimeoutMinutes)

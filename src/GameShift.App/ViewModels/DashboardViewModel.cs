@@ -959,18 +959,6 @@ public class ExpandableOptimizationItem : INotifyPropertyChanged
     }
 }
 
-/// <summary>
-/// Display model for a single optimization's status in the dashboard list.
-/// Kept for backward compatibility — new code uses ExpandableOptimizationItem.
-/// </summary>
-public class OptimizationStatus
-{
-    public string Name { get; set; } = "";
-    public string Description { get; set; } = "";
-    public string Status { get; set; } = "";
-    public Brush StatusBrush { get; set; } = new SolidColorBrush(Color.FromRgb(0x80, 0x80, 0x80));
-}
-
 internal class RelayCommand : ICommand
 {
     private readonly Action _execute;

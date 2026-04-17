@@ -27,10 +27,11 @@ public class TemperatureMonitor : IDisposable
 
     public float CurrentCpuTemp { get; private set; }
     public float CurrentGpuTemp { get; private set; }
-    public float MinCpuTemp { get; private set; } = float.MaxValue;
-    public float MaxCpuTemp { get; private set; } = float.MinValue;
-    public float MinGpuTemp { get; private set; } = float.MaxValue;
-    public float MaxGpuTemp { get; private set; } = float.MinValue;
+    public float MinCpuTemp { get; private set; }
+    public float MaxCpuTemp { get; private set; }
+    public float MinGpuTemp { get; private set; }
+    public float MaxGpuTemp { get; private set; }
+    private bool _hasFirstReading;
     public bool IsAvailable { get; private set; }
     public bool IsMonitoring => _isMonitoring;
 
@@ -156,8 +157,20 @@ public class TemperatureMonitor : IDisposable
             CurrentCpuTemp = cpuTemp;
             CurrentGpuTemp = gpuTemp;
 
-            if (cpuTemp > 0) { MinCpuTemp = Math.Min(MinCpuTemp, cpuTemp); MaxCpuTemp = Math.Max(MaxCpuTemp, cpuTemp); }
-            if (gpuTemp > 0) { MinGpuTemp = Math.Min(MinGpuTemp, gpuTemp); MaxGpuTemp = Math.Max(MaxGpuTemp, gpuTemp); }
+            if (cpuTemp > 0 || gpuTemp > 0)
+            {
+                if (!_hasFirstReading)
+                {
+                    if (cpuTemp > 0) { MinCpuTemp = cpuTemp; MaxCpuTemp = cpuTemp; }
+                    if (gpuTemp > 0) { MinGpuTemp = gpuTemp; MaxGpuTemp = gpuTemp; }
+                    _hasFirstReading = true;
+                }
+                else
+                {
+                    if (cpuTemp > 0) { MinCpuTemp = Math.Min(MinCpuTemp, cpuTemp); MaxCpuTemp = Math.Max(MaxCpuTemp, cpuTemp); }
+                    if (gpuTemp > 0) { MinGpuTemp = Math.Min(MinGpuTemp, gpuTemp); MaxGpuTemp = Math.Max(MaxGpuTemp, gpuTemp); }
+                }
+            }
 
             TemperatureUpdated?.Invoke(this, new TemperatureSample
             {

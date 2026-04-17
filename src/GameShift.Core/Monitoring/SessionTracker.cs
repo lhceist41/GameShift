@@ -10,7 +10,7 @@ namespace GameShift.Core.Monitoring;
 /// Records session timing, DPC latency snapshots, and optimization counts.
 /// Saves completed sessions to SessionHistoryStore.
 /// </summary>
-public class SessionTracker
+public class SessionTracker : IDisposable
 {
     private readonly GameDetector _detector;
     private readonly DpcLatencyMonitor? _dpcMonitor;
@@ -84,5 +84,11 @@ public class SessionTracker
             completed.OptimizationsApplied);
 
         SessionEnded?.Invoke(this, completed);
+    }
+
+    public void Dispose()
+    {
+        _detector.GameStarted -= OnGameStarted;
+        _detector.AllGamesStopped -= OnAllGamesStopped;
     }
 }

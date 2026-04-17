@@ -32,7 +32,9 @@ public class SystemTweaksManager
             new Tweaks.DisableUsbSelectiveSuspend(),
             new Tweaks.OptimizeInterruptHandling(),
             new Tweaks.DisableMemoryCompression(),
-            new Tweaks.EnableLargePages()
+            new Tweaks.EnableLargePages(),
+            new Tweaks.OptimizeNtfsMemoryUsage(),
+            new Tweaks.OptimizeKernelMemory()
         };
     }
 

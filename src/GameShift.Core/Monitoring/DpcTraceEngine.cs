@@ -97,7 +97,8 @@ public class DpcTraceEngine : IDisposable
     }
 
     /// <summary>How many seconds the trace has been running.</summary>
-    public int CaptureSeconds { get; private set; }
+    private int _captureSeconds;
+    public int CaptureSeconds => Volatile.Read(ref _captureSeconds);
 
     public DpcTraceEngine(KnownDriverDatabase driverDb)
     {
@@ -155,7 +156,7 @@ public class DpcTraceEngine : IDisposable
             _processingThread.Start();
 
             // Start 1-second tick timer for UI updates
-            CaptureSeconds = 0;
+            _captureSeconds = 0;
             _tickTimer = new global::System.Timers.Timer(1000);
             _tickTimer.Elapsed += OnTick;
             _tickTimer.Start();
@@ -232,7 +233,7 @@ public class DpcTraceEngine : IDisposable
         if (_kernelModules == null || _kernelModules.Length == 0)
             return null;
 
-        // Binary search through sorted kernel module addresses
+        // Linear scan through kernel module addresses
         // Find the module whose base address is closest to (but not exceeding) the routine address
         string? driverName = null;
         ulong bestBase = 0;
@@ -289,13 +290,17 @@ public class DpcTraceEngine : IDisposable
                 stats.CurrentWindowPeak = microseconds;
         }
 
-        if (microseconds > Interlocked.CompareExchange(ref _systemPeakDpc, 0, 0))
-            Interlocked.Exchange(ref _systemPeakDpc, microseconds);
+        double oldPeak;
+        do
+        {
+            oldPeak = Interlocked.CompareExchange(ref _systemPeakDpc, 0, 0);
+        } while (microseconds > oldPeak &&
+                 Interlocked.CompareExchange(ref _systemPeakDpc, microseconds, oldPeak) != oldPeak);
     }
 
     private void OnTick(object? sender, global::System.Timers.ElapsedEventArgs e)
     {
-        CaptureSeconds++;
+        Interlocked.Increment(ref _captureSeconds);
 
         // Roll sparkline history and reset current window peak
         foreach (var stats in _driverStats.Values)

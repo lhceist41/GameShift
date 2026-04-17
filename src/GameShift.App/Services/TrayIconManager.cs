@@ -3,7 +3,6 @@ using System.Drawing;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
-using GameShift.App.ViewModels;
 using GameShift.App.Views;
 using GameShift.Core.Config;
 using GameShift.Core.Detection;
@@ -32,9 +31,7 @@ public class TrayIconManager : IDisposable
     private readonly ILogger _logger;
     private bool _isPaused;
     private bool _hasDpcWarning;
-    private bool _hasError;  // Reserved for future use (optimization failure events)
     private bool _disposed;
-    private TrayFlyoutWindow? _flyoutWindow;
 
     // Session tracking for post-session toast
     private DateTime? _sessionStartTime;
@@ -132,34 +129,6 @@ public class TrayIconManager : IDisposable
     }
 
     /// <summary>
-    /// Handles tray icon left single-click — toggles the flyout panel.
-    /// Creates a new TrayFlyoutWindow each time (they self-close on Deactivated).
-    /// </summary>
-    private void OnTrayLeftClick(object sender, RoutedEventArgs e)
-    {
-        try
-        {
-            // If a flyout is already open, close it (toggle behavior)
-            if (_flyoutWindow != null && _flyoutWindow.IsLoaded)
-            {
-                _flyoutWindow.Close();
-                _flyoutWindow = null;
-                return;
-            }
-
-            var vm = new TrayFlyoutViewModel(_orchestrator, _engine, _dpcMonitor, _isPaused);
-            _flyoutWindow = new TrayFlyoutWindow();
-            _flyoutWindow.SetViewModel(vm);
-            _flyoutWindow.Closed += (_, _) => _flyoutWindow = null;
-            _flyoutWindow.Show();
-        }
-        catch (Exception ex)
-        {
-            _logger.Warning(ex, "Failed to show tray flyout");
-        }
-    }
-
-    /// <summary>
     /// Builds the right-click context menu.
     /// Items: Status (disabled header), Dashboard, Game Library, Pause/Resume, Settings, Exit.
     /// </summary>
@@ -230,13 +199,7 @@ public class TrayIconManager : IDisposable
         string tooltip;
         string statusText;
 
-        if (_hasError)
-        {
-            iconName = "tray-error";
-            tooltip = "GameShift - Error";
-            statusText = "GameShift: Error";
-        }
-        else if (_hasDpcWarning && _orchestrator.IsOptimizing)
+        if (_hasDpcWarning && _orchestrator.IsOptimizing)
         {
             iconName = "tray-warning";
             tooltip = "GameShift - Warning (DPC)";
@@ -444,7 +407,6 @@ public class TrayIconManager : IDisposable
             }
 
             _hasDpcWarning = false;
-            _hasError = false;
 
             _sessionStartTime = null;
             _sessionGameName = null;
@@ -631,12 +593,6 @@ public class TrayIconManager : IDisposable
         {
             _dpcMonitor.DpcSpikeDetected -= OnDpcSpikeForIcon;
             _dpcMonitor.LatencySampled -= OnLatencySampled;
-        }
-
-        if (_flyoutWindow != null && _flyoutWindow.IsLoaded)
-        {
-            _flyoutWindow.Close();
-            _flyoutWindow = null;
         }
 
         _taskbarIcon.TrayLeftMouseUp -= OnTrayLeftDoubleClick;

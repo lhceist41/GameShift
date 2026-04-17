@@ -9,6 +9,7 @@ namespace GameShift.Core.GameProfiles;
 /// </summary>
 public static class IntelHybridDetector
 {
+    private static readonly object _detectLock = new();
     private static bool? _isHybrid;
     private static int _pCoreCount;
     private static long _pCoreAffinityMask;
@@ -18,7 +19,7 @@ public static class IntelHybridDetector
     {
         get
         {
-            if (_isHybrid == null) Detect();
+            if (_isHybrid == null) { lock (_detectLock) { if (_isHybrid == null) Detect(); } }
             return _isHybrid ?? false;
         }
     }
@@ -28,7 +29,7 @@ public static class IntelHybridDetector
     {
         get
         {
-            if (_isHybrid == null) Detect();
+            if (_isHybrid == null) { lock (_detectLock) { if (_isHybrid == null) Detect(); } }
             return _pCoreCount;
         }
     }
@@ -41,7 +42,7 @@ public static class IntelHybridDetector
     {
         get
         {
-            if (_isHybrid == null) Detect();
+            if (_isHybrid == null) { lock (_detectLock) { if (_isHybrid == null) Detect(); } }
             return _pCoreAffinityMask;
         }
     }

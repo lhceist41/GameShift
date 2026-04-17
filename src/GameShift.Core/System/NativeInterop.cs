@@ -74,7 +74,7 @@ internal static partial class NativeInterop
     /// <param name="UserRootPowerKey">Reserved, must be IntPtr.Zero</param>
     /// <param name="SchemeGuid">GUID of the power scheme to activate</param>
     /// <returns>ERROR_SUCCESS (0) on success, error code otherwise</returns>
-    [DllImport("powrprof.dll", SetLastError = true)]
+    [DllImport("powrprof.dll")]
     internal static extern uint PowerSetActiveScheme(
         IntPtr UserRootPowerKey,
         ref Guid SchemeGuid);
@@ -91,7 +91,7 @@ internal static partial class NativeInterop
     /// <param name="SetResolution">True to request resolution, false to release</param>
     /// <param name="CurrentResolution">Receives the actual resolution set</param>
     /// <returns>NTSTATUS code (0 = STATUS_SUCCESS)</returns>
-    [DllImport("ntdll.dll", SetLastError = true)]
+    [DllImport("ntdll.dll")]
     internal static extern int NtSetTimerResolution(
         int DesiredResolution,
         bool SetResolution,
@@ -105,7 +105,7 @@ internal static partial class NativeInterop
     /// <param name="MaximumResolution">Receives the maximum (finest) resolution</param>
     /// <param name="CurrentResolution">Receives the current resolution</param>
     /// <returns>NTSTATUS code (0 = STATUS_SUCCESS)</returns>
-    [DllImport("ntdll.dll", SetLastError = true)]
+    [DllImport("ntdll.dll")]
     internal static extern int NtQueryTimerResolution(
         out int MinimumResolution,
         out int MaximumResolution,

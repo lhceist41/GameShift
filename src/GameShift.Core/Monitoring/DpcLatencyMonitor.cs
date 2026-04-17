@@ -41,7 +41,7 @@ public class DpcLatencyMonitor : IDisposable
     private readonly object _lock = new();
     private int _thresholdMicroseconds;
     private DateTime _lastAlertTime;
-    private bool _isMonitoring;
+    private volatile bool _isMonitoring;
     private bool _counterAvailable;
     private bool _disposed;
     private readonly ILogger _logger;

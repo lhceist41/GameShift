@@ -5,6 +5,11 @@ using GameShift.Core.Profiles.GameActions;
 
 namespace GameShift.Core.Profiles;
 
+// NOTE: Hardcoded game install paths assume default installation directories.
+// Users with non-default install locations will not benefit from Defender exclusions,
+// firewall rules, or fullscreen optimization flags. These paths should ideally be
+// resolved dynamically from library scanner data.
+
 /// <summary>
 /// Static factory for game-specific preset profiles and actions.
 /// Provides pre-configured GameProfile settings and GameAction lists for
@@ -487,7 +492,9 @@ public static class CompetitivePresets
         OptimizeNetwork = true,
         UsePerformanceCoresOnly = true,    // osu! is extremely single-threaded
         EnableCompetitiveMode = false,     // No overlays to kill for rhythm games
-        SuspendDiscordOverlay = true,      // But still suspend Discord overlay
+        // SuspendDiscordOverlay only takes effect when EnableCompetitiveMode is true,
+        // so leave it false to be honest about what this profile actually does.
+        SuspendDiscordOverlay = false,
         EnableGpuOptimization = true,
         DisableMpo = false,
         // v3 toggles

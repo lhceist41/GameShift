@@ -33,19 +33,26 @@ public static class GpuDetector
 
                 foreach (ManagementObject obj in searcher.Get())
                 {
-                    var name = obj["Name"]?.ToString();
-                    var compat = obj["AdapterCompatibility"]?.ToString();
+                    try
+                    {
+                        var name = obj["Name"]?.ToString();
+                        var compat = obj["AdapterCompatibility"]?.ToString();
 
-                    if (string.IsNullOrWhiteSpace(name)) continue;
+                        if (string.IsNullOrWhiteSpace(name)) continue;
 
-                    // Skip virtual/basic display adapters
-                    if (name.Contains("Microsoft", StringComparison.OrdinalIgnoreCase) &&
-                        name.Contains("Basic", StringComparison.OrdinalIgnoreCase))
-                        continue;
+                        // Skip virtual/basic display adapters
+                        if (name.Contains("Microsoft", StringComparison.OrdinalIgnoreCase) &&
+                            name.Contains("Basic", StringComparison.OrdinalIgnoreCase))
+                            continue;
 
-                    _cachedGpuName = name;
-                    Log.Debug("GpuDetector: Detected GPU — {GpuName} ({Compat})", name, compat ?? "n/a");
-                    return name;
+                        _cachedGpuName = name;
+                        Log.Debug("GpuDetector: Detected GPU — {GpuName} ({Compat})", name, compat ?? "n/a");
+                        return name;
+                    }
+                    finally
+                    {
+                        obj.Dispose();
+                    }
                 }
             }
             catch (Exception ex)
@@ -58,14 +65,4 @@ public static class GpuDetector
         }
     }
 
-    /// <summary>
-    /// Clears the cached GPU name, forcing re-detection on next call.
-    /// </summary>
-    public static void ClearCache()
-    {
-        lock (_lock)
-        {
-            _cachedGpuName = null;
-        }
-    }
 }

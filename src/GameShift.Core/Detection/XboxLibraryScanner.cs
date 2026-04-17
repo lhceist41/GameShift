@@ -1,5 +1,4 @@
 using System.Reflection;
-using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Xml.Linq;
 using GameShift.Core.Config;
@@ -231,8 +230,7 @@ public class XboxLibraryScanner : ILibraryScanner
         Windows.ApplicationModel.Package package,
         XboxTitleEntry knownTitle)
     {
-        string processName = Path.GetFileNameWithoutExtension(knownTitle.Executable);
-        if (string.IsNullOrEmpty(processName)) return null;
+        if (string.IsNullOrEmpty(knownTitle.Executable)) return null;
 
         return new GameInfo
         {
@@ -265,7 +263,6 @@ public class XboxLibraryScanner : ILibraryScanner
             string? executable = app.Attribute("Executable")?.Value;
             if (string.IsNullOrEmpty(executable)) return null;
 
-            string processName = Path.GetFileNameWithoutExtension(executable);
             string displayName = package.DisplayName;
 
             return new GameInfo
@@ -324,47 +321,4 @@ public class XboxLibraryScanner : ILibraryScanner
         }
     }
 
-    // ── UWP App Launch Support ───────────────────────────────────────
-
-    /// <summary>
-    /// COM interface for launching UWP/MSIX apps by Application User Model ID.
-    /// </summary>
-    [ComImport, Guid("2e941141-7f97-4756-ba1d-9decde894a3d"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    private interface IApplicationActivationManager
-    {
-        int ActivateApplication(
-            [MarshalAs(UnmanagedType.LPWStr)] string appUserModelId,
-            [MarshalAs(UnmanagedType.LPWStr)] string? arguments,
-            uint options,
-            out uint processId);
-    }
-
-    [ComImport, Guid("45BA127D-10A8-46EA-8AB7-56EA9078943C")]
-    private class ApplicationActivationManager { }
-
-    /// <summary>
-    /// Launches a UWP/MSIX game by its Application User Model ID (AUMID).
-    /// Format: "PackageFamilyName!ApplicationId"
-    /// Returns the launched process ID, or 0 on failure.
-    /// </summary>
-    /// <param name="aumid">Application User Model ID (e.g., "Microsoft.624F8B84B80_8wekyb3d8bbwe!App")</param>
-    /// <returns>Process ID of the launched application, or 0 if launch failed.</returns>
-    public static uint LaunchGame(string aumid)
-    {
-        try
-        {
-            var aam = (IApplicationActivationManager)new ApplicationActivationManager();
-            aam.ActivateApplication(aumid, null, 0, out uint pid);
-
-            SettingsManager.Logger.Information(
-                "XboxLibraryScanner: Launched {Aumid} — PID {Pid}", aumid, pid);
-            return pid;
-        }
-        catch (Exception ex)
-        {
-            SettingsManager.Logger.Error(ex,
-                "XboxLibraryScanner: Failed to launch {Aumid}", aumid);
-            return 0;
-        }
-    }
 }

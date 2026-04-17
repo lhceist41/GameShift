@@ -78,13 +78,8 @@ public partial class App : Application
         }
         WriteDiag("Single-instance check passed");
 
-        // Additional global exception handlers on the WPF Dispatcher thread.
+        // WPF Dispatcher thread exception handler.
         // The AppDomain handler registered in static ctor covers pre-startup crashes.
-        AppDomain.CurrentDomain.UnhandledException += (s, args) =>
-        {
-            WriteCrashLog("UNHANDLED", args.ExceptionObject as Exception);
-        };
-
         DispatcherUnhandledException += (s, args) =>
         {
             WriteCrashLog("DISPATCHER", args.Exception);
@@ -408,16 +403,18 @@ public partial class App : Application
         });
     }
 
-    protected override async void OnExit(ExitEventArgs e)
+    protected override void OnExit(ExitEventArgs e)
     {
         Log.Information("GameShift shutting down normally");
 
-        // Deactivate any active optimizations
+        // Deactivate any active optimizations.
+        // Block synchronously — async void can be killed by the framework before
+        // the await completes, leaving optimizations un-reverted.
         if (Services.Orchestrator?.IsOptimizing == true && Services.Engine != null)
         {
             try
             {
-                await Services.Engine.DeactivateProfileAsync();
+                Services.Engine.DeactivateProfileAsync().GetAwaiter().GetResult();
                 Log.Information("Optimizations deactivated during shutdown");
             }
             catch (Exception ex)
@@ -428,6 +425,12 @@ public partial class App : Application
 
         // Unsubscribe all event handlers from Detector before disposing
         EventWiringHelper.UnwireAll(Services, _eventSubs);
+
+        // Clean up DetectionOrchestrator event subscriptions
+        Services.Orchestrator?.Cleanup();
+
+        // Dispose session tracker (unsubscribes from Detector events)
+        Services.SessionTrk?.Dispose();
 
         // Dispose Game Profile manager
         Services.GameProfileMgr?.Dispose();

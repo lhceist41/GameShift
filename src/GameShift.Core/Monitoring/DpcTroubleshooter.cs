@@ -89,46 +89,53 @@ public class DpcTroubleshooter
 
             foreach (ManagementObject driver in results)
             {
-                driversScanned++;
-
-                var pathName = driver["PathName"]?.ToString();
-                if (string.IsNullOrEmpty(pathName)) continue;
-
-                // Extract filename from path
-                // WMI paths can be: \SystemRoot\System32\drivers\foo.sys
-                //                   C:\Windows\System32\drivers\foo.sys
-                //                   \\?\C:\...\foo.sys
-                var fileName = Path.GetFileName(pathName);
-                if (string.IsNullOrEmpty(fileName)) continue;
-
-                var offender = KnownDpcOffenders.GetOffender(fileName);
-                if (offender == null) continue;
-
-                // Try to get file version
-                string fileVersion = "Unknown";
-                string fullPath = ResolvDriverPath(pathName);
                 try
                 {
-                    if (!string.IsNullOrEmpty(fullPath) && File.Exists(fullPath))
-                    {
-                        var versionInfo = FileVersionInfo.GetVersionInfo(fullPath);
-                        if (!string.IsNullOrEmpty(versionInfo.FileVersion))
-                            fileVersion = versionInfo.FileVersion;
-                    }
-                }
-                catch
-                {
-                    // Can't read version — not critical
-                }
+                    driversScanned++;
 
-                matches.Add(new DpcOffenderMatch
+                    var pathName = driver["PathName"]?.ToString();
+                    if (string.IsNullOrEmpty(pathName)) continue;
+
+                    // Extract filename from path
+                    // WMI paths can be: \SystemRoot\System32\drivers\foo.sys
+                    //                   C:\Windows\System32\drivers\foo.sys
+                    //                   \\?\C:\...\foo.sys
+                    var fileName = Path.GetFileName(pathName);
+                    if (string.IsNullOrEmpty(fileName)) continue;
+
+                    var offender = KnownDpcOffenders.GetOffender(fileName);
+                    if (offender == null) continue;
+
+                    // Try to get file version
+                    string fileVersion = "Unknown";
+                    string fullPath = ResolvDriverPath(pathName);
+                    try
+                    {
+                        if (!string.IsNullOrEmpty(fullPath) && File.Exists(fullPath))
+                        {
+                            var versionInfo = FileVersionInfo.GetVersionInfo(fullPath);
+                            if (!string.IsNullOrEmpty(versionInfo.FileVersion))
+                                fileVersion = versionInfo.FileVersion;
+                        }
+                    }
+                    catch
+                    {
+                        // Can't read version — not critical
+                    }
+
+                    matches.Add(new DpcOffenderMatch
+                    {
+                        ServiceName = driver["Name"]?.ToString() ?? "",
+                        DriverFileName = fileName,
+                        FileVersion = fileVersion,
+                        FilePath = fullPath,
+                        Offender = offender
+                    });
+                }
+                finally
                 {
-                    ServiceName = driver["Name"]?.ToString() ?? "",
-                    DriverFileName = fileName,
-                    FileVersion = fileVersion,
-                    FilePath = fullPath,
-                    Offender = offender
-                });
+                    driver.Dispose();
+                }
             }
         }
         catch (Exception ex)

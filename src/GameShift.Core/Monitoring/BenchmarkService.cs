@@ -337,7 +337,9 @@ public class BenchmarkService
         double avgFrameTime = sorted.Average();
         double p99FrameTime = sorted[Math.Min((int)(count * 0.99), count - 1)];
         double p999FrameTime = sorted[Math.Min((int)(count * 0.999), count - 1)];
-        double medianFrameTime = sorted[count / 2];
+        double medianFrameTime = count % 2 == 0
+            ? (sorted[count / 2 - 1] + sorted[count / 2]) / 2.0
+            : sorted[count / 2];
         double maxFrameTime = sorted[count - 1];
         double minFrameTime = sorted[0];
 
