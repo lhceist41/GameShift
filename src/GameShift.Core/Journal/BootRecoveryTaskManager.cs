@@ -1,5 +1,6 @@
 using System.Text;
 using GameShift.Core.Config;
+using GameShift.Core.System;
 using Serilog;
 
 namespace GameShift.Core.Journal;
@@ -149,7 +150,7 @@ public static class BootRecoveryTaskManager
         using var p = global::System.Diagnostics.Process.Start(
             new global::System.Diagnostics.ProcessStartInfo
             {
-                FileName = "schtasks",
+                FileName = NativeInterop.SystemExePath("schtasks.exe"),
                 Arguments = arguments,
                 UseShellExecute = false,
                 RedirectStandardOutput = true,

@@ -17,6 +17,21 @@ public class ProfileManager
     private readonly object _lock = new();
     private GameProfile? _cachedDefault;
 
+    /// <summary>
+    /// Strips path traversal characters and invalid filename characters from a game ID
+    /// to prevent directory traversal attacks when constructing file paths.
+    /// </summary>
+    private static string SanitizeGameId(string gameId)
+    {
+        var sanitized = gameId
+            .Replace("..", "")
+            .Replace("/", "_")
+            .Replace("\\", "_");
+        foreach (var c in Path.GetInvalidFileNameChars())
+            sanitized = sanitized.Replace(c, '_');
+        return sanitized;
+    }
+
     private static readonly JsonSerializerOptions WriteOptions = new()
     {
         WriteIndented = true
@@ -94,7 +109,8 @@ public class ProfileManager
     {
         lock (_lock)
         {
-            var profilePath = Path.Combine(_profilesDirectory, $"{gameId}.json");
+            var safeId = SanitizeGameId(gameId);
+            var profilePath = Path.Combine(_profilesDirectory, $"{safeId}.json");
 
             try
             {
@@ -136,7 +152,8 @@ public class ProfileManager
         {
             try
             {
-                var profilePath = Path.Combine(_profilesDirectory, $"{profile.Id}.json");
+                var safeId = SanitizeGameId(profile.Id);
+                var profilePath = Path.Combine(_profilesDirectory, $"{safeId}.json");
                 var json = JsonSerializer.Serialize(profile, WriteOptions);
                 File.WriteAllText(profilePath, json);
 
@@ -172,7 +189,8 @@ public class ProfileManager
                 return false;
             }
 
-            var profilePath = Path.Combine(_profilesDirectory, $"{gameId}.json");
+            var safeId = SanitizeGameId(gameId);
+            var profilePath = Path.Combine(_profilesDirectory, $"{safeId}.json");
 
             if (File.Exists(profilePath))
             {

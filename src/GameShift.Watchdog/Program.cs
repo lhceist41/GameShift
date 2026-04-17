@@ -159,7 +159,7 @@ static void RunSc(string arguments)
     Console.WriteLine($"  sc {arguments}");
     using var p = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
     {
-        FileName = "sc",
+        FileName = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "sc.exe"),
         Arguments = arguments,
         UseShellExecute = false,
         RedirectStandardOutput = true,

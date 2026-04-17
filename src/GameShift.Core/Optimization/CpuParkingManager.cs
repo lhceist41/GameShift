@@ -434,7 +434,7 @@ public class CpuParkingManager : IOptimization
         {
             var psi = new ProcessStartInfo
             {
-                FileName = "powercfg",
+                FileName = NativeInterop.SystemExePath("powercfg.exe"),
                 Arguments = arguments,
                 UseShellExecute = false,
                 CreateNoWindow = true,

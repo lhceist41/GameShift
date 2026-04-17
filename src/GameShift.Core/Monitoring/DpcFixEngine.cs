@@ -230,7 +230,7 @@ public class DpcFixEngine
 
     private DpcFixResult ApplyBcdEditFix(DriverAutoFix fix)
     {
-        var (success, output) = RunProcess("bcdedit.exe", fix.Command!.Replace("bcdedit ", ""));
+        var (success, output) = RunProcess(NativeInterop.SystemExePath("bcdedit.exe"), fix.Command!.Replace("bcdedit ", ""));
         if (!success)
             return new DpcFixResult { Success = false, Message = $"bcdedit failed: {output}" };
 
@@ -253,7 +253,7 @@ public class DpcFixEngine
         if (string.IsNullOrEmpty(applied.PreviousValue))
             return new DpcFixResult { Success = false, Message = "No revert command stored." };
 
-        var (success, output) = RunProcess("bcdedit.exe", applied.PreviousValue.Replace("bcdedit ", ""));
+        var (success, output) = RunProcess(NativeInterop.SystemExePath("bcdedit.exe"), applied.PreviousValue.Replace("bcdedit ", ""));
         return new DpcFixResult
         {
             Success = success,
@@ -266,7 +266,7 @@ public class DpcFixEngine
 
     private DpcFixResult ApplyNetshFix(DriverAutoFix fix)
     {
-        var (success, output) = RunProcess("netsh.exe", fix.Command!.Replace("netsh ", ""));
+        var (success, output) = RunProcess(NativeInterop.SystemExePath("netsh.exe"), fix.Command!.Replace("netsh ", ""));
         if (!success)
             return new DpcFixResult { Success = false, Message = $"netsh failed: {output}" };
 
@@ -289,7 +289,7 @@ public class DpcFixEngine
         if (string.IsNullOrEmpty(applied.PreviousValue))
             return new DpcFixResult { Success = false, Message = "No revert command stored." };
 
-        var (success, output) = RunProcess("netsh.exe", applied.PreviousValue.Replace("netsh ", ""));
+        var (success, output) = RunProcess(NativeInterop.SystemExePath("netsh.exe"), applied.PreviousValue.Replace("netsh ", ""));
         return new DpcFixResult { Success = success, Message = success ? "Fix reverted." : $"Revert failed: {output}" };
     }
 
@@ -304,7 +304,7 @@ public class DpcFixEngine
         if (fix.Value == "high_performance")
         {
             // Get current active power plan for rollback
-            var (curSuccess, currentPlan) = RunProcess("powercfg.exe", "/getactivescheme");
+            var (curSuccess, currentPlan) = RunProcess(NativeInterop.SystemExePath("powercfg.exe"), "/getactivescheme");
             string? previousGuid = null;
             if (curSuccess && currentPlan.Length > 10)
             {
@@ -326,7 +326,7 @@ public class DpcFixEngine
             if (targetGuid == null)
                 return new DpcFixResult { Success = false, Message = "Could not find or create a High Performance power plan." };
 
-            var (success, output) = RunProcess("powercfg.exe", $"/setactive {targetGuid}");
+            var (success, output) = RunProcess(NativeInterop.SystemExePath("powercfg.exe"), $"/setactive {targetGuid}");
             if (!success)
                 return new DpcFixResult { Success = false, Message = $"powercfg failed: {output}" };
 
@@ -350,7 +350,7 @@ public class DpcFixEngine
         var value = fix.Value ?? "0";
 
         // Read current value for rollback
-        var (qSuccess, queryOutput) = RunProcess("powercfg.exe", $"/query SCHEME_CURRENT {subgroup} {setting}");
+        var (qSuccess, queryOutput) = RunProcess(NativeInterop.SystemExePath("powercfg.exe"), $"/query SCHEME_CURRENT {subgroup} {setting}");
         string? prevVal = null;
         if (qSuccess)
         {
@@ -367,12 +367,12 @@ public class DpcFixEngine
             }
         }
 
-        var (sSuccess, sOutput) = RunProcess("powercfg.exe", $"/setacvalueindex SCHEME_CURRENT {subgroup} {setting} {value}");
+        var (sSuccess, sOutput) = RunProcess(NativeInterop.SystemExePath("powercfg.exe"), $"/setacvalueindex SCHEME_CURRENT {subgroup} {setting} {value}");
         if (!sSuccess)
             return new DpcFixResult { Success = false, Message = $"powercfg failed: {sOutput}" };
 
         // Apply the change
-        RunProcess("powercfg.exe", "/setactive SCHEME_CURRENT");
+        RunProcess(NativeInterop.SystemExePath("powercfg.exe"), "/setactive SCHEME_CURRENT");
 
         _settings.AppliedDpcFixes.Add(new AppliedDpcFix
         {
@@ -396,7 +396,7 @@ public class DpcFixEngine
             if (string.IsNullOrEmpty(applied.PreviousValue))
                 return new DpcFixResult { Success = false, Message = "No previous power plan GUID stored." };
 
-            var (success, output) = RunProcess("powercfg.exe", $"/setactive {applied.PreviousValue}");
+            var (success, output) = RunProcess(NativeInterop.SystemExePath("powercfg.exe"), $"/setactive {applied.PreviousValue}");
             return new DpcFixResult { Success = success, Message = success ? "Power plan reverted." : output };
         }
 
@@ -405,9 +405,9 @@ public class DpcFixEngine
         if (parts.Length != 2 || string.IsNullOrEmpty(applied.PreviousValue))
             return new DpcFixResult { Success = false, Message = "Invalid revert target." };
 
-        var (s, o) = RunProcess("powercfg.exe",
+        var (s, o) = RunProcess(NativeInterop.SystemExePath("powercfg.exe"),
             $"/setacvalueindex SCHEME_CURRENT {parts[0]} {parts[1]} {applied.PreviousValue}");
-        RunProcess("powercfg.exe", "/setactive SCHEME_CURRENT");
+        RunProcess(NativeInterop.SystemExePath("powercfg.exe"), "/setactive SCHEME_CURRENT");
 
         return new DpcFixResult { Success = s, Message = s ? "Setting reverted." : o };
     }
@@ -430,7 +430,7 @@ public class DpcFixEngine
             return UltimatePerformanceGuid;
 
         // 3. List all plans — look for any existing "Ultimate Performance" variant
-        var (listOk, listOut) = RunProcess("powercfg.exe", "-list");
+        var (listOk, listOut) = RunProcess(NativeInterop.SystemExePath("powercfg.exe"), "-list");
         if (listOk)
         {
             foreach (var line in listOut.Split('\n'))
@@ -447,7 +447,7 @@ public class DpcFixEngine
         }
 
         // 4. None found — duplicate from hidden Ultimate Performance template
-        var (dupOk, dupOut) = RunProcess("powercfg.exe", $"-duplicatescheme {UltimatePerformanceGuid}");
+        var (dupOk, dupOut) = RunProcess(NativeInterop.SystemExePath("powercfg.exe"), $"-duplicatescheme {UltimatePerformanceGuid}");
         if (dupOk)
         {
             var newGuid = ExtractGuidFromLine(dupOut);
@@ -459,7 +459,7 @@ public class DpcFixEngine
         }
 
         // 5. Last resort — try duplicating from High Performance template
-        var (dup2Ok, dup2Out) = RunProcess("powercfg.exe", $"-duplicatescheme {HighPerformanceGuid}");
+        var (dup2Ok, dup2Out) = RunProcess(NativeInterop.SystemExePath("powercfg.exe"), $"-duplicatescheme {HighPerformanceGuid}");
         if (dup2Ok)
         {
             var newGuid = ExtractGuidFromLine(dup2Out);
@@ -478,7 +478,7 @@ public class DpcFixEngine
     /// </summary>
     private static bool IsPlanAvailable(string guid)
     {
-        var (ok, output) = RunProcess("powercfg.exe", $"-query {guid}");
+        var (ok, output) = RunProcess(NativeInterop.SystemExePath("powercfg.exe"), $"-query {guid}");
         return ok && !output.Contains("Invalid Parameters", StringComparison.OrdinalIgnoreCase);
     }
 
@@ -509,12 +509,19 @@ public class DpcFixEngine
         var property = fix.Property ?? "";
         var value = fix.Value ?? "0";
 
+        // Reject non-numeric values to prevent PowerShell injection
+        if (!int.TryParse(value, out _))
+        {
+            Log.Warning("[DpcFix] Rejecting non-numeric adapter value: {Value}", value);
+            return new DpcFixResult { Success = false, Message = $"Invalid non-numeric adapter value: {value}" };
+        }
+
         // Query current value from the first physical adapter that has this property
         string previousValue = QueryNetAdapterPropertyValue(property) ?? "1";
 
         // Use PowerShell to set the property on all physical adapters
         var script = $"Get-NetAdapter -Physical | Set-NetAdapterAdvancedProperty -RegistryKeyword '{property}' -RegistryValue {value} -ErrorAction SilentlyContinue";
-        var (success, output) = RunProcess("powershell.exe", $"-NoProfile -Command \"{script}\"");
+        var (success, output) = RunProcess(NativeInterop.SystemExePath("WindowsPowerShell\\v1.0\\powershell.exe"), $"-NoProfile -Command \"{script}\"");
 
         // Store rollback with the actual previous value
         _settings.AppliedDpcFixes.Add(new AppliedDpcFix
@@ -537,8 +544,16 @@ public class DpcFixEngine
 
     private DpcFixResult RevertNetAdapterFix(AppliedDpcFix applied)
     {
-        var script = $"Get-NetAdapter -Physical | Set-NetAdapterAdvancedProperty -RegistryKeyword '{applied.Target}' -RegistryValue {applied.PreviousValue ?? "1"} -ErrorAction SilentlyContinue";
-        var (success, output) = RunProcess("powershell.exe", $"-NoProfile -Command \"{script}\"");
+        // Reject non-numeric values to prevent PowerShell injection
+        var revertValue = applied.PreviousValue ?? "1";
+        if (!int.TryParse(revertValue, out _))
+        {
+            Log.Warning("[DpcFix] Rejecting non-numeric adapter revert value: {Value}", revertValue);
+            return new DpcFixResult { Success = false, Message = $"Invalid non-numeric adapter revert value: {revertValue}" };
+        }
+
+        var script = $"Get-NetAdapter -Physical | Set-NetAdapterAdvancedProperty -RegistryKeyword '{applied.Target}' -RegistryValue {revertValue} -ErrorAction SilentlyContinue";
+        var (success, output) = RunProcess(NativeInterop.SystemExePath("WindowsPowerShell\\v1.0\\powershell.exe"), $"-NoProfile -Command \"{script}\"");
         return new DpcFixResult { Success = true, Message = "Network adapter property reverted." };
     }
 
@@ -554,7 +569,7 @@ public class DpcFixEngine
                 $"Get-NetAdapter -Physical | " +
                 $"Get-NetAdapterAdvancedProperty -RegistryKeyword '{registryKeyword}' -ErrorAction SilentlyContinue | " +
                 $"Select-Object -First 1 -ExpandProperty RegistryValue";
-            var (ok, output) = RunProcess("powershell.exe", $"-NoProfile -Command \"{queryScript}\"");
+            var (ok, output) = RunProcess(NativeInterop.SystemExePath("WindowsPowerShell\\v1.0\\powershell.exe"), $"-NoProfile -Command \"{queryScript}\"");
             if (ok && !string.IsNullOrWhiteSpace(output))
             {
                 var val = output.Trim().Split('\n')[0].Trim();

@@ -1,6 +1,7 @@
 using System.ServiceProcess;
 using GameShift.Core.Config;
 using GameShift.Core.Journal;
+using GameShift.Core.System;
 using Serilog;
 
 namespace GameShift.Core.SystemTweaks;
@@ -300,7 +301,7 @@ public class KernelTuningManager
             using var process = global::System.Diagnostics.Process.Start(
                 new global::System.Diagnostics.ProcessStartInfo
                 {
-                    FileName = "bcdedit.exe",
+                    FileName = NativeInterop.SystemExePath("bcdedit.exe"),
                     Arguments = arguments,
                     UseShellExecute = false,
                     CreateNoWindow = true,

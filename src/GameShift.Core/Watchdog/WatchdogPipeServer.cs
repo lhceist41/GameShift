@@ -1,4 +1,6 @@
 using System.IO.Pipes;
+using System.Security.AccessControl;
+using System.Security.Principal;
 using GameShift.Core.Journal;
 using Serilog;
 
@@ -41,12 +43,16 @@ public class WatchdogPipeServer
         {
             try
             {
-                using var pipe = new NamedPipeServerStream(
+                var pipeSecurity = CreatePipeSecurity();
+                using var pipe = NamedPipeServerStreamAcl.Create(
                     PipeName,
                     PipeDirection.In,
                     maxNumberOfServerInstances: 1,
                     transmissionMode: PipeTransmissionMode.Byte,
-                    options: PipeOptions.Asynchronous);
+                    options: PipeOptions.Asynchronous,
+                    inBufferSize: 0,
+                    outBufferSize: 0,
+                    pipeSecurity: pipeSecurity);
 
                 _logger.Information("[WatchdogPipeServer] Waiting for GameShift connection...");
                 await pipe.WaitForConnectionAsync(ct);
@@ -134,6 +140,23 @@ public class WatchdogPipeServer
         {
             _logger.Information("[WatchdogPipeServer] Session inactive — clean shutdown, no recovery needed");
         }
+    }
+
+    /// <summary>
+    /// Creates a PipeSecurity that restricts access to Administrators and SYSTEM only.
+    /// </summary>
+    private static PipeSecurity CreatePipeSecurity()
+    {
+        var pipeSecurity = new PipeSecurity();
+        pipeSecurity.AddAccessRule(new PipeAccessRule(
+            new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null),
+            PipeAccessRights.FullControl,
+            AccessControlType.Allow));
+        pipeSecurity.AddAccessRule(new PipeAccessRule(
+            new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null),
+            PipeAccessRights.FullControl,
+            AccessControlType.Allow));
+        return pipeSecurity;
     }
 
     /// <summary>

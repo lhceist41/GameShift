@@ -268,7 +268,7 @@ public class ScheduledTaskSuppressor : IOptimization
         {
             var psi = new ProcessStartInfo
             {
-                FileName = "schtasks.exe",
+                FileName = NativeInterop.SystemExePath("schtasks.exe"),
                 Arguments = arguments,
                 UseShellExecute = false,
                 CreateNoWindow = true,

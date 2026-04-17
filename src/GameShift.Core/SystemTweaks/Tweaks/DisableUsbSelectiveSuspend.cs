@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using GameShift.Core.System;
 
 namespace GameShift.Core.SystemTweaks.Tweaks;
 
@@ -87,7 +88,7 @@ public class DisableUsbSelectiveSuspend : ISystemTweak
         {
             var psi = new ProcessStartInfo
             {
-                FileName = "powercfg",
+                FileName = NativeInterop.SystemExePath("powercfg.exe"),
                 Arguments = arguments,
                 UseShellExecute = false,
                 CreateNoWindow = true,

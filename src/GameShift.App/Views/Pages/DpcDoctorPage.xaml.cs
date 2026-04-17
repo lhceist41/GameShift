@@ -83,7 +83,9 @@ public partial class DpcDoctorPage : Page
         if (result != MessageBoxResult.Yes)
             return;
 
-        System.Diagnostics.Process.Start("shutdown", "/r /t 10 /c \"GameShift DPC Doctor: Applying fix - restarting in 10 seconds\"");
+        System.Diagnostics.Process.Start(
+            System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "shutdown.exe"),
+            "/r /t 10 /c \"GameShift DPC Doctor: Applying fix - restarting in 10 seconds\"");
     }
 
     private void OnDismissRebootPrompt(object sender, RoutedEventArgs e) =>

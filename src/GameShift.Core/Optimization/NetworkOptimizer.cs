@@ -499,7 +499,7 @@ public class NetworkOptimizer : IOptimization
         try
         {
             // Capture current RSC state
-            var (queryExitCode, queryOutput) = RunProcess("netsh", "int tcp show global");
+            var (queryExitCode, queryOutput) = RunProcess(NativeInterop.SystemExePath("netsh.exe"), "int tcp show global");
             if (queryExitCode == 0)
             {
                 _originalRscState = ParseRscState(queryOutput);
@@ -513,7 +513,7 @@ public class NetworkOptimizer : IOptimization
             }
 
             // Disable RSC
-            var (disableExitCode, _) = RunProcess("netsh", "int tcp set global rsc=disabled");
+            var (disableExitCode, _) = RunProcess(NativeInterop.SystemExePath("netsh.exe"), "int tcp set global rsc=disabled");
             if (disableExitCode == 0)
             {
                 SettingsManager.Logger.Information("[NetworkOptimizer] Disabled RSC globally via netsh");
@@ -539,7 +539,7 @@ public class NetworkOptimizer : IOptimization
 
         try
         {
-            var (exitCode, _) = RunProcess("netsh", $"int tcp set global rsc={_originalRscState}");
+            var (exitCode, _) = RunProcess(NativeInterop.SystemExePath("netsh.exe"), $"int tcp set global rsc={_originalRscState}");
             if (exitCode == 0)
             {
                 SettingsManager.Logger.Information(

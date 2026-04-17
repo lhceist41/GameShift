@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using GameShift.Core.System;
 using Serilog;
 
 namespace GameShift.Core.Updates;
@@ -73,12 +74,13 @@ public static class UpdateApplier
                 exit
                 """;
 
-            var batchPath = Path.Combine(currentDir, "gameshift-update.cmd");
+            var batchName = $"gameshift-update-{Guid.NewGuid():N}.cmd";
+            var batchPath = Path.Combine(currentDir, batchName);
             File.WriteAllText(batchPath, script);
 
             var psi = new ProcessStartInfo
             {
-                FileName = "cmd.exe",
+                FileName = NativeInterop.SystemExePath("cmd.exe"),
                 Arguments = $"/c \"{batchPath}\"",
                 WorkingDirectory = currentDir,
                 UseShellExecute = true,
@@ -115,11 +117,15 @@ public static class UpdateApplier
                 Log.Debug("UpdateApplier: Cleaned up leftover .update file");
             }
 
-            var batchPath = Path.Combine(currentDir, "gameshift-update.cmd");
-            if (File.Exists(batchPath))
+            // Clean up any leftover update batch scripts (name includes a random GUID)
+            foreach (var batchFile in Directory.GetFiles(currentDir, "gameshift-update-*.cmd"))
             {
-                File.Delete(batchPath);
-                Log.Debug("UpdateApplier: Cleaned up leftover update script");
+                try
+                {
+                    File.Delete(batchFile);
+                    Log.Debug("UpdateApplier: Cleaned up leftover update script {Path}", batchFile);
+                }
+                catch { }
             }
         }
         catch (Exception ex)

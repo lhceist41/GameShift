@@ -114,4 +114,16 @@ internal static partial class NativeInterop
     // ============================================================
     // kernel32.dll - CPU Set Information (added by Plan 03-02 if needed)
     // ============================================================
+
+    // ============================================================
+    // Safe executable path resolution
+    // ============================================================
+
+    /// <summary>
+    /// Returns the absolute path to a Windows system executable (e.g., powercfg.exe).
+    /// Prevents PATH hijacking when running as administrator.
+    /// Accepts subdirectories (e.g., "WindowsPowerShell\v1.0\powershell.exe").
+    /// </summary>
+    internal static string SystemExePath(string exeName) =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), exeName);
 }

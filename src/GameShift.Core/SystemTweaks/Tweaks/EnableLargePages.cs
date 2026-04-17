@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Security.Principal;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using GameShift.Core.System;
 using Serilog;
 
 namespace GameShift.Core.SystemTweaks.Tweaks;
@@ -95,7 +96,7 @@ public class EnableLargePages : ISystemTweak
         string tempFile = Path.Combine(Path.GetTempPath(), $"gameshift_secpol_check_{Guid.NewGuid():N}.inf");
         try
         {
-            var (exitCode, _) = RunProcess("secedit",
+            var (exitCode, _) = RunProcess(NativeInterop.SystemExePath("secedit.exe"),
                 $"/export /cfg \"{tempFile}\" /areas USER_RIGHTS");
 
             if (exitCode != 0) return false;
@@ -137,7 +138,7 @@ public class EnableLargePages : ISystemTweak
         try
         {
             // Step 1: Export current security policy
-            var (exitCode1, output1) = RunProcess("secedit",
+            var (exitCode1, output1) = RunProcess(NativeInterop.SystemExePath("secedit.exe"),
                 $"/export /cfg \"{exportFile}\" /areas USER_RIGHTS");
             if (exitCode1 != 0)
             {
@@ -167,7 +168,7 @@ public class EnableLargePages : ISystemTweak
             File.WriteAllText(importFile, content);
 
             // Step 3: Import modified policy
-            var (exitCode2, output2) = RunProcess("secedit",
+            var (exitCode2, output2) = RunProcess(NativeInterop.SystemExePath("secedit.exe"),
                 $"/configure /db \"{dbFile}\" /cfg \"{importFile}\" /areas USER_RIGHTS");
 
             if (exitCode2 != 0)
@@ -204,7 +205,7 @@ public class EnableLargePages : ISystemTweak
 
         try
         {
-            var (exitCode1, output1) = RunProcess("secedit",
+            var (exitCode1, output1) = RunProcess(NativeInterop.SystemExePath("secedit.exe"),
                 $"/export /cfg \"{exportFile}\" /areas USER_RIGHTS");
             if (exitCode1 != 0)
             {
@@ -225,7 +226,7 @@ public class EnableLargePages : ISystemTweak
 
             File.WriteAllText(importFile, content);
 
-            var (exitCode2, output2) = RunProcess("secedit",
+            var (exitCode2, output2) = RunProcess(NativeInterop.SystemExePath("secedit.exe"),
                 $"/configure /db \"{dbFile}\" /cfg \"{importFile}\" /areas USER_RIGHTS");
 
             if (exitCode2 != 0)

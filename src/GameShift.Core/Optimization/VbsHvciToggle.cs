@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Microsoft.Win32;
 using GameShift.Core.Config;
+using GameShift.Core.System;
 using Serilog;
 
 namespace GameShift.Core.Optimization;
@@ -256,7 +257,7 @@ public class VbsHvciToggle
     {
         Process.Start(new ProcessStartInfo
         {
-            FileName = "shutdown",
+            FileName = NativeInterop.SystemExePath("shutdown.exe"),
             Arguments = "/r /t 30 /c \"GameShift: Disabling Memory Integrity for better gaming performance.\"",
             UseShellExecute = false,
             CreateNoWindow = true
@@ -374,7 +375,7 @@ public class VbsHvciToggle
             var launchType = off ? "off" : "auto";
             var psi = new ProcessStartInfo
             {
-                FileName = "bcdedit",
+                FileName = NativeInterop.SystemExePath("bcdedit.exe"),
                 Arguments = $"/set hypervisorlaunchtype {launchType}",
                 UseShellExecute = false,
                 CreateNoWindow = true,
