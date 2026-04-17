@@ -114,9 +114,11 @@ public class TaskDeferralService
             using var process = Process.Start(psi);
             if (process == null) return null;
 
+            string error = "";
+            var stderrTask = Task.Run(() => { error = process.StandardError.ReadToEnd(); });
             var output = process.StandardOutput.ReadToEnd();
-            var error = process.StandardError.ReadToEnd();
-            process.WaitForExit(10000);
+            stderrTask.Wait(10_000);
+            process.WaitForExit(10_000);
 
             return string.IsNullOrEmpty(error) ? output : $"ERROR: {error}";
         }

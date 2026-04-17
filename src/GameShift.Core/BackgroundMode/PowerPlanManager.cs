@@ -420,8 +420,11 @@ public class PowerPlanManager : IDisposable
             using var process = Process.Start(psi);
             if (process == null) return null;
 
+            string stderr = "";
+            var stderrTask = Task.Run(() => { stderr = process.StandardError.ReadToEnd(); });
             var output = process.StandardOutput.ReadToEnd();
-            process.WaitForExit(10000);
+            stderrTask.Wait(10_000);
+            process.WaitForExit(10_000);
             return output;
         }
         catch (Exception ex)

@@ -149,10 +149,22 @@ public partial class DashboardPage : Page
 
     /// <summary>
     /// Handles clicking anywhere on an optimization row to toggle expand/collapse.
-    /// Sender is the Border containing the DataContext for the row item.
+    /// Skips the toggle when the click originated from the CheckBox (the toggle
+    /// has its own Checked/Unchecked handler and should not also expand/collapse).
     /// </summary>
     private void OnOptimizationRowClicked(object sender, MouseButtonEventArgs e)
     {
+        // If the click came from the CheckBox or a child of a CheckBox, ignore it
+        if (e.OriginalSource is DependencyObject source)
+        {
+            var parent = source;
+            while (parent != null)
+            {
+                if (parent is CheckBox) return;
+                parent = System.Windows.Media.VisualTreeHelper.GetParent(parent);
+            }
+        }
+
         if (sender is FrameworkElement element && element.DataContext is ExpandableOptimizationItem item)
         {
             item.IsExpanded = !item.IsExpanded;
