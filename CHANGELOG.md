@@ -2,6 +2,63 @@
 
 All notable changes to GameShift are documented here.
 
+## [3.6.3] - 2026-04-18
+
+### Security
+
+- **PATH hijacking eliminated** - all 14 external executables (`powercfg`, `schtasks`, `bcdedit`, `powershell`, `shutdown`, `netsh`, `sc`, `cmd`, `fsutil`, `secedit`) were invoked by bare filename, which Windows resolves via PATH. Since GameShift runs as administrator, a malicious executable in any writable PATH directory (common with developer tools) could execute as admin. All system tool invocations now use absolute paths via `Path.Combine(Environment.SpecialFolder.System, "tool.exe")`.
+- **Named pipe access control** - `SingleInstancePipe` and `WatchdogPipeServer` were created with default ACLs, allowing any local user to connect and trigger window activation or force optimization reverts mid-game. Both pipes now restrict access to Administrators and SYSTEM only via explicit `PipeSecurity`.
+- **Update download URL validation** - the `browser_download_url` and `html_url` from the GitHub API were trusted blindly. A tampered API response could redirect downloads to a malicious server. URLs are now validated against an allowlist (`github.com`, `*.githubusercontent.com`) over HTTPS only.
+- **Update batch script TOCTOU hardened** - the update script was written to a predictable filename (`gameshift-update.cmd`) in the application directory. Now uses a random GUID filename to prevent race-condition replacement attacks.
+- **PowerShell injection prevention** - `FirewallRuleAction._direction` was interpolated unquoted; now validated as `Inbound`/`Outbound` only and quoted. `DpcFixEngine` adapter property values are validated as numeric before interpolation.
+- **Profile path traversal** - `ProfileManager` constructed file paths from unsanitized game IDs, allowing crafted IDs (e.g., `..\..\Windows\System32\evil`) to write/read arbitrary `.json` files as admin. Game IDs are now sanitized via `SanitizeGameId()`.
+
+### Fixed
+
+- **Optimization row click leaked to expand/collapse** - after fixing the v3.6.2 toggle bug, clicking the CheckBox also toggled the row's expand state. The row click handler now walks the visual tree to skip clicks originating from a CheckBox.
+- **Settings file corruption on crash** - `SettingsManager.Save()` and `SessionHistoryStore.Save()` used non-atomic `File.WriteAllText`, risking corruption if the process crashed mid-write. Both now write to a `.tmp` file then atomically rename via `File.Move(overwrite: true)`.
+- **First-run wizard reset all settings** - completing the wizard created a brand-new `AppSettings` object with only 3 properties set, overwriting all existing BackgroundMode/notification/profile settings with defaults. Now loads existing settings first and overlays only the wizard values.
+- **3 additional process-launching deadlocks** - `TaskDeferralService`, `PowerPlanManager`, and `HardwareScanner` had the same stdout/stderr deadlock pattern as the 10 fixed in v3.6.2. All three now read stderr concurrently in a background task.
+- **20 WMI ManagementObject COM handle leaks** across 9 files - foreach loops over `searcher.Get()` did not dispose individual `ManagementObject` instances. All loops now dispose properly. Files: `GpuDetector`, `HardwareScanner` (3 loops), `HybridCpuDetector`, `GpuDriverOptimizer`, `DpcTroubleshooter`, `DisableMemoryCompression`, `SystemInfoGatherer` (8 loops), `PowerPlanConfigurator` (3 loops).
+- **`AntiCheatDetector` ServiceController array leak** - `ServiceController.GetServices()` returned an array of native handles that were never disposed.
+- **DPC trace engine peak update race** - `_systemPeakDpc` was read and updated in two separate Interlocked operations, allowing a higher value from a concurrent thread to be overwritten by a lower value. Now uses a proper CAS loop.
+- **DPC capture seconds non-volatile** - `CaptureSeconds` was read from the UI thread and written from the timer thread without synchronization. Now uses `Interlocked.Increment` and `Volatile.Read`.
+- **DPC latency monitor non-volatile flag** - `_isMonitoring` was written from `Start`/`Stop` and read from timer/ETW callbacks without `volatile`.
+- **Hybrid CPU detector lazy init race** - the `IsHybridCpu`/`PCoreCount`/`PCoreAffinityMask` properties checked `_isHybrid == null` without synchronization, allowing concurrent threads to call `Detect()` simultaneously. Now uses double-checked locking.
+- **DriverVersionTracker advisory list race** - the `ActiveAdvisories` list was cleared and rebuilt incrementally, allowing UI readers to see a partially-populated list and throw `InvalidOperationException`. Now built locally and swapped via atomic reference assignment.
+- **AntiCheatDetector cache race** - the static `_detected` flag is now `volatile` to ensure cross-thread visibility of detection results.
+- **KnownGamesStore.GetAllGames returned live wrapper** - `_games.AsReadOnly()` returned a wrapper around the live list. Concurrent mutations from another thread could throw during enumeration. Now returns a snapshot via `_games.ToList().AsReadOnly()`.
+- **Dark title bar missing on UpdateWindow and FirstRunWizardWindow** - both windows had dark backgrounds but white Windows 11 title bars. `DwmSetWindowAttribute(DWMWA_USE_IMMERSIVE_DARK_MODE)` is now applied at construction.
+- **TemperatureMonitor showed `float.MaxValue` before first reading** - `MinCpuTemp`/`MinGpuTemp` were initialized to `float.MaxValue` and visible to the UI before any reading arrived. Now initialized to 0 with a `_hasFirstReading` flag that sets min/max directly on the first sample.
+- **DPC Doctor driver status badge always green** - the badge background was hardcoded to dark green regardless of severity, making Critical drivers look "good" at a glance. Now uses `DataTrigger`s to color the background by severity.
+- **Laptop detection failed silently on some Windows versions** - `Win32_SystemEnclosure.ChassisTypes` returns `int[]` on some systems and `ushort[]` on others; the cast `is ushort[]` failed silently on the former. Now uses `Array` + `Convert.ToInt32` to handle both.
+- **Riot Games detection only checked C:\\** - users with games on D:\\ or other drives got false negatives, potentially causing GameShift to disable VBS when Vanguard was actually installed. Now also checks the registry for Riot Client install path and the `vgc` (Vanguard) service existence.
+- **`SessionTracker` and `DetectionOrchestrator` never unsubscribed events** - both subscribed to detector events in their constructors but had no cleanup path. Could fire callbacks against disposed services during shutdown. `SessionTracker` now implements `IDisposable`; `DetectionOrchestrator` has a `Cleanup()` method called from `App.OnExit`.
+- **`SingleInstancePipe.ReadLineAsync` had no timeout** - a malicious or hung client could connect and never send a line, blocking the read indefinitely. Now uses a 5-second timeout per read.
+- **Duplicate `UnhandledException` handler** - the static constructor and `OnStartup` both registered handlers for `AppDomain.CurrentDomain.UnhandledException`, causing duplicate crash log entries. The duplicate registration was removed.
+- **Two implemented system tweaks were not registered** - `OptimizeNtfsMemoryUsage` and `OptimizeKernelMemory` were fully implemented but missing from `SystemTweaksManager._tweaks`, making them unreachable. Now registered.
+- **`App.OnExit` async-void could be killed mid-revert** - WPF may terminate the process before `await DeactivateProfileAsync()` completes. Now blocks synchronously via `.GetAwaiter().GetResult()` to ensure optimization revert finishes before exit.
+- **PowerShell `WaitForExit` without timeout in 2 game actions** - `DefenderExclusionAction` and `FirewallRuleAction` could hang indefinitely if PowerShell stalled. Added 15-second timeout with process kill on hang.
+- **`FirewallRuleAction.RuleExists` missing quote escaping** - `_ruleName` was interpolated without `Replace("'", "''")`, unlike `Apply` and `Revert`.
+- **`DisableGameDvr.Revert` assumed integer registry values** - called `GetInt32()` on all original values; string-typed values threw `InvalidOperationException`. Now checks `ValueKind` first.
+- **`TaskDeferralService` re-enabled user-disabled tasks** - did not check whether a task was already disabled before disabling it; then unconditionally re-enabled all tracked tasks. Now skips already-disabled tasks.
+- **Steam library path dedup was case-sensitive** - `D:\\Steam` and `d:\\steam` were treated as different paths.
+- **`PowerPlanManager.CheckIdle` TickCount overflow** - `Environment.TickCount` is 32-bit signed and wraps at ~24.8 days. Now uses `Environment.TickCount64` masked to 32 bits to match `LASTINPUTINFO.dwTime`.
+- **`PowerPlanSwitcher` activated plans as side effect of existence check** - used `PowerSetActiveScheme` to test if a plan existed, accidentally switching the active plan. Now uses `powercfg /query` with no side effects.
+- **`TimerResolutionManager` Win10 revert passed wrong resolution** - the revert path passed the original system resolution instead of the resolution actually applied, failing to release the timer lock. Now stores and uses the applied resolution.
+- **`BenchmarkService` median off-by-one** - did not average the two middle values for even-sized arrays.
+- **osu! profile `SuspendDiscordOverlay` was inert** - set to `true` but `EnableCompetitiveMode = false` meant CompetitiveMode never applied, so the flag had no effect. Set to `false` to be honest about what the profile does.
+- **Removed `SetLastError = true` from ntdll P/Invokes** - NT Native API functions return NTSTATUS, not Win32 last error. The flag caused unnecessary `GetLastError()` calls returning stale data.
+
+### Removed
+
+- **Dead code cleanup** - removed 11 unused items: `GpuDetector.ClearCache()`, `HardwareScanner.GetSummary()`, `XboxLibraryScanner.LaunchGame()` (and unused COM interop types), `OptimizationStatus` class, `TrayIconManager.OnTrayLeftClick`/`_hasError`/`_flyoutWindow`, `HeroOptimizeViewModel.Start()`/`Stop()`, 14 unused `GS.Spacing.*` theme resources, duplicate `AdvancedVisibility` converter, misleading "binary search" comment in `DpcTraceEngine`.
+
+### Changed
+
+- **`AdlxManager`** - marked as a stub explicitly; ADLX integration is not yet implemented.
+- **`CompetitivePresets`** - added a class-level note that hardcoded game install paths assume default installation directories.
+
 ## [3.6.2] - 2026-04-16
 
 ### Fixed
