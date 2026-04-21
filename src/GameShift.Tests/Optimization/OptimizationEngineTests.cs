@@ -28,8 +28,8 @@ public class OptimizationEngineTests
 
         // Assert
         Assert.Equal(1, mock.ApplyCallCount);
+        Assert.NotNull(mock.LastSnapshotReceived);  // Engine must capture and pass a snapshot
         Assert.True(mock.IsApplied);
-        // Snapshot is captured before apply - verified by no exception thrown
     }
 
     [Fact]
@@ -102,18 +102,24 @@ public class OptimizationEngineTests
     public async Task ConcurrentActivate_Deactivate_ThreadSafe()
     {
         // Arrange
-        var mock = new MockOptimizationSuccess();
+        var mock = new MockOptimizationWithInterleaveDetection { Name = "Test" };
         var engine = new OptimizationEngine(new[] { mock });
         var profile = new GameProfile { Id = "test", GameName = "TestGame", ProcessId = 1234 };
 
-        // Act - fire both concurrently (one will wait for the other via semaphore)
-        var activateTask = engine.ActivateProfileAsync(profile);
-        var deactivateTask = engine.DeactivateProfileAsync();
-        await Task.WhenAll(activateTask, deactivateTask);
+        // Act - fire 10 Activate/Deactivate pairs concurrently
+        var tasks = new List<Task>();
+        for (int i = 0; i < 10; i++)
+        {
+            tasks.Add(engine.ActivateProfileAsync(profile));
+            tasks.Add(engine.DeactivateProfileAsync());
+        }
+        await Task.WhenAll(tasks);
 
-        // Assert - should not throw, should serialize via semaphore
-        // If we get here without deadlock/exception, thread safety works
-        Assert.True(true);
+        // Assert - no interleaving observed; engine's semaphore serialized all calls
+        Assert.False(mock.InterleaveDetected,
+            "Apply and Revert ran concurrently - semaphore serialization failed");
+        Assert.True(mock.MaxInterleaveObserved <= 1,
+            $"Multiple simultaneous operations observed (max={mock.MaxInterleaveObserved})");
     }
 
     [Fact]

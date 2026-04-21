@@ -20,8 +20,9 @@ public class ProfileManager
     /// <summary>
     /// Strips path traversal characters and invalid filename characters from a game ID
     /// to prevent directory traversal attacks when constructing file paths.
+    /// Also guards against empty results and Windows reserved device names.
     /// </summary>
-    private static string SanitizeGameId(string gameId)
+    internal static string SanitizeGameId(string gameId)
     {
         var sanitized = gameId
             .Replace("..", "")
@@ -29,6 +30,20 @@ public class ProfileManager
             .Replace("\\", "_");
         foreach (var c in Path.GetInvalidFileNameChars())
             sanitized = sanitized.Replace(c, '_');
+
+        // Guard: empty result (e.g., input was ".." or only invalid chars)
+        if (string.IsNullOrWhiteSpace(sanitized))
+            sanitized = "unknown";
+
+        // Guard: Windows reserved device names (CON, PRN, AUX, NUL, COM1-9, LPT1-9)
+        // Windows refuses to create files with these base names even with extensions.
+        var upper = sanitized.ToUpperInvariant();
+        var reserved = new[] { "CON", "PRN", "AUX", "NUL",
+            "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+            "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9" };
+        if (reserved.Contains(upper))
+            sanitized = "_" + sanitized;
+
         return sanitized;
     }
 

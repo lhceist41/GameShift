@@ -96,6 +96,10 @@ public class OptimizationEngine : IDisposable
     /// <param name="profile">Game profile to activate</param>
     public async Task ActivateProfileAsync(GameProfile profile)
     {
+        // Collect events to fire AFTER the semaphore is released, so subscriber
+        // reentrancy (e.g. a handler that calls DeactivateProfileAsync) can't deadlock.
+        var eventsToFire = new List<Action>();
+
         await _semaphore.WaitAsync();
         try
         {
@@ -163,21 +167,24 @@ public class OptimizationEngine : IDisposable
                         _appliedOptimizations.Push(optimization);
                         _logger.Information("Successfully applied: {OptimizationName}", optimization.Name);
 
-                        // Notify UI
-                        OptimizationApplied?.Invoke(this, new OptimizationAppliedEventArgs(optimization));
+                        // Queue UI notification — fired outside semaphore below
+                        var appliedOpt = optimization;
+                        eventsToFire.Add(() => OptimizationApplied?.Invoke(this, new OptimizationAppliedEventArgs(appliedOpt)));
                     }
                     else
                     {
                         _logger.Warning("Optimization failed (returned false): {OptimizationName}",
                             optimization.Name);
-                        OptimizationFailed?.Invoke(this, new OptimizationAppliedEventArgs(optimization));
+                        var failedOpt = optimization;
+                        eventsToFire.Add(() => OptimizationFailed?.Invoke(this, new OptimizationAppliedEventArgs(failedOpt)));
                     }
                 }
                 catch (Exception ex)
                 {
                     _logger.Warning(ex, "Optimization threw exception: {OptimizationName}",
                         optimization.Name);
-                    OptimizationFailed?.Invoke(this, new OptimizationAppliedEventArgs(optimization));
+                    var failedOpt = optimization;
+                    eventsToFire.Add(() => OptimizationFailed?.Invoke(this, new OptimizationAppliedEventArgs(failedOpt)));
                 }
             }
 
@@ -199,6 +206,13 @@ public class OptimizationEngine : IDisposable
         finally
         {
             _semaphore.Release();
+        }
+
+        // Fire events OUTSIDE the semaphore to prevent subscriber-reentrancy deadlocks.
+        foreach (var fire in eventsToFire)
+        {
+            try { fire(); }
+            catch (Exception ex) { _logger.Warning(ex, "Optimization event subscriber threw"); }
         }
     }
 
@@ -238,9 +252,33 @@ public class OptimizationEngine : IDisposable
     /// </summary>
     public async Task DeactivateProfileAsync()
     {
+        // Collect events to fire AFTER the semaphore is released, so subscriber
+        // reentrancy (e.g. a handler that calls ActivateProfileAsync) can't deadlock.
+        var eventsToFire = new List<Action>();
+
         await _semaphore.WaitAsync();
         try
         {
+            // If the watchdog has already reverted our optimizations (because it
+            // detected a heartbeat timeout or pipe disconnect), the registry/system
+            // state has been restored under our feet. Re-running our own revert
+            // would redundantly process no-op state and could race with anything
+            // else reading the journal. Clear in-memory tracking and exit early.
+            if (_journal.WasRecoveredDuringCurrentSession())
+            {
+                _logger.Information(
+                    "[OptimizationEngine] Watchdog already recovered optimizations — skipping LIFO revert");
+
+                // Still stop ProBalance and registry monitor — those run in-process and
+                // the watchdog has no visibility into them.
+                _proBalance.Stop();
+                _registryMonitor.StopSession();
+
+                _appliedOptimizations.Clear(); // Clear in-memory tracking
+                _snapshot = null;
+                return;
+            }
+
             _logger.Information("Deactivating profile. Reverting {Count} optimizations in LIFO order.",
                 _appliedOptimizations.Count);
 
@@ -280,8 +318,9 @@ public class OptimizationEngine : IDisposable
                     {
                         _logger.Information("Successfully reverted: {OptimizationName}", optimization.Name);
 
-                        // Notify UI
-                        OptimizationReverted?.Invoke(this, new OptimizationRevertedEventArgs(optimization));
+                        // Queue UI notification — fired outside semaphore below
+                        var revertedOpt = optimization;
+                        eventsToFire.Add(() => OptimizationReverted?.Invoke(this, new OptimizationRevertedEventArgs(revertedOpt)));
                     }
                     else
                     {
@@ -306,6 +345,13 @@ public class OptimizationEngine : IDisposable
         finally
         {
             _semaphore.Release();
+        }
+
+        // Fire events OUTSIDE the semaphore to prevent subscriber-reentrancy deadlocks.
+        foreach (var fire in eventsToFire)
+        {
+            try { fire(); }
+            catch (Exception ex) { _logger.Warning(ex, "Optimization event subscriber threw"); }
         }
     }
 

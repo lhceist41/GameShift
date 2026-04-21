@@ -121,6 +121,12 @@ public class CompetitiveMode : IOptimization
             // ── Step 4: Write frame cap hint ──
             WriteFrameCapHint();
 
+            // Mark as applied BEFORE starting the safety timer. If any exception
+            // fires between timer start and this flag being set, the safety timer's
+            // !_isApplied guard would cause it to early-return 6 hours later, leaving
+            // processes suspended forever.
+            _isApplied = true;
+
             // ── Step 5: Start 6-hour safety timer ──
             _safetyTimer = new global::System.Threading.Timer(
                 _ => SafetyTimeoutResumeAll(),
@@ -136,7 +142,6 @@ public class CompetitiveMode : IOptimization
                 _suspendedProcesses.Count,
                 _killedProcessNames.Count);
 
-            _isApplied = true;
             return Task.FromResult(true);
         }
         catch (Exception ex)
@@ -276,16 +281,20 @@ public class CompetitiveMode : IOptimization
                             continue;
                         }
 
-                        SuspendProcess(process);
-                        _suspendedProcesses.Add(new SuspendedProcessInfo(
-                            process.Id, process.ProcessName, DateTime.UtcNow));
+                        // Only record the suspension if it actually succeeded.
+                        // SuspendProcess can fail silently (e.g., handle open denied).
+                        if (SuspendProcess(process))
+                        {
+                            _suspendedProcesses.Add(new SuspendedProcessInfo(
+                                process.Id, process.ProcessName, DateTime.UtcNow));
 
-                        _logger.Information(
-                            "[CompetitiveMode] Suspended {Category} process: {ProcessName} (PID: {ProcessId}) at {Timestamp}",
-                            category,
-                            process.ProcessName,
-                            process.Id,
-                            DateTime.UtcNow.ToString("o"));
+                            _logger.Information(
+                                "[CompetitiveMode] Suspended {Category} process: {ProcessName} (PID: {ProcessId}) at {Timestamp}",
+                                category,
+                                process.ProcessName,
+                                process.Id,
+                                DateTime.UtcNow.ToString("o"));
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -315,8 +324,9 @@ public class CompetitiveMode : IOptimization
     /// <summary>
     /// Suspends a single process using NtSuspendProcess via NativeInterop.
     /// Process handle is always closed in a finally block.
+    /// Returns true if suspension succeeded, false otherwise.
     /// </summary>
-    private void SuspendProcess(Process process)
+    private bool SuspendProcess(Process process)
     {
         IntPtr handle = IntPtr.Zero;
         try
@@ -330,7 +340,7 @@ public class CompetitiveMode : IOptimization
                     "[CompetitiveMode] Failed to open process handle for {ProcessName} (PID: {ProcessId})",
                     process.ProcessName,
                     process.Id);
-                return;
+                return false;
             }
 
             int status = NativeInterop.NtSuspendProcess(handle);
@@ -341,7 +351,10 @@ public class CompetitiveMode : IOptimization
                     status,
                     process.ProcessName,
                     process.Id);
+                return false;
             }
+
+            return true;
         }
         finally
         {
@@ -402,10 +415,21 @@ public class CompetitiveMode : IOptimization
         {
             try
             {
-                // Verify process still exists before attempting resume
+                // Verify process still exists AND has the same name before resuming.
+                // If the PID was reused by a different process after our target exited,
+                // resuming that PID would unfreeze something we never suspended.
                 try
                 {
                     using var check = Process.GetProcessById(info.ProcessId);
+                    if (!string.Equals(check.ProcessName, info.ProcessName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        _logger.Warning(
+                            "[CompetitiveMode] PID reuse detected — PID {ProcessId} is now {NewName}, expected {OldName}, skipping resume",
+                            info.ProcessId,
+                            check.ProcessName,
+                            info.ProcessName);
+                        continue;
+                    }
                 }
                 catch (ArgumentException)
                 {

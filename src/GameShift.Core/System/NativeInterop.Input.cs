@@ -6,7 +6,7 @@ namespace GameShift.Core.System;
 /// Input-related P/Invoke declarations for NativeInterop.
 /// Partial class extension for user idle detection.
 /// </summary>
-internal static partial class NativeInterop
+public static partial class NativeInterop
 {
     // ============================================================
     // user32.dll - User Input Tracking

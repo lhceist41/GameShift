@@ -454,8 +454,9 @@ public class DetectionOrchestrator
     }
 
     /// <summary>
-    /// Unsubscribes all event handlers registered during construction and InitializeAsync().
-    /// Call during application shutdown to prevent leaks and stale callbacks.
+    /// Unsubscribes all event handlers registered during construction and InitializeAsync(),
+    /// and releases the internal SemaphoreSlim. Call during application shutdown to prevent
+    /// leaks and stale callbacks.
     /// </summary>
     public void Cleanup()
     {
@@ -463,6 +464,7 @@ public class DetectionOrchestrator
         _detector.GameStopped -= OnGameStopped;
         _detector.AllGamesStopped -= OnAllGamesStopped;
         if (_dpcMonitor != null) _dpcMonitor.DpcSpikeDetected -= OnDpcSpikeDetected;
+        _semaphore.Dispose();
     }
 
     /// <summary>

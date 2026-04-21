@@ -6,7 +6,7 @@ namespace GameShift.Core.System;
 /// Memory-related P/Invoke declarations for NativeInterop.
 /// Partial class extension for standby list management and memory queries.
 /// </summary>
-internal static partial class NativeInterop
+public static partial class NativeInterop
 {
     // ============================================================
     // ntdll.dll - Memory Management

@@ -70,7 +70,7 @@
 
                                                 <!-- Category color strip -->
                                                 <Border Grid.Column="0"
-                                                        Background="{Binding DataContext.CategoryColor, RelativeSource={RelativeSource AncestorType=ItemsControl, AncestorLevel=2}}"
+                                                        Background="{Binding DataContext.CategoryColor, RelativeSource={RelativeSource AncestorType=ItemsControl, AncestorLevel=1}}"
                                                         CornerRadius="8,0,0,8"/>
 
                                                 <!-- Status indicator dot -->

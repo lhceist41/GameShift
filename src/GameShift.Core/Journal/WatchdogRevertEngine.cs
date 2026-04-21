@@ -16,18 +16,40 @@ namespace GameShift.Core.Journal;
 public class WatchdogRevertEngine
 {
     private readonly ILogger _logger;
+    private readonly Dictionary<string, Func<IJournaledOptimization>> _factories;
 
     // Registry of optimization factories keyed by Name.
     // Add entries here as more optimizations migrate to IJournaledOptimization.
-    private static readonly Dictionary<string, Func<IJournaledOptimization>> Factories =
+    private static readonly Dictionary<string, Func<IJournaledOptimization>> DefaultFactories =
         new(StringComparer.Ordinal)
         {
             [MpoToggle.OptimizationId] = () => new MpoToggle(),
+            [VisualEffectReducer.OptimizationId] = () => new VisualEffectReducer(),
+            [ScheduledTaskSuppressor.OptimizationId] = () => new ScheduledTaskSuppressor(),
+            [NetworkOptimizer.OptimizationId] = () => new NetworkOptimizer(),
+            [PowerPlanSwitcher.OptimizationId] = () => new PowerPlanSwitcher(),
+            [CpuParkingManager.OptimizationId] = () => new CpuParkingManager(),
+            [ProcessPriorityBooster.OptimizationId] = () => new ProcessPriorityBooster(),
+            [HybridCpuDetector.OptimizationId] = () => new HybridCpuDetector(),
         };
 
     public WatchdogRevertEngine(ILogger logger)
+        : this(logger, factories: null)
+    {
+    }
+
+    /// <summary>
+    /// Test-only constructor that allows overriding the factory dictionary so that
+    /// revert-from-record can be routed to mock implementations of
+    /// <see cref="IJournaledOptimization"/> rather than the real ones (which touch
+    /// the registry, services, processes, etc.).
+    /// </summary>
+    internal WatchdogRevertEngine(
+        ILogger logger,
+        Dictionary<string, Func<IJournaledOptimization>>? factories)
     {
         _logger = logger.ForContext<WatchdogRevertEngine>();
+        _factories = factories ?? DefaultFactories;
     }
 
     /// <summary>
@@ -53,7 +75,7 @@ public class WatchdogRevertEngine
 
         foreach (var entry in toRevert)
         {
-            if (!Factories.TryGetValue(entry.Name, out var factory))
+            if (!_factories.TryGetValue(entry.Name, out var factory))
             {
                 _logger.Warning(
                     "[WatchdogRevertEngine] No factory registered for '{Name}' — skipping",
@@ -79,6 +101,11 @@ public class WatchdogRevertEngine
                 _logger.Error(ex, "[WatchdogRevertEngine] Exception reverting '{Name}'", entry.Name);
             }
         }
+
+        // Stamp the journal with the recovery time so the main app's
+        // DeactivateProfileAsync can detect that the watchdog has already
+        // reverted and skip its own redundant LIFO revert.
+        journal.RecordRecoveryTimestamp(DateTime.UtcNow);
 
         // Mark session inactive so boot recovery won't trigger again
         journal.EndSession();

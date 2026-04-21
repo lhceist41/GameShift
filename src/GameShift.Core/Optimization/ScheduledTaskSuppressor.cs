@@ -1,5 +1,7 @@
 using System.Diagnostics;
+using System.Text.Json;
 using GameShift.Core.Config;
+using GameShift.Core.Journal;
 using GameShift.Core.Profiles;
 using GameShift.Core.System;
 
@@ -11,8 +13,11 @@ namespace GameShift.Core.Optimization;
 /// and Tier 3 (Defender tasks — opt-in only via SuppressDefenderScheduledScan toggle).
 /// Coordinates with Background Mode's TaskDeferralService to avoid double-handling.
 /// Uses schtasks.exe for consistency with existing TaskDeferralService pattern.
+///
+/// Implements IJournaledOptimization so the watchdog can re-enable orphaned tasks
+/// after a crash without relying on live instance state.
 /// </summary>
-public class ScheduledTaskSuppressor : IOptimization
+public class ScheduledTaskSuppressor : IOptimization, IJournaledOptimization
 {
     /// <summary>
     /// Tier 1 — High impact, always safe to disable during gaming.
@@ -60,24 +65,72 @@ public class ScheduledTaskSuppressor : IOptimization
 
     private readonly List<TaskOriginalState> _disabledTasks = new();
 
+    // Context stored by CanApply() for use by Apply()
+    private SystemContext? _context;
+
+    private bool _isApplied;
+
     public const string OptimizationId = "Scheduled Task Suppression";
 
     public string Name => OptimizationId;
 
     public string Description => "Disables resource-heavy Windows scheduled tasks during gaming sessions";
 
-    public bool IsApplied { get; private set; }
+    public bool IsApplied => _isApplied;
 
     public bool IsAvailable => true; // Tasks that don't exist are skipped individually
+
+    // ── IOptimization ─────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Delegates to the journaled Apply() path. Stores context first via CanApply().
+    /// </summary>
+    public Task<bool> ApplyAsync(SystemStateSnapshot snapshot, GameProfile profile)
+    {
+        var context = new SystemContext { Profile = profile, Snapshot = snapshot };
+        if (!CanApply(context))
+            return Task.FromResult(true);
+
+        var result = Apply();
+        return Task.FromResult(result.State == OptimizationState.Applied);
+    }
+
+    /// <summary>
+    /// Delegates to the journaled Revert() path.
+    /// </summary>
+    public Task<bool> RevertAsync(SystemStateSnapshot snapshot)
+    {
+        if (!_isApplied)
+            return Task.FromResult(true);
+
+        var result = Revert();
+        return Task.FromResult(result.State == OptimizationState.Reverted);
+    }
+
+    // ── IJournaledOptimization ────────────────────────────────────────────────
+
+    /// <summary>
+    /// Pre-flight check. Stores context for use in Apply().
+    /// Always returns true — tier gating and profile-driven Tier 3 selection happen in Apply().
+    /// </summary>
+    public bool CanApply(SystemContext context)
+    {
+        _context = context;
+        return true;
+    }
 
     /// <summary>
     /// Disables all targeted scheduled tasks based on profile settings.
     /// Tier 1 + 2 are always disabled when this module is active.
     /// Tier 3 (Defender) only disabled if SuppressDefenderScheduledScan is true.
-    /// Records original state in snapshot for crash recovery.
+    /// Records original state in snapshot for crash recovery AND returns the list of
+    /// disabled task paths as a JSON payload for the journal-based watchdog revert.
     /// </summary>
-    public Task<bool> ApplyAsync(SystemStateSnapshot snapshot, GameProfile profile)
+    public OptimizationResult Apply()
     {
+        var profile = _context?.Profile;
+        var snapshot = _context?.Snapshot;
+
         int disabledCount = 0;
         int skippedCount = 0;
         int errorCount = 0;
@@ -89,7 +142,7 @@ public class ScheduledTaskSuppressor : IOptimization
             targetTasks.AddRange(Tier1Tasks);
             targetTasks.AddRange(Tier2Tasks);
 
-            if (profile.SuppressDefenderScheduledScan)
+            if (profile?.SuppressDefenderScheduledScan == true)
             {
                 targetTasks.AddRange(Tier3DefenderTasks);
                 SettingsManager.Logger.Information(
@@ -145,21 +198,31 @@ public class ScheduledTaskSuppressor : IOptimization
                 }
             }
 
-            // Record disabled task paths in snapshot for crash recovery
-            snapshot.RecordDisabledScheduledTasks(
-                _disabledTasks.Select(t => t.TaskPath).ToList());
+            // Record disabled task paths in snapshot for crash recovery (legacy path)
+            var disabledPaths = _disabledTasks.Select(t => t.TaskPath).ToList();
+            snapshot?.RecordDisabledScheduledTasks(disabledPaths);
 
             SettingsManager.Logger.Information(
                 "[ScheduledTaskSuppressor] Completed — {Disabled} disabled, {Skipped} skipped, {Errors} errors",
                 disabledCount, skippedCount, errorCount);
 
-            IsApplied = true;
-            return Task.FromResult(true); // Partial success is still success
+            _isApplied = true;
+
+            // Serialize the list of tasks we disabled for the journal. Original and applied
+            // states are the same list — the tasks we need to re-enable on revert.
+            var state = new { disabledTasks = disabledPaths };
+            var json = JsonSerializer.Serialize(state);
+
+            return new OptimizationResult(
+                Name: OptimizationId,
+                OriginalValue: json,
+                AppliedValue: json,
+                State: OptimizationState.Applied);
         }
         catch (Exception ex)
         {
             SettingsManager.Logger.Error(ex, "[ScheduledTaskSuppressor] Apply failed");
-            return Task.FromResult(false);
+            return Fail(ex.Message);
         }
     }
 
@@ -167,7 +230,7 @@ public class ScheduledTaskSuppressor : IOptimization
     /// Re-enables all tasks that were disabled during Apply.
     /// Reverts in reverse order (LIFO pattern).
     /// </summary>
-    public Task<bool> RevertAsync(SystemStateSnapshot snapshot)
+    public OptimizationResult Revert()
     {
         int restoredCount = 0;
         int errorCount = 0;
@@ -210,18 +273,125 @@ public class ScheduledTaskSuppressor : IOptimization
                 restoredCount, errorCount);
 
             _disabledTasks.Clear();
-            IsApplied = false;
-            return Task.FromResult(true);
+            _isApplied = false;
+            return new OptimizationResult(
+                Name: OptimizationId,
+                OriginalValue: string.Empty,
+                AppliedValue: string.Empty,
+                State: OptimizationState.Reverted);
         }
         catch (Exception ex)
         {
             SettingsManager.Logger.Error(ex, "[ScheduledTaskSuppressor] Revert failed");
-            IsApplied = false;
-            return Task.FromResult(false);
+            _isApplied = false;
+            return RevertFail(ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Confirms the tasks we disabled during Apply are still disabled.
+    /// Returns true if every tracked task still reports disabled.
+    /// </summary>
+    public bool Verify()
+    {
+        if (!_isApplied)
+            return false;
+
+        try
+        {
+            foreach (var state in _disabledTasks)
+            {
+                if (!state.WasEnabled)
+                    continue;
+
+                bool? isEnabled = IsTaskEnabled(state.TaskPath);
+                // If the task has gone missing or is back to enabled, verification fails.
+                if (isEnabled == null || isEnabled.Value)
+                    return false;
+            }
+
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Watchdog recovery path: parses the serialized list of disabled task paths from the
+    /// journal and re-enables each one without requiring any live instance fields.
+    /// schtasks /enable is idempotent — running it against an already-enabled task is a no-op.
+    /// </summary>
+    public OptimizationResult RevertFromRecord(string originalValueJson)
+    {
+        try
+        {
+            SettingsManager.Logger.Information(
+                "[ScheduledTaskSuppressor] Reverting from journal record (watchdog recovery)");
+
+            var stateElement = JsonSerializer.Deserialize<JsonElement>(originalValueJson);
+            if (!stateElement.TryGetProperty("disabledTasks", out var tasksElement) ||
+                tasksElement.ValueKind != JsonValueKind.Array)
+            {
+                return RevertFail("Missing disabledTasks field");
+            }
+
+            int restoredCount = 0;
+            int errorCount = 0;
+
+            foreach (var element in tasksElement.EnumerateArray())
+            {
+                var taskPath = element.GetString();
+                if (string.IsNullOrWhiteSpace(taskPath))
+                    continue;
+
+                try
+                {
+                    var result = RunSchtasks($"/change /tn \"{taskPath}\" /enable");
+                    if (result != null && !result.Contains("ERROR"))
+                    {
+                        restoredCount++;
+                        SettingsManager.Logger.Debug(
+                            "[ScheduledTaskSuppressor] Re-enabled task: {TaskPath}", taskPath);
+                    }
+                    else
+                    {
+                        SettingsManager.Logger.Warning(
+                            "[ScheduledTaskSuppressor] Failed to re-enable task: {TaskPath}", taskPath);
+                        errorCount++;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    SettingsManager.Logger.Warning(ex,
+                        "[ScheduledTaskSuppressor] Error re-enabling task {TaskPath}", taskPath);
+                    errorCount++;
+                }
+            }
+
+            SettingsManager.Logger.Information(
+                "[ScheduledTaskSuppressor] Watchdog revert completed — {Restored} re-enabled, {Errors} errors",
+                restoredCount, errorCount);
+
+            _isApplied = false;
+            return new OptimizationResult(
+                OptimizationId, string.Empty, string.Empty, OptimizationState.Reverted);
+        }
+        catch (Exception ex)
+        {
+            SettingsManager.Logger.Error(ex, "[ScheduledTaskSuppressor] RevertFromRecord failed");
+            return RevertFail(ex.Message);
         }
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────
+
+    private static OptimizationResult Fail(string error) =>
+        new(OptimizationId, string.Empty, string.Empty, OptimizationState.Failed, error);
+
+    private static OptimizationResult RevertFail(string error) =>
+        new(OptimizationId, string.Empty, string.Empty, OptimizationState.Failed, error);
 
     /// <summary>
     /// Checks if a scheduled task exists and is enabled.

@@ -23,4 +23,8 @@
     <EmbeddedResource Include="Detection\Resources\xbox_titles.json" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="GameShift.Tests" />
+  </ItemGroup>
+
 </Project>

@@ -25,8 +25,28 @@ public class GameProfileManager : IDisposable
     /// <summary>Whether a profile is currently active.</summary>
     public bool HasActiveProfile => _activeProfile != null;
 
-    /// <summary>Set of process names currently managed by an active game profile session.</summary>
-    public HashSet<string> ActiveSessionProcessNames { get; } = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>
+    /// Set of process names currently managed by an active game profile session.
+    /// Mutated on the detector event thread (game start/stop) and read from the WMI
+    /// process-spawn thread via <see cref="ProcessPriorityPersistence"/>. All access
+    /// must go through <see cref="IsActiveGameProcess"/> or be serialized via
+    /// <see cref="_processNamesLock"/>.
+    /// </summary>
+    private readonly HashSet<string> _activeSessionProcessNames = new(StringComparer.OrdinalIgnoreCase);
+    private readonly object _processNamesLock = new();
+
+    /// <summary>
+    /// Thread-safe check whether a process name is currently managed by an active game
+    /// profile session. Replaces direct access to the internal HashSet to avoid torn
+    /// reads during concurrent Add/Clear.
+    /// </summary>
+    public bool IsActiveGameProcess(string processName)
+    {
+        lock (_processNamesLock)
+        {
+            return _activeSessionProcessNames.Contains(processName);
+        }
+    }
 
     public GameProfileManager()
     {
@@ -99,9 +119,12 @@ public class GameProfileManager : IDisposable
         }
 
         _activeProfile = profile;
-        ActiveSessionProcessNames.Clear();
-        foreach (var pn in profile.ProcessNames)
-            ActiveSessionProcessNames.Add(pn);
+        lock (_processNamesLock)
+        {
+            _activeSessionProcessNames.Clear();
+            foreach (var pn in profile.ProcessNames)
+                _activeSessionProcessNames.Add(pn);
+        }
 
         SettingsManager.Logger.Information(
             "[GameProfiles] Activating profile '{Profile}' for {Game} (PID {Pid})",
@@ -223,7 +246,10 @@ public class GameProfileManager : IDisposable
         }
         _launcherOriginals.Clear();
 
-        ActiveSessionProcessNames.Clear();
+        lock (_processNamesLock)
+        {
+            _activeSessionProcessNames.Clear();
+        }
 
         SettingsManager.Logger.Information("[GameProfiles] Profile '{Profile}' reverted", _activeProfile.DisplayName);
         _activeProfile = null;

@@ -4,6 +4,7 @@ using GameShift.Core.BackgroundMode;
 using GameShift.Core.Config;
 using GameShift.Core.Detection;
 using GameShift.Core.GameProfiles;
+using GameShift.Core.Journal;
 using GameShift.Core.Monitoring;
 using GameShift.Core.Optimization;
 using GameShift.Core.Profiles;
@@ -45,6 +46,13 @@ public static class ServiceFactory
         {
             Log.Information("VBS/HVCI is enabled -- dashboard banner will be shown");
         }
+
+        // Journal reader for the App layer — surfaces boot-recovery warnings (pending
+        // reboot-required DPC fixes, Windows Update since last session) on startup.
+        // Separate instance from the one owned by OptimizationEngine; safe because
+        // JournalManager serializes through a static lock and writes atomically.
+        services.Journal = new JournalManager();
+        services.Journal.LoadJournal();
 
         // Create DPC latency monitor (passive, not an IOptimization)
         services.DpcMon = new DpcLatencyMonitor();
@@ -122,10 +130,10 @@ public static class ServiceFactory
         services.SessionStore.Load();
         services.SessionTrk = new SessionTracker(services.Detector!, services.DpcMon, services.Engine!, services.SessionStore);
 
-        // Background Mode service
+        // Background Mode service — constructed here, but .Start() is deferred until
+        // after GameProfileManager is wired so ProcessPriorityPersistence never sees
+        // a game process before the GameProfile conflict-resolution hook is attached.
         services.BackgroundMode = new BackgroundModeService();
-        services.BackgroundMode.Start(services.Detector);
-        writeDiag($"BackgroundMode initialized (enabled={services.BackgroundMode.IsEnabled})");
 
         // Temperature monitor
         services.TempMon = new TemperatureMonitor();
@@ -150,12 +158,19 @@ public static class ServiceFactory
         // Game Profile manager
         services.GameProfileMgr = new GameProfileManager();
 
-        // Wire conflict resolution: GameProfiles -> ProcessPriorityPersistence
+        // Wire conflict resolution: GameProfiles -> ProcessPriorityPersistence.
+        // MUST happen before BackgroundMode.Start() — otherwise a game launching in
+        // the startup window could be clobbered by ProcessPriorityPersistence because
+        // the hook that marks the process as game-protected isn't attached yet.
         if (services.BackgroundMode?.ProcessPriority != null && services.GameProfileMgr != null)
         {
-            services.BackgroundMode.ProcessPriority.GameProfileActiveProcesses = services.GameProfileMgr.ActiveSessionProcessNames;
+            services.BackgroundMode.ProcessPriority.GameProfileActiveProcesses = services.GameProfileMgr.IsActiveGameProcess;
         }
         writeDiag($"GameProfileManager initialized (profiles={services.GameProfileMgr?.GetAllProfiles().Count})");
+
+        // Start BackgroundMode now that the GameProfile hook is wired.
+        services.BackgroundMode!.Start(services.Detector);
+        writeDiag($"BackgroundMode initialized (enabled={services.BackgroundMode.IsEnabled})");
 
         writeDiag("Core services wired OK");
 

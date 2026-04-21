@@ -2,8 +2,10 @@ using System.Diagnostics;
 using System.Text.Json;
 using GameShift.Core.Profiles;
 using GameShift.Core.Config;
+using GameShift.Core.Journal;
 using GameShift.Core.System;
 using Microsoft.Win32;
+using Serilog;
 
 namespace GameShift.Core.Optimization;
 
@@ -11,9 +13,16 @@ namespace GameShift.Core.Optimization;
 /// Sets game process priority to High for better CPU scheduling.
 /// Uses runtime SetPriorityClass() for most games, or IFEO registry fallback
 /// for anti-cheat-protected games (EAC, BattlEye, RICOCHET, TencentACE).
+///
+/// Implements IJournaledOptimization so the watchdog can clean up IFEO registry
+/// changes after a main-app crash. Only IFEO changes are journaled — the live
+/// PriorityClass path is ephemeral (dies with the game process) and the
+/// Win32PrioritySeparation value is captured in the snapshot-based recovery path.
 /// </summary>
-public class ProcessPriorityBooster : IOptimization
+public class ProcessPriorityBooster : IOptimization, IJournaledOptimization
 {
+    private readonly ILogger _logger = SettingsManager.Logger;
+
     private int _boostedProcessId;
     private bool _usedIfeo;
     private string _ifeoExeName = string.Empty;
@@ -25,6 +34,9 @@ public class ProcessPriorityBooster : IOptimization
     private int? _originalPrioritySeparation;
     private bool _prioritySeparationApplied;
 
+    // Context stored by CanApply() for use by Apply().
+    private SystemContext? _context;
+
     private const string IfeoBasePath = @"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options";
 
     /// <summary>
@@ -35,6 +47,8 @@ public class ProcessPriorityBooster : IOptimization
 
     public const string OptimizationId = "Process Priority Booster";
 
+    // ── IOptimization ─────────────────────────────────────────────────────────
+
     public string Name => OptimizationId;
 
     public string Description => "Sets game process priority to High for better CPU scheduling";
@@ -44,30 +58,120 @@ public class ProcessPriorityBooster : IOptimization
     public bool IsAvailable => true; // Any process can have its priority changed
 
     /// <summary>
-    /// Applies High priority to the game process.
-    /// Uses IFEO registry path for anti-cheat games, runtime API for others.
-    /// Records original state in snapshot before changing.
+    /// Delegates to the journaled Apply() path. Stores context first via CanApply().
     /// </summary>
     public Task<bool> ApplyAsync(SystemStateSnapshot snapshot, GameProfile profile)
     {
+        var context = new SystemContext { Profile = profile, Snapshot = snapshot };
+        if (!CanApply(context))
+            return Task.FromResult(true);
+
+        var result = Apply();
+        return Task.FromResult(result.State == OptimizationState.Applied);
+    }
+
+    /// <summary>
+    /// Delegates to the journaled Revert() path.
+    /// </summary>
+    public Task<bool> RevertAsync(SystemStateSnapshot snapshot)
+    {
+        if (!IsApplied)
+            return Task.FromResult(true);
+
+        var result = Revert();
+        return Task.FromResult(result.State == OptimizationState.Reverted);
+    }
+
+    // ── IJournaledOptimization ────────────────────────────────────────────────
+
+    /// <summary>
+    /// Pre-flight check. Stores context for use in Apply().
+    /// Process priority boost applies at all intensity tiers.
+    /// </summary>
+    public bool CanApply(SystemContext context)
+    {
+        _context = context;
+        return true;
+    }
+
+    /// <summary>
+    /// Applies High priority to the game process.
+    /// Uses IFEO registry path for anti-cheat games, runtime API for others.
+    /// Records original state in snapshot before changing.
+    /// Returns OptimizationResult carrying the serialized IFEO state for journal-based revert.
+    /// </summary>
+    public OptimizationResult Apply()
+    {
+        var snapshot = _context?.Snapshot;
+        var profile = _context?.Profile;
+
+        if (snapshot == null || profile == null)
+        {
+            _logger.Warning("[ProcessPriorityBooster] Apply called without context; skipping");
+            return Fail("No context available");
+        }
+
+        // Reset per-apply state
+        _usedIfeo = false;
+        _ifeoExeName = string.Empty;
+        _ifeoSubKeyPath = string.Empty;
+        _ifeoPerfOptionsPreviouslyExisted = false;
+        _ifeoOriginalValues = null;
+
         try
         {
-            // Apply session-scoped Win32PrioritySeparation (gaming-optimal scheduling quantum)
+            // Apply session-scoped Win32PrioritySeparation (gaming-optimal scheduling quantum).
+            // Captured via snapshot for crash recovery — not journaled here.
             ApplyPrioritySeparation(snapshot);
 
+            bool pathSuccess;
             if (profile.RequiresIfeoFallback)
             {
-                return Task.FromResult(ApplyViaIfeo(snapshot, profile));
+                pathSuccess = ApplyViaIfeo(snapshot, profile);
             }
             else
             {
-                return Task.FromResult(ApplyViaRuntimeApi(snapshot, profile));
+                pathSuccess = ApplyViaRuntimeApi(snapshot, profile);
             }
+
+            if (!pathSuccess)
+                return Fail("Failed to apply priority boost");
+
+            IsApplied = true;
+
+            // Build journaled state. Only IFEO changes persist across reboots and
+            // therefore need watchdog recovery; the live-API path is ephemeral.
+            var ifeoKeys = new List<object>();
+            if (_usedIfeo && !string.IsNullOrEmpty(_ifeoSubKeyPath))
+            {
+                string? originalValuesJson = _ifeoPerfOptionsPreviouslyExisted && _ifeoOriginalValues != null
+                    ? JsonSerializer.Serialize(_ifeoOriginalValues)
+                    : null;
+
+                ifeoKeys.Add(new
+                {
+                    keyPath = _ifeoSubKeyPath,
+                    originalValuesJson
+                });
+            }
+
+            var originalState = JsonSerializer.Serialize(new { ifeoKeys });
+            var appliedState = JsonSerializer.Serialize(new
+            {
+                usedIfeo = _usedIfeo,
+                ifeoKeyCount = ifeoKeys.Count
+            });
+
+            return new OptimizationResult(
+                Name: OptimizationId,
+                OriginalValue: originalState,
+                AppliedValue: appliedState,
+                State: OptimizationState.Applied);
         }
         catch (Exception ex)
         {
-            SettingsManager.Logger.Error(ex, "[ProcessPriorityBooster] Failed to apply priority boost");
-            return Task.FromResult(false);
+            _logger.Error(ex, "[ProcessPriorityBooster] Failed to apply priority boost");
+            return Fail(ex.Message);
         }
     }
 
@@ -79,7 +183,7 @@ public class ProcessPriorityBooster : IOptimization
     {
         if (profile.ProcessId <= 0)
         {
-            SettingsManager.Logger.Warning("[ProcessPriorityBooster] No valid process ID in profile");
+            _logger.Warning("[ProcessPriorityBooster] No valid process ID in profile");
             return false;
         }
 
@@ -94,7 +198,7 @@ public class ProcessPriorityBooster : IOptimization
             // Set to High priority (NOT Realtime - per PRD decision)
             process.PriorityClass = ProcessPriorityClass.High;
 
-            SettingsManager.Logger.Information(
+            _logger.Information(
                 "[ProcessPriorityBooster] Set process {ProcessName} (PID: {ProcessId}) priority from {Original} to High via runtime API",
                 process.ProcessName,
                 profile.ProcessId,
@@ -102,12 +206,11 @@ public class ProcessPriorityBooster : IOptimization
 
             _boostedProcessId = profile.ProcessId;
             _usedIfeo = false;
-            IsApplied = true;
             return true;
         }
         catch (ArgumentException)
         {
-            SettingsManager.Logger.Warning(
+            _logger.Warning(
                 "[ProcessPriorityBooster] Game process {ProcessId} not found - may have exited",
                 profile.ProcessId);
             return false;
@@ -125,7 +228,7 @@ public class ProcessPriorityBooster : IOptimization
         var exeName = profile.ExecutableName;
         if (string.IsNullOrEmpty(exeName))
         {
-            SettingsManager.Logger.Warning(
+            _logger.Warning(
                 "[ProcessPriorityBooster] No executable name in profile for IFEO fallback");
             return false;
         }
@@ -136,23 +239,25 @@ public class ProcessPriorityBooster : IOptimization
         try
         {
             // Check if PerfOptions subkey already exists
-            using var existingKey = Registry.LocalMachine.OpenSubKey(_ifeoSubKeyPath);
-            if (existingKey != null)
+            using (var existingKey = Registry.LocalMachine.OpenSubKey(_ifeoSubKeyPath))
             {
-                _ifeoPerfOptionsPreviouslyExisted = true;
-                _ifeoOriginalValues = new Dictionary<string, int>();
-
-                // Record existing CpuPriorityClass if present
-                var existingPriority = existingKey.GetValue("CpuPriorityClass");
-                if (existingPriority is int priorityValue)
+                if (existingKey != null)
                 {
-                    _ifeoOriginalValues["CpuPriorityClass"] = priorityValue;
+                    _ifeoPerfOptionsPreviouslyExisted = true;
+                    _ifeoOriginalValues = new Dictionary<string, int>();
+
+                    // Record existing CpuPriorityClass if present
+                    var existingPriority = existingKey.GetValue("CpuPriorityClass");
+                    if (existingPriority is int priorityValue)
+                    {
+                        _ifeoOriginalValues["CpuPriorityClass"] = priorityValue;
+                    }
                 }
-            }
-            else
-            {
-                _ifeoPerfOptionsPreviouslyExisted = false;
-                _ifeoOriginalValues = null;
+                else
+                {
+                    _ifeoPerfOptionsPreviouslyExisted = false;
+                    _ifeoOriginalValues = null;
+                }
             }
 
             // Create or open the PerfOptions subkey
@@ -160,7 +265,7 @@ public class ProcessPriorityBooster : IOptimization
             using var ifeoExeKey = Registry.LocalMachine.CreateSubKey(ifeoExeKeyPath);
             if (ifeoExeKey == null)
             {
-                SettingsManager.Logger.Error(
+                _logger.Error(
                     "[ProcessPriorityBooster] Failed to create IFEO key for {ExeName}",
                     exeName);
                 return false;
@@ -169,7 +274,7 @@ public class ProcessPriorityBooster : IOptimization
             using var perfOptionsKey = ifeoExeKey.CreateSubKey("PerfOptions");
             if (perfOptionsKey == null)
             {
-                SettingsManager.Logger.Error(
+                _logger.Error(
                     "[ProcessPriorityBooster] Failed to create PerfOptions subkey for {ExeName}",
                     exeName);
                 return false;
@@ -178,13 +283,13 @@ public class ProcessPriorityBooster : IOptimization
             // Set CpuPriorityClass = 3 (High priority)
             perfOptionsKey.SetValue("CpuPriorityClass", 3, RegistryValueKind.DWord);
 
-            // Record in snapshot for crash recovery
+            // Record in snapshot for crash recovery (parallel to the journal path).
             string? originalJson = _ifeoOriginalValues != null
                 ? JsonSerializer.Serialize(_ifeoOriginalValues)
                 : null;
             snapshot.RecordIfeoEntry(_ifeoSubKeyPath, originalJson);
 
-            SettingsManager.Logger.Information(
+            _logger.Information(
                 "[ProcessPriorityBooster] Set IFEO CpuPriorityClass=3 (High) for {ExeName} " +
                 "(anti-cheat: {AntiCheat}, PerfOptions previously existed: {Existed})",
                 exeName,
@@ -192,12 +297,11 @@ public class ProcessPriorityBooster : IOptimization
                 _ifeoPerfOptionsPreviouslyExisted);
 
             _usedIfeo = true;
-            IsApplied = true;
             return true;
         }
         catch (Exception ex)
         {
-            SettingsManager.Logger.Error(
+            _logger.Error(
                 ex,
                 "[ProcessPriorityBooster] Failed to apply IFEO priority for {ExeName}",
                 exeName);
@@ -209,34 +313,45 @@ public class ProcessPriorityBooster : IOptimization
     /// Reverts process priority to original value.
     /// Handles both runtime API and IFEO registry paths.
     /// </summary>
-    public Task<bool> RevertAsync(SystemStateSnapshot snapshot)
+    public OptimizationResult Revert()
     {
+        var snapshot = _context?.Snapshot;
+
         try
         {
             // Revert session-scoped Win32PrioritySeparation
             RevertPrioritySeparation();
 
+            bool pathSuccess;
             if (_usedIfeo)
             {
-                return Task.FromResult(RevertViaIfeo());
+                pathSuccess = RevertViaIfeo();
             }
             else
             {
-                return Task.FromResult(RevertViaRuntimeApi(snapshot));
+                pathSuccess = RevertViaRuntimeApi(snapshot);
             }
+
+            IsApplied = false;
+
+            if (!pathSuccess)
+                return RevertFail("Failed to revert priority boost");
+
+            return new OptimizationResult(
+                OptimizationId, string.Empty, string.Empty, OptimizationState.Reverted);
         }
         catch (Exception ex)
         {
-            SettingsManager.Logger.Error(ex, "[ProcessPriorityBooster] Failed to revert priority");
+            _logger.Error(ex, "[ProcessPriorityBooster] Failed to revert priority");
             IsApplied = false; // Mark as not applied even on failure
-            return Task.FromResult(false);
+            return RevertFail(ex.Message);
         }
     }
 
     /// <summary>
     /// Reverts runtime API priority change.
     /// </summary>
-    private bool RevertViaRuntimeApi(SystemStateSnapshot snapshot)
+    private bool RevertViaRuntimeApi(SystemStateSnapshot? snapshot)
     {
         if (_boostedProcessId <= 0)
         {
@@ -244,9 +359,9 @@ public class ProcessPriorityBooster : IOptimization
         }
 
         // Check if we have the recorded original priority
-        if (!snapshot.ProcessPriorities.TryGetValue(_boostedProcessId, out var originalPriority))
+        if (snapshot == null || !snapshot.ProcessPriorities.TryGetValue(_boostedProcessId, out var originalPriority))
         {
-            SettingsManager.Logger.Warning(
+            _logger.Warning(
                 "[ProcessPriorityBooster] No recorded priority for PID {ProcessId}",
                 _boostedProcessId);
             return true; // Not a fatal error
@@ -259,20 +374,18 @@ public class ProcessPriorityBooster : IOptimization
             // Restore original priority
             process.PriorityClass = originalPriority;
 
-            SettingsManager.Logger.Information(
+            _logger.Information(
                 "[ProcessPriorityBooster] Reverted process {ProcessName} priority to {Original} via runtime API",
                 process.ProcessName,
                 originalPriority);
 
-            IsApplied = false;
             return true;
         }
         catch (ArgumentException)
         {
-            SettingsManager.Logger.Information(
+            _logger.Information(
                 "[ProcessPriorityBooster] Process {ProcessId} already exited, no revert needed",
                 _boostedProcessId);
-            IsApplied = false;
             return true;
         }
     }
@@ -302,7 +415,7 @@ public class ProcessPriorityBooster : IOptimization
                 {
                     perfKey.SetValue("CpuPriorityClass", _ifeoOriginalValues["CpuPriorityClass"],
                         RegistryValueKind.DWord);
-                    SettingsManager.Logger.Information(
+                    _logger.Information(
                         "[ProcessPriorityBooster] Restored IFEO CpuPriorityClass={Value} for {ExeName}",
                         _ifeoOriginalValues["CpuPriorityClass"],
                         _ifeoExeName);
@@ -310,42 +423,167 @@ public class ProcessPriorityBooster : IOptimization
             }
             else
             {
-                // Delete only the CpuPriorityClass value (not the whole subkey — affinity may still be there)
-                using var perfKey = Registry.LocalMachine.OpenSubKey(_ifeoSubKeyPath, writable: true);
-                if (perfKey != null)
+                // Delete only the CpuPriorityClass value (not the whole subkey — affinity may still be there).
+                // Must close perfKey BEFORE attempting to delete the subkey — Windows registry
+                // won't delete a subkey while a handle to it is still open in the same process.
+                bool shouldDeleteSubKey = false;
+                using (var perfKey = Registry.LocalMachine.OpenSubKey(_ifeoSubKeyPath, writable: true))
                 {
-                    perfKey.DeleteValue("CpuPriorityClass", throwOnMissingValue: false);
-
-                    // If PerfOptions is now empty and we created it, delete the subkey
-                    if (!_ifeoPerfOptionsPreviouslyExisted && perfKey.ValueCount == 0)
+                    if (perfKey != null)
                     {
-                        using var parentKey = Registry.LocalMachine.OpenSubKey(ifeoExeKeyPath, writable: true);
-                        parentKey?.DeleteSubKey("PerfOptions", throwOnMissingSubKey: false);
+                        perfKey.DeleteValue("CpuPriorityClass", throwOnMissingValue: false);
 
-                        SettingsManager.Logger.Information(
-                            "[ProcessPriorityBooster] Deleted empty IFEO PerfOptions subkey for {ExeName}",
-                            _ifeoExeName);
+                        // If PerfOptions is now empty and we created it, mark for deletion
+                        shouldDeleteSubKey = !_ifeoPerfOptionsPreviouslyExisted && perfKey.ValueCount == 0;
                     }
-                    else
-                    {
-                        SettingsManager.Logger.Information(
-                            "[ProcessPriorityBooster] Deleted IFEO CpuPriorityClass for {ExeName} (PerfOptions retained)",
-                            _ifeoExeName);
-                    }
+                } // perfKey closed here — safe to delete subkey
+
+                if (shouldDeleteSubKey)
+                {
+                    using var parentKey = Registry.LocalMachine.OpenSubKey(ifeoExeKeyPath, writable: true);
+                    parentKey?.DeleteSubKey("PerfOptions", throwOnMissingSubKey: false);
+
+                    _logger.Information(
+                        "[ProcessPriorityBooster] Deleted empty IFEO PerfOptions subkey for {ExeName}",
+                        _ifeoExeName);
+                }
+                else
+                {
+                    _logger.Information(
+                        "[ProcessPriorityBooster] Deleted IFEO CpuPriorityClass for {ExeName} (PerfOptions retained)",
+                        _ifeoExeName);
                 }
             }
 
-            IsApplied = false;
             return true;
         }
         catch (Exception ex)
         {
-            SettingsManager.Logger.Error(
+            _logger.Error(
                 ex,
                 "[ProcessPriorityBooster] Failed to revert IFEO priority for {ExeName}",
                 _ifeoExeName);
-            IsApplied = false;
             return false;
+        }
+    }
+
+    /// <summary>
+    /// Confirms the applied IFEO entries are still present with the expected CpuPriorityClass.
+    /// For the live runtime-API path, the priority is ephemeral and cannot be verified reliably
+    /// once the game process exits, so this path returns true if IsApplied and no IFEO was written.
+    /// </summary>
+    public bool Verify()
+    {
+        if (!IsApplied)
+            return false;
+
+        try
+        {
+            if (_usedIfeo && !string.IsNullOrEmpty(_ifeoSubKeyPath))
+            {
+                using var key = Registry.LocalMachine.OpenSubKey(_ifeoSubKeyPath);
+                if (key?.GetValue("CpuPriorityClass") is not int cpc || cpc != 3)
+                    return false;
+            }
+
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Watchdog recovery path: parses the serialized IFEO state from the journal and
+    /// restores each IFEO PerfOptions subkey without relying on any live instance state.
+    /// For each entry:
+    ///   - If originalValuesJson is null, GameShift created the key → delete PerfOptions.
+    ///   - Else, restore the original DWORD values.
+    /// Live PriorityClass changes are ephemeral and never journaled, so there's nothing
+    /// to do for the non-IFEO path.
+    /// </summary>
+    public OptimizationResult RevertFromRecord(string originalValueJson)
+    {
+        try
+        {
+            _logger.Information(
+                "[ProcessPriorityBooster] Reverting from journal record (watchdog recovery)");
+
+            var state = JsonSerializer.Deserialize<JsonElement>(originalValueJson);
+            if (!state.TryGetProperty("ifeoKeys", out var keys) ||
+                keys.ValueKind != JsonValueKind.Array)
+            {
+                // No IFEO changes were journaled — nothing to revert (live-only path or no apply).
+                IsApplied = false;
+                return new OptimizationResult(
+                    OptimizationId, string.Empty, string.Empty, OptimizationState.Reverted);
+            }
+
+            foreach (var entry in keys.EnumerateArray())
+            {
+                try
+                {
+                    if (!entry.TryGetProperty("keyPath", out var keyPathElement) ||
+                        keyPathElement.ValueKind != JsonValueKind.String)
+                        continue;
+
+                    var keyPath = keyPathElement.GetString();
+                    if (string.IsNullOrEmpty(keyPath))
+                        continue;
+
+                    var hasOriginal = entry.TryGetProperty("originalValuesJson", out var origElement) &&
+                                      origElement.ValueKind == JsonValueKind.String;
+
+                    if (hasOriginal)
+                    {
+                        // Restore original values
+                        var originals = JsonSerializer.Deserialize<Dictionary<string, int>>(
+                            origElement.GetString()!);
+                        using var key = Registry.LocalMachine.OpenSubKey(keyPath, writable: true);
+                        if (key != null && originals != null)
+                        {
+                            foreach (var (name, value) in originals)
+                            {
+                                key.SetValue(name, value, RegistryValueKind.DWord);
+                            }
+
+                            _logger.Information(
+                                "[ProcessPriorityBooster] Restored {Count} original value(s) at {KeyPath}",
+                                originals.Count, keyPath);
+                        }
+                    }
+                    else
+                    {
+                        // GameShift created it — delete the PerfOptions subkey.
+                        // CRITICAL: don't hold a handle to the subkey while deleting it.
+                        var parentPath = keyPath.EndsWith(@"\PerfOptions", StringComparison.Ordinal)
+                            ? keyPath[..keyPath.LastIndexOf(@"\PerfOptions", StringComparison.Ordinal)]
+                            : keyPath;
+
+                        using var parentKey = Registry.LocalMachine.OpenSubKey(parentPath, writable: true);
+                        parentKey?.DeleteSubKey("PerfOptions", throwOnMissingSubKey: false);
+
+                        _logger.Information(
+                            "[ProcessPriorityBooster] Deleted PerfOptions subkey under {ParentPath} (created by GameShift)",
+                            parentPath);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.Warning(ex,
+                        "[ProcessPriorityBooster] Failed to revert an IFEO entry during watchdog recovery");
+                }
+            }
+
+            IsApplied = false;
+            return new OptimizationResult(
+                OptimizationId, string.Empty, string.Empty, OptimizationState.Reverted);
+        }
+        catch (Exception ex)
+        {
+            _logger.Error(ex, "[ProcessPriorityBooster] RevertFromRecord failed");
+            return RevertFail(ex.Message);
         }
     }
 
@@ -366,7 +604,7 @@ public class ProcessPriorityBooster : IOptimization
 
             if (key == null)
             {
-                SettingsManager.Logger.Warning(
+                _logger.Warning(
                     "[ProcessPriorityBooster] Cannot open PriorityControl registry key");
                 return;
             }
@@ -383,7 +621,7 @@ public class ProcessPriorityBooster : IOptimization
             // Skip if already set to gaming-optimal value
             if (currentValue == GamingPrioritySeparation)
             {
-                SettingsManager.Logger.Debug(
+                _logger.Debug(
                     "[ProcessPriorityBooster] Win32PrioritySeparation already 0x{Value:X2}, skipping",
                     GamingPrioritySeparation);
                 _prioritySeparationApplied = false;
@@ -393,14 +631,14 @@ public class ProcessPriorityBooster : IOptimization
             key.SetValue("Win32PrioritySeparation", GamingPrioritySeparation, RegistryValueKind.DWord);
             _prioritySeparationApplied = true;
 
-            SettingsManager.Logger.Information(
+            _logger.Information(
                 "[ProcessPriorityBooster] Win32PrioritySeparation set to 0x{New:X2} (was: 0x{Original:X2})",
                 GamingPrioritySeparation,
                 currentValue ?? 0);
         }
         catch (Exception ex)
         {
-            SettingsManager.Logger.Warning(
+            _logger.Warning(
                 ex,
                 "[ProcessPriorityBooster] Failed to set Win32PrioritySeparation");
         }
@@ -421,7 +659,7 @@ public class ProcessPriorityBooster : IOptimization
 
             if (key == null)
             {
-                SettingsManager.Logger.Warning(
+                _logger.Warning(
                     "[ProcessPriorityBooster] Cannot open PriorityControl registry key for revert");
                 return;
             }
@@ -429,13 +667,13 @@ public class ProcessPriorityBooster : IOptimization
             key.SetValue("Win32PrioritySeparation", _originalPrioritySeparation.Value, RegistryValueKind.DWord);
             _prioritySeparationApplied = false;
 
-            SettingsManager.Logger.Information(
+            _logger.Information(
                 "[ProcessPriorityBooster] Win32PrioritySeparation restored to 0x{Original:X2}",
                 _originalPrioritySeparation.Value);
         }
         catch (Exception ex)
         {
-            SettingsManager.Logger.Warning(
+            _logger.Warning(
                 ex,
                 "[ProcessPriorityBooster] Failed to restore Win32PrioritySeparation");
         }
@@ -469,4 +707,12 @@ public class ProcessPriorityBooster : IOptimization
                 "[ProcessPriorityBooster] Crash recovery — failed to restore Win32PrioritySeparation");
         }
     }
+
+    // ── Result helpers ────────────────────────────────────────────────────────
+
+    private static OptimizationResult Fail(string error) =>
+        new(OptimizationId, string.Empty, string.Empty, OptimizationState.Failed, error);
+
+    private static OptimizationResult RevertFail(string error) =>
+        new(OptimizationId, string.Empty, string.Empty, OptimizationState.Failed, error);
 }

@@ -7,7 +7,7 @@ namespace GameShift.Core.System;
 /// Partial class extension for I/O priority, Efficiency Mode, and memory priority management.
 /// Used by IoPriorityManager, EfficiencyModeController, and MemoryOptimizer.
 /// </summary>
-internal static partial class NativeInterop
+public static partial class NativeInterop
 {
     // ============================================================
     // ntdll.dll - Process I/O Priority

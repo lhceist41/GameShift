@@ -65,9 +65,20 @@ public partial class DashboardPage : Page
     {
         // Stop event subscriptions when the page is not visible
         var vm = DataContext as DashboardViewModel;
-        if (vm != null)
+        if (vm == null) return;
+
+        vm.Hero.PropertyChanged -= OnHeroPropertyChanged;
+
+        // When the MainWindow is actually closing (no tray to hide into), do a
+        // full Cleanup so every subscription (SessionTracker, AllActivities,
+        // sub-VMs, engine/detector events) is released — not just the live timers.
+        var mainWindow = Window.GetWindow(this) as MainWindow;
+        if (mainWindow != null && mainWindow.IsClosingForReal)
         {
-            vm.Hero.PropertyChanged -= OnHeroPropertyChanged;
+            vm.Cleanup();
+        }
+        else
+        {
             vm.StopTimers();
         }
     }

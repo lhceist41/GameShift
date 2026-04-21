@@ -90,8 +90,10 @@ public class DpcTraceEngine : IDisposable
     {
         get
         {
-            if (_systemPeakDpc > 2000) return DpcHealthStatus.Critical;
-            if (_systemPeakDpc > 500) return DpcHealthStatus.Warning;
+            // Read once into a local to avoid torn reads across the two threshold checks.
+            double peak = Interlocked.CompareExchange(ref _systemPeakDpc, 0, 0);
+            if (peak > 2000) return DpcHealthStatus.Critical;
+            if (peak > 500) return DpcHealthStatus.Warning;
             return DpcHealthStatus.Good;
         }
     }
@@ -119,7 +121,7 @@ public class DpcTraceEngine : IDisposable
             _kernelModules = KernelModuleResolver.GetKernelModules();
             _routineCache.Clear();
             _driverStats.Clear();
-            _systemPeakDpc = 0;
+            Interlocked.Exchange(ref _systemPeakDpc, 0);
 
             Log.Debug("DpcTraceEngine: loaded {Count} kernel modules for address resolution",
                 _kernelModules?.Length ?? 0);

@@ -1,7 +1,9 @@
 using System.Diagnostics;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using GameShift.Core.BackgroundMode;
 using GameShift.Core.Config;
+using GameShift.Core.Journal;
 using GameShift.Core.Profiles;
 using GameShift.Core.System;
 
@@ -18,13 +20,24 @@ namespace GameShift.Core.Optimization;
 /// Also manages processor idle disable (IDLEDISABLE) as a session-scoped toggle —
 /// forces all cores to C0 state during gaming, re-enables idle on game exit.
 /// AMD dual-CCD X3D processors get special parking values (CPMINCORES=50, ConcurrencyThreshold=67).
+///
+/// Implements IJournaledOptimization so the watchdog can re-apply original parking values
+/// after a crash without relying on live instance state. Both the snapshot-based recovery
+/// path (via SystemStateSnapshot.CpuParkingEntries) and the journal-based watchdog path
+/// coexist — running both is safe since powercfg writes are idempotent.
 /// </summary>
-public class CpuParkingManager : IOptimization
+public class CpuParkingManager : IOptimization, IJournaledOptimization
 {
     /// <summary>
     /// Processor Power Management sub-group GUID.
     /// </summary>
     private const string ProcessorSubGroupGuid = "54533251-82be-4824-96c1-47b60b740d00";
+
+    // Core parking setting GUIDs (used by both apply and revert paths).
+    private const string CpMinCoresGuid          = "0cc5b647-c1df-4637-891a-dec35c318583";
+    private const string CpMaxCoresGuid          = "ea062031-0e34-4ff1-9b6d-eb1059334028";
+    private const string MinProcessorStateGuid   = "893dee8e-2bef-41e0-89c6-b55d0929964c";
+    private const string ConcurrencyThresholdGuid = "2430ab6f-a520-44a2-9601-f7f23b5134b1";
 
     // ── C-state depth limiting GUIDs (replaces IDLEDISABLE=1) ──────────
 
@@ -74,6 +87,13 @@ public class CpuParkingManager : IOptimization
     private string? _activeSchemeGuid;
     private bool _idleDisableApplied;
 
+    // Target parking values applied during Apply() — captured so Verify() can re-read them.
+    private int _appliedCpMinCores;
+    private int _appliedConcurrencyThreshold;
+
+    // Context stored by CanApply() for use by Apply().
+    private SystemContext? _context;
+
     public const string OptimizationId = "CPU Core Unparking";
 
     public string Name => OptimizationId;
@@ -84,15 +104,58 @@ public class CpuParkingManager : IOptimization
 
     public bool IsAvailable => true; // powercfg is always available on Windows
 
+    // ── IOptimization ─────────────────────────────────────────────────────────
+
     /// <summary>
-    /// Unparks all CPU cores by setting aggressive parking values on the active power plan.
-    /// Captures original values for both AC and DC power, sets both to gaming-optimal values.
-    /// Records the active scheme GUID and original values in snapshot for crash recovery.
-    /// Also disables processor idle (forces C0 state) if the game profile allows it.
-    /// Uses vendor-aware parking values for AMD dual-CCD X3D processors.
+    /// Delegates to the journaled Apply() path. Stores context first via CanApply().
     /// </summary>
     public Task<bool> ApplyAsync(SystemStateSnapshot snapshot, GameProfile profile)
     {
+        var context = new SystemContext { Profile = profile, Snapshot = snapshot };
+        if (!CanApply(context))
+            return Task.FromResult(true);
+
+        var result = Apply();
+        return Task.FromResult(result.State == OptimizationState.Applied);
+    }
+
+    /// <summary>
+    /// Delegates to the journaled Revert() path.
+    /// </summary>
+    public Task<bool> RevertAsync(SystemStateSnapshot snapshot)
+    {
+        if (!IsApplied)
+            return Task.FromResult(true);
+
+        var result = Revert();
+        return Task.FromResult(result.State == OptimizationState.Reverted);
+    }
+
+    // ── IJournaledOptimization ────────────────────────────────────────────────
+
+    /// <summary>
+    /// Pre-flight check. Stores context for use in Apply().
+    /// Always returns true — powercfg is available on every supported Windows version.
+    /// </summary>
+    public bool CanApply(SystemContext context)
+    {
+        _context = context;
+        return true;
+    }
+
+    /// <summary>
+    /// Unparks all CPU cores by setting aggressive parking values on the active power plan.
+    /// Captures original values for both AC and DC power, sets both to gaming-optimal values.
+    /// Records the active scheme GUID and original values in snapshot for crash recovery and
+    /// also serializes them as JSON for the journal-based watchdog revert path.
+    /// Also disables processor idle (forces C0 state) if the game profile allows it.
+    /// Uses vendor-aware parking values for AMD dual-CCD X3D processors.
+    /// </summary>
+    public OptimizationResult Apply()
+    {
+        var profile = _context?.Profile;
+        var snapshot = _context?.Snapshot;
+
         try
         {
             // Get the currently active power scheme GUID
@@ -100,7 +163,7 @@ public class CpuParkingManager : IOptimization
             if (_activeSchemeGuid == null)
             {
                 SettingsManager.Logger.Error("[CpuParkingManager] Failed to get active power scheme GUID");
-                return Task.FromResult(false);
+                return Fail("Failed to get active power scheme GUID");
             }
 
             SettingsManager.Logger.Information(
@@ -109,6 +172,8 @@ public class CpuParkingManager : IOptimization
             // Detect CPU profile for vendor-aware parking values
             var cpuProfile = PowerPlanConfigurator.DetectCpuProfile();
             var (cpMinCores, concurrencyThreshold) = PowerPlanConfigurator.GetParkingValuesForProfile(cpuProfile);
+            _appliedCpMinCores = cpMinCores;
+            _appliedConcurrencyThreshold = concurrencyThreshold;
 
             SettingsManager.Logger.Information(
                 "[CpuParkingManager] CPU profile={Profile}, CPMINCORES={MinCores}, ConcurrencyThreshold={Threshold}",
@@ -117,10 +182,10 @@ public class CpuParkingManager : IOptimization
             // Build vendor-aware parking settings
             var parkingSettings = new (string Guid, string Name, int TargetValue)[]
             {
-                ("0cc5b647-c1df-4637-891a-dec35c318583", "CPMINCORES", cpMinCores),
-                ("ea062031-0e34-4ff1-9b6d-eb1059334028", "CPMAXCORES", 100),
-                ("893dee8e-2bef-41e0-89c6-b55d0929964c", "MinProcessorState", 100),
-                ("2430ab6f-a520-44a2-9601-f7f23b5134b1", "ConcurrencyThreshold", concurrencyThreshold),
+                (CpMinCoresGuid,          "CPMINCORES",           cpMinCores),
+                (CpMaxCoresGuid,          "CPMAXCORES",           100),
+                (MinProcessorStateGuid,   "MinProcessorState",    100),
+                (ConcurrencyThresholdGuid, "ConcurrencyThreshold", concurrencyThreshold),
             };
 
             foreach (var (settingGuid, settingName, targetValue) in parkingSettings)
@@ -158,17 +223,19 @@ public class CpuParkingManager : IOptimization
             // instead of the old IDLEDISABLE=1 approach. C1 has 2µs wake latency (vs
             // C6's 100µs+) while keeping the idle thread running so WMI counters report
             // correct CPU utilization. Preserves thermal headroom for boost clocks.
-            if (profile.DisableProcessorIdle && profile.Intensity == OptimizationIntensity.Competitive)
+            if (profile != null &&
+                profile.DisableProcessorIdle &&
+                profile.Intensity == OptimizationIntensity.Competitive)
             {
                 ApplyCStateLimiting();
-                snapshot.RecordIdleDisableState(_activeSchemeGuid);
+                snapshot?.RecordIdleDisableState(_activeSchemeGuid);
             }
 
             // Apply changes to the active scheme
             RunPowercfg($"/setactive {_activeSchemeGuid}");
 
-            // Record in snapshot for crash recovery
-            snapshot.RecordCpuParkingState(
+            // Record in snapshot for crash recovery (legacy snapshot path)
+            snapshot?.RecordCpuParkingState(
                 _activeSchemeGuid,
                 _originalStates.Select(s => new CpuParkingSnapshotEntry(
                     s.SettingGuid, s.OriginalAcValue, s.OriginalDcValue)).ToList());
@@ -178,12 +245,21 @@ public class CpuParkingManager : IOptimization
                 _originalStates.Count, _idleDisableApplied);
 
             IsApplied = true;
-            return Task.FromResult(true);
+
+            // Build JSON payload for the journal-based watchdog revert path.
+            var originalJson = BuildOriginalStateJson();
+            var appliedJson = BuildAppliedStateJson(cpMinCores, concurrencyThreshold);
+
+            return new OptimizationResult(
+                Name: OptimizationId,
+                OriginalValue: originalJson,
+                AppliedValue: appliedJson,
+                State: OptimizationState.Applied);
         }
         catch (Exception ex)
         {
             SettingsManager.Logger.Error(ex, "[CpuParkingManager] Apply failed");
-            return Task.FromResult(false);
+            return Fail(ex.Message);
         }
     }
 
@@ -191,7 +267,7 @@ public class CpuParkingManager : IOptimization
     /// Restores original parking settings for both AC and DC power.
     /// Re-enables processor idle and restores time check interval to responsive value.
     /// </summary>
-    public Task<bool> RevertAsync(SystemStateSnapshot snapshot)
+    public OptimizationResult Revert()
     {
         try
         {
@@ -200,7 +276,8 @@ public class CpuParkingManager : IOptimization
                 SettingsManager.Logger.Warning(
                     "[CpuParkingManager] No active scheme GUID recorded, skipping revert");
                 IsApplied = false;
-                return Task.FromResult(true);
+                return new OptimizationResult(
+                    OptimizationId, string.Empty, string.Empty, OptimizationState.Reverted);
             }
 
             foreach (var state in _originalStates)
@@ -247,14 +324,223 @@ public class CpuParkingManager : IOptimization
 
             _originalStates.Clear();
             IsApplied = false;
-            return Task.FromResult(true);
+            return new OptimizationResult(
+                OptimizationId, string.Empty, string.Empty, OptimizationState.Reverted);
         }
         catch (Exception ex)
         {
             SettingsManager.Logger.Error(ex, "[CpuParkingManager] Revert failed");
             IsApplied = false;
-            return Task.FromResult(false);
+            return RevertFail(ex.Message);
         }
+    }
+
+    /// <summary>
+    /// Confirms the applied CPMINCORES value is still in effect on the active scheme.
+    /// Returns false if the value was reverted externally (e.g., by Windows Update or
+    /// another process re-editing the power plan).
+    /// </summary>
+    public bool Verify()
+    {
+        if (!IsApplied || _activeSchemeGuid == null)
+            return false;
+
+        try
+        {
+            // Re-read CPMINCORES AC value — should match the value we applied.
+            var current = QueryPowerSettingValue(_activeSchemeGuid, CpMinCoresGuid, "AC");
+            if (current == null)
+                return false;
+
+            return int.TryParse(current, out var value) && value == _appliedCpMinCores;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Watchdog recovery path: parses the serialized original parking state from the journal
+    /// and restores AC/DC values for every tracked setting via powercfg, without requiring
+    /// any live instance fields. Idempotent — writing the same values twice is safe, so
+    /// coexisting with the snapshot-based boot recovery path is fine.
+    /// </summary>
+    public OptimizationResult RevertFromRecord(string originalValueJson)
+    {
+        try
+        {
+            SettingsManager.Logger.Information(
+                "[CpuParkingManager] Reverting from journal record (watchdog recovery)");
+
+            var payload = JsonSerializer.Deserialize<JsonElement>(originalValueJson);
+
+            if (!payload.TryGetProperty("schemeGuid", out var schemeElement) ||
+                schemeElement.ValueKind != JsonValueKind.String)
+            {
+                return RevertFail("Missing schemeGuid field");
+            }
+
+            var schemeGuid = schemeElement.GetString();
+            if (string.IsNullOrWhiteSpace(schemeGuid))
+                return RevertFail("schemeGuid is empty");
+
+            // Revert core parking settings.
+            if (payload.TryGetProperty("entries", out var entriesElement) &&
+                entriesElement.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var entry in entriesElement.EnumerateArray())
+                {
+                    RestoreParkingEntry(schemeGuid, entry);
+                }
+            }
+
+            // Revert C-state limiting originals if they were captured.
+            bool hadCStateLimiting = false;
+            if (payload.TryGetProperty("cStateOriginals", out var cStateElement) &&
+                cStateElement.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var entry in cStateElement.EnumerateArray())
+                {
+                    if (!entry.TryGetProperty("settingGuid", out var guidElement) ||
+                        guidElement.ValueKind != JsonValueKind.String)
+                        continue;
+
+                    var settingGuid = guidElement.GetString();
+                    if (string.IsNullOrWhiteSpace(settingGuid))
+                        continue;
+
+                    if (entry.TryGetProperty("originalAc", out var acElement) &&
+                        acElement.ValueKind == JsonValueKind.String)
+                    {
+                        var ac = acElement.GetString();
+                        if (!string.IsNullOrWhiteSpace(ac))
+                        {
+                            RunPowercfg(
+                                $"/setacvalueindex {schemeGuid} {ProcessorSubGroupGuid} {settingGuid} {ac}");
+                        }
+                    }
+
+                    if (entry.TryGetProperty("originalDc", out var dcElement) &&
+                        dcElement.ValueKind == JsonValueKind.String)
+                    {
+                        var dc = dcElement.GetString();
+                        if (!string.IsNullOrWhiteSpace(dc))
+                        {
+                            RunPowercfg(
+                                $"/setdcvalueindex {schemeGuid} {ProcessorSubGroupGuid} {settingGuid} {dc}");
+                        }
+                    }
+
+                    // Re-hide the setting so it goes back to being an advanced hidden option.
+                    RunPowercfg($"-attributes {ProcessorSubGroupGuid} {settingGuid} +ATTRIB_HIDE");
+                    hadCStateLimiting = true;
+                }
+            }
+
+            if (hadCStateLimiting)
+            {
+                // Restore time check interval to the safe default if the session touched it.
+                RunPowercfg($"/setacvalueindex {schemeGuid} {ProcessorSubGroupGuid} {TimeCheckIntervalGuid} 15");
+                RunPowercfg($"/setdcvalueindex {schemeGuid} {ProcessorSubGroupGuid} {TimeCheckIntervalGuid} 15");
+            }
+
+            // Activate restored settings.
+            RunPowercfg($"/setactive {schemeGuid}");
+
+            IsApplied = false;
+            return new OptimizationResult(
+                OptimizationId, string.Empty, string.Empty, OptimizationState.Reverted);
+        }
+        catch (Exception ex)
+        {
+            SettingsManager.Logger.Error(ex, "[CpuParkingManager] RevertFromRecord failed");
+            return RevertFail(ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Restores AC/DC values for a single parking entry parsed from the journal JSON.
+    /// Missing values (null or absent) are skipped — nothing to restore.
+    /// </summary>
+    private void RestoreParkingEntry(string schemeGuid, JsonElement entry)
+    {
+        if (!entry.TryGetProperty("settingGuid", out var guidElement) ||
+            guidElement.ValueKind != JsonValueKind.String)
+            return;
+
+        var settingGuid = guidElement.GetString();
+        if (string.IsNullOrWhiteSpace(settingGuid))
+            return;
+
+        if (entry.TryGetProperty("originalAc", out var acElement) &&
+            acElement.ValueKind == JsonValueKind.String)
+        {
+            var ac = acElement.GetString();
+            if (!string.IsNullOrWhiteSpace(ac))
+            {
+                RunPowercfg(
+                    $"/setacvalueindex {schemeGuid} {ProcessorSubGroupGuid} {settingGuid} {ac}");
+            }
+        }
+
+        if (entry.TryGetProperty("originalDc", out var dcElement) &&
+            dcElement.ValueKind == JsonValueKind.String)
+        {
+            var dc = dcElement.GetString();
+            if (!string.IsNullOrWhiteSpace(dc))
+            {
+                RunPowercfg(
+                    $"/setdcvalueindex {schemeGuid} {ProcessorSubGroupGuid} {settingGuid} {dc}");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Serializes the captured original state into the JSON payload persisted by the journal.
+    /// The payload must be self-contained so the watchdog can revert without live fields.
+    /// </summary>
+    private string BuildOriginalStateJson()
+    {
+        var payload = new
+        {
+            schemeGuid = _activeSchemeGuid,
+            entries = _originalStates.Select(s => new
+            {
+                settingGuid = s.SettingGuid,
+                settingName = s.SettingName,
+                originalAc = s.OriginalAcValue,
+                originalDc = s.OriginalDcValue
+            }).ToArray(),
+            idleDisableApplied = _idleDisableApplied,
+            cStateOriginals = _cStateOriginals.Select(s => new
+            {
+                settingGuid = s.Guid,
+                settingName = s.Name,
+                originalAc = s.OrigAc,
+                originalDc = s.OrigDc
+            }).ToArray()
+        };
+
+        return JsonSerializer.Serialize(payload);
+    }
+
+    /// <summary>
+    /// Serializes the values that were actually applied. Used for logging / audit only.
+    /// </summary>
+    private string BuildAppliedStateJson(int cpMinCores, int concurrencyThreshold)
+    {
+        var payload = new
+        {
+            schemeGuid = _activeSchemeGuid,
+            cpMinCores,
+            cpMaxCores = 100,
+            minProcessorState = 100,
+            concurrencyThreshold,
+            idleDisableApplied = _idleDisableApplied
+        };
+
+        return JsonSerializer.Serialize(payload);
     }
 
     /// <summary>
@@ -403,6 +689,12 @@ public class CpuParkingManager : IOptimization
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────
+
+    private static OptimizationResult Fail(string error) =>
+        new(OptimizationId, string.Empty, string.Empty, OptimizationState.Failed, error);
+
+    private static OptimizationResult RevertFail(string error) =>
+        new(OptimizationId, string.Empty, string.Empty, OptimizationState.Failed, error);
 
     private static string? GetActiveSchemeGuid()
     {

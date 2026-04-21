@@ -79,7 +79,7 @@ public class TrayIconManager : IDisposable
         // Create TaskbarIcon using Hardcodet.NotifyIcon.Wpf (works on Win10 + Win11)
         _taskbarIcon = new TaskbarIcon();
         _taskbarIcon.ToolTipText = "GameShift - Idle";
-        _taskbarIcon.Icon = LoadIcon("tray-idle");
+        _taskbarIcon.Icon = LoadIcon("tray-idle"); // initial assignment — no prior icon to dispose
         _taskbarIcon.ContextMenu = BuildContextMenu();
 
         // Single-click opens dashboard (same as double-click)
@@ -111,8 +111,10 @@ public class TrayIconManager : IDisposable
     }
 
     /// <summary>
-    /// Loads a System.Drawing.Icon from the embedded .ico resource.
-    /// Hardcodet TaskbarIcon requires System.Drawing.Icon, not BitmapImage.
+    /// Loads a System.Drawing.Icon from the embedded .ico resource. The underlying
+    /// resource stream is disposed before returning — Icon copies the pixel data
+    /// during construction, so the stream is no longer needed. Hardcodet TaskbarIcon
+    /// requires System.Drawing.Icon, not BitmapImage.
     /// </summary>
     private static Icon LoadIcon(string iconName)
     {
@@ -120,7 +122,20 @@ public class TrayIconManager : IDisposable
         var streamInfo = Application.GetResourceStream(uri);
         if (streamInfo == null)
             throw new FileNotFoundException($"Tray icon resource not found: {iconName}.ico");
-        return new Icon(streamInfo.Stream);
+        using var stream = streamInfo.Stream;
+        return new Icon(stream);
+    }
+
+    /// <summary>
+    /// Assigns a new icon to the taskbar icon and disposes the previous one.
+    /// Each LoadIcon call allocates a GDI handle; without disposing the old icon
+    /// every state transition would leak a handle.
+    /// </summary>
+    private void SetTaskbarIcon(string iconName)
+    {
+        var oldIcon = _taskbarIcon.Icon;
+        _taskbarIcon.Icon = LoadIcon(iconName);
+        oldIcon?.Dispose();
     }
 
     private void OnTrayLeftDoubleClick(object sender, RoutedEventArgs e)
@@ -224,7 +239,7 @@ public class TrayIconManager : IDisposable
             statusText = "GameShift: Idle";
         }
 
-        _taskbarIcon.Icon = LoadIcon(iconName);
+        SetTaskbarIcon(iconName);
         _taskbarIcon.ToolTipText = tooltip;
         UpdateStatusMenuItem(statusText);
     }
@@ -596,7 +611,12 @@ public class TrayIconManager : IDisposable
         }
 
         _taskbarIcon.TrayLeftMouseUp -= OnTrayLeftDoubleClick;
+
+        // Capture the current icon BEFORE TaskbarIcon.Dispose() so we can free its GDI
+        // handle. TaskbarIcon.Dispose() does not dispose the assigned Icon.
+        var finalIcon = _taskbarIcon.Icon;
         _taskbarIcon.Dispose();
+        finalIcon?.Dispose();
 
         _disposed = true;
         _logger.Information("TrayIconManager disposed");

@@ -84,9 +84,18 @@ public class IoPriorityManager : IOptimization
         {
             SettingsManager.Logger.Information("[IoPriorityManager] Reverting I/O priority changes");
 
-            // Stop periodic rescan
-            _rescanTimer?.Dispose();
-            _rescanTimer = null;
+            // Stop periodic rescan and wait for any in-flight callback to finish.
+            // Timer.Dispose() does NOT wait for callbacks, so a pending callback could race
+            // with the restore path below and repopulate tracking collections after they
+            // were cleared. The WaitHandle overload signals when all callbacks complete.
+            if (_rescanTimer != null)
+            {
+                _rescanTimer.Change(Timeout.Infinite, Timeout.Infinite);
+                using var waitHandle = new ManualResetEvent(false);
+                _rescanTimer.Dispose(waitHandle);
+                waitHandle.WaitOne(TimeSpan.FromSeconds(5)); // timeout so we don't hang forever
+                _rescanTimer = null;
+            }
 
             int restoredCount = 0;
             int skippedCount = 0;
@@ -106,19 +115,36 @@ public class IoPriorityManager : IOptimization
                             continue;
                         }
 
-                        int priority = state.OriginalIoPriority;
-                        int status = NativeInterop.NtSetInformationProcess(
-                            process.Handle,
-                            NativeInterop.ProcessIoPriority,
-                            ref priority,
-                            sizeof(int));
-
-                        if (status == 0)
+                        // Open our own limited-rights handle — Process.Handle requires PROCESS_ALL_ACCESS
+                        IntPtr hProc = NativeInterop.OpenProcess(
+                            NativeInterop.PROCESS_QUERY_INFORMATION | NativeInterop.PROCESS_SET_INFORMATION,
+                            false, state.ProcessId);
+                        if (hProc == IntPtr.Zero)
                         {
-                            restoredCount++;
-                            SettingsManager.Logger.Debug(
-                                "[IoPriorityManager] Restored I/O priority: {Name} (PID {Pid}) → {Priority}",
-                                state.ProcessName, state.ProcessId, state.OriginalIoPriority);
+                            skippedCount++;
+                            continue;
+                        }
+
+                        try
+                        {
+                            int priority = state.OriginalIoPriority;
+                            int status = NativeInterop.NtSetInformationProcess(
+                                hProc,
+                                NativeInterop.ProcessIoPriority,
+                                ref priority,
+                                sizeof(int));
+
+                            if (status == 0)
+                            {
+                                restoredCount++;
+                                SettingsManager.Logger.Debug(
+                                    "[IoPriorityManager] Restored I/O priority: {Name} (PID {Pid}) → {Priority}",
+                                    state.ProcessName, state.ProcessId, state.OriginalIoPriority);
+                            }
+                        }
+                        finally
+                        {
+                            NativeInterop.CloseHandle(hProc);
                         }
                     }
                     catch (ArgumentException)

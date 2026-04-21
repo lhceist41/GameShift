@@ -48,7 +48,9 @@ public class SessionJournalData
     /// Set by boot recovery when the Windows build number differs from the value
     /// recorded at the start of the last session. Signals that a Windows Update
     /// occurred between the last session and this boot, and that all persistent
-    /// registry-backed optimizations should be re-verified.
+    /// registry-backed optimizations should be re-verified. Read and cleared by
+    /// the main app on startup via <see cref="JournalManager.GetBuildChangedWarning"/> /
+    /// <see cref="JournalManager.ClearBuildChangedWarning"/>.
     /// </summary>
     public bool BuildChangedWarning { get; set; }
 
@@ -69,7 +71,9 @@ public class SessionJournalData
     /// <summary>
     /// True when changes that require a reboot are pending (e.g., interrupt affinity,
     /// MSI mode, BCD edits). Signals the main app to show a reboot prompt on launch.
-    /// Cleared after the system reboots (detected by comparing boot time vs apply time).
+    /// Read and cleared by the main app on startup via
+    /// <see cref="JournalManager.HasPendingRebootFixes"/> /
+    /// <see cref="JournalManager.ClearPendingRebootFixes"/>.
     /// </summary>
     public bool HasPendingRebootFixes { get; set; }
 
@@ -77,6 +81,22 @@ public class SessionJournalData
     /// Descriptions of pending reboot-required fixes for display in the UI.
     /// </summary>
     public List<string> PendingRebootFixDescriptions { get; set; } = new();
+
+    // ── Watchdog recovery coordination ────────────────────────────────────────
+
+    /// <summary>
+    /// UTC timestamp of the last watchdog-initiated recovery, if any.
+    /// Set by WatchdogRevertEngine after a successful revert.
+    /// OptimizationEngine checks this during DeactivateProfileAsync to avoid
+    /// double-reverting optimizations the watchdog already rolled back.
+    /// </summary>
+    public DateTime? LastRecoveryTimestamp { get; set; }
+
+    /// <summary>
+    /// UTC timestamp when the current session was started via StartSession().
+    /// Used by OptimizationEngine to detect whether a recovery happened during the session.
+    /// </summary>
+    public DateTime? SessionStartTime { get; set; }
 }
 
 // ── JournalManager ────────────────────────────────────────────────────────────
@@ -90,7 +110,11 @@ public class JournalManager
 {
     private readonly string _journalPath;
     private readonly ILogger _logger;
-    private readonly object _lock = new();
+    // Static: multiple JournalManager instances exist (OptimizationEngine,
+    // CoreIsolationManager, KernelTuningManager) but all write to the same
+    // %ProgramData%\GameShift\state.json file. A per-instance lock would let
+    // concurrent instances race on the shared .tmp file.
+    private static readonly object _lock = new();
     private SessionJournalData _current = new();
 
     private static readonly JsonSerializerOptions _writeOptions = new()
@@ -99,14 +123,30 @@ public class JournalManager
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
 
-    public JournalManager()
+    /// <summary>
+    /// Production constructor - uses %ProgramData%\GameShift\state.json.
+    /// </summary>
+    public JournalManager() : this(GetDefaultJournalPath()) { }
+
+    /// <summary>
+    /// Test/explicit-path constructor. Allows overriding the journal file location.
+    /// Internal to prevent production callers from depending on it.
+    /// </summary>
+    internal JournalManager(string journalPath)
     {
         _logger = SettingsManager.Logger;
+        _journalPath = journalPath;
+        var dir = Path.GetDirectoryName(_journalPath);
+        if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+            Directory.CreateDirectory(dir);
+    }
+
+    private static string GetDefaultJournalPath()
+    {
         var dir = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
             "GameShift");
-        Directory.CreateDirectory(dir);
-        _journalPath = Path.Combine(dir, "state.json");
+        return Path.Combine(dir, "state.json");
     }
 
     // ── Session lifecycle ─────────────────────────────────────────────────────
@@ -126,6 +166,8 @@ public class JournalManager
                 GameShiftVersion = ReadGameShiftVersion(),
                 Timestamp = DateTimeOffset.UtcNow,
                 SessionActive = true,
+                SessionStartTime = DateTime.UtcNow,
+                LastRecoveryTimestamp = null, // Fresh session — clear any stale recovery marker
                 ActiveGame = new ActiveGameInfo
                 {
                     Name = profile.GameName,
@@ -206,6 +248,43 @@ public class JournalManager
     }
 
     /// <summary>
+    /// Returns true if there are pending DPC fixes that required a reboot but haven't been
+    /// acknowledged by the user. Read by the main app on startup to surface a prompt.
+    /// </summary>
+    public bool HasPendingRebootFixes()
+    {
+        lock (_lock)
+        {
+            return _current.HasPendingRebootFixes;
+        }
+    }
+
+    /// <summary>
+    /// Returns a snapshot of the pending reboot-required fix descriptions.
+    /// The returned list is a copy and is safe to enumerate without additional locking.
+    /// </summary>
+    public IReadOnlyList<string> GetPendingRebootFixDescriptions()
+    {
+        lock (_lock)
+        {
+            return _current.PendingRebootFixDescriptions.ToList();
+        }
+    }
+
+    /// <summary>
+    /// Clears all pending reboot-required fixes (called after the user acknowledges them).
+    /// </summary>
+    public void ClearPendingRebootFixes()
+    {
+        lock (_lock)
+        {
+            _current.HasPendingRebootFixes = false;
+            _current.PendingRebootFixDescriptions.Clear();
+            Save();
+        }
+    }
+
+    /// <summary>
     /// Records a Windows Update warning in the journal.
     /// Called by boot recovery when the build stored in the journal differs from the
     /// current OS build, indicating that a Windows Update occurred since the last session.
@@ -218,6 +297,66 @@ public class JournalManager
             _current.BuildAtLastSession = buildAtLastSession;
             _current.BuildAtRecovery = buildAtRecovery;
             Save();
+        }
+    }
+
+    /// <summary>
+    /// Returns a formatted build-change warning string, or null if Windows has not changed
+    /// since the last session. Read by the main app on startup to surface a prompt.
+    /// </summary>
+    public string? GetBuildChangedWarning()
+    {
+        lock (_lock)
+        {
+            if (!_current.BuildChangedWarning)
+                return null;
+
+            var before = _current.BuildAtLastSession ?? "unknown";
+            var after = _current.BuildAtRecovery ?? "unknown";
+            return $"Windows build changed from {before} to {after}.";
+        }
+    }
+
+    /// <summary>
+    /// Clears the build-changed warning (called after the user acknowledges it).
+    /// </summary>
+    public void ClearBuildChangedWarning()
+    {
+        lock (_lock)
+        {
+            _current.BuildChangedWarning = false;
+            _current.BuildAtLastSession = null;
+            _current.BuildAtRecovery = null;
+            Save();
+        }
+    }
+
+    /// <summary>
+    /// Records the UTC timestamp of a watchdog-initiated recovery.
+    /// Called by <see cref="WatchdogRevertEngine"/> after successfully reverting
+    /// optimizations from the journal so the main app can skip its own redundant
+    /// LIFO revert on next DeactivateProfileAsync.
+    /// </summary>
+    public void RecordRecoveryTimestamp(DateTime utcNow)
+    {
+        lock (_lock)
+        {
+            _current.LastRecoveryTimestamp = utcNow;
+            Save();
+        }
+    }
+
+    /// <summary>
+    /// Returns true if the watchdog has performed a recovery since the current session started.
+    /// The OptimizationEngine uses this to skip revert of optimizations the watchdog already rolled back.
+    /// </summary>
+    public bool WasRecoveredDuringCurrentSession()
+    {
+        lock (_lock)
+        {
+            var start = _current.SessionStartTime;
+            var recovery = _current.LastRecoveryTimestamp;
+            return recovery.HasValue && start.HasValue && recovery.Value > start.Value;
         }
     }
 

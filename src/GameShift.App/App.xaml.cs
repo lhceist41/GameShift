@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Windows;
 using GameShift.Core.Config;
@@ -210,6 +211,10 @@ public partial class App : Application
             ShowAndNavigate(typeof(DashboardPage));
             WriteDiag("MainWindow shown OK");
 
+            // Step f1: Surface any boot-recovery warnings recorded by the watchdog.
+            // Deferred to ApplicationIdle so the MessageBoxes appear after MainWindow renders.
+            CheckJournalWarnings();
+
             // Step f2: Register global hotkey
             // Must happen after MainWindow is shown so the window handle is available.
             WriteDiag("Step f2: Registering global hotkey...");
@@ -303,6 +308,68 @@ public partial class App : Application
         }
 
         _mainWindow.NavigateTo(pageType);
+    }
+
+    /// <summary>
+    /// Surfaces any boot-recovery warnings recorded by the watchdog in the session journal:
+    /// (1) pending DPC fixes that required a reboot but haven't been acknowledged, and
+    /// (2) a Windows Update that occurred between the last session and this boot.
+    /// Dialogs are deferred to <see cref="System.Windows.Threading.DispatcherPriority.ApplicationIdle"/>
+    /// so they appear after the MainWindow has rendered and can own the MessageBox.
+    /// Never throws; failures are logged but non-fatal.
+    /// </summary>
+    private void CheckJournalWarnings()
+    {
+        try
+        {
+            var journal = Services.Journal;
+            if (journal == null) return;
+
+            var pendingFixes = journal.GetPendingRebootFixDescriptions();
+            var buildWarning = journal.GetBuildChangedWarning();
+
+            if (pendingFixes.Count == 0 && string.IsNullOrEmpty(buildWarning))
+                return;
+
+            Dispatcher.BeginInvoke(() =>
+            {
+                if (pendingFixes.Count > 0)
+                {
+                    var msg = "A previous DPC fix required a system reboot:\n\n" +
+                              string.Join("\n", pendingFixes.Select(d => "  \u2022 " + d)) +
+                              "\n\nHas the system been rebooted since?";
+
+                    var result = MessageBox.Show(
+                        _mainWindow!,
+                        msg,
+                        "Pending DPC Fixes",
+                        MessageBoxButton.YesNo,
+                        MessageBoxImage.Information);
+
+                    if (result == MessageBoxResult.Yes)
+                    {
+                        journal.ClearPendingRebootFixes();
+                    }
+                }
+
+                if (!string.IsNullOrEmpty(buildWarning))
+                {
+                    MessageBox.Show(
+                        _mainWindow!,
+                        "Windows was updated since your last GameShift session:\n\n" + buildWarning +
+                        "\n\nSome optimizations may need to be reapplied.",
+                        "Windows Build Changed",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+
+                    journal.ClearBuildChangedWarning();
+                }
+            }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to check journal warnings");
+        }
     }
 
     /// <summary>
@@ -406,6 +473,19 @@ public partial class App : Application
     protected override void OnExit(ExitEventArgs e)
     {
         Log.Information("GameShift shutting down normally");
+
+        // Release long-lived page ViewModel event subscriptions (DashboardViewModel,
+        // etc.) BEFORE disposing core services so their handlers do not fire during
+        // service teardown. The DashboardPage's Unloaded handler uses the lightweight
+        // StopTimers path for navigate-away; shutdown requires a full Cleanup.
+        try
+        {
+            _mainWindow?.CleanupLongLivedPageViewModels();
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to clean up page ViewModels during shutdown");
+        }
 
         // Deactivate any active optimizations.
         // Block synchronously — async void can be killed by the framework before

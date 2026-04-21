@@ -6,7 +6,7 @@ namespace GameShift.Core.System;
 /// Centralized P/Invoke declarations for Windows API calls.
 /// All platform invoke declarations should be placed here to maintain a single source of truth.
 /// </summary>
-internal static partial class NativeInterop
+public static partial class NativeInterop
 {
     // ============================================================
     // advapi32.dll - Security and Token Management
@@ -124,6 +124,6 @@ internal static partial class NativeInterop
     /// Prevents PATH hijacking when running as administrator.
     /// Accepts subdirectories (e.g., "WindowsPowerShell\v1.0\powershell.exe").
     /// </summary>
-    internal static string SystemExePath(string exeName) =>
+    public static string SystemExePath(string exeName) =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), exeName);
 }

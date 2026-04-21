@@ -160,8 +160,9 @@ public class WatchdogPipeServer
     }
 
     /// <summary>
-    /// Unconditional recovery triggered by a heartbeat timeout.
-    /// Always reverts applied optimizations regardless of sessionActive flag.
+    /// Recovery triggered by a heartbeat timeout. Checks the journal's SessionActive flag
+    /// before reverting — protects against false positives when the main app is just slow
+    /// (e.g. ThreadPool starvation during powercfg/schtasks calls) but still alive.
     /// </summary>
     private async Task TriggerRecoveryAsync()
     {
@@ -172,6 +173,12 @@ public class WatchdogPipeServer
         if (journalData == null)
         {
             _logger.Warning("[WatchdogPipeServer] Heartbeat timed out but no journal found");
+            return;
+        }
+
+        if (!journalData.SessionActive)
+        {
+            _logger.Debug("[Watchdog] Heartbeat timeout but no active session - no revert needed");
             return;
         }
 

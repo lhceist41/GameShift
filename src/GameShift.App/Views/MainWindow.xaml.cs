@@ -6,6 +6,8 @@ using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 using GameShift.App.Helpers;
+using GameShift.App.ViewModels;
+using GameShift.App.Views.Pages;
 using GameShift.Core.Config;
 using Wpf.Ui.Controls;
 
@@ -28,6 +30,14 @@ public partial class MainWindow : Window
 
     // ── Snackbar for toast notifications ────────────────────────────────
     private Snackbar? _snackbar;
+
+    /// <summary>
+    /// True when the window is being torn down for real (not hidden to tray).
+    /// Pages can inspect this in their Unloaded handler to distinguish a
+    /// navigate-away / minimize-to-tray (keep the ViewModel alive for reuse)
+    /// from a final teardown (fully unsubscribe everything).
+    /// </summary>
+    public bool IsClosingForReal { get; private set; }
 
     public MainWindow()
     {
@@ -66,6 +76,11 @@ public partial class MainWindow : Window
 
     // ── NavigationView Scroll Fix ────────────────────────────────────────
 
+    // Track the DashboardPage instance once we navigate through it so that App.OnExit
+    // can find the long-lived DashboardViewModel and fully unsubscribe it on shutdown.
+    // NavigationView caches page instances, so the first navigate-through is enough.
+    private DashboardPage? _dashboardPage;
+
     /// <summary>
     /// Fired after every page navigation. Defers disabling the dynamic ScrollViewer
     /// wrapper until after WPF-UI's layout pass — which is when it resets the property
@@ -73,6 +88,13 @@ public partial class MainWindow : Window
     /// </summary>
     private void OnNavigated(NavigationView sender, NavigatedEventArgs args)
     {
+        // Remember the DashboardPage instance — the NavigationView owns its lifetime
+        // and we need a handle to call Cleanup on its ViewModel during app shutdown.
+        if (args.Page is DashboardPage dashboard)
+        {
+            _dashboardPage = dashboard;
+        }
+
         // The NavigationView resets IsDynamicScrollViewerEnabled = true during its
         // post-navigation layout pass. A Dispatcher callback at Loaded priority runs
         // after that layout pass completes, so we can override it back to false.
@@ -80,6 +102,18 @@ public partial class MainWindow : Window
         {
             DisableContentPresenterDynamicScroll();
         }, System.Windows.Threading.DispatcherPriority.Loaded);
+    }
+
+    /// <summary>
+    /// Invoked from App.OnExit to fully release ViewModel event subscriptions
+    /// for long-lived pages before the application shuts down.
+    /// </summary>
+    public void CleanupLongLivedPageViewModels()
+    {
+        IsClosingForReal = true;
+
+        var dashboardVm = _dashboardPage?.DataContext as DashboardViewModel;
+        dashboardVm?.Cleanup();
     }
 
     // ── Mouse Wheel Scroll Fix ─────────────────────────────────────────
@@ -179,15 +213,6 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Navigates the NavigationView to the Dashboard page.
-    /// Called on first show to ensure a page is selected.
-    /// </summary>
-    public void NavigateToDashboard()
-    {
-        NavigationView.Navigate(typeof(Pages.DashboardPage));
-    }
-
-    /// <summary>
     /// Navigates to the specified page type via the NavigationView.
     /// </summary>
     public void NavigateTo(Type pageType)
@@ -255,6 +280,9 @@ public partial class MainWindow : Window
         else
         {
             // Tray creation failed — closing the window exits the app.
+            // Flag the real teardown so page Unloaded handlers perform a full
+            // Cleanup rather than the lightweight StopTimers used on navigate-away.
+            IsClosingForReal = true;
             e.Cancel = false;
             Application.Current.Shutdown();
         }

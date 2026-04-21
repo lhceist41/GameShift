@@ -10,7 +10,6 @@
     <SolidColorBrush x:Key="GS.Surface.Base"     Color="#0D1117" />
     <SolidColorBrush x:Key="GS.Surface.Card"     Color="#1A1D23" />
     <SolidColorBrush x:Key="GS.Surface.Elevated" Color="#232323" />
-    <SolidColorBrush x:Key="GS.Surface.Hover"    Color="#2C2C2C" />
     <SolidColorBrush x:Key="GS.Surface.Border"   Color="#2D333B" />
 
     <!-- Text Colors -->
@@ -29,7 +28,6 @@
     <SolidColorBrush x:Key="GS.Badge.Active.Bg"  Color="#1A4ADE80" />
     <SolidColorBrush x:Key="GS.Badge.Warning.Bg" Color="#1AFBBF24" />
     <SolidColorBrush x:Key="GS.Badge.Error.Bg"   Color="#1AF87171" />
-    <SolidColorBrush x:Key="GS.Badge.Info.Bg"    Color="#1A60A5FA" />
 
     <!-- Accent Colors -->
     <SolidColorBrush x:Key="GS.Accent.Primary" Color="#4ADE80" />
@@ -57,13 +55,6 @@
         <Setter Property="FontFamily"  Value="Segoe UI" />
         <Setter Property="FontSize"    Value="13" />
         <Setter Property="FontWeight"  Value="Normal" />
-        <Setter Property="Foreground"  Value="{DynamicResource GS.Text.Primary}" />
-    </Style>
-
-    <Style x:Key="GS.Text.Badge" TargetType="TextBlock">
-        <Setter Property="FontFamily"  Value="Segoe UI" />
-        <Setter Property="FontSize"    Value="11" />
-        <Setter Property="FontWeight"  Value="SemiBold" />
         <Setter Property="Foreground"  Value="{DynamicResource GS.Text.Primary}" />
     </Style>
 

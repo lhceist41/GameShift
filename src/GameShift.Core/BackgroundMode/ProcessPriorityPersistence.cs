@@ -18,10 +18,13 @@ public class ProcessPriorityPersistence : IDisposable
     public bool IsRunning => _running;
 
     /// <summary>
-    /// Set of process names currently managed by an active GameProfile session.
-    /// Set by App layer. When a process name is in this set, persistent priority rules are skipped.
+    /// Thread-safe predicate identifying process names currently managed by an active
+    /// GameProfile session. Set by the App layer to the GameProfileManager's
+    /// IsActiveGameProcess method. When the predicate returns true for a name,
+    /// persistent priority rules are skipped so the GameProfile session takes priority.
+    /// Null when no GameProfile manager is wired up.
     /// </summary>
-    public HashSet<string>? GameProfileActiveProcesses { get; set; }
+    public Func<string, bool>? GameProfileActiveProcesses { get; set; }
 
     /// <summary>
     /// Starts monitoring for process starts and applying priority rules.
@@ -101,7 +104,7 @@ public class ProcessPriorityPersistence : IDisposable
             if (!_rules.TryGetValue(key, out var targetPriority)) return;
 
             // GameProfile session takes priority over persistent rules
-            if (GameProfileActiveProcesses?.Contains(key) == true)
+            if (GameProfileActiveProcesses?.Invoke(key) == true)
             {
                 SettingsManager.Logger.Debug(
                     "[ProcessPriority] Skipping {Process} — active GameProfile session takes priority", processName);
@@ -143,7 +146,7 @@ public class ProcessPriorityPersistence : IDisposable
             try
             {
                 var name = Path.GetFileNameWithoutExtension(exe);
-                if (GameProfileActiveProcesses?.Contains(exe) == true) continue;
+                if (GameProfileActiveProcesses?.Invoke(exe) == true) continue;
                 var processes = Process.GetProcessesByName(name);
                 foreach (var proc in processes)
                 {

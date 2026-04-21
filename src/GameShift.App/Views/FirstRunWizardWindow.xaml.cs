@@ -5,6 +5,7 @@ using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Media;
 using GameShift.Core.Config;
+using GameShift.Core.System;
 using Serilog;
 
 namespace GameShift.App.Views;
@@ -103,6 +104,18 @@ public partial class FirstRunWizardWindow : Window
             settings.GpuVendorOverride = (GpuVendorComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Auto";
 
             SettingsManager.Save(settings);
+
+            // Apply startup registration change to Windows (scheduled task / registry)
+            // so the setting takes effect immediately rather than on next save from Settings page.
+            try
+            {
+                StartupManager.SetStartWithWindows(settings.StartWithWindows);
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "FirstRunWizard: Failed to apply StartWithWindows setting");
+            }
+
             WizardCompleted = true;
             Log.Information("FirstRunWizard completed — settings saved (StartWithWindows={StartWithWindows}, ShowNotifications={ShowNotifications}, GpuVendor={GpuVendor})",
                 settings.StartWithWindows, settings.ShowNotifications, settings.GpuVendorOverride);

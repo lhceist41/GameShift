@@ -3,6 +3,7 @@ using System.Management;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using GameShift.Core.Config;
+using GameShift.Core.Journal;
 using GameShift.Core.Profiles;
 using GameShift.Core.System;
 using Microsoft.Win32;
@@ -26,8 +27,13 @@ namespace GameShift.Core.Optimization;
 ///
 /// Falls back to IFEO CpuAffinityMask for anti-cheat games where
 /// SetProcessDefaultCpuSets() is blocked.
+///
+/// Implements IJournaledOptimization. Only the IFEO fallback path is persistent —
+/// CPU Sets and ProcessorAffinity are ephemeral (live-process state that vanishes
+/// if the process exits). The journal state contains only IFEO subkey paths and
+/// their original values so the watchdog can clean them up after a crash.
 /// </summary>
-public class HybridCpuDetector : IOptimization
+public class HybridCpuDetector : IOptimization, IJournaledOptimization
 {
     private bool _detectionComplete;
     private CpuTopology? _topology;
@@ -38,6 +44,9 @@ public class HybridCpuDetector : IOptimization
     private string _ifeoSubKeyPath = string.Empty;
     private bool _ifeoPerfOptionsPreviouslyExisted;
     private int? _ifeoOriginalAffinityMask;
+
+    // Context stored by CanApply() for use by Apply()
+    private SystemContext? _context;
 
     private const string IfeoBasePath = @"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options";
 
@@ -66,18 +75,68 @@ public class HybridCpuDetector : IOptimization
         }
     }
 
+    // ── IOptimization ─────────────────────────────────────────────────────────
+
     /// <summary>
-    /// Pins game process to optimal CPU sets based on detected topology.
-    /// Uses SetProcessDefaultCpuSets for most games, IFEO fallback for anti-cheat titles.
+    /// Delegates to the journaled Apply() path. Stores context first via CanApply().
     /// </summary>
     public Task<bool> ApplyAsync(SystemStateSnapshot snapshot, GameProfile profile)
     {
+        var context = new SystemContext { Profile = profile, Snapshot = snapshot };
+        if (!CanApply(context))
+            return Task.FromResult(true);
+
+        var result = Apply();
+        return Task.FromResult(result.State == OptimizationState.Applied);
+    }
+
+    /// <summary>
+    /// Delegates to the journaled Revert() path.
+    /// </summary>
+    public Task<bool> RevertAsync(SystemStateSnapshot snapshot)
+    {
+        if (!IsApplied)
+            return Task.FromResult(true);
+
+        var result = Revert();
+        return Task.FromResult(result.State == OptimizationState.Reverted);
+    }
+
+    // ── IJournaledOptimization ────────────────────────────────────────────────
+
+    /// <summary>
+    /// Pre-flight check. Stores context for use in Apply().
+    /// Always returns true — topology gating and IFEO-vs-CPU-Sets routing happens in Apply().
+    /// </summary>
+    public bool CanApply(SystemContext context)
+    {
+        _context = context;
+        return true;
+    }
+
+    /// <summary>
+    /// Pins game process to optimal CPU sets based on detected topology.
+    /// Tries SetProcessDefaultCpuSets first (live, ephemeral — not journaled),
+    /// then ProcessorAffinity (live, ephemeral — not journaled),
+    /// falling back to IFEO CpuAffinityMask for anti-cheat titles (persistent — journaled).
+    ///
+    /// The returned OptimizationResult only carries IFEO state; if the live paths
+    /// succeeded, the state is an empty ifeoKeys list (nothing for the watchdog to revert).
+    /// </summary>
+    public OptimizationResult Apply()
+    {
+        var profile = _context?.Profile;
+        var snapshot = _context?.Snapshot;
+
+        if (profile == null || snapshot == null)
+            return Fail("Missing context — CanApply() must be called first");
+
         try
         {
             if (_topology == null)
             {
                 SettingsManager.Logger.Warning("[HybridCpuDetector] No topology available");
-                return Task.FromResult(false);
+                return Fail("No CPU topology detected");
             }
 
             // Determine target CPU sets based on profile and topology
@@ -87,52 +146,296 @@ public class HybridCpuDetector : IOptimization
                 SettingsManager.Logger.Information(
                     "[HybridCpuDetector] No CPU Set pinning recommended for current profile/topology");
                 IsApplied = true;
-                return Task.FromResult(true);
+                // Nothing persistent — journal carries an empty IFEO list.
+                return AppliedWithIfeoState(originalJson: EmptyIfeoStateJson(), appliedJson: EmptyIfeoStateJson());
             }
 
+            bool success;
             if (profile.RequiresIfeoFallback)
             {
                 // Anti-cheat games: try SetProcessDefaultCpuSets first, fall back to IFEO
-                return Task.FromResult(ApplyWithFallback(snapshot, profile, targetCpuSets));
+                success = ApplyWithFallback(snapshot, profile, targetCpuSets);
             }
             else
             {
-                return Task.FromResult(ApplyViaCpuSets(snapshot, profile, targetCpuSets));
+                success = ApplyViaCpuSets(snapshot, profile, targetCpuSets);
             }
+
+            if (!success)
+                return Fail("Failed to apply CPU pinning on all code paths");
+
+            // Build the journal payload. Only IFEO state needs persistence — live paths
+            // (CPU Sets / ProcessorAffinity) are ephemeral.
+            var stateJson = BuildIfeoStateJson();
+
+            return new OptimizationResult(
+                Name: OptimizationId,
+                OriginalValue: stateJson,
+                AppliedValue: stateJson,
+                State: OptimizationState.Applied);
         }
         catch (Exception ex)
         {
-            SettingsManager.Logger.Error(ex, "[HybridCpuDetector] Failed to apply CPU pinning");
-            return Task.FromResult(false);
+            SettingsManager.Logger.Error(ex, "[HybridCpuDetector] Apply failed");
+            return Fail(ex.Message);
         }
     }
 
     /// <summary>
     /// Removes CPU Set restriction or reverts IFEO registry change.
     /// </summary>
-    public Task<bool> RevertAsync(SystemStateSnapshot snapshot)
+    public OptimizationResult Revert()
     {
         try
         {
+            bool success;
             if (_usedCpuSets)
             {
-                return Task.FromResult(RevertViaCpuSets());
+                success = RevertViaCpuSets();
             }
             else if (_usedIfeo)
             {
-                return Task.FromResult(RevertViaIfeo());
+                success = RevertViaIfeo();
+            }
+            else
+            {
+                IsApplied = false;
+                success = true;
             }
 
-            IsApplied = false;
-            return Task.FromResult(true);
+            if (!success)
+                return RevertFail("Revert reported failure");
+
+            return new OptimizationResult(
+                Name: OptimizationId,
+                OriginalValue: string.Empty,
+                AppliedValue: string.Empty,
+                State: OptimizationState.Reverted);
         }
         catch (Exception ex)
         {
-            SettingsManager.Logger.Error(ex, "[HybridCpuDetector] Failed to revert CPU pinning");
+            SettingsManager.Logger.Error(ex, "[HybridCpuDetector] Revert failed");
             IsApplied = false;
-            return Task.FromResult(false);
+            return RevertFail(ex.Message);
         }
     }
+
+    /// <summary>
+    /// Confirms the applied change is still in effect. For the IFEO path this means the
+    /// PerfOptions subkey still carries CpuAffinityMask. For the ephemeral paths there is
+    /// nothing durable to verify — we report true while the in-memory flag is set.
+    /// </summary>
+    public bool Verify()
+    {
+        if (!IsApplied)
+            return false;
+
+        try
+        {
+            if (_usedIfeo && !string.IsNullOrEmpty(_ifeoSubKeyPath))
+            {
+                using var perfKey = Registry.LocalMachine.OpenSubKey(_ifeoSubKeyPath);
+                return perfKey?.GetValue("CpuAffinityMask") is int;
+            }
+
+            // Live paths: nothing persisted in the registry to verify — trust the in-memory state.
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Watchdog recovery path: parses the serialized IFEO state and cleans up each
+    /// PerfOptions subkey without any live instance state. If the subkey did not exist
+    /// before apply and has no other values, the subkey itself is deleted.
+    ///
+    /// Critical: the write handle to PerfOptions must be closed BEFORE attempting to
+    /// delete the subkey — Windows refuses DeleteSubKey while a handle is still open.
+    /// </summary>
+    public OptimizationResult RevertFromRecord(string originalValueJson)
+    {
+        try
+        {
+            SettingsManager.Logger.Information(
+                "[HybridCpuDetector] Reverting from journal record (watchdog recovery)");
+
+            if (string.IsNullOrWhiteSpace(originalValueJson))
+            {
+                IsApplied = false;
+                return new OptimizationResult(
+                    OptimizationId, string.Empty, string.Empty, OptimizationState.Reverted);
+            }
+
+            var root = JsonSerializer.Deserialize<JsonElement>(originalValueJson);
+
+            if (!root.TryGetProperty("ifeoKeys", out var ifeoKeysElement) ||
+                ifeoKeysElement.ValueKind != JsonValueKind.Array)
+            {
+                // Empty/missing — nothing persistent to revert
+                IsApplied = false;
+                return new OptimizationResult(
+                    OptimizationId, string.Empty, string.Empty, OptimizationState.Reverted);
+            }
+
+            foreach (var entry in ifeoKeysElement.EnumerateArray())
+            {
+                if (!entry.TryGetProperty("keyPath", out var keyPathElement) ||
+                    keyPathElement.ValueKind != JsonValueKind.String)
+                {
+                    continue;
+                }
+
+                var keyPath = keyPathElement.GetString();
+                if (string.IsNullOrWhiteSpace(keyPath))
+                    continue;
+
+                string? originalValuesJson = null;
+                if (entry.TryGetProperty("originalValuesJson", out var originalValuesElement) &&
+                    originalValuesElement.ValueKind == JsonValueKind.String)
+                {
+                    originalValuesJson = originalValuesElement.GetString();
+                }
+
+                RevertIfeoSubKeyFromRecord(keyPath, originalValuesJson);
+            }
+
+            IsApplied = false;
+            return new OptimizationResult(
+                OptimizationId, string.Empty, string.Empty, OptimizationState.Reverted);
+        }
+        catch (Exception ex)
+        {
+            SettingsManager.Logger.Error(ex, "[HybridCpuDetector] RevertFromRecord failed");
+            return RevertFail(ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Cleans up a single IFEO PerfOptions subkey during watchdog recovery.
+    /// If the original values JSON is non-null, restores them; otherwise deletes the
+    /// CpuAffinityMask value, and if the subkey is now empty and was created by GameShift,
+    /// deletes the PerfOptions subkey itself.
+    /// </summary>
+    private static void RevertIfeoSubKeyFromRecord(string perfOptionsPath, string? originalValuesJson)
+    {
+        try
+        {
+            if (!string.IsNullOrEmpty(originalValuesJson))
+            {
+                // Original values existed — restore them
+                var originalValues = JsonSerializer.Deserialize<Dictionary<string, int>>(originalValuesJson);
+                if (originalValues != null)
+                {
+                    using var perfKey = Registry.LocalMachine.OpenSubKey(perfOptionsPath, writable: true);
+                    if (perfKey != null)
+                    {
+                        foreach (var (valueName, value) in originalValues)
+                        {
+                            perfKey.SetValue(valueName, value, RegistryValueKind.DWord);
+                        }
+                        SettingsManager.Logger.Information(
+                            "[HybridCpuDetector] Restored IFEO values at {Path}", perfOptionsPath);
+                    }
+                }
+                return;
+            }
+
+            // No original values — GameShift created the subkey (or CpuAffinityMask was fresh).
+            // Delete the CpuAffinityMask value; delete the subkey too only if it's now empty.
+            // Must close perfKey BEFORE attempting DeleteSubKey — Windows blocks DeleteSubKey
+            // while a handle to it is still open in the same process.
+            bool shouldDeleteSubKey;
+            using (var perfKey = Registry.LocalMachine.OpenSubKey(perfOptionsPath, writable: true))
+            {
+                if (perfKey == null)
+                    return;
+
+                perfKey.DeleteValue("CpuAffinityMask", throwOnMissingValue: false);
+                shouldDeleteSubKey = perfKey.ValueCount == 0 && perfKey.SubKeyCount == 0;
+            } // perfKey closed here — safe to delete subkey
+
+            if (shouldDeleteSubKey)
+            {
+                // Derive the parent IFEO\<exe> path from the PerfOptions subkey path
+                const string perfOptionsSuffix = @"\PerfOptions";
+                if (perfOptionsPath.EndsWith(perfOptionsSuffix, StringComparison.OrdinalIgnoreCase))
+                {
+                    var parentPath = perfOptionsPath[..^perfOptionsSuffix.Length];
+                    using var parentKey = Registry.LocalMachine.OpenSubKey(parentPath, writable: true);
+                    parentKey?.DeleteSubKey("PerfOptions", throwOnMissingSubKey: false);
+
+                    SettingsManager.Logger.Information(
+                        "[HybridCpuDetector] Deleted empty IFEO PerfOptions subkey at {Path}", perfOptionsPath);
+                }
+            }
+            else
+            {
+                SettingsManager.Logger.Information(
+                    "[HybridCpuDetector] Deleted CpuAffinityMask at {Path} (PerfOptions retained)",
+                    perfOptionsPath);
+            }
+        }
+        catch (Exception ex)
+        {
+            SettingsManager.Logger.Warning(ex,
+                "[HybridCpuDetector] Failed to revert IFEO subkey {Path} from record", perfOptionsPath);
+        }
+    }
+
+    // ── Journal Payload Builders ──────────────────────────────────────────────
+
+    /// <summary>
+    /// Builds the JSON state payload stored in the journal. Contains only IFEO subkeys
+    /// since the live CPU Sets / ProcessorAffinity paths are ephemeral. Returns an
+    /// empty ifeoKeys list when the live path succeeded.
+    /// </summary>
+    private string BuildIfeoStateJson()
+    {
+        var ifeoKeys = new List<object>();
+
+        if (_usedIfeo && !string.IsNullOrEmpty(_ifeoSubKeyPath))
+        {
+            string? originalValuesJson = null;
+            if (_ifeoPerfOptionsPreviouslyExisted && _ifeoOriginalAffinityMask.HasValue)
+            {
+                originalValuesJson = JsonSerializer.Serialize(
+                    new Dictionary<string, int> { ["CpuAffinityMask"] = _ifeoOriginalAffinityMask.Value });
+            }
+
+            ifeoKeys.Add(new
+            {
+                keyPath = _ifeoSubKeyPath,
+                originalValuesJson
+            });
+        }
+
+        return JsonSerializer.Serialize(new { ifeoKeys });
+    }
+
+    private static string EmptyIfeoStateJson() =>
+        JsonSerializer.Serialize(new { ifeoKeys = Array.Empty<object>() });
+
+    /// <summary>
+    /// Helper that constructs a success OptimizationResult and sets IsApplied.
+    /// </summary>
+    private OptimizationResult AppliedWithIfeoState(string originalJson, string appliedJson)
+    {
+        IsApplied = true;
+        return new OptimizationResult(
+            Name: OptimizationId,
+            OriginalValue: originalJson,
+            AppliedValue: appliedJson,
+            State: OptimizationState.Applied);
+    }
+
+    private static OptimizationResult Fail(string error) =>
+        new(OptimizationId, string.Empty, string.Empty, OptimizationState.Failed, error);
+
+    private static OptimizationResult RevertFail(string error) =>
+        new(OptimizationId, string.Empty, string.Empty, OptimizationState.Failed, error);
 
     // ── Topology Detection ───────────────────────────────────────────
 
@@ -427,7 +730,10 @@ public class HybridCpuDetector : IOptimization
 
                 using (process)
                 {
-                    snapshot.RecordProcessAffinity(profile.ProcessId, process.ProcessorAffinity);
+                    // Capture original affinity BEFORE attempting CPU-Sets so we can record
+                    // it only if the call succeeds — avoids a spurious snapshot entry if
+                    // we fall through to the IFEO path.
+                    var originalAffinity = process.ProcessorAffinity;
 
                     bool success = NativeInterop.SetProcessDefaultCpuSets(
                         process.Handle,
@@ -436,6 +742,8 @@ public class HybridCpuDetector : IOptimization
 
                     if (success)
                     {
+                        snapshot.RecordProcessAffinity(profile.ProcessId, originalAffinity);
+
                         _pinnedProcessId = profile.ProcessId;
                         _usedCpuSets = true;
                         _usedIfeo = false;
@@ -525,20 +833,22 @@ public class HybridCpuDetector : IOptimization
             }
 
             // Check if PerfOptions subkey already exists
-            using var existingKey = Registry.LocalMachine.OpenSubKey(_ifeoSubKeyPath);
-            if (existingKey != null)
+            using (var existingKey = Registry.LocalMachine.OpenSubKey(_ifeoSubKeyPath))
             {
-                _ifeoPerfOptionsPreviouslyExisted = true;
-                var existingAffinity = existingKey.GetValue("CpuAffinityMask");
-                if (existingAffinity is int affinityValue)
+                if (existingKey != null)
                 {
-                    _ifeoOriginalAffinityMask = affinityValue;
+                    _ifeoPerfOptionsPreviouslyExisted = true;
+                    var existingAffinity = existingKey.GetValue("CpuAffinityMask");
+                    if (existingAffinity is int affinityValue)
+                    {
+                        _ifeoOriginalAffinityMask = affinityValue;
+                    }
                 }
-            }
-            else
-            {
-                _ifeoPerfOptionsPreviouslyExisted = false;
-                _ifeoOriginalAffinityMask = null;
+                else
+                {
+                    _ifeoPerfOptionsPreviouslyExisted = false;
+                    _ifeoOriginalAffinityMask = null;
+                }
             }
 
             // Create or open the PerfOptions subkey
@@ -617,26 +927,33 @@ public class HybridCpuDetector : IOptimization
             }
             else
             {
-                using var perfKey = Registry.LocalMachine.OpenSubKey(_ifeoSubKeyPath, writable: true);
-                if (perfKey != null)
+                // Must close perfKey BEFORE attempting to delete the subkey — Windows registry
+                // won't delete a subkey while a handle to it is still open in the same process.
+                bool shouldDeleteSubKey = false;
+                using (var perfKey = Registry.LocalMachine.OpenSubKey(_ifeoSubKeyPath, writable: true))
                 {
-                    perfKey.DeleteValue("CpuAffinityMask", throwOnMissingValue: false);
-
-                    if (!_ifeoPerfOptionsPreviouslyExisted && perfKey.ValueCount == 0)
+                    if (perfKey != null)
                     {
-                        using var parentKey = Registry.LocalMachine.OpenSubKey(ifeoExeKeyPath, writable: true);
-                        parentKey?.DeleteSubKey("PerfOptions", throwOnMissingSubKey: false);
+                        perfKey.DeleteValue("CpuAffinityMask", throwOnMissingValue: false);
 
-                        SettingsManager.Logger.Information(
-                            "[HybridCpuDetector] Deleted empty IFEO PerfOptions subkey for {ExeName}",
-                            _ifeoExeName);
+                        shouldDeleteSubKey = !_ifeoPerfOptionsPreviouslyExisted && perfKey.ValueCount == 0;
                     }
-                    else
-                    {
-                        SettingsManager.Logger.Information(
-                            "[HybridCpuDetector] Deleted IFEO CpuAffinityMask for {ExeName} (PerfOptions retained)",
-                            _ifeoExeName);
-                    }
+                } // perfKey closed here — safe to delete subkey
+
+                if (shouldDeleteSubKey)
+                {
+                    using var parentKey = Registry.LocalMachine.OpenSubKey(ifeoExeKeyPath, writable: true);
+                    parentKey?.DeleteSubKey("PerfOptions", throwOnMissingSubKey: false);
+
+                    SettingsManager.Logger.Information(
+                        "[HybridCpuDetector] Deleted empty IFEO PerfOptions subkey for {ExeName}",
+                        _ifeoExeName);
+                }
+                else
+                {
+                    SettingsManager.Logger.Information(
+                        "[HybridCpuDetector] Deleted IFEO CpuAffinityMask for {ExeName} (PerfOptions retained)",
+                        _ifeoExeName);
                 }
             }
 

@@ -870,7 +870,7 @@ public class DpcDoctorViewModel : INotifyPropertyChanged
         {
             global::System.Diagnostics.Process.Start(new global::System.Diagnostics.ProcessStartInfo
             {
-                FileName = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "shutdown.exe"), Arguments = "/r /t 10",
+                FileName = NativeInterop.SystemExePath("shutdown.exe"), Arguments = "/r /t 10",
                 UseShellExecute = false, CreateNoWindow = true
             });
         }

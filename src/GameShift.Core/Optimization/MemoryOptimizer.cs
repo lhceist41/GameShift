@@ -129,11 +129,16 @@ public class MemoryOptimizer : IOptimization
 
             _isMonitoring = false;
 
-            // Stop the monitoring timer
+            // Stop the monitoring timer and wait for any in-flight callback to finish.
+            // Timer.Dispose() does NOT wait for callbacks, so a pending callback could race
+            // with the restore paths below and repopulate tracking collections after they
+            // were cleared. The WaitHandle overload signals when all callbacks complete.
             if (_monitorTimer != null)
             {
                 _monitorTimer.Change(Timeout.Infinite, Timeout.Infinite);
-                _monitorTimer.Dispose();
+                using var waitHandle = new ManualResetEvent(false);
+                _monitorTimer.Dispose(waitHandle);
+                waitHandle.WaitOne(TimeSpan.FromSeconds(5)); // timeout so we don't hang forever
                 _monitorTimer = null;
             }
 
@@ -436,29 +441,46 @@ public class MemoryOptimizer : IOptimization
                         continue;
                     }
 
-                    var info = new NativeInterop.MEMORY_PRIORITY_INFORMATION { MemoryPriority = state.OriginalPriority };
-                    int size = Marshal.SizeOf<NativeInterop.MEMORY_PRIORITY_INFORMATION>();
-                    IntPtr ptr = Marshal.AllocHGlobal(size);
+                    // Open our own limited-rights handle — Process.Handle requires PROCESS_ALL_ACCESS
+                    IntPtr hProc = NativeInterop.OpenProcess(
+                        NativeInterop.PROCESS_QUERY_INFORMATION | NativeInterop.PROCESS_SET_INFORMATION,
+                        false, state.ProcessId);
+                    if (hProc == IntPtr.Zero)
+                    {
+                        skippedCount++;
+                        continue;
+                    }
 
                     try
                     {
-                        Marshal.StructureToPtr(info, ptr, false);
+                        var info = new NativeInterop.MEMORY_PRIORITY_INFORMATION { MemoryPriority = state.OriginalPriority };
+                        int size = Marshal.SizeOf<NativeInterop.MEMORY_PRIORITY_INFORMATION>();
+                        IntPtr ptr = Marshal.AllocHGlobal(size);
 
-                        if (NativeInterop.SetProcessInformation(
-                            process.Handle,
-                            NativeInterop.ProcessMemoryPriority,
-                            ptr,
-                            size))
+                        try
                         {
-                            restoredCount++;
-                            SettingsManager.Logger.Debug(
-                                "[MemoryOptimizer] Memory priority restored: {Name} (PID {Pid}) → {Priority}",
-                                state.ProcessName, state.ProcessId, state.OriginalPriority);
+                            Marshal.StructureToPtr(info, ptr, false);
+
+                            if (NativeInterop.SetProcessInformation(
+                                hProc,
+                                NativeInterop.ProcessMemoryPriority,
+                                ptr,
+                                size))
+                            {
+                                restoredCount++;
+                                SettingsManager.Logger.Debug(
+                                    "[MemoryOptimizer] Memory priority restored: {Name} (PID {Pid}) → {Priority}",
+                                    state.ProcessName, state.ProcessId, state.OriginalPriority);
+                            }
+                        }
+                        finally
+                        {
+                            Marshal.FreeHGlobal(ptr);
                         }
                     }
                     finally
                     {
-                        Marshal.FreeHGlobal(ptr);
+                        NativeInterop.CloseHandle(hProc);
                     }
                 }
                 catch (ArgumentException)

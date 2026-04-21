@@ -176,8 +176,14 @@ public class CpuSchedulingOptimizer : IOptimization
                         NativeInterop.PROCESS_SET_INFORMATION, false, _gamePid);
                     if (hGame != IntPtr.Zero)
                     {
-                        NativeInterop.SetProcessDefaultCpuSetMasks(hGame, null, 0);
-                        NativeInterop.CloseHandle(hGame);
+                        try
+                        {
+                            NativeInterop.SetProcessDefaultCpuSetMasks(hGame, null, 0);
+                        }
+                        finally
+                        {
+                            NativeInterop.CloseHandle(hGame);
+                        }
                     }
                 }
                 catch (ArgumentException)
@@ -197,9 +203,15 @@ public class CpuSchedulingOptimizer : IOptimization
                         NativeInterop.PROCESS_SET_INFORMATION, false, _gamePid);
                     if (hGame != IntPtr.Zero)
                     {
-                        // Reset: clear ControlMask to let OS manage throttling again
-                        ResetPowerThrottling(hGame);
-                        NativeInterop.CloseHandle(hGame);
+                        try
+                        {
+                            // Reset: clear ControlMask to let OS manage throttling again
+                            ResetPowerThrottling(hGame);
+                        }
+                        finally
+                        {
+                            NativeInterop.CloseHandle(hGame);
+                        }
                     }
                 }
                 catch (ArgumentException)
@@ -220,8 +232,14 @@ public class CpuSchedulingOptimizer : IOptimization
                             NativeInterop.PROCESS_SET_INFORMATION, false, pid);
                         if (h != IntPtr.Zero)
                         {
-                            NativeInterop.SetProcessDefaultCpuSetMasks(h, null, 0);
-                            NativeInterop.CloseHandle(h);
+                            try
+                            {
+                                NativeInterop.SetProcessDefaultCpuSetMasks(h, null, 0);
+                            }
+                            finally
+                            {
+                                NativeInterop.CloseHandle(h);
+                            }
                         }
                     }
                     catch { /* Process may have exited */ }
@@ -236,8 +254,14 @@ public class CpuSchedulingOptimizer : IOptimization
                             NativeInterop.PROCESS_SET_INFORMATION, false, pid);
                         if (h != IntPtr.Zero)
                         {
-                            ResetPowerThrottling(h);
-                            NativeInterop.CloseHandle(h);
+                            try
+                            {
+                                ResetPowerThrottling(h);
+                            }
+                            finally
+                            {
+                                NativeInterop.CloseHandle(h);
+                            }
                         }
                     }
                     catch { /* Process may have exited */ }

@@ -133,12 +133,12 @@ public static class UpdateChecker
 
                 // Validate URLs before returning — reject any that point outside GitHub
                 var releaseUrl = htmlUrl ?? $"https://github.com/lhceist41/GameShift/releases/tag/{tagName}";
-                if (!IsValidGitHubUrl(releaseUrl))
+                if (!GitHubUrlValidator.IsValid(releaseUrl))
                 {
                     Log.Warning("UpdateChecker: Rejected release URL outside allowed domains: {Url}", releaseUrl);
                     return null;
                 }
-                if (downloadUrl != null && !IsValidGitHubUrl(downloadUrl))
+                if (downloadUrl != null && !GitHubUrlValidator.IsValid(downloadUrl))
                 {
                     Log.Warning("UpdateChecker: Rejected download URL outside allowed domains: {Url}", downloadUrl);
                     downloadUrl = null;
@@ -166,19 +166,6 @@ public static class UpdateChecker
             Log.Debug(ex, "UpdateChecker: Check failed (non-fatal)");
             return null;
         }
-    }
-
-    /// <summary>
-    /// Validates that a URL is HTTPS and points to a trusted GitHub domain.
-    /// </summary>
-    private static bool IsValidGitHubUrl(string url)
-    {
-        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)) return false;
-        if (uri.Scheme != "https") return false;
-        var host = uri.Host.ToLowerInvariant();
-        return host == "github.com"
-            || host.EndsWith(".github.com")
-            || host.EndsWith(".githubusercontent.com");
     }
 
     private static Version GetCurrentVersion()

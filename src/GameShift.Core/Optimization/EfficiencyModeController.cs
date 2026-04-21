@@ -101,9 +101,18 @@ public class EfficiencyModeController : IOptimization
         {
             SettingsManager.Logger.Information("[EfficiencyModeController] Reverting Efficiency Mode changes");
 
-            // Stop periodic rescan
-            _rescanTimer?.Dispose();
-            _rescanTimer = null;
+            // Stop periodic rescan and wait for any in-flight callback to finish.
+            // Timer.Dispose() does NOT wait for callbacks, so a pending callback could race
+            // with the restore path below and repopulate tracking collections after they
+            // were cleared. The WaitHandle overload signals when all callbacks complete.
+            if (_rescanTimer != null)
+            {
+                _rescanTimer.Change(Timeout.Infinite, Timeout.Infinite);
+                using var waitHandle = new ManualResetEvent(false);
+                _rescanTimer.Dispose(waitHandle);
+                waitHandle.WaitOne(TimeSpan.FromSeconds(5)); // timeout so we don't hang forever
+                _rescanTimer = null;
+            }
 
             if (!_isWindows11)
             {
@@ -137,12 +146,29 @@ public class EfficiencyModeController : IOptimization
                             continue;
                         }
 
-                        if (DisableEfficiencyMode(process.Handle))
+                        // Open our own limited-rights handle — Process.Handle requires PROCESS_ALL_ACCESS
+                        IntPtr hProc = NativeInterop.OpenProcess(
+                            NativeInterop.PROCESS_QUERY_INFORMATION | NativeInterop.PROCESS_SET_INFORMATION,
+                            false, state.ProcessId);
+                        if (hProc == IntPtr.Zero)
                         {
-                            restoredCount++;
-                            SettingsManager.Logger.Debug(
-                                "[EfficiencyModeController] Removed Efficiency Mode: {Name} (PID {Pid})",
-                                state.ProcessName, state.ProcessId);
+                            skippedCount++;
+                            continue;
+                        }
+
+                        try
+                        {
+                            if (DisableEfficiencyMode(hProc))
+                            {
+                                restoredCount++;
+                                SettingsManager.Logger.Debug(
+                                    "[EfficiencyModeController] Removed Efficiency Mode: {Name} (PID {Pid})",
+                                    state.ProcessName, state.ProcessId);
+                            }
+                        }
+                        finally
+                        {
+                            NativeInterop.CloseHandle(hProc);
                         }
                     }
                     catch (ArgumentException)
