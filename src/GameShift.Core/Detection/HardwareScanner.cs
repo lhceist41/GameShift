@@ -315,6 +315,27 @@ public class HardwareScanner
     }
 
     /// <summary>
+    /// Resolves the absolute path to nvidia-smi.exe. Checks System32 first (modern
+    /// drivers install there) then the legacy NVSMI directory under Program Files.
+    /// Returns null if neither exists, which indicates non-NVIDIA hardware or a
+    /// broken driver install. Using absolute paths prevents PATH hijacking when
+    /// the app runs elevated.
+    /// </summary>
+    private static string? FindNvidiaSmiPath()
+    {
+        var system32Path = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.System), "nvidia-smi.exe");
+        if (File.Exists(system32Path)) return system32Path;
+
+        var nvsmiPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+            "NVIDIA Corporation", "NVSMI", "nvidia-smi.exe");
+        if (File.Exists(nvsmiPath)) return nvsmiPath;
+
+        return null;
+    }
+
+    /// <summary>
     /// Queries nvidia-smi for BAR1 total size. If BAR1 &gt; 256 MB, ReBAR is active.
     /// Returns false if nvidia-smi is not available (non-NVIDIA system) or BAR1 &lt;= 256.
     /// </summary>
@@ -322,13 +343,21 @@ public class HardwareScanner
     {
         try
         {
+            // Resolve the absolute path to avoid PATH hijack when running elevated.
+            var nvidiaSmi = FindNvidiaSmiPath();
+            if (nvidiaSmi == null)
+            {
+                Log.Debug("HardwareScanner: nvidia-smi not found at expected locations (non-NVIDIA system)");
+                return false;
+            }
+
             // Use nvidia-smi -q and parse the "BAR1 Memory Usage / Total" line.
             // The --query-gpu=bar1.total CSV field doesn't exist on all driver versions,
             // but the full query output always includes BAR1 info.
             using var process = global::System.Diagnostics.Process.Start(
                 new global::System.Diagnostics.ProcessStartInfo
                 {
-                    FileName = "nvidia-smi",
+                    FileName = nvidiaSmi,
                     Arguments = "-q",
                     UseShellExecute = false,
                     CreateNoWindow = true,

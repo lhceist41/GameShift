@@ -10,12 +10,29 @@ namespace GameShift.Core.Config;
 /// </summary>
 public static class SettingsManager
 {
-    private static readonly string AppDataPath = Path.Combine(
+    private static readonly string DefaultAppDataPath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "GameShift");
 
-    private static readonly string SettingsFilePath = Path.Combine(AppDataPath, "settings.json");
-    private static readonly string LogsPath = Path.Combine(AppDataPath, "logs");
+    /// <summary>
+    /// Internal test hook. Null in production; tests can set this to redirect the settings
+    /// file to an isolated location (e.g., a temp directory). When set, the containing
+    /// directory is used as <see cref="AppDataPath"/> and the logs directory is placed
+    /// alongside it. Tests must reset this to null during cleanup.
+    /// All reads/writes of this field are guarded by <see cref="_fileLock"/> via the
+    /// public Load/Save/Get* methods.
+    /// </summary>
+    internal static string? SettingsFilePathOverride { get; set; }
+
+    private static string SettingsFilePath =>
+        SettingsFilePathOverride ?? Path.Combine(DefaultAppDataPath, "settings.json");
+
+    private static string AppDataPath =>
+        SettingsFilePathOverride is { } overridePath
+            ? (Path.GetDirectoryName(overridePath) ?? DefaultAppDataPath)
+            : DefaultAppDataPath;
+
+    private static string LogsPath => Path.Combine(AppDataPath, "logs");
 
     private static readonly object _fileLock = new();
     private static bool _lastLoggingEnabled;

@@ -408,7 +408,10 @@ public class SettingsViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(BgPowerPlanEnabled));
         OnPropertyChanged(nameof(BgIdleTimeoutMinutes));
         OnPropertyChanged(nameof(BgTaskDeferralEnabled));
+        OnPropertyChanged(nameof(BgProBalanceEnabled));
         OnPropertyChanged(nameof(BgProcessPriorityEnabled));
+        OnPropertyChanged(nameof(AdvancedMode));
+        OnPropertyChanged(nameof(IsEasyMode));
         OnPropertyChanged(nameof(GameProfilesEnabled));
     }
 

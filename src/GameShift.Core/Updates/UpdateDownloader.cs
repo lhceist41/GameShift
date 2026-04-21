@@ -40,7 +40,7 @@ public static class UpdateDownloader
         IProgress<double> progress,
         CancellationToken ct)
     {
-        if (!IsValidDownloadUrl(downloadUrl))
+        if (!GitHubUrlValidator.IsValid(downloadUrl))
         {
             Log.Warning("UpdateDownloader: Rejected download URL outside allowed domains: {Url}", downloadUrl);
             return false;
@@ -110,19 +110,6 @@ public static class UpdateDownloader
             CleanupTmp(tmpPath);
             return false;
         }
-    }
-
-    /// <summary>
-    /// Validates that a download URL is HTTPS and points to a trusted GitHub domain.
-    /// </summary>
-    internal static bool IsValidDownloadUrl(string url)
-    {
-        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)) return false;
-        if (uri.Scheme != "https") return false;
-        var host = uri.Host.ToLowerInvariant();
-        return host == "github.com"
-            || host.EndsWith(".github.com")
-            || host.EndsWith(".githubusercontent.com");
     }
 
     private static void CleanupTmp(string tmpPath)

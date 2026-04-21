@@ -1,4 +1,5 @@
 using GameShift.Core.Journal;
+using GameShift.Core.System;
 using GameShift.Watchdog;
 using Serilog;
 using Serilog.Events;
@@ -159,7 +160,7 @@ static void RunSc(string arguments)
     Console.WriteLine($"  sc {arguments}");
     using var p = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
     {
-        FileName = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "sc.exe"),
+        FileName = NativeInterop.SystemExePath("sc.exe"),
         Arguments = arguments,
         UseShellExecute = false,
         RedirectStandardOutput = true,

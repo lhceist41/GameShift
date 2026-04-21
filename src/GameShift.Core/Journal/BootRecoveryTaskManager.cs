@@ -97,8 +97,9 @@ public static class BootRecoveryTaskManager
     /// <summary>
     /// Builds the task XML for schtasks /Create /XML.
     /// Uses the SYSTEM account (S-1-5-18) so the task runs regardless of logged-on state.
+    /// Internal to allow unit tests to verify XML generation without invoking schtasks.
     /// </summary>
-    private static string BuildTaskXml(string watchdogExePath)
+    internal static string BuildTaskXml(string watchdogExePath)
     {
         // Escape the exe path for XML attribute/element content
         var escapedPath = global::System.Security.SecurityElement.Escape(watchdogExePath);

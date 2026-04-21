@@ -165,13 +165,14 @@ public class HeroOptimizeViewModel : INotifyPropertyChanged
         }
     }
 
-    private void OnOptimizationApplied(object? sender, OptimizationAppliedEventArgs e) => RefreshHeroState();
-    private void OnOptimizationReverted(object? sender, OptimizationRevertedEventArgs e) => RefreshHeroState();
-
+    /// <summary>
+    /// Called by DashboardViewModel during page teardown. This ViewModel
+    /// does not subscribe to engine events itself (DashboardViewModel drives
+    /// refresh via RefreshHeroState), so there is nothing to release here.
+    /// Kept as a stable hook in case future subscriptions are added.
+    /// </summary>
     public void Cleanup()
     {
-        _engine.OptimizationApplied -= OnOptimizationApplied;
-        _engine.OptimizationReverted -= OnOptimizationReverted;
     }
 
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null)

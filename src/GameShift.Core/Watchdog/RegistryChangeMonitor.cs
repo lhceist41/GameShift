@@ -72,7 +72,7 @@ public sealed class RegistryChangeMonitor : IDisposable
             KeyPath:          @"SYSTEM\CurrentControlSet\Control\PriorityControl",
             ValueName:        "Win32PrioritySeparation",
             OptimizationName: ProcessPriorityBooster.OptimizationId,
-            JsonKey:          null   // ProcessPriorityBooster not yet journal-migrated → warn only
+            JsonKey:          null   // Win32PrioritySeparation is snapshot-only, not in journaled state → warn only
         ),
     ];
 

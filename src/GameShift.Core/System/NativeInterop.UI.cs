@@ -6,7 +6,7 @@ namespace GameShift.Core.System;
 /// UI-related P/Invoke declarations for NativeInterop.
 /// Partial class extension for Windows animation and visual effects control.
 /// </summary>
-internal static partial class NativeInterop
+public static partial class NativeInterop
 {
     // ============================================================
     // user32.dll - User Interface and Animation Control

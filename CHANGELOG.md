@@ -2,6 +2,28 @@
 
 All notable changes to GameShift are documented here.
 
+## [3.7.0] - 2026-04-22
+
+### Added -- Crash Recovery Coverage
+
+- **Seven additional optimizations now journaled** - `VisualEffectReducer`, `NetworkOptimizer`, `ScheduledTaskSuppressor`, `PowerPlanSwitcher`, `CpuParkingManager`, `ProcessPriorityBooster`, and `HybridCpuDetector` all now implement `IJournaledOptimization`. Combined with the pre-existing `MpoToggle`, the watchdog can now restore eight classes of optimizations from the journal after a main-app crash. Registry entries, service states, network adapter properties, power plan sub-settings, IFEO fallback keys, and scheduled task enablement all survive crashes.
+- **Watchdog-to-main-app recovery signaling** - when the watchdog performs a recovery (due to heartbeat timeout or disconnect), it now stamps `LastRecoveryTimestamp` in the journal. The main app's `OptimizationEngine.DeactivateProfileAsync` checks this via `WasRecoveredDuringCurrentSession()` and skips its own LIFO revert when the watchdog has already rolled everything back. Prevents double-revert races and incorrect state when the main app is slow (e.g., ThreadPool starvation) but still alive.
+- **Reboot and Windows-update warnings on startup** - if a previous DPC fix required a system reboot but hasn't been acknowledged, or if Windows updated between sessions, users now see an informational dialog on app launch. Journal fields (`HasPendingRebootFixes`, `BuildChangedWarning`) are now read and cleared by the App layer.
+
+### Added -- Test Infrastructure
+
+- **Injectable file paths for tests** - `JournalManager`, `SettingsManager`, and `SessionHistoryStore` now accept override paths via internal constructors / properties, isolated from production `%ProgramData%` and `%AppData%` paths. `TempPath` test helper auto-cleans temp directories.
+- **48 new unit tests** - JournalManager (17), WatchdogRevertEngine (9), BootRecoveryTaskManager (8), SessionHistoryStore (8), SanitizeGameId (62 via Phase 3 partial), GitHubUrlValidator (18 via Phase 3 partial). Total test count: 71 → 187.
+- **Shared `GitHubUrlValidator`** - extracted URL allowlist validation from `UpdateChecker` and `UpdateDownloader` into a reusable public helper, also comprehensively unit-tested.
+
+### Fixed
+
+- **Two false-positive unit tests rewritten** - `ConcurrentActivate_Deactivate_ThreadSafe` previously only asserted `Assert.True(true)`; now uses an interleave-detecting mock that catches semaphore removal. `ActivateProfile_CapturesSnapshot_BeforeApplyingOptimizations` previously only checked call count; now verifies the engine actually passes a non-null `SystemStateSnapshot` to `ApplyAsync`. Both were verified to fail when their respective production code is broken.
+- **`DashboardViewModel` subscriptions leaked on shutdown** - `DashboardPage.OnUnloaded` only called `StopTimers()`, so `SessionTracker.SessionEnded`, `AllActivities.CollectionChanged`, and the `Update`/`Hero`/`Vbs` sub-ViewModel subscriptions were never released. `App.OnExit` now invokes `MainWindow.CleanupLongLivedPageViewModels()` which calls the full `DashboardViewModel.Cleanup()`; the page's Unloaded handler detects real teardown via a new `MainWindow.IsClosingForReal` flag.
+- **`SettingsViewModel.LoadSettings` missed 3 property notifications** - after loading, `AdvancedMode`, `IsEasyMode`, and `BgProBalanceEnabled` were assigned to backing fields without firing `PropertyChanged`, so the UI could display stale values after Import Settings. Notifications are now raised for all three.
+- **OptimizationsPage category color strip was always empty** - the inner-row `Border` used `AncestorLevel=2` which walked to the outer `ItemsControl` whose DataContext is the ViewModel (no `CategoryColor`). Corrected to `AncestorLevel=1` so the binding resolves against the `OptimizationGroup`.
+- **First-run wizard "Start with Windows" setting was saved but not applied** - `OnFinishClicked` persisted `StartWithWindows` to settings but did not call `StartupManager.SetStartWithWindows(...)`, so the scheduled task / registry entry was only created on the next Save from the Settings page. Now applied immediately on wizard finish.
+
 ## [3.6.3] - 2026-04-18
 
 ### Security

@@ -270,14 +270,13 @@ public class GameDetector : IDisposable
                     data.ProcessId,
                     gameInfo.LauncherSource));
 
-                // Check if all games have stopped
-                lock (_lock)
+                // Check if all games have stopped. _activeGames is a ConcurrentDictionary
+                // so IsEmpty is thread-safe on its own. Fire the event OUTSIDE any lock
+                // so subscribers can safely call back into the detector without deadlock risk.
+                if (_activeGames.IsEmpty)
                 {
-                    if (_activeGames.IsEmpty)
-                    {
-                        _logger.Information("All games exited - ready for optimization revert");
-                        AllGamesStopped?.Invoke(this, EventArgs.Empty);
-                    }
+                    _logger.Information("All games exited - ready for optimization revert");
+                    AllGamesStopped?.Invoke(this, EventArgs.Empty);
                 }
             }
         }

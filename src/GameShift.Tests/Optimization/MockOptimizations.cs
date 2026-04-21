@@ -19,6 +19,17 @@ public class MockOptimizationSuccess : IOptimization
     public int RevertCallCount { get; private set; }
 
     /// <summary>
+    /// Captures the snapshot reference passed to ApplyAsync.
+    /// Used to verify the engine captures system state before applying optimizations.
+    /// </summary>
+    public SystemStateSnapshot? LastSnapshotReceived { get; private set; }
+
+    /// <summary>
+    /// Optional callback invoked when ApplyAsync is called.
+    /// </summary>
+    public Action? OnApply { get; set; }
+
+    /// <summary>
     /// Optional callback invoked when RevertAsync is called.
     /// Used for LIFO order verification.
     /// </summary>
@@ -26,8 +37,10 @@ public class MockOptimizationSuccess : IOptimization
 
     public Task<bool> ApplyAsync(SystemStateSnapshot snapshot, GameProfile profile)
     {
+        LastSnapshotReceived = snapshot;
         ApplyCallCount++;
         IsApplied = true;
+        OnApply?.Invoke();
         return Task.FromResult(true);
     }
 
@@ -90,5 +103,72 @@ public class MockOptimizationUnavailable : IOptimization
     {
         IsApplied = false;
         return Task.FromResult(true);
+    }
+}
+
+/// <summary>
+/// Mock optimization that detects Apply/Revert interleaving.
+/// Tracks concurrent Apply and Revert invocations to verify that
+/// OptimizationEngine serializes access via its internal semaphore.
+/// </summary>
+public class MockOptimizationWithInterleaveDetection : IOptimization
+{
+    private int _activeApplyCount;
+    private int _activeRevertCount;
+    private readonly object _lock = new();
+
+    public string Name { get; set; } = "MockInterleaveDetection";
+    public string Description { get; set; } = "Mock optimization that detects concurrent Apply/Revert";
+    public bool IsApplied { get; private set; }
+    public bool IsAvailable { get; set; } = true;
+
+    /// <summary>
+    /// Maximum number of simultaneously-active Apply+Revert invocations observed.
+    /// Should remain at 1 if the engine serializes correctly.
+    /// </summary>
+    public int MaxInterleaveObserved { get; private set; }
+
+    /// <summary>
+    /// True if Apply and Revert were ever observed running simultaneously.
+    /// Indicates the engine's semaphore serialization failed.
+    /// </summary>
+    public bool InterleaveDetected { get; private set; }
+
+    public async Task<bool> ApplyAsync(SystemStateSnapshot snapshot, GameProfile profile)
+    {
+        lock (_lock)
+        {
+            _activeApplyCount++;
+            if (_activeRevertCount > 0) InterleaveDetected = true;
+            MaxInterleaveObserved = Math.Max(MaxInterleaveObserved, _activeApplyCount + _activeRevertCount);
+        }
+
+        await Task.Delay(10); // Simulate work to widen the race window
+
+        lock (_lock)
+        {
+            _activeApplyCount--;
+            IsApplied = true;
+        }
+        return true;
+    }
+
+    public async Task<bool> RevertAsync(SystemStateSnapshot snapshot)
+    {
+        lock (_lock)
+        {
+            _activeRevertCount++;
+            if (_activeApplyCount > 0) InterleaveDetected = true;
+            MaxInterleaveObserved = Math.Max(MaxInterleaveObserved, _activeApplyCount + _activeRevertCount);
+        }
+
+        await Task.Delay(10); // Simulate work to widen the race window
+
+        lock (_lock)
+        {
+            _activeRevertCount--;
+            IsApplied = false;
+        }
+        return true;
     }
 }

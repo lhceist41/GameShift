@@ -1,3 +1,4 @@
+using System.IO;
 using System.IO.Pipes;
 using GameShift.Core.Config;
 using Serilog;
@@ -43,10 +44,12 @@ public sealed class WatchdogHeartbeatClient : IDisposable
                 {
                     pipe?.Dispose();
                     pipe = new NamedPipeClientStream(
-                        ".",
-                        WatchdogPipeServer.PipeName,
-                        PipeDirection.Out,
-                        PipeOptions.Asynchronous);
+                        serverName: ".",
+                        pipeName: WatchdogPipeServer.PipeName,
+                        direction: PipeDirection.Out,
+                        options: PipeOptions.Asynchronous,
+                        impersonationLevel: global::System.Security.Principal.TokenImpersonationLevel.Anonymous,
+                        inheritability: HandleInheritability.None);
 
                     await pipe.ConnectAsync(ConnectTimeoutMs, ct);
                     _logger.Information("[WatchdogHeartbeatClient] Connected to watchdog pipe");

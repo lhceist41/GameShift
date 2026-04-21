@@ -2,7 +2,7 @@ using System.Runtime.InteropServices;
 
 namespace GameShift.Core.System;
 
-internal static partial class NativeInterop
+public static partial class NativeInterop
 {
     // ── RegNotifyChangeKeyValue ──────────────────────────────────────────────
     // https://learn.microsoft.com/windows/win32/api/winreg/nf-winreg-regnotifychangekeyvalue

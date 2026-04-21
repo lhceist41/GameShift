@@ -6,7 +6,7 @@ namespace GameShift.Core.System;
 /// Process-related P/Invoke declarations for NativeInterop.
 /// Partial class extension for process suspension and resumption.
 /// </summary>
-internal static partial class NativeInterop
+public static partial class NativeInterop
 {
     // ============================================================
     // ntdll.dll - Process Suspension/Resumption

@@ -70,10 +70,24 @@ public class SessionHistoryStore
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
 
-    public SessionHistoryStore()
+    /// <summary>
+    /// Production constructor - uses %AppData%\GameShift\session-history.json.
+    /// </summary>
+    public SessionHistoryStore() : this(GetDefaultFilePath()) { }
+
+    /// <summary>
+    /// Test/explicit-path constructor. Allows overriding the session history file location.
+    /// Internal to prevent production callers from depending on it.
+    /// </summary>
+    internal SessionHistoryStore(string filePath)
+    {
+        _filePath = filePath;
+    }
+
+    private static string GetDefaultFilePath()
     {
         var appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        _filePath = Path.Combine(appDataPath, "GameShift", "session-history.json");
+        return Path.Combine(appDataPath, "GameShift", "session-history.json");
     }
 
     /// <summary>Load session history from disk.</summary>
