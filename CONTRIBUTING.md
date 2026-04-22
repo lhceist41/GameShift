@@ -1,6 +1,6 @@
 # Contributing to GameShift
 
-Thank you for your interest in contributing to GameShift! This guide will help you get set up and submit your first pull request.
+Hey, thanks for taking a look. GameShift is a one-person project I build in my spare time, so any help at all (a bug report, a fix, even just an idea) genuinely makes a difference. This guide gets you set up.
 
 ## Prerequisites
 
@@ -47,7 +47,7 @@ src/
 - **GameShift.App** is the UI layer. It depends on GameShift.Core but never the reverse.
 - **GameShift.Core** contains all business logic with zero UI dependencies. This includes the state journal, optimization interfaces, revert logic, and watchdog shared components. Both the main app and the watchdog service reference this project.
 - **GameShift.Watchdog** is a lightweight Windows Service that monitors the main app via named pipe heartbeat and handles crash recovery. It references GameShift.Core for journal and revert logic.
-- **GameShift.Tests** covers Core logic. Tests must pass before any PR is merged.
+- **GameShift.Tests** covers Core logic. I run the tests before merging anything, so please make sure they pass.
 
 ## Coding Standards
 
@@ -108,16 +108,18 @@ public interface IJournaledOptimization
 - **No UI in Core.** Optimization classes must not reference WPF types. The watchdog service calls the same revert code - if it pulls in `PresentationFramework.dll`, something is wrong.
 - **Graceful degradation.** If a feature requires a specific OS version, CPU architecture, or GPU vendor, gate it in `CanApply()` and skip silently. Never crash on unsupported hardware.
 
-## Pull Request Process
+## Sending a pull request
 
-1. **Fork** the repository
-2. **Create a feature branch** from `master` (`git checkout -b feature/your-feature`)
-3. **Make your changes**  - keep commits focused and descriptive
-4. **Run tests**  - `dotnet test` must pass with zero failures
-5. **Build clean**  - `dotnet build` must complete with zero errors and zero warnings
-6. **Test with admin privileges**  - optimizations that modify system state need to be tested on a real Windows install, not just unit tested
-7. **Push** your branch and open a PR against `master`
-8. Fill in the PR template with a summary, what was tested, and which Windows versions were verified
+Nothing fancy here. It's just me reviewing, so keep it simple:
+
+1. **Fork** the repo and **branch** off `master` (`git checkout -b feature/your-feature`)
+2. **Make your changes** and keep commits focused and easy to follow
+3. **Run the tests** - `dotnet test` should pass with no failures
+4. **Build clean** - `dotnet build` should be zero errors, zero warnings
+5. **Test it for real with admin rights** - anything that changes system state needs a real Windows run, not just unit tests
+6. **Open the PR** against `master` and tell me what you changed, what you tested, and which Windows version(s) you ran it on
+
+That last point matters more than any template. I mostly need to know it actually works on a real machine.
 
 ## Issue Guidelines
 

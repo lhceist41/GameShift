@@ -299,18 +299,18 @@ GameShift modifies Windows services, writes to protected registry keys, manages 
 
 ## 🤝 Contributing
 
-Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+GameShift is a solo project, and I'd love the help. Bug reports, fixes, and ideas are all welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for how to get set up.
 
 ```bash
 git clone https://github.com/lhceist41/GameShift.git
 cd GameShift
 git checkout -b feature/your-feature
 dotnet test
-git commit -m "feat: your feature"
+git commit -m "describe what you changed"
 git push origin feature/your-feature
 ```
 
-Issues and feature requests are welcome on the [Issues page](https://github.com/lhceist41/GameShift/issues).
+Found a bug or want a feature? Open an issue on the [Issues page](https://github.com/lhceist41/GameShift/issues). I read all of them.
 
 ---
 

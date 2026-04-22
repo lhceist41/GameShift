@@ -1,34 +1,26 @@
 # Security Policy
 
-## Supported Versions
+## Supported versions
 
-| Version | Supported |
-|---------|-----------|
-| 3.6.x   | ✅        |
-| 3.5.x   | ✅        |
-| < 3.5   | ❌        |
+GameShift is a one-person project, so I keep this simple: I support the latest release. If you're on an older build, please update before reporting something. There's a good chance it's already fixed.
 
-## Reporting a Vulnerability
+## Reporting a vulnerability
 
-If you discover a security vulnerability in GameShift, please report it responsibly.
+GameShift runs with admin rights and touches a lot of the system, so if you find a security hole I genuinely want to hear about it.
 
-**Do not open a public GitHub issue for security vulnerabilities.**
+**Please don't open a public issue for security problems.** That just tells everyone how to exploit it before there's a fix.
 
-Instead, use [GitHub's private vulnerability reporting](https://github.com/lhceist41/GameShift/security/advisories/new) or email the maintainer directly.
+Instead, use [GitHub's private vulnerability reporting](https://github.com/lhceist41/GameShift/security/advisories/new). It comes straight to me and stays private until it's sorted out.
 
-### What to include
+Helpful things to include:
 
-- Description of the vulnerability
-- Steps to reproduce
-- Potential impact
-- Affected component (main app, watchdog service, boot recovery, etc.)
-- Suggested fix (if any)
+- What the vulnerability is
+- How to reproduce it
+- What an attacker could actually do with it
+- Which part it affects (main app, watchdog, boot recovery, etc.)
+- A suggested fix, if you have one
 
-### Response timeline
-
-- **Acknowledgment:** Within 48 hours
-- **Assessment:** Within 7 days
-- **Fix release:** As soon as practical, depending on severity
+It's just me here, so I can't promise a corporate-style response time. But I read every report, and I'll get back to you as soon as I reasonably can. Security stuff jumps the queue.
 
 ## Scope
 
