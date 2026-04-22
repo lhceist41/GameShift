@@ -183,51 +183,61 @@ public class PingMonitor : IDisposable
         if (_stopping) return;
         if (_ping == null || _disposed) return;
 
-        long rtt = -1;
-        bool success = false;
-
+        // A timer event handler must never let an exception escape - that would crash the
+        // process. The inner handlers cover the common ping failures; this outer guard is a
+        // final backstop for the stats update and any PingUpdated subscriber.
         try
         {
-            _totalSent++;
-            var reply = await _ping.SendPingAsync(_target, 1000);
+            long rtt = -1;
+            bool success = false;
 
-            if (reply.Status == IPStatus.Success)
+            try
             {
-                rtt = reply.RoundtripTime;
-                success = true;
+                _totalSent++;
+                var reply = await _ping.SendPingAsync(_target, 1000);
+
+                if (reply.Status == IPStatus.Success)
+                {
+                    rtt = reply.RoundtripTime;
+                    success = true;
+                }
+                else
+                {
+                    _totalLost++;
+                }
             }
-            else
+            catch (ObjectDisposedException)
+            {
+                return;
+            }
+            catch (Exception ex)
             {
                 _totalLost++;
+                _logger.Debug(ex, "Ping to {Target} failed", _target);
             }
-        }
-        catch (ObjectDisposedException)
-        {
-            return;
+
+            CurrentRttMs = rtt;
+
+            lock (_lock)
+            {
+                _rttSamples.Enqueue(rtt);
+                while (_rttSamples.Count > 60)
+                    _rttSamples.Dequeue();
+            }
+
+            PingUpdated?.Invoke(this, new PingSample
+            {
+                RttMilliseconds = rtt,
+                AverageRtt = AverageRttMs,
+                JitterMs = JitterMs,
+                PacketLossPercent = PacketLossPercent,
+                Success = success
+            });
         }
         catch (Exception ex)
         {
-            _totalLost++;
-            _logger.Debug(ex, "Ping to {Target} failed", _target);
+            _logger.Debug(ex, "Ping monitor tick failed");
         }
-
-        CurrentRttMs = rtt;
-
-        lock (_lock)
-        {
-            _rttSamples.Enqueue(rtt);
-            while (_rttSamples.Count > 60)
-                _rttSamples.Dequeue();
-        }
-
-        PingUpdated?.Invoke(this, new PingSample
-        {
-            RttMilliseconds = rtt,
-            AverageRtt = AverageRttMs,
-            JitterMs = JitterMs,
-            PacketLossPercent = PacketLossPercent,
-            Success = success
-        });
     }
 
     // -- IDisposable ────────────────────────────────────────────────────────

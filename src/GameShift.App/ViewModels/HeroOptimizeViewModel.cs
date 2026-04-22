@@ -158,6 +158,13 @@ public class HeroOptimizeViewModel : INotifyPropertyChanged
                 await _engine.ActivateProfileAsync(profile);
             }
         }
+        catch (Exception ex)
+        {
+            // An async void handler must never let an exception escape - that would crash the
+            // whole app on a button click. The finally block restores the button to a correct,
+            // usable state via RefreshHeroState().
+            Serilog.Log.Error(ex, "Quick Optimize (hero button) failed");
+        }
         finally
         {
             IsApplyingHero = false;

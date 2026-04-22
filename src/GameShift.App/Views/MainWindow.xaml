@@ -78,5 +78,24 @@
                 <ui:SnackbarPresenter x:Name="SnackbarPresenter"/>
             </ui:NavigationView.ContentOverlay>
         </ui:NavigationView>
+
+        <!-- Startup loading overlay. Covers the whole window (including the nav pane, so a
+             page cannot be opened before its services exist) while core services are built
+             on a background thread. Removed by App.OnStartup via HideLoadingOverlay() once
+             the dashboard is ready. -->
+        <Border x:Name="LoadingOverlay" Background="#0D1117">
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                <ui:ProgressRing IsIndeterminate="True"
+                                 Width="54" Height="54"
+                                 Foreground="#58A6FF"
+                                 HorizontalAlignment="Center"/>
+                <TextBlock Text="Starting GameShift..."
+                           Foreground="#C9D1D9" FontSize="15" FontWeight="SemiBold"
+                           Margin="0,18,0,0" HorizontalAlignment="Center"/>
+                <TextBlock Text="Preparing optimizations"
+                           Foreground="#8B949E" FontSize="12"
+                           Margin="0,4,0,0" HorizontalAlignment="Center"/>
+            </StackPanel>
+        </Border>
     </Grid>
 </Window>

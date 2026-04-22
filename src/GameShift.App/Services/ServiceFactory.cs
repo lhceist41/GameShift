@@ -35,8 +35,9 @@ public static class ServiceFactory
         Log.Information("GameShift started (Admin: true)");
         writeDiag("Settings loaded OK");
 
-        // Apply startup registration from settings
-        StartupManager.SetStartWithWindows(settings.StartWithWindows);
+        // Reconcile startup registration without spawning schtasks.exe on every launch.
+        // Only (re)registers when the scheduled task is missing or points at a stale exe path.
+        StartupManager.ReconcileStartupRegistration(settings.StartWithWindows);
 
         // Check VBS/HVCI state (advisory)
         services.VbsToggle = new VbsHvciToggle();

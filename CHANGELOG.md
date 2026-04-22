@@ -2,6 +2,18 @@
 
 All notable changes to GameShift are documented here.
 
+## [Unreleased]
+
+### Performance
+
+- **Faster, smoother startup** - the main window now appears within a fraction of a second showing a brief loading state, while core services (hardware detection, performance counters, registry/WMI queries) initialize on a background thread instead of blocking the UI thread. Previously the window didn't paint until all startup work had finished.
+- **Faster cold start** - published builds now precompile to native code (`PublishReadyToRun`), so there's no cold JIT on launch, and single-file compression is off so the bundle no longer unpacks to a temp directory every time it starts. Both make launch quicker, at the cost of a slightly larger download.
+- **Less work on every launch** - "Start with Windows" registration now checks the existing scheduled task on disk and only re-creates it when it's actually missing or stale, instead of spawning `schtasks.exe` on every launch.
+
+### Fixed
+
+- **Fixed two spots that could crash the app** - the Quick Optimize button and the ping monitor's one-second timer now fully guard against exceptions, so a hiccup in either can't take the whole app down with it.
+
 ## [3.7.0] - 2026-04-22
 
 ### Added -- Crash Recovery Coverage

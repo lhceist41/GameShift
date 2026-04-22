@@ -49,7 +49,16 @@
     <SelfContained>true</SelfContained>
     <PublishTrimmed>false</PublishTrimmed>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
-    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+
+    <!-- Precompile IL to native code (ReadyToRun) so the app skips cold JIT on launch.
+         Only takes effect when publishing with a RuntimeIdentifier (dotnet publish -r win-x64),
+         so plain `dotnet build` and debug runs are unchanged. Largest single cold-start win. -->
+    <PublishReadyToRun>true</PublishReadyToRun>
+
+    <!-- Compression shrinks the download but forces the entire self-contained bundle to be
+         decompressed to a temp directory on every cold start, adding seconds to first launch.
+         For a performance tool, a fast start matters more than a smaller download. -->
+    <EnableCompressionInSingleFile>false</EnableCompressionInSingleFile>
   </PropertyGroup>
 
 </Project>

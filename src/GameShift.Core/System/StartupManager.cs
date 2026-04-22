@@ -67,6 +67,114 @@ public static class StartupManager
     }
 
     /// <summary>
+    /// Startup-time reconciliation of the Windows startup registration.
+    ///
+    /// Unlike <see cref="SetStartWithWindows"/> (which always shells out to schtasks.exe and is
+    /// meant for explicit user toggles), this runs on every launch and avoids spawning a process
+    /// unless something actually needs to change. It reads the Task Scheduler's on-disk task
+    /// definition directly and only (re)registers when the task is missing or points at a
+    /// different executable path (e.g. after the app was moved or updated).
+    ///
+    /// On the common path (already in the desired state) this performs only a cheap registry
+    /// cleanup and a single file-existence check - no schtasks.exe spawn. Safe on any thread.
+    /// Never throws: on any failure it falls back to the authoritative <see cref="SetStartWithWindows"/>.
+    /// </summary>
+    /// <param name="enable">Desired state: true = registered for startup, false = not registered.</param>
+    public static void ReconcileStartupRegistration(bool enable)
+    {
+        try
+        {
+            // Cheap, idempotent registry cleanup (no process spawn).
+            RemoveLegacyRunEntry();
+
+            bool taskExists = TryReadRegisteredCommand(out var registeredCommand);
+
+            if (enable)
+            {
+                var exePath = GetExePath();
+                bool upToDate = taskExists
+                    && !string.IsNullOrEmpty(registeredCommand)
+                    && string.Equals(
+                        registeredCommand!.Trim().Trim('"'),
+                        exePath.Trim().Trim('"'),
+                        StringComparison.OrdinalIgnoreCase);
+
+                if (upToDate)
+                    return; // Already registered for the current exe - no schtasks spawn needed.
+
+                RegisterScheduledTask();
+            }
+            else
+            {
+                if (taskExists)
+                    UnregisterScheduledTask();
+                // Not registered and not wanted - nothing to do, no schtasks spawn.
+            }
+        }
+        catch (Exception ex)
+        {
+            // Reconciliation must never block or crash startup. Fall back to the
+            // authoritative path so registration still self-heals.
+            Log.Warning(ex, "[StartupManager] Fast startup reconciliation failed; falling back to full registration");
+            try { SetStartWithWindows(enable); }
+            catch (Exception inner) { Log.Warning(inner, "[StartupManager] Fallback startup registration also failed"); }
+        }
+    }
+
+    /// <summary>
+    /// Reads the &lt;Command&gt; element of the GameShift\Startup task directly from the Task
+    /// Scheduler's on-disk definition (%windir%\System32\Tasks\GameShift\Startup), avoiding a
+    /// schtasks.exe spawn. The file is the XML that schtasks itself writes when the task is created.
+    /// </summary>
+    /// <param name="command">The decoded executable path the task launches, or null if it could not be parsed.</param>
+    /// <returns>True if the task definition file exists (even if the command did not parse), false otherwise.</returns>
+    private static bool TryReadRegisteredCommand(out string? command)
+    {
+        command = null;
+
+        var taskFile = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.Windows),
+            "System32", "Tasks", TaskFolder, TaskName);
+
+        if (!File.Exists(taskFile))
+            return false;
+
+        try
+        {
+            var xml = File.ReadAllText(taskFile);
+
+            const string openTag = "<Command>";
+            const string closeTag = "</Command>";
+            var start = xml.IndexOf(openTag, StringComparison.OrdinalIgnoreCase);
+            if (start >= 0)
+            {
+                start += openTag.Length;
+                var end = xml.IndexOf(closeTag, start, StringComparison.OrdinalIgnoreCase);
+                if (end > start)
+                {
+                    // Reverse the XML entity escaping applied by SecurityElement.Escape in BuildTaskXml.
+                    // Decode &amp; last so an already-decoded "&" is not processed twice.
+                    command = xml.Substring(start, end - start)
+                        .Replace("&lt;", "<")
+                        .Replace("&gt;", ">")
+                        .Replace("&quot;", "\"")
+                        .Replace("&apos;", "'")
+                        .Replace("&amp;", "&")
+                        .Trim();
+                }
+            }
+
+            return true; // Task file exists; treat as registered even if the command did not parse.
+        }
+        catch
+        {
+            // File exists but is unreadable - report "exists" so we don't needlessly re-register
+            // on every launch; if the command was needed and is null, the caller re-registers safely.
+            return true;
+        }
+    }
+
+    /// <summary>
     /// Checks if GameShift is currently registered to start with Windows via the scheduled task.
     /// </summary>
     public static bool IsRegisteredForStartup()

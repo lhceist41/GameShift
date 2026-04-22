@@ -138,10 +138,25 @@ public partial class App : Application
             var gameshiftPath = Path.Combine(appDataPath, "GameShift");
             CrashRecoveryHandler.RecoverIfNeeded(gameshiftPath);
 
-            // Steps c-d: Create all services, load settings
-            var settings = ServiceFactory.CreateAll(Services, WriteDiag);
+            // Step c: Show the window IMMEDIATELY with a loading overlay, before the heavy
+            // service initialization. The user sees GameShift within a fraction of a second
+            // instead of a blank screen while WMI / performance-counter / registry work runs.
+            // The window stays responsive because the service construction itself happens on a
+            // background thread (Step d) - the overlay's progress ring keeps spinning.
+            WriteDiag("Step c: Showing MainWindow (loading state)...");
+            _mainWindow = new MainWindow();
+            _mainWindow.Show();
+            WriteDiag("MainWindow shown (loading overlay visible)");
 
-            // Wire inter-service events (background mode, monitor pause, game profiles, etc.)
+            // Step d: Build all core services OFF the UI thread so the window never freezes.
+            // CreateAll constructs only plain, background-safe objects (no WPF UI elements), so it
+            // is safe on a thread-pool thread; the tray icon and navigation stay on the UI thread.
+            WriteDiag("Step d: Creating core services (background thread)...");
+            var settings = await Task.Run(() => ServiceFactory.CreateAll(Services, WriteDiag));
+            WriteDiag("Core services created");
+
+            // Wire inter-service events (background mode, monitor pause, game profiles, etc.).
+            // Back on the UI thread now that services exist.
             _eventSubs = EventWiringHelper.WireAll(Services);
 
             // Wire game tip notifications to snackbar toast
@@ -152,7 +167,7 @@ public partial class App : Application
 
             WriteDiag("Core services wired OK");
 
-            // Step e: Create tray icon BEFORE async init (icon appears < 1 sec)
+            // Step e: Create tray icon (UI thread - builds a WPF NotifyIcon).
             // Wrapped in try/catch: tray icon registration can fail on some Win10 configurations
             // (e.g., pack URI resolution fails before Application is fully initialized).
             WriteDiag("Step e: Creating TrayIconManager...");
@@ -183,12 +198,12 @@ public partial class App : Application
 
             // Step e2: First-run wizard check
             // Shown AFTER services and tray are wired (wizard's Scan button needs App.Services.Detector),
-            // BEFORE ShowAndNavigate so the wizard is the first thing the user sees.
+            // BEFORE navigating to the dashboard. The loading overlay sits behind the modal wizard.
             var settingsFilePath = Path.Combine(SettingsManager.GetAppDataPath(), "settings.json");
             if (!File.Exists(settingsFilePath))
             {
                 WriteDiag("Step e2: First launch detected - showing setup wizard...");
-                var wizard = new FirstRunWizardWindow();
+                var wizard = new FirstRunWizardWindow { Owner = _mainWindow };
                 wizard.ShowDialog(); // Modal - blocks until wizard closes
 
                 if (wizard.WizardCompleted)
@@ -203,13 +218,12 @@ public partial class App : Application
                 }
             }
 
-            // Always show the main window on startup.
-            // The tray icon may or may not render on Win10 (Register() succeeds but the icon
-            // doesn't appear in the notification area). Showing the window guarantees the user
-            // always sees something. The tray icon still works alongside the window when available.
-            WriteDiag("Step f: Showing MainWindow...");
-            ShowAndNavigate(typeof(DashboardPage));
-            WriteDiag("MainWindow shown OK");
+            // Step f: Services are ready - navigate to the dashboard and drop the loading overlay.
+            // The window itself has been visible since Step c.
+            WriteDiag("Step f: Navigating to dashboard...");
+            _mainWindow.NavigateTo(typeof(DashboardPage));
+            _mainWindow.HideLoadingOverlay();
+            WriteDiag("Dashboard shown OK");
 
             // Step f1: Surface any boot-recovery warnings recorded by the watchdog.
             // Deferred to ApplicationIdle so the MessageBoxes appear after MainWindow renders.

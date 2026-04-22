@@ -221,6 +221,15 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
+    /// Removes the startup loading overlay once core services are ready and the dashboard
+    /// has been navigated to. Called by App.OnStartup. Safe to call more than once.
+    /// </summary>
+    public void HideLoadingOverlay()
+    {
+        LoadingOverlay.Visibility = Visibility.Collapsed;
+    }
+
+    /// <summary>
     /// Shows or hides navigation items based on Advanced Mode setting.
     /// Simple Mode: only Dashboard and Settings visible.
     /// </summary>
