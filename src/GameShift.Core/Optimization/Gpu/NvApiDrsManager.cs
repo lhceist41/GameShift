@@ -29,22 +29,22 @@ public sealed class NvApiDrsManager : IDisposable
 
     // ── NvAPI function IDs ────────────────────────────────────────────────────
 
-    private const uint FnId_Initialize        = 0x0150E828;
-    private const uint FnId_Unload            = 0xD22BDD7E;
+    private const uint FnId_Initialize = 0x0150E828;
+    private const uint FnId_Unload = 0xD22BDD7E;
     private const uint FnId_DRS_CreateSession = 0x0694D52E;
-    private const uint FnId_DRS_DestroySession= 0xDAD9CFF8;
-    private const uint FnId_DRS_LoadSettings  = 0x375DBD6B;
-    private const uint FnId_DRS_SaveSettings  = 0xFCBC7E14;
-    private const uint FnId_DRS_GetBaseProfile= 0xDA8466A0;
-    private const uint FnId_DRS_GetSetting    = 0x73BF8338;
-    private const uint FnId_DRS_SetSetting    = 0x577DD202;
+    private const uint FnId_DRS_DestroySession = 0xDAD9CFF8;
+    private const uint FnId_DRS_LoadSettings = 0x375DBD6B;
+    private const uint FnId_DRS_SaveSettings = 0xFCBC7E14;
+    private const uint FnId_DRS_GetBaseProfile = 0xDA8466A0;
+    private const uint FnId_DRS_GetSetting = 0x73BF8338;
+    private const uint FnId_DRS_SetSetting = 0x577DD202;
 
     // ── DRS Setting IDs ───────────────────────────────────────────────────────
 
-    public const uint Setting_PreRenderLimit  = 0x20906015;
-    public const uint Setting_PowerMgmtMode   = 0x20D690F8;
+    public const uint Setting_PreRenderLimit = 0x20906015;
+    public const uint Setting_PowerMgmtMode = 0x20D690F8;
     public const uint Setting_ShaderCacheSize = 0x20C392B0;
-    public const uint Setting_LowLatencyMode  = 0x20E4E645;
+    public const uint Setting_LowLatencyMode = 0x20E4E645;
 
     // ── Struct layout constants ───────────────────────────────────────────────
 
@@ -60,11 +60,11 @@ public sealed class NvApiDrsManager : IDisposable
     //   8216: predefinedValue union (4096)
     //   Total: 12312 bytes
     private const int SettingStructSize = 12312;
-    private const int SettingVersion    = (1 << 16) | SettingStructSize;
+    private const int SettingVersion = (1 << 16) | SettingStructSize;
 
-    private const int Off_SettingId           = 4100;
-    private const int Off_SettingType         = 4104;
-    private const int Off_CurrentValueDword   = 4120;
+    private const int Off_SettingId = 4100;
+    private const int Off_SettingType = 4104;
+    private const int Off_CurrentValueDword = 4120;
 
     // NvAPI status codes
     private const int NVAPI_OK = 0;
@@ -136,15 +136,15 @@ public sealed class NvApiDrsManager : IDisposable
             var qi = Marshal.GetDelegateForFunctionPointer<NvAPI_QueryInterface_t>(qiPtr);
 
             // Resolve all needed function pointers
-            _initialize    = GetDelegate<NvAPI_Initialize_t>(qi, FnId_Initialize);
-            _unload        = GetDelegate<NvAPI_Unload_t>(qi, FnId_Unload);
+            _initialize = GetDelegate<NvAPI_Initialize_t>(qi, FnId_Initialize);
+            _unload = GetDelegate<NvAPI_Unload_t>(qi, FnId_Unload);
             _createSession = GetDelegate<NvAPI_DRS_CreateSession_t>(qi, FnId_DRS_CreateSession);
-            _destroySession= GetDelegate<NvAPI_DRS_DestroySession_t>(qi, FnId_DRS_DestroySession);
-            _loadSettings  = GetDelegate<NvAPI_DRS_LoadSettings_t>(qi, FnId_DRS_LoadSettings);
-            _saveSettings  = GetDelegate<NvAPI_DRS_SaveSettings_t>(qi, FnId_DRS_SaveSettings);
-            _getBaseProfile= GetDelegate<NvAPI_DRS_GetBaseProfile_t>(qi, FnId_DRS_GetBaseProfile);
-            _getSetting    = GetDelegate<NvAPI_DRS_GetSetting_t>(qi, FnId_DRS_GetSetting);
-            _setSetting    = GetDelegate<NvAPI_DRS_SetSetting_t>(qi, FnId_DRS_SetSetting);
+            _destroySession = GetDelegate<NvAPI_DRS_DestroySession_t>(qi, FnId_DRS_DestroySession);
+            _loadSettings = GetDelegate<NvAPI_DRS_LoadSettings_t>(qi, FnId_DRS_LoadSettings);
+            _saveSettings = GetDelegate<NvAPI_DRS_SaveSettings_t>(qi, FnId_DRS_SaveSettings);
+            _getBaseProfile = GetDelegate<NvAPI_DRS_GetBaseProfile_t>(qi, FnId_DRS_GetBaseProfile);
+            _getSetting = GetDelegate<NvAPI_DRS_GetSetting_t>(qi, FnId_DRS_GetSetting);
+            _setSetting = GetDelegate<NvAPI_DRS_SetSetting_t>(qi, FnId_DRS_SetSetting);
 
             // Initialize NvAPI
             int status = _initialize!();

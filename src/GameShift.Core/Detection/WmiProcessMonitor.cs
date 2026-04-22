@@ -47,14 +47,14 @@ public sealed class WmiProcessMonitor : IProcessMonitor
 
     private void OnStart(object sender, EventArrivedEventArgs e)
     {
-        var pid  = Convert.ToInt32(e.NewEvent.Properties["ProcessID"].Value);
+        var pid = Convert.ToInt32(e.NewEvent.Properties["ProcessID"].Value);
         var name = e.NewEvent.Properties["ProcessName"].Value?.ToString() ?? string.Empty;
 
         ProcessStarted?.Invoke(new ProcessStartEventData
         {
-            ProcessId     = pid,
+            ProcessId = pid,
             ImageFileName = name,   // WMI provides filename only, not full path
-            Timestamp     = DateTime.UtcNow
+            Timestamp = DateTime.UtcNow
         });
     }
 

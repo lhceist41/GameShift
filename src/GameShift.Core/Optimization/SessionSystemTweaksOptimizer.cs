@@ -44,7 +44,7 @@ public class SessionSystemTweaksOptimizer : IOptimization
 
     // PCIe ASPM powercfg GUIDs
     private const string PcieSubgroupGuid = "501a4d13-42af-4429-9fd1-a8218c268e20";
-    private const string AspmSettingGuid  = "ee12f906-d277-404b-b6da-e5fa1a576df5";
+    private const string AspmSettingGuid = "ee12f906-d277-404b-b6da-e5fa1a576df5";
 
     // ── IOptimization ─────────────────────────────────────────────────────────
 

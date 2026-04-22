@@ -39,45 +39,45 @@ public static class CompetitivePresets
 
     private static readonly Dictionary<string, PresetGameMetadata> _metadata =
         new(StringComparer.OrdinalIgnoreCase)
-    {
-        [Overwatch2Exe] = new()
         {
-            DisplayName = "Overwatch 2",
-            AntiCheatName = "", // Server-side ML detection only - no kernel anti-cheat
-            AntiCheat = AntiCheatType.None,
-            VbsSafeToDisable = true
-        },
-        [ValorantExe] = new()
-        {
-            DisplayName = "Valorant",
-            AntiCheatName = "Riot Vanguard",
-            AntiCheat = AntiCheatType.RiotVanguard,
-            VbsSafeToDisable = false,
-            VbsSafetyReason = "Riot Vanguard enforces VBS/HVCI (Memory Integrity) as a hard requirement. Disabling it causes VAN:RESTRICTION errors and prevents Valorant from launching."
-        },
-        [LeagueExe] = new()
-        {
-            DisplayName = "League of Legends",
-            AntiCheatName = "Riot Vanguard",
-            AntiCheat = AntiCheatType.RiotVanguard,
-            VbsSafeToDisable = false,
-            VbsSafetyReason = "Riot Vanguard enforces VBS/HVCI (Memory Integrity) as a hard requirement. Disabling it causes VAN:RESTRICTION errors and prevents League of Legends from launching."
-        },
-        [DeadlockExe] = new()
-        {
-            DisplayName = "Deadlock",
-            AntiCheatName = "VAC",
-            AntiCheat = AntiCheatType.ValveAntiCheat,
-            VbsSafeToDisable = true
-        },
-        [OsuExe] = new()
-        {
-            DisplayName = "osu!",
-            AntiCheatName = "",
-            AntiCheat = AntiCheatType.None,
-            VbsSafeToDisable = true
-        }
-    };
+            [Overwatch2Exe] = new()
+            {
+                DisplayName = "Overwatch 2",
+                AntiCheatName = "", // Server-side ML detection only - no kernel anti-cheat
+                AntiCheat = AntiCheatType.None,
+                VbsSafeToDisable = true
+            },
+            [ValorantExe] = new()
+            {
+                DisplayName = "Valorant",
+                AntiCheatName = "Riot Vanguard",
+                AntiCheat = AntiCheatType.RiotVanguard,
+                VbsSafeToDisable = false,
+                VbsSafetyReason = "Riot Vanguard enforces VBS/HVCI (Memory Integrity) as a hard requirement. Disabling it causes VAN:RESTRICTION errors and prevents Valorant from launching."
+            },
+            [LeagueExe] = new()
+            {
+                DisplayName = "League of Legends",
+                AntiCheatName = "Riot Vanguard",
+                AntiCheat = AntiCheatType.RiotVanguard,
+                VbsSafeToDisable = false,
+                VbsSafetyReason = "Riot Vanguard enforces VBS/HVCI (Memory Integrity) as a hard requirement. Disabling it causes VAN:RESTRICTION errors and prevents League of Legends from launching."
+            },
+            [DeadlockExe] = new()
+            {
+                DisplayName = "Deadlock",
+                AntiCheatName = "VAC",
+                AntiCheat = AntiCheatType.ValveAntiCheat,
+                VbsSafeToDisable = true
+            },
+            [OsuExe] = new()
+            {
+                DisplayName = "osu!",
+                AntiCheatName = "",
+                AntiCheat = AntiCheatType.None,
+                VbsSafeToDisable = true
+            }
+        };
 
     // ── Public API ────────────────────────────────────────────────────
 

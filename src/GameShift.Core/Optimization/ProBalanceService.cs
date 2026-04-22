@@ -30,8 +30,8 @@ public sealed class ProBalanceService : IDisposable
 
     private const double CpuThresholdPercent = 15.0;
     private const int SustainedSamplesToRestrain = 3;
-    private const int SustainedSamplesToRestore  = 5;
-    private const int SampleIntervalMs           = 5000; // 5s - balances responsiveness vs CPU overhead
+    private const int SustainedSamplesToRestore = 5;
+    private const int SampleIntervalMs = 5000; // 5s - balances responsiveness vs CPU overhead
 
     // ── Safety list - never restrain ──────────────────────────────────────────
 

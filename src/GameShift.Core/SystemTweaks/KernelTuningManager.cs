@@ -274,7 +274,7 @@ public class KernelTuningManager
         return new HypervisorDependencyCheck
         {
             HyperVServiceRunning = IsServiceRunning("vmms") || IsServiceRunning("HvHost"),
-            Wsl2ServiceRunning   = IsServiceRunning("WslService") || IsServiceRunning("LxssManager"),
+            Wsl2ServiceRunning = IsServiceRunning("WslService") || IsServiceRunning("LxssManager"),
             DockerServiceRunning = IsServiceRunning("com.docker.service") || IsServiceRunning("docker"),
         };
     }

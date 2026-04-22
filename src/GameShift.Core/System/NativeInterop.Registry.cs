@@ -14,11 +14,11 @@ public static partial class NativeInterop
     /// </summary>
     [DllImport("advapi32.dll", SetLastError = true)]
     internal static extern int RegNotifyChangeKeyValue(
-        IntPtr   hKey,
-        bool     bWatchSubtree,
+        IntPtr hKey,
+        bool bWatchSubtree,
         RegNotifyFilter dwNotifyFilter,
-        IntPtr   hEvent,
-        bool     fAsynchronous);
+        IntPtr hEvent,
+        bool fAsynchronous);
 
     /// <summary>
     /// Filter flags for <see cref="RegNotifyChangeKeyValue"/>.
@@ -27,16 +27,16 @@ public static partial class NativeInterop
     internal enum RegNotifyFilter : uint
     {
         /// <summary>Notify the caller if a subkey is added or deleted.</summary>
-        Name        = 0x00000001,
+        Name = 0x00000001,
 
         /// <summary>Notify the caller of changes to the attributes of the key.</summary>
-        Attributes  = 0x00000002,
+        Attributes = 0x00000002,
 
         /// <summary>Notify the caller of changes to a value of the key (add, delete, modify).</summary>
-        LastSet     = 0x00000004,
+        LastSet = 0x00000004,
 
         /// <summary>Notify the caller of changes to the security descriptor of the key.</summary>
-        Security    = 0x00000008,
+        Security = 0x00000008,
 
         /// <summary>
         /// Indicates that the thread should not be unloaded until the notification fires.

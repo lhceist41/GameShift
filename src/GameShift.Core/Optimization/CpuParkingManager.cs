@@ -34,32 +34,32 @@ public class CpuParkingManager : IOptimization, IJournaledOptimization
     private const string ProcessorSubGroupGuid = "54533251-82be-4824-96c1-47b60b740d00";
 
     // Core parking setting GUIDs (used by both apply and revert paths).
-    private const string CpMinCoresGuid          = "0cc5b647-c1df-4637-891a-dec35c318583";
-    private const string CpMaxCoresGuid          = "ea062031-0e34-4ff1-9b6d-eb1059334028";
-    private const string MinProcessorStateGuid   = "893dee8e-2bef-41e0-89c6-b55d0929964c";
+    private const string CpMinCoresGuid = "0cc5b647-c1df-4637-891a-dec35c318583";
+    private const string CpMaxCoresGuid = "ea062031-0e34-4ff1-9b6d-eb1059334028";
+    private const string MinProcessorStateGuid = "893dee8e-2bef-41e0-89c6-b55d0929964c";
     private const string ConcurrencyThresholdGuid = "2430ab6f-a520-44a2-9601-f7f23b5134b1";
 
     // ── C-state depth limiting GUIDs (replaces IDLEDISABLE=1) ──────────
 
     /// <summary>Max idle state depth: 1 = C1 only (2µs wake, HLT still runs so counters work).</summary>
-    private const string IdleStateMaxGuid       = "9943e905-9a30-4ec1-9b99-44dd3b76f7a2";
+    private const string IdleStateMaxGuid = "9943e905-9a30-4ec1-9b99-44dd3b76f7a2";
     /// <summary>Idle promote threshold: 100 = never promote to deeper C-states.</summary>
-    private const string IdlePromoteGuid        = "7b224883-b3cc-4d79-819f-8374152cbe7c";
+    private const string IdlePromoteGuid = "7b224883-b3cc-4d79-819f-8374152cbe7c";
     /// <summary>Idle demote threshold: 100 = aggressively return to shallowest state.</summary>
-    private const string IdleDemoteGuid         = "4b92d758-5a24-4851-a470-815d78aee119";
+    private const string IdleDemoteGuid = "4b92d758-5a24-4851-a470-815d78aee119";
     /// <summary>Idle scaling: 0 = disable auto threshold scaling.</summary>
-    private const string IdleScalingGuid         = "6c2993b0-8f48-481f-bcc6-00dd2742aa06";
+    private const string IdleScalingGuid = "6c2993b0-8f48-481f-bcc6-00dd2742aa06";
     /// <summary>C-state time check interval: ms between idle re-evaluation.</summary>
-    private const string CsTimeCheckGuid         = "c4581c31-89ab-4597-8e2b-9c9cab440e6b";
+    private const string CsTimeCheckGuid = "c4581c31-89ab-4597-8e2b-9c9cab440e6b";
     /// <summary>Latency hint perf response (primary): 100 = max CPU on input events.</summary>
-    private const string LatencyHintPerfGuid     = "619b7505-003b-4e82-b7a6-4dd29c300971";
+    private const string LatencyHintPerfGuid = "619b7505-003b-4e82-b7a6-4dd29c300971";
     /// <summary>Latency hint perf response (secondary).</summary>
-    private const string LatencyHintPerf1Guid    = "619b7505-003b-4e82-b7a6-4dd29c300972";
+    private const string LatencyHintPerf1Guid = "619b7505-003b-4e82-b7a6-4dd29c300972";
     /// <summary>Latency-sensitive unparked cores hint: 100 = keep all cores unparked during hints.</summary>
-    private const string LatencyUnparkedGuid     = "616cdaa5-695e-4545-97ad-97dc2d1bdd88";
+    private const string LatencyUnparkedGuid = "616cdaa5-695e-4545-97ad-97dc2d1bdd88";
 
     /// <summary>Performance time check interval setting GUID.</summary>
-    private const string TimeCheckIntervalGuid   = "4d2b0152-7d5c-498b-88e2-34345392a2c5";
+    private const string TimeCheckIntervalGuid = "4d2b0152-7d5c-498b-88e2-34345392a2c5";
 
     /// <summary>All C-state limiting GUIDs in apply order.</summary>
     private static readonly (string Guid, string Name, int Value)[] CStateLimitSettings =

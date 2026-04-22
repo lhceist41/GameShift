@@ -133,7 +133,7 @@ public static class BootRecoveryHandler
                 @"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion";
 
             var build = Registry.GetValue(regPath, "CurrentBuildNumber", "0")?.ToString() ?? "0";
-            var ubr   = Registry.GetValue(regPath, "UBR", "0")?.ToString() ?? "0";
+            var ubr = Registry.GetValue(regPath, "UBR", "0")?.ToString() ?? "0";
             return $"{build}.{ubr}";
         }
         catch

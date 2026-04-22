@@ -465,9 +465,9 @@ public class CpuSchedulingOptimizer : IOptimization
     {
         var state = new NativeInterop.PROCESS_POWER_THROTTLING_STATE
         {
-            Version     = NativeInterop.PROCESS_POWER_THROTTLING_CURRENT_VERSION,
+            Version = NativeInterop.PROCESS_POWER_THROTTLING_CURRENT_VERSION,
             ControlMask = NativeInterop.PROCESS_POWER_THROTTLING_EXECUTION_SPEED,
-            StateMask   = disableThrottling ? 0 : NativeInterop.PROCESS_POWER_THROTTLING_EXECUTION_SPEED
+            StateMask = disableThrottling ? 0 : NativeInterop.PROCESS_POWER_THROTTLING_EXECUTION_SPEED
         };
 
         int size = Marshal.SizeOf<NativeInterop.PROCESS_POWER_THROTTLING_STATE>();
@@ -493,9 +493,9 @@ public class CpuSchedulingOptimizer : IOptimization
     {
         var state = new NativeInterop.PROCESS_POWER_THROTTLING_STATE
         {
-            Version     = NativeInterop.PROCESS_POWER_THROTTLING_CURRENT_VERSION,
+            Version = NativeInterop.PROCESS_POWER_THROTTLING_CURRENT_VERSION,
             ControlMask = 0,  // Clear control - let OS manage
-            StateMask   = 0
+            StateMask = 0
         };
 
         int size = Marshal.SizeOf<NativeInterop.PROCESS_POWER_THROTTLING_STATE>();

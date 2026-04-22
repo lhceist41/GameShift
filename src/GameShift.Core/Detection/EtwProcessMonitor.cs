@@ -41,11 +41,11 @@ public sealed class EtwProcessMonitor : IProcessMonitor
         {
             ProcessStarted?.Invoke(new ProcessStartEventData
             {
-                ProcessId       = data.ProcessID,
-                ImageFileName   = data.ImageFileName,
+                ProcessId = data.ProcessID,
+                ImageFileName = data.ImageFileName,
                 ParentProcessId = data.ParentID,
-                CommandLine     = data.CommandLine,
-                Timestamp       = data.TimeStamp
+                CommandLine = data.CommandLine,
+                Timestamp = data.TimeStamp
             });
         };
 
@@ -53,11 +53,11 @@ public sealed class EtwProcessMonitor : IProcessMonitor
         {
             ProcessStopped?.Invoke(new ProcessStopEventData
             {
-                ProcessId     = data.ProcessID,
+                ProcessId = data.ProcessID,
                 ImageFileName = data.ImageFileName,
                 // ExitCode not available from the kernel session parser;
                 // available if using the Microsoft-Windows-Kernel-Process provider directly.
-                Timestamp     = data.TimeStamp
+                Timestamp = data.TimeStamp
             });
         };
 

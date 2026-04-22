@@ -23,7 +23,7 @@ namespace GameShift.Core.Journal;
 public static class BootRecoveryTaskManager
 {
     public const string TaskFolder = "GameShift";
-    public const string TaskName   = "BootRecovery";
+    public const string TaskName = "BootRecovery";
     public const string FullTaskName = @"GameShift\BootRecovery";
 
     // ── Public API ────────────────────────────────────────────────────────────

@@ -89,7 +89,7 @@ public sealed class RegistryChangeMonitor : IDisposable
     public RegistryChangeMonitor(JournalManager journal, ILogger logger)
     {
         _journal = journal;
-        _logger  = logger.ForContext<RegistryChangeMonitor>();
+        _logger = logger.ForContext<RegistryChangeMonitor>();
     }
 
     // ── Session lifecycle ─────────────────────────────────────────────────────
@@ -110,9 +110,9 @@ public sealed class RegistryChangeMonitor : IDisposable
             var captured = key;
             var thread = new Thread(() => WatchKeyLoop(captured, _stopEvent))
             {
-                Name        = $"GameShift_RegWatch_{captured.ValueName}",
+                Name = $"GameShift_RegWatch_{captured.ValueName}",
                 IsBackground = true,
-                Priority     = ThreadPriority.BelowNormal,
+                Priority = ThreadPriority.BelowNormal,
             };
             _threads.Add(thread);
             thread.Start();
@@ -163,8 +163,8 @@ public sealed class RegistryChangeMonitor : IDisposable
     /// </summary>
     private void WatchKeyLoop(WatchedKey key, ManualResetEvent stopEvent)
     {
-        RegistryKey? regKey    = null;
-        EventWaitHandle? evt   = null;
+        RegistryKey? regKey = null;
+        EventWaitHandle? evt = null;
 
         try
         {
@@ -178,7 +178,7 @@ public sealed class RegistryChangeMonitor : IDisposable
             }
 
             evt = new EventWaitHandle(false, EventResetMode.AutoReset);
-            var hKey   = regKey.Handle.DangerousGetHandle();
+            var hKey = regKey.Handle.DangerousGetHandle();
             var hEvent = evt.SafeWaitHandle.DangerousGetHandle();
 
             _logger.Debug(
