@@ -102,6 +102,8 @@ public partial class FirstRunWizardWindow : Window
             settings.StartWithWindows = StartWithWindowsCheckBox.IsChecked == true;
             settings.ShowNotifications = NotificationsCheckBox.IsChecked == true;
             settings.GpuVendorOverride = (GpuVendorComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Auto";
+            // Easy Mode (default) unless the user opted into advanced features.
+            settings.AdvancedMode = AdvancedFeaturesCheckBox.IsChecked == true;
 
             SettingsManager.Save(settings);
 

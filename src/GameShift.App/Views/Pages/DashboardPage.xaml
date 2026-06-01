@@ -888,14 +888,15 @@
                                              Margin="0,0,10,0" VerticalAlignment="Center"
                                              Fill="{Binding StatusBrush}"/>
 
-                                    <!-- Name + Status -->
+                                    <!-- Name + plain-language description (status is shown by the dot colour) -->
                                     <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                         <TextBlock Text="{Binding Name}"
                                                    FontSize="14" FontWeight="SemiBold"
                                                    Foreground="{DynamicResource GS.Text.Primary}"/>
-                                        <TextBlock Text="{Binding Status}"
+                                        <TextBlock Text="{Binding Description}"
                                                    FontSize="12"
-                                                   Foreground="{DynamicResource GS.Text.Secondary}"/>
+                                                   Foreground="{DynamicResource GS.Text.Secondary}"
+                                                   TextTrimming="CharacterEllipsis"/>
                                     </StackPanel>
 
                                     <!-- Per-profile enable/disable toggle -->

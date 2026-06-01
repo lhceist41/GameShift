@@ -1,7 +1,7 @@
 <Window x:Class="GameShift.App.Views.FirstRunWizardWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="GameShift Setup" Width="520" Height="420"
+        Title="GameShift Setup" Width="520" Height="490"
         WindowStartupLocation="CenterScreen"
         ResizeMode="NoResize"
         Background="#0D1117"
@@ -206,6 +206,27 @@
                 <!-- Settings card -->
                 <Border Background="#161B22" CornerRadius="8" Padding="20">
                     <StackPanel>
+                        <!-- Show advanced features (sets Easy vs Advanced Mode) -->
+                        <DockPanel Margin="0,0,0,16">
+                            <StackPanel DockPanel.Dock="Left" MaxWidth="330">
+                                <TextBlock Text="Show advanced features"
+                                           FontSize="14"
+                                           Foreground="#E6EDF3"/>
+                                <TextBlock Text="Extra pages and per-optimization controls for power users. Leave off for a simpler app."
+                                           FontSize="12"
+                                           Foreground="#8B949E"
+                                           TextWrapping="Wrap"/>
+                            </StackPanel>
+                            <CheckBox x:Name="AdvancedFeaturesCheckBox"
+                                      DockPanel.Dock="Right"
+                                      HorizontalAlignment="Right"
+                                      VerticalAlignment="Center"
+                                      IsChecked="False"/>
+                        </DockPanel>
+
+                        <!-- Divider -->
+                        <Rectangle Height="1" Fill="#30363D" Margin="0,0,0,16"/>
+
                         <!-- Start with Windows -->
                         <DockPanel Margin="0,0,0,16">
                             <StackPanel DockPanel.Dock="Left">

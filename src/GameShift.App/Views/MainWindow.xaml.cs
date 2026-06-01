@@ -236,13 +236,21 @@ public partial class MainWindow : Window
     public void ApplyAdvancedMode(bool advanced)
     {
         var vis = advanced ? Visibility.Visible : Visibility.Collapsed;
-        NavSystem.Visibility = vis;
-        NavDpcDoctor.Visibility = vis;
-        NavOptimizations.Visibility = vis;
-        NavProfiles.Visibility = vis;
+
+        // Games group
+        NavHeaderGames.Visibility = vis;
         NavGameLibrary.Visibility = vis;
+        NavProfiles.Visibility = vis;
+
+        // Tuning group
+        NavHeaderTuning.Visibility = vis;
+        NavOptimizations.Visibility = vis;
+        NavSystem.Visibility = vis;
+
+        // Diagnostics group
+        NavHeaderDiagnostics.Visibility = vis;
+        NavDpcDoctor.Visibility = vis;
         NavLogs.Visibility = vis;
-        NavSetupWizard.Visibility = vis;
     }
 
     /// <summary>
