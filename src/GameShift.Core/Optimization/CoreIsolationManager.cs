@@ -125,8 +125,8 @@ public class CoreIsolationManager
         if (cpuSetIdsToReserve.Count >= pCores.Count)
             return $"Cannot reserve all {pCores.Count} P-cores. At least 1 must remain for OS/background work.";
 
-        // Build bitmask
-        byte[] bitmask = BuildBitmask(cpuSetIdsToReserve);
+        // Build bitmask (indexed by logical processor number - see BuildBitmask)
+        byte[] bitmask = BuildBitmask(cpuSetIdsToReserve, pCores);
 
         try
         {
@@ -216,6 +216,13 @@ public class CoreIsolationManager
             if (key?.GetValue(ValueName) is not byte[] bitmask)
                 return reserved;
 
+            // Bits are indexed by logical processor number; translate back to CPU Set IDs so
+            // callers (CpuSchedulingOptimizer, GetStatus) keep working in CPU-Set-ID space.
+            var (pCores, eCores, _) = DetectTopology();
+            var logicalToId = new Dictionary<int, uint>();
+            foreach (var c in pCores.Concat(eCores))
+                logicalToId[c.LogicalProcessorIndex] = c.CpuSetId;
+
             for (int byteIdx = 0; byteIdx < bitmask.Length; byteIdx++)
             {
                 byte b = bitmask[byteIdx];
@@ -223,8 +230,10 @@ public class CoreIsolationManager
 
                 for (int bit = 0; bit < 8; bit++)
                 {
-                    if ((b & (1 << bit)) != 0)
-                        reserved.Add((uint)(byteIdx * 8 + bit));
+                    if ((b & (1 << bit)) == 0) continue;
+                    int logical = byteIdx * 8 + bit;
+                    if (logicalToId.TryGetValue(logical, out var id))
+                        reserved.Add(id);
                 }
             }
         }
@@ -305,18 +314,34 @@ public class CoreIsolationManager
     }
 
     /// <summary>
-    /// Builds a byte-array bitmask where bit N is set if CPU Set ID N is in the list.
+    /// Builds the ReservedCpuSets bitmask. The kernel value is a flat affinity bitmask indexed
+    /// by LOGICAL PROCESSOR NUMBER, not by CPU Set ID (those are offset, typically by 0x100), so
+    /// each selected CPU Set ID must be translated to its logical processor index first -
+    /// mirroring HybridCpuDetector.CpuSetsToAffinityMask / IntelHybridDetector, which already do this.
     /// </summary>
-    private static byte[] BuildBitmask(IReadOnlyList<uint> cpuSetIds)
+    private static byte[] BuildBitmask(IReadOnlyList<uint> cpuSetIds, IReadOnlyList<CpuCoreInfo> allCores)
     {
         if (cpuSetIds.Count == 0) return Array.Empty<byte>();
 
-        uint maxId = cpuSetIds.Max();
-        int byteCount = (int)(maxId / 8) + 1;
+        var idToLogical = new Dictionary<uint, byte>();
+        foreach (var c in allCores)
+            idToLogical[c.CpuSetId] = c.LogicalProcessorIndex;
+
+        // Resolve logical processor indices first so the array is sized to the real bit positions.
+        var logicalIndices = new List<int>();
+        foreach (var id in cpuSetIds)
+        {
+            if (idToLogical.TryGetValue(id, out var logical))
+                logicalIndices.Add(logical);
+        }
+        if (logicalIndices.Count == 0) return Array.Empty<byte>();
+
+        int maxLogical = logicalIndices.Max();
+        int byteCount = (maxLogical / 8) + 1;
         var bitmask = new byte[byteCount];
 
-        foreach (var id in cpuSetIds)
-            bitmask[id / 8] |= (byte)(1 << (int)(id % 8));
+        foreach (var logical in logicalIndices)
+            bitmask[logical / 8] |= (byte)(1 << (logical % 8));
 
         return bitmask;
     }

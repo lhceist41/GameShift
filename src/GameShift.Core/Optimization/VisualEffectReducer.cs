@@ -287,10 +287,9 @@ public class VisualEffectReducer : IOptimization, IJournaledOptimization
                 animationSuccess = true; // nothing to revert
             }
 
-            _isApplied = false;
-
             if (transparencySuccess || animationSuccess)
             {
+                _isApplied = false; // only clear when at least one revert actually succeeded
                 _logger.Information(
                     "[VisualEffectReducer] Visual effect reduction reverted (transparency: {Trans}, animations: {Anim})",
                     transparencySuccess, animationSuccess);
@@ -360,10 +359,14 @@ public class VisualEffectReducer : IOptimization, IJournaledOptimization
             {
                 using var key = Registry.CurrentUser.OpenSubKey(
                     TransparencyRegistrySubKey, writable: true);
+                // A missing key must not abort the whole revert - fall through so the animation
+                // restore below still runs (mirrors live Revert() keeping the two independent).
                 if (key == null)
-                    return RevertFail("Failed to open transparency registry key");
-
-                if (transparencyElement.ValueKind == JsonValueKind.Null)
+                {
+                    _logger.Warning(
+                        "[VisualEffectReducer] Transparency key unavailable; skipping transparency restore");
+                }
+                else if (transparencyElement.ValueKind == JsonValueKind.Null)
                 {
                     key.DeleteValue(TransparencyValueName, throwOnMissingValue: false);
                     _logger.Information(

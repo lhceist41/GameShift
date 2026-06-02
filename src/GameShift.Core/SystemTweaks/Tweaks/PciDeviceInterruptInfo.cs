@@ -46,6 +46,10 @@ public class PciDeviceInterruptInfo
     /// <summary>Current AssignmentSetOverride bitmask (null = not set).</summary>
     public byte[]? CurrentAffinityMask { get; set; }
 
+    /// <summary>Whether the "Affinity Policy" registry key already existed at scan time, so revert
+    /// can delete a key GameShift created rather than leave an empty orphan behind.</summary>
+    public bool AffinityKeyExisted { get; set; }
+
     /// <summary>Base registry path for this device instance.</summary>
     public string RegistryBasePath { get; set; } = "";
 

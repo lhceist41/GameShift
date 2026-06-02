@@ -1,6 +1,8 @@
 using System.Runtime.InteropServices;
 using System.ServiceProcess;
+using System.Text.Json;
 using GameShift.Core.Config;
+using GameShift.Core.Journal;
 using GameShift.Core.Profiles;
 using GameShift.Core.System;
 using Microsoft.Win32;
@@ -15,7 +17,7 @@ namespace GameShift.Core.Optimization;
 ///   Tier 3 - Conditional, only stopped when hardware/software conditions are met.
 /// A safety list prevents critical system services from ever being stopped.
 /// </summary>
-public class ServiceSuppressor : IOptimization
+public class ServiceSuppressor : IOptimization, IJournaledOptimization
 {
     /// <summary>
     /// Describes a service target with metadata for tiered suppression.
@@ -147,6 +149,11 @@ public class ServiceSuppressor : IOptimization
 
     public bool IsAvailable => true; // Services that don't exist are skipped individually
 
+    // Journaling: context for Apply(), and the list of services this run actually stopped
+    // (serialized into the journal so the watchdog can restart them after a crash).
+    private SystemContext? _context;
+    private readonly List<string> _stoppedServices = new();
+
     /// <summary>
     /// Stops services across all applicable tiers.
     /// Tier 1: always stopped.
@@ -156,6 +163,36 @@ public class ServiceSuppressor : IOptimization
     /// </summary>
     public Task<bool> ApplyAsync(SystemStateSnapshot snapshot, GameProfile profile)
     {
+        CanApply(new SystemContext { Profile = profile, Snapshot = snapshot });
+        var result = Apply();
+        return Task.FromResult(result.State == OptimizationState.Applied);
+    }
+
+    // ── IJournaledOptimization ────────────────────────────────────────────────
+
+    public bool CanApply(SystemContext context)
+    {
+        _context = context;
+        return true;
+    }
+
+    public OptimizationResult Apply()
+    {
+        if (_context == null)
+            return new OptimizationResult(OptimizationId, string.Empty, string.Empty, OptimizationState.Failed, "No context");
+
+        ApplyInternal(_context.Snapshot, _context.Profile);
+
+        return new OptimizationResult(
+            OptimizationId,
+            JsonSerializer.Serialize(new { services = _stoppedServices }),
+            string.Empty,
+            OptimizationState.Applied);
+    }
+
+    private void ApplyInternal(SystemStateSnapshot snapshot, GameProfile profile)
+    {
+        _stoppedServices.Clear();
         int stoppedCount = 0;
         int skippedCount = 0;
         int errorCount = 0;
@@ -230,6 +267,7 @@ public class ServiceSuppressor : IOptimization
                         "[ServiceSuppressor] Successfully stopped service {ServiceName}",
                         svcInfo.ServiceName);
 
+                    _stoppedServices.Add(svcInfo.ServiceName);
                     stoppedCount++;
                 }
                 else
@@ -277,7 +315,6 @@ public class ServiceSuppressor : IOptimization
             errorCount);
 
         IsApplied = true;
-        return Task.FromResult(true); // Partial success is still success
     }
 
     /// <summary>
@@ -286,80 +323,98 @@ public class ServiceSuppressor : IOptimization
     /// </summary>
     public Task<bool> RevertAsync(SystemStateSnapshot snapshot)
     {
+        var result = Revert();
+        return Task.FromResult(result.State == OptimizationState.Reverted);
+    }
+
+    public bool Verify() => IsApplied;
+
+    public OptimizationResult Revert()
+    {
+        RestartServices(_stoppedServices);
+        _stoppedServices.Clear();
+        IsApplied = false;
+        return new OptimizationResult(OptimizationId, string.Empty, string.Empty, OptimizationState.Reverted);
+    }
+
+    /// <summary>
+    /// Watchdog recovery: restarts the services recorded in the journal OriginalValue JSON,
+    /// without any live instance state.
+    /// </summary>
+    public OptimizationResult RevertFromRecord(string originalValueJson)
+    {
+        try
+        {
+            var payload = JsonSerializer.Deserialize<ServiceRevertPayload>(originalValueJson);
+            RestartServices(payload?.Services ?? new List<string>());
+            return new OptimizationResult(OptimizationId, string.Empty, string.Empty, OptimizationState.Reverted);
+        }
+        catch (Exception ex)
+        {
+            SettingsManager.Logger.Error(ex, "[ServiceSuppressor] RevertFromRecord failed");
+            return new OptimizationResult(OptimizationId, string.Empty, string.Empty, OptimizationState.Failed, ex.Message);
+        }
+    }
+
+    private static void RestartServices(IReadOnlyList<string> serviceNames)
+    {
         int restartedCount = 0;
         int errorCount = 0;
 
-        foreach (var entry in snapshot.ServiceStates)
+        foreach (var name in serviceNames)
         {
-            // Only restart services that were running before
-            if (entry.Value != ServiceControllerStatus.Running)
-            {
-                continue;
-            }
-
             try
             {
-                using var sc = new ServiceController(entry.Key);
+                using var sc = new ServiceController(name);
 
                 // Only restart if currently stopped
                 if (sc.Status == ServiceControllerStatus.Stopped)
                 {
                     SettingsManager.Logger.Debug(
-                        "[ServiceSuppressor] Restarting service {ServiceName}",
-                        entry.Key);
+                        "[ServiceSuppressor] Restarting service {ServiceName}", name);
 
                     sc.Start();
                     sc.WaitForStatus(ServiceControllerStatus.Running, TimeSpan.FromSeconds(10));
 
                     SettingsManager.Logger.Information(
-                        "[ServiceSuppressor] Successfully restarted service {ServiceName}",
-                        entry.Key);
+                        "[ServiceSuppressor] Successfully restarted service {ServiceName}", name);
 
                     restartedCount++;
                 }
                 else
                 {
                     SettingsManager.Logger.Debug(
-                        "[ServiceSuppressor] Service {ServiceName} already running (status: {Status})",
-                        entry.Key,
-                        sc.Status);
+                        "[ServiceSuppressor] Service {ServiceName} already running (status: {Status})", name, sc.Status);
                 }
             }
             catch (InvalidOperationException ex)
             {
-                // Service no longer exists - not a fatal error
                 SettingsManager.Logger.Warning(
-                    "[ServiceSuppressor] Service {ServiceName} not found during revert: {Message}",
-                    entry.Key,
-                    ex.Message);
+                    "[ServiceSuppressor] Service {ServiceName} not found during revert: {Message}", name, ex.Message);
                 errorCount++;
             }
             catch (global::System.ServiceProcess.TimeoutException ex)
             {
-                // Service didn't start within timeout
                 SettingsManager.Logger.Warning(
-                    "[ServiceSuppressor] Service {ServiceName} failed to start within timeout: {Message}",
-                    entry.Key,
-                    ex.Message);
+                    "[ServiceSuppressor] Service {ServiceName} failed to start within timeout: {Message}", name, ex.Message);
                 errorCount++;
             }
             catch (Exception ex)
             {
                 SettingsManager.Logger.Warning(
-                    ex,
-                    "[ServiceSuppressor] Failed to restart service {ServiceName}",
-                    entry.Key);
+                    ex, "[ServiceSuppressor] Failed to restart service {ServiceName}", name);
                 errorCount++;
             }
         }
 
         SettingsManager.Logger.Information(
             "[ServiceSuppressor] Revert completed - {RestartedCount} restarted, {ErrorCount} errors",
-            restartedCount,
-            errorCount);
+            restartedCount, errorCount);
+    }
 
-        IsApplied = false;
-        return Task.FromResult(true); // Partial success is still success
+    private sealed class ServiceRevertPayload
+    {
+        public List<string> Services { get; set; } = new();
     }
 
     // ── Tier 3 condition helpers ──────────────────────────────────────

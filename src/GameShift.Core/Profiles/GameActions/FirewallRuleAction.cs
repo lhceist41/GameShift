@@ -109,17 +109,32 @@ public class FirewallRuleAction : GameAction
             };
 
             using var process = Process.Start(psi);
-            if (process != null && !process.WaitForExit(15_000))
+            bool removed = false;
+            if (process != null)
             {
-                Log.Warning("FirewallRuleAction: PowerShell timed out removing rule '{RuleName}', killing process", _ruleName);
-                try { process.Kill(); } catch { }
+                if (!process.WaitForExit(15_000))
+                {
+                    Log.Warning("FirewallRuleAction: PowerShell timed out removing rule '{RuleName}', killing process", _ruleName);
+                    try { process.Kill(); } catch { }
+                }
+                else
+                {
+                    removed = process.ExitCode == 0;
+                }
             }
 
-            Log.Information(
-                "FirewallRuleAction: Removed firewall rule '{RuleName}'",
-                _ruleName);
-
-            _ruleCreated = false;
+            if (removed)
+            {
+                Log.Information("FirewallRuleAction: Removed firewall rule '{RuleName}'", _ruleName);
+                _ruleCreated = false;
+            }
+            else
+            {
+                // Keep _ruleCreated = true so the failure stays visible instead of logging a false success.
+                Log.Warning(
+                    "FirewallRuleAction: Failed to remove rule '{RuleName}' (exit {ExitCode}); rule may persist",
+                    _ruleName, process?.ExitCode);
+            }
         }
         catch (Exception ex)
         {

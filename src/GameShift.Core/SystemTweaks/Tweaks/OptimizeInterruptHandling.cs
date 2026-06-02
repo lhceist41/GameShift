@@ -137,7 +137,8 @@ public class OptimizeInterruptHandling : ISystemTweak
             InstanceId = PrimaryGpu.InstanceId,
             OriginalMsiEnabled = PrimaryGpu.MsiEnabled,
             OriginalDevicePolicy = PrimaryGpu.DevicePolicy,
-            OriginalAffinityMask = PrimaryGpu.CurrentAffinityMask
+            OriginalAffinityMask = PrimaryGpu.CurrentAffinityMask,
+            GpuAffinityKeyExisted = PrimaryGpu.AffinityKeyExisted
         };
 
         bool changed = false;
@@ -177,6 +178,7 @@ public class OptimizeInterruptHandling : ISystemTweak
             backup.UsbOriginalDevicePolicy = PrimaryUsb.DevicePolicy;
             backup.UsbOriginalAffinityMask = PrimaryUsb.CurrentAffinityMask;
             backup.UsbOriginalMsiEnabled = PrimaryUsb.MsiEnabled;
+            backup.UsbAffinityKeyExisted = PrimaryUsb.AffinityKeyExisted;
         }
 
         if (changed)
@@ -220,27 +222,34 @@ public class OptimizeInterruptHandling : ISystemTweak
             // Restore affinity
             try
             {
-                using var affinityKey = Registry.LocalMachine.OpenSubKey(affinityKeyPath, writable: true);
-                if (affinityKey != null)
+                using (var affinityKey = Registry.LocalMachine.OpenSubKey(affinityKeyPath, writable: true))
                 {
-                    if (backup.OriginalDevicePolicy != null)
+                    if (affinityKey != null)
                     {
-                        affinityKey.SetValue("DevicePolicy", backup.OriginalDevicePolicy.Value, RegistryValueKind.DWord);
-                    }
-                    else
-                    {
-                        affinityKey.DeleteValue("DevicePolicy", throwOnMissingValue: false);
-                    }
+                        if (backup.OriginalDevicePolicy != null)
+                        {
+                            affinityKey.SetValue("DevicePolicy", backup.OriginalDevicePolicy.Value, RegistryValueKind.DWord);
+                        }
+                        else
+                        {
+                            affinityKey.DeleteValue("DevicePolicy", throwOnMissingValue: false);
+                        }
 
-                    if (backup.OriginalAffinityMask != null)
-                    {
-                        affinityKey.SetValue("AssignmentSetOverride", backup.OriginalAffinityMask, RegistryValueKind.Binary);
-                    }
-                    else
-                    {
-                        affinityKey.DeleteValue("AssignmentSetOverride", throwOnMissingValue: false);
+                        if (backup.OriginalAffinityMask != null)
+                        {
+                            affinityKey.SetValue("AssignmentSetOverride", backup.OriginalAffinityMask, RegistryValueKind.Binary);
+                        }
+                        else
+                        {
+                            affinityKey.DeleteValue("AssignmentSetOverride", throwOnMissingValue: false);
+                        }
                     }
                 }
+
+                // If GameShift created the Affinity Policy key (absent before Apply), delete the
+                // now-empty key it left behind rather than leaving an orphan.
+                if (!backup.GpuAffinityKeyExisted)
+                    DeleteKeyIfEmpty(affinityKeyPath);
             }
             catch (Exception ex)
             {
@@ -253,19 +262,24 @@ public class OptimizeInterruptHandling : ISystemTweak
                 string usbAffinityPath = $@"{PciEnumPath}\{backup.UsbDeviceId}\{backup.UsbInstanceId}\Device Parameters\Interrupt Management\Affinity Policy";
                 try
                 {
-                    using var usbKey = Registry.LocalMachine.OpenSubKey(usbAffinityPath, writable: true);
-                    if (usbKey != null)
+                    using (var usbKey = Registry.LocalMachine.OpenSubKey(usbAffinityPath, writable: true))
                     {
-                        if (backup.UsbOriginalDevicePolicy != null)
-                            usbKey.SetValue("DevicePolicy", backup.UsbOriginalDevicePolicy.Value, RegistryValueKind.DWord);
-                        else
-                            usbKey.DeleteValue("DevicePolicy", throwOnMissingValue: false);
+                        if (usbKey != null)
+                        {
+                            if (backup.UsbOriginalDevicePolicy != null)
+                                usbKey.SetValue("DevicePolicy", backup.UsbOriginalDevicePolicy.Value, RegistryValueKind.DWord);
+                            else
+                                usbKey.DeleteValue("DevicePolicy", throwOnMissingValue: false);
 
-                        if (backup.UsbOriginalAffinityMask != null)
-                            usbKey.SetValue("AssignmentSetOverride", backup.UsbOriginalAffinityMask, RegistryValueKind.Binary);
-                        else
-                            usbKey.DeleteValue("AssignmentSetOverride", throwOnMissingValue: false);
+                            if (backup.UsbOriginalAffinityMask != null)
+                                usbKey.SetValue("AssignmentSetOverride", backup.UsbOriginalAffinityMask, RegistryValueKind.Binary);
+                            else
+                                usbKey.DeleteValue("AssignmentSetOverride", throwOnMissingValue: false);
+                        }
                     }
+
+                    if (!backup.UsbAffinityKeyExisted)
+                        DeleteKeyIfEmpty(usbAffinityPath);
                 }
                 catch (Exception ex)
                 {
@@ -295,6 +309,34 @@ public class OptimizeInterruptHandling : ISystemTweak
         {
             Log.Warning(ex, "[InterruptAffinity] Failed to revert");
             return false;
+        }
+    }
+
+    /// <summary>
+    /// Deletes a registry key only if it exists and is empty (no values, no subkeys). Used to
+    /// remove an "Affinity Policy" key that GameShift created during Apply so revert leaves no
+    /// orphan. The read handle is disposed before deletion (Windows blocks deleting an open key).
+    /// </summary>
+    private static void DeleteKeyIfEmpty(string keyPath)
+    {
+        try
+        {
+            bool empty;
+            using (var k = Registry.LocalMachine.OpenSubKey(keyPath))
+                empty = k != null && k.ValueCount == 0 && k.SubKeyCount == 0;
+            if (!empty) return;
+
+            int slash = keyPath.LastIndexOf('\\');
+            if (slash <= 0) return;
+            string parentPath = keyPath[..slash];
+            string leaf = keyPath[(slash + 1)..];
+
+            using var parent = Registry.LocalMachine.OpenSubKey(parentPath, writable: true);
+            parent?.DeleteSubKey(leaf, throwOnMissingSubKey: false);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "[InterruptAffinity] Failed to delete created key {Path}", keyPath);
         }
     }
 
@@ -374,6 +416,7 @@ public class OptimizeInterruptHandling : ISystemTweak
                         MessageNumberLimit = messageNumberLimit,
                         DevicePolicy = devicePolicy,
                         CurrentAffinityMask = assignmentSetOverride,
+                        AffinityKeyExisted = affinityKey != null,
                         RegistryBasePath = $@"{PciEnumPath}\{deviceId}\{instanceId}"
                     });
                 }
@@ -532,6 +575,7 @@ public class InterruptBackupState
     public bool OriginalMsiEnabled { get; set; }
     public int? OriginalDevicePolicy { get; set; }
     public byte[]? OriginalAffinityMask { get; set; }
+    public bool GpuAffinityKeyExisted { get; set; }
 
     // USB host controller
     public string? UsbDeviceId { get; set; }
@@ -539,4 +583,5 @@ public class InterruptBackupState
     public int? UsbOriginalDevicePolicy { get; set; }
     public byte[]? UsbOriginalAffinityMask { get; set; }
     public bool? UsbOriginalMsiEnabled { get; set; }
+    public bool UsbAffinityKeyExisted { get; set; }
 }

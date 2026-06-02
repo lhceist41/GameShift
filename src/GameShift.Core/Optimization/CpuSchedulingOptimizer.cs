@@ -56,8 +56,8 @@ public class CpuSchedulingOptimizer : IOptimization
     private int _gamePid;
     private bool _gameHighQosApplied;
     private bool _gameCpuSetApplied;
-    private readonly List<int> _bgCpuSetPids = new();
-    private readonly List<int> _bgThrottlePids = new();
+    private readonly List<(int Pid, string Name)> _bgCpuSetPids = new();
+    private readonly List<(int Pid, string Name, bool WasEcoQos)> _bgThrottlePids = new();
     private readonly object _lock = new();
 
     // ── IOptimization ─────────────────────────────────────────────────────────
@@ -224,12 +224,15 @@ public class CpuSchedulingOptimizer : IOptimization
             // Revert background CPU Sets
             lock (_lock)
             {
-                foreach (var pid in _bgCpuSetPids)
+                foreach (var entry in _bgCpuSetPids)
                 {
+                    // PID-reuse guard: only touch the process if the PID still belongs to the
+                    // same-named process we modified (a reused PID could be something unrelated).
+                    if (!ProcessStillMatches(entry.Pid, entry.Name)) continue;
                     try
                     {
                         var h = NativeInterop.OpenProcess(
-                            NativeInterop.PROCESS_SET_INFORMATION, false, pid);
+                            NativeInterop.PROCESS_SET_INFORMATION, false, entry.Pid);
                         if (h != IntPtr.Zero)
                         {
                             try
@@ -246,12 +249,16 @@ public class CpuSchedulingOptimizer : IOptimization
                 }
                 _bgCpuSetPids.Clear();
 
-                foreach (var pid in _bgThrottlePids)
+                foreach (var entry in _bgThrottlePids)
                 {
+                    // Leave processes that were already EcoQoS-throttled before we touched them.
+                    if (entry.WasEcoQos) continue;
+                    // PID-reuse guard (see above).
+                    if (!ProcessStillMatches(entry.Pid, entry.Name)) continue;
                     try
                     {
                         var h = NativeInterop.OpenProcess(
-                            NativeInterop.PROCESS_SET_INFORMATION, false, pid);
+                            NativeInterop.PROCESS_SET_INFORMATION, false, entry.Pid);
                         if (h != IntPtr.Zero)
                         {
                             try
@@ -344,7 +351,7 @@ public class CpuSchedulingOptimizer : IOptimization
                 var reservedIds = CoreIsolationManager.ReadCurrentReservation();
                 if (reservedIds.Count > 0)
                 {
-                    // Match by CpuSetId (the bitmask bit positions correspond to CPU Set IDs)
+                    // Match by CpuSetId (ReadCurrentReservation maps the kernel's logical-processor bitmask back to CPU Set IDs)
                     var reservedCores = pCores.Where(c => reservedIds.Contains(c.CpuSetId)).ToList();
                     var unreservedCores = pCores.Where(c => !reservedIds.Contains(c.CpuSetId))
                         .Concat(eCores).ToList();
@@ -429,14 +436,16 @@ public class CpuSchedulingOptimizer : IOptimization
                         if (NativeInterop.SetProcessDefaultCpuSetMasks(
                                 hProc, bgMasks, (ushort)bgMasks.Length))
                         {
-                            lock (_lock) { _bgCpuSetPids.Add(process.Id); }
+                            lock (_lock) { _bgCpuSetPids.Add((process.Id, process.ProcessName)); }
                             cpuSetCount++;
                         }
                     }
 
-                    // EcoQoS: enable power throttling
+                    // EcoQoS: enable power throttling. Capture whether the process was already
+                    // throttled so revert can leave the OS/other tools' setting intact.
+                    bool wasEcoQos = IsEcoQosEnabled(hProc);
                     ApplyPowerThrottling(hProc, disableThrottling: false);
-                    lock (_lock) { _bgThrottlePids.Add(process.Id); }
+                    lock (_lock) { _bgThrottlePids.Add((process.Id, process.ProcessName, wasEcoQos)); }
                     throttleCount++;
                 }
                 finally
@@ -511,6 +520,54 @@ public class CpuSchedulingOptimizer : IOptimization
         finally
         {
             Marshal.FreeHGlobal(ptr);
+        }
+    }
+
+    /// <summary>
+    /// Reads whether a process currently has EcoQoS (execution-speed throttling) enabled.
+    /// Used to avoid turning OFF throttling that the OS or another tool set, not us.
+    /// </summary>
+    private static bool IsEcoQosEnabled(IntPtr hProcess)
+    {
+        var state = new NativeInterop.PROCESS_POWER_THROTTLING_STATE
+        {
+            Version = NativeInterop.PROCESS_POWER_THROTTLING_CURRENT_VERSION,
+            ControlMask = 0,
+            StateMask = 0
+        };
+
+        int size = Marshal.SizeOf<NativeInterop.PROCESS_POWER_THROTTLING_STATE>();
+        var ptr = Marshal.AllocHGlobal(size);
+        try
+        {
+            Marshal.StructureToPtr(state, ptr, false);
+            if (!NativeInterop.GetProcessInformation(
+                    hProcess, NativeInterop.ProcessPowerThrottling, ptr, size))
+                return false;
+
+            state = Marshal.PtrToStructure<NativeInterop.PROCESS_POWER_THROTTLING_STATE>(ptr);
+            return (state.StateMask & NativeInterop.PROCESS_POWER_THROTTLING_EXECUTION_SPEED) != 0;
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(ptr);
+        }
+    }
+
+    /// <summary>
+    /// PID-reuse guard: true only if <paramref name="pid"/> still belongs to a running process
+    /// whose name matches <paramref name="name"/> (so we never reset an unrelated reused PID).
+    /// </summary>
+    private static bool ProcessStillMatches(int pid, string name)
+    {
+        try
+        {
+            using var p = Process.GetProcessById(pid);
+            return p.ProcessName.Equals(name, StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false; // exited or inaccessible
         }
     }
 

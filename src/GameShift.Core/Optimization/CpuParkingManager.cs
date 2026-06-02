@@ -396,7 +396,6 @@ public class CpuParkingManager : IOptimization, IJournaledOptimization
             }
 
             // Revert C-state limiting originals if they were captured.
-            bool hadCStateLimiting = false;
             if (payload.TryGetProperty("cStateOriginals", out var cStateElement) &&
                 cStateElement.ValueKind == JsonValueKind.Array)
             {
@@ -434,15 +433,7 @@ public class CpuParkingManager : IOptimization, IJournaledOptimization
 
                     // Re-hide the setting so it goes back to being an advanced hidden option.
                     RunPowercfg($"-attributes {ProcessorSubGroupGuid} {settingGuid} +ATTRIB_HIDE");
-                    hadCStateLimiting = true;
                 }
-            }
-
-            if (hadCStateLimiting)
-            {
-                // Restore time check interval to the safe default if the session touched it.
-                RunPowercfg($"/setacvalueindex {schemeGuid} {ProcessorSubGroupGuid} {TimeCheckIntervalGuid} 15");
-                RunPowercfg($"/setdcvalueindex {schemeGuid} {ProcessorSubGroupGuid} {TimeCheckIntervalGuid} 15");
             }
 
             // Activate restored settings.
@@ -589,10 +580,6 @@ public class CpuParkingManager : IOptimization, IJournaledOptimization
                 // Re-hide the setting
                 RunPowercfg($"-attributes {ProcessorSubGroupGuid} {guid} +ATTRIB_HIDE");
             }
-
-            // Restore time check interval
-            RunPowercfg($"/setacvalueindex {schemeGuid} {ProcessorSubGroupGuid} {TimeCheckIntervalGuid} 15");
-            RunPowercfg($"/setdcvalueindex {schemeGuid} {ProcessorSubGroupGuid} {TimeCheckIntervalGuid} 15");
 
             RunPowercfg($"/setactive {schemeGuid}");
 

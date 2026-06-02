@@ -453,7 +453,11 @@ public class ScheduledTaskSuppressor : IOptimization, IJournaledOptimization
             var stderrTask = Task.Run(() => { error = process.StandardError.ReadToEnd(); });
             var output = process.StandardOutput.ReadToEnd();
             stderrTask.Wait(10000);
-            process.WaitForExit(10000);
+            if (!process.WaitForExit(10000))
+            {
+                try { process.Kill(true); } catch { /* best effort */ }
+                return "ERROR: schtasks timed out";
+            }
 
             return string.IsNullOrEmpty(error) ? output : $"ERROR: {error}";
         }

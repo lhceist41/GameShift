@@ -26,15 +26,14 @@ public class OptimizeMmcss : ISystemTweak
 
     public string? Apply()
     {
+        // Capture ALL originals BEFORE writing anything, so a write that throws partway can be
+        // fully rolled back and never leaves a modified system with no revert record.
         var originals = new Dictionary<string, object?>();
 
         using (var profileKey = Registry.LocalMachine.CreateSubKey(ProfilePath))
         {
             originals["NetworkThrottlingIndex"] = profileKey.GetValue("NetworkThrottlingIndex");
             originals["SystemResponsiveness"] = profileKey.GetValue("SystemResponsiveness");
-
-            profileKey.SetValue("NetworkThrottlingIndex", 20, RegistryValueKind.DWord);
-            profileKey.SetValue("SystemResponsiveness", 0, RegistryValueKind.DWord);
         }
 
         using (var gamesKey = Registry.LocalMachine.CreateSubKey(GamesPath))
@@ -43,14 +42,35 @@ public class OptimizeMmcss : ISystemTweak
             originals["Priority"] = gamesKey.GetValue("Priority");
             originals["Scheduling Category"] = gamesKey.GetValue("Scheduling Category");
             originals["SFIO Priority"] = gamesKey.GetValue("SFIO Priority");
-
-            gamesKey.SetValue("GPU Priority", 8, RegistryValueKind.DWord);
-            gamesKey.SetValue("Priority", 6, RegistryValueKind.DWord);
-            gamesKey.SetValue("Scheduling Category", "High", RegistryValueKind.String);
-            gamesKey.SetValue("SFIO Priority", "High", RegistryValueKind.String);
         }
 
-        return JsonSerializer.Serialize(originals);
+        var originalsJson = JsonSerializer.Serialize(originals);
+
+        try
+        {
+            using (var profileKey = Registry.LocalMachine.OpenSubKey(ProfilePath, writable: true))
+            {
+                profileKey?.SetValue("NetworkThrottlingIndex", 20, RegistryValueKind.DWord);
+                profileKey?.SetValue("SystemResponsiveness", 0, RegistryValueKind.DWord);
+            }
+
+            using (var gamesKey = Registry.LocalMachine.OpenSubKey(GamesPath, writable: true))
+            {
+                gamesKey?.SetValue("GPU Priority", 8, RegistryValueKind.DWord);
+                gamesKey?.SetValue("Priority", 6, RegistryValueKind.DWord);
+                gamesKey?.SetValue("Scheduling Category", "High", RegistryValueKind.String);
+                gamesKey?.SetValue("SFIO Priority", "High", RegistryValueKind.String);
+            }
+        }
+        catch
+        {
+            // A write failed partway - roll back using the captured originals so we never leave a
+            // half-applied state with no revert record, then report not-applied.
+            try { Revert(originalsJson); } catch { /* best effort */ }
+            return null;
+        }
+
+        return originalsJson;
     }
 
     public bool Revert(string? originalValuesJson)

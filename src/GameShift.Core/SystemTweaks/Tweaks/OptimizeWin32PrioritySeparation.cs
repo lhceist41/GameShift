@@ -42,7 +42,7 @@ public class OptimizeWin32PrioritySeparation : ISystemTweak
             using var key = Registry.LocalMachine.OpenSubKey(KeyPath, writable: true);
             if (key == null) return false;
             if (val.ValueKind == JsonValueKind.Null)
-                key.SetValue(ValueName, 0x26, RegistryValueKind.DWord); // Windows default
+                key.DeleteValue(ValueName, throwOnMissingValue: false); // we created it - delete, don't guess a default
             else
                 key.SetValue(ValueName, val.GetInt32(), RegistryValueKind.DWord);
             return true;

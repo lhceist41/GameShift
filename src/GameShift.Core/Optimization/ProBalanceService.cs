@@ -47,6 +47,7 @@ public sealed class ProBalanceService : IDisposable
             "vgc", "vgtray", "BEService", "BEDaisy",
             "EasyAntiCheat", "EasyAntiCheat_EOS",
             "EAAntiCheat.GameService",
+            "FACEITService", "FACEITClient", "faceit",
             // GameShift
             "GameShift", "GameShift.App", "GameShift.Watchdog",
         };

@@ -78,8 +78,9 @@ public class OptimizePageFile : ISystemTweak
 
             if (pagingFilesElement.ValueKind == JsonValueKind.Null)
             {
-                // Original had no value - restore system-managed default
-                key.SetValue(ValueName, new[] { @"?:\pagefile.sys" }, RegistryValueKind.MultiString);
+                // Original had no PagingFiles value - delete what we created rather than guess a
+                // system-managed default. Revert must restore the EXACT prior state.
+                key.DeleteValue(ValueName, throwOnMissingValue: false);
             }
             else
             {

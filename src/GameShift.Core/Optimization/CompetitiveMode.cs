@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using System.Text.Json;
 using Microsoft.Win32;
 using GameShift.Core.Config;
+using GameShift.Core.Journal;
 using GameShift.Core.Profiles;
 using GameShift.Core.System;
 using Serilog;
@@ -20,11 +21,12 @@ namespace GameShift.Core.Optimization;
 /// - 6-hour safety timeout for auto-resume
 /// - Per-profile sub-toggles (SuspendDiscordOverlay, SuspendSteamOverlay, SuspendNvidiaOverlay, KillWidgets)
 /// </summary>
-public class CompetitiveMode : IOptimization
+public class CompetitiveMode : IOptimization, IJournaledOptimization
 {
     private readonly ILogger _logger = SettingsManager.Logger;
     private readonly object _revertLock = new();
     private bool _isApplied;
+    private SystemContext? _context;
     private readonly List<SuspendedProcessInfo> _suspendedProcesses = new();
     private readonly List<string> _killedProcessNames = new();
     private bool _discordOverlayWasEnabled;
@@ -84,6 +86,38 @@ public class CompetitiveMode : IOptimization
     /// </summary>
     public Task<bool> ApplyAsync(SystemStateSnapshot snapshot, GameProfile profile)
     {
+        CanApply(new SystemContext { Profile = profile, Snapshot = snapshot });
+        var result = Apply();
+        return Task.FromResult(result.State == OptimizationState.Applied);
+    }
+
+    // ── IJournaledOptimization ────────────────────────────────────────────────
+
+    public bool CanApply(SystemContext context)
+    {
+        _context = context;
+        return true;
+    }
+
+    public OptimizationResult Apply()
+    {
+        if (_context == null)
+            return new OptimizationResult(OptimizationId, string.Empty, string.Empty, OptimizationState.Failed, "No context");
+
+        bool success = ApplyInternal(_context.Profile);
+
+        // Only the persistent Discord-overlay registry value is journaled for crash recovery -
+        // process suspends are process-scoped and can't be reverted from a record.
+        var payload = new { discordModified = _discordOverlayWasEnabled, discordPrev = _discordOverlayPreviousValue };
+        return new OptimizationResult(
+            OptimizationId,
+            JsonSerializer.Serialize(payload),
+            string.Empty,
+            success ? OptimizationState.Applied : OptimizationState.Failed);
+    }
+
+    private bool ApplyInternal(GameProfile profile)
+    {
         try
         {
             _logger.Information(
@@ -142,14 +176,14 @@ public class CompetitiveMode : IOptimization
                 _suspendedProcesses.Count,
                 _killedProcessNames.Count);
 
-            return Task.FromResult(true);
+            return true;
         }
         catch (Exception ex)
         {
             _logger.Error(
                 ex,
                 "[CompetitiveMode] Failed to apply competitive mode");
-            return Task.FromResult(false);
+            return false;
         }
     }
 
@@ -162,12 +196,18 @@ public class CompetitiveMode : IOptimization
     /// </summary>
     public Task<bool> RevertAsync(SystemStateSnapshot snapshot)
     {
+        var result = Revert();
+        return Task.FromResult(result.State == OptimizationState.Reverted);
+    }
+
+    public bool Verify() => _isApplied;
+
+    public OptimizationResult Revert()
+    {
         lock (_revertLock)
         {
             if (!_isApplied)
-            {
-                return Task.FromResult(true);
-            }
+                return new OptimizationResult(OptimizationId, string.Empty, string.Empty, OptimizationState.Reverted);
 
             try
             {
@@ -196,15 +236,55 @@ public class CompetitiveMode : IOptimization
                     "[CompetitiveMode] Revert complete");
 
                 _isApplied = false;
-                return Task.FromResult(true);
+                return new OptimizationResult(OptimizationId, string.Empty, string.Empty, OptimizationState.Reverted);
             }
             catch (Exception ex)
             {
                 _logger.Error(
                     ex,
                     "[CompetitiveMode] Failed to revert competitive mode");
-                return Task.FromResult(false);
+                return new OptimizationResult(OptimizationId, string.Empty, string.Empty, OptimizationState.Failed, ex.Message);
             }
+        }
+    }
+
+    /// <summary>
+    /// Watchdog recovery: only the persistent Discord-overlay registry value is restored. Suspended
+    /// processes are gone with the crashed session (or remain frozen until they exit) and cannot be
+    /// resumed without live handles, so they are not part of the journaled recovery.
+    /// </summary>
+    public OptimizationResult RevertFromRecord(string originalValueJson)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(originalValueJson);
+            var root = doc.RootElement;
+            bool modified = root.TryGetProperty("discordModified", out var m) && m.ValueKind == JsonValueKind.True;
+
+            if (modified)
+            {
+                using var key = Registry.CurrentUser.OpenSubKey(DiscordOverlayRegistryPath, writable: true);
+                if (key != null)
+                {
+                    if (root.TryGetProperty("discordPrev", out var pv) && pv.ValueKind == JsonValueKind.Number)
+                    {
+                        key.SetValue(DiscordOverlayEnabledValue, pv.GetInt32(), RegistryValueKind.DWord);
+                        _logger.Information("[CompetitiveMode] Restored Discord overlay registry to {Value}", pv.GetInt32());
+                    }
+                    else
+                    {
+                        key.DeleteValue(DiscordOverlayEnabledValue, throwOnMissingValue: false);
+                        _logger.Information("[CompetitiveMode] Deleted Discord overlay value (was absent before session)");
+                    }
+                }
+            }
+
+            return new OptimizationResult(OptimizationId, string.Empty, string.Empty, OptimizationState.Reverted);
+        }
+        catch (Exception ex)
+        {
+            _logger.Error(ex, "[CompetitiveMode] RevertFromRecord failed");
+            return new OptimizationResult(OptimizationId, string.Empty, string.Empty, OptimizationState.Failed, ex.Message);
         }
     }
 
@@ -619,9 +699,11 @@ public class CompetitiveMode : IOptimization
             }
 
             _discordOverlayPreviousValue = key.GetValue(DiscordOverlayEnabledValue);
-            _discordOverlayWasEnabled = _discordOverlayPreviousValue != null;
 
             key.SetValue(DiscordOverlayEnabledValue, 0, RegistryValueKind.DWord);
+            // Mark as modified regardless of whether the value pre-existed, so revert always undoes
+            // our write - restore the old value, or delete the one we created.
+            _discordOverlayWasEnabled = true;
 
             _logger.Information(
                 "[CompetitiveMode] Disabled Discord overlay via registry (previous value: {PreviousValue})",
@@ -663,6 +745,13 @@ public class CompetitiveMode : IOptimization
                 _logger.Information(
                     "[CompetitiveMode] Restored Discord overlay registry to {PreviousValue}",
                     _discordOverlayPreviousValue);
+            }
+            else
+            {
+                // The value did not exist before - delete the one we created, don't leave 0 behind.
+                key.DeleteValue(DiscordOverlayEnabledValue, throwOnMissingValue: false);
+                _logger.Information(
+                    "[CompetitiveMode] Deleted Discord overlay value (was absent before session)");
             }
 
             _discordOverlayWasEnabled = false;

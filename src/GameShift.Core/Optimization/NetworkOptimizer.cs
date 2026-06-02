@@ -122,6 +122,8 @@ public class NetworkOptimizer : IOptimization, IJournaledOptimization
     {
         var snapshot = _context?.Snapshot;
         _originalState = new Dictionary<string, object?>(StringComparer.Ordinal);
+        // Start each session clean so stale interface IDs from a prior session can't accumulate.
+        _modifiedInterfaceIds.Clear();
 
         try
         {
@@ -804,6 +806,8 @@ public class NetworkOptimizer : IOptimization, IJournaledOptimization
 
         _logger.Information(
             "[NetworkOptimizer] Restored TCP settings on {Count} interfaces", _modifiedInterfaceIds.Count);
+
+        _modifiedInterfaceIds.Clear();
     }
 
     /// <summary>

@@ -120,6 +120,16 @@ public class OptimizationEngine : IDisposable
             int skippedCount = 0;
             foreach (var optimization in _optimizations.Where(o => o.IsAvailable))
             {
+                // Guard against double-apply: if an optimization is already applied (e.g. the
+                // manual "Optimize Now" path ran, then a game auto-launched), re-applying would
+                // let modules that capture original state on Apply overwrite their true baseline
+                // with already-modified values - corrupting revert. Skip and keep tracking intact.
+                if (optimization.IsApplied || _appliedOptimizations.Contains(optimization))
+                {
+                    _logger.Information("Skipped (already applied): {OptimizationName}", optimization.Name);
+                    continue;
+                }
+
                 if (!profile.IsOptimizationEnabled(optimization.Name))
                 {
                     _logger.Information("Skipped (disabled in profile): {OptimizationName}", optimization.Name);

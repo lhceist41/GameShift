@@ -35,12 +35,20 @@ public class DisableLastAccessTimestamp : ISystemTweak
     {
         int originalValue = QueryCurrentValue();
 
-        // Already disabled - skip
+        // Only 0/1/2/3 are valid fsutil states. A negative sentinel means the query failed -
+        // abort rather than serialize a corrupt baseline we could never revert correctly.
+        if (originalValue is < 0 or > 3)
+            return null;
+
+        // Already disabled (user- or system-managed) - nothing to do.
         if (originalValue == 1 || originalValue == 3)
             return null;
 
-        // Set to 1 (user-managed, disabled)
-        RunFsutil("behavior set disablelastaccess 1");
+        // Set to 1 (user-managed, disabled). If fsutil fails, return null so the manager
+        // does not record an unapplied tweak as applied.
+        var (exitCode, _) = RunFsutil("behavior set disablelastaccess 1");
+        if (exitCode != 0)
+            return null;
 
         return JsonSerializer.Serialize(new { DisableLastAccess = originalValue });
     }
@@ -53,16 +61,28 @@ public class DisableLastAccessTimestamp : ISystemTweak
             var doc = JsonDocument.Parse(originalValuesJson);
             int originalValue = doc.RootElement.GetProperty("DisableLastAccess").GetInt32();
 
-            RunFsutil($"behavior set disablelastaccess {originalValue}");
-            return true;
+            // Reject a corrupt/sentinel baseline rather than running an invalid fsutil argument.
+            if (originalValue is < 0 or > 3)
+                return false;
+
+            // 1/3 mean the original state was already disabled - nothing to undo.
+            if (originalValue == 1 || originalValue == 3)
+                return true;
+
+            var (exitCode, _) = RunFsutil($"behavior set disablelastaccess {originalValue}");
+            if (exitCode != 0)
+                return false;
+
+            // Confirm the value actually took before reporting success.
+            return QueryCurrentValue() == originalValue;
         }
         catch { return false; }
     }
 
     private static int QueryCurrentValue()
     {
-        var output = RunFsutil("behavior query disablelastaccess");
-        if (output == null)
+        var (exitCode, output) = RunFsutil("behavior query disablelastaccess");
+        if (exitCode != 0 || output == null)
             return -1;
 
         // Output: "DisableLastAccess = 1" or similar
@@ -70,7 +90,11 @@ public class DisableLastAccessTimestamp : ISystemTweak
         return match.Success ? int.Parse(match.Groups[1].Value) : -1;
     }
 
-    private static string? RunFsutil(string arguments)
+    /// <summary>
+    /// Runs fsutil and returns its exit code plus stdout. <c>exitCode</c> is -1 if the process
+    /// could not start or timed out, so callers can distinguish real success from failure.
+    /// </summary>
+    private static (int exitCode, string? output) RunFsutil(string arguments)
     {
         try
         {
@@ -85,18 +109,22 @@ public class DisableLastAccessTimestamp : ISystemTweak
             };
 
             using var process = Process.Start(psi);
-            if (process == null) return null;
+            if (process == null) return (-1, null);
 
             var stderr = "";
             var stderrTask = Task.Run(() => { stderr = process.StandardError.ReadToEnd(); });
             var output = process.StandardOutput.ReadToEnd();
             stderrTask.Wait(5000);
-            process.WaitForExit(5000);
-            return output;
+            if (!process.WaitForExit(5000))
+            {
+                try { process.Kill(true); } catch { /* best effort */ }
+                return (-1, output);
+            }
+            return (process.ExitCode, output);
         }
         catch
         {
-            return null;
+            return (-1, null);
         }
     }
 }

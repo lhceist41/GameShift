@@ -390,7 +390,10 @@ public class GameProfile
             MemoryOptimizer.OptimizationId => OptimizeMemory,
             VisualEffectReducer.OptimizationId => ReduceVisualEffects,
             NetworkOptimizer.OptimizationId => OptimizeNetwork,
-            HybridCpuDetector.OptimizationId => UsePerformanceCoresOnly,
+            // Enable when the user wants P-core-only OR V-Cache CCD pinning (default on). The module
+            // itself no-ops by topology, so gating on ONLY UsePerformanceCoresOnly previously and
+            // silently disabled V-Cache pinning and LP-core exclusion for everyone.
+            HybridCpuDetector.OptimizationId => UsePerformanceCoresOnly || PinToVCacheCcd,
             MpoToggle.OptimizationId => DisableMpo,
             CompetitiveMode.OptimizationId => EnableCompetitiveMode,
             GpuDriverOptimizer.OptimizationId => EnableGpuOptimization,

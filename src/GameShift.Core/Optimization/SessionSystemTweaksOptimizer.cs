@@ -1,5 +1,7 @@
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using GameShift.Core.Config;
+using GameShift.Core.Journal;
 using GameShift.Core.Profiles;
 using GameShift.Core.System;
 using Microsoft.Win32;
@@ -19,11 +21,12 @@ namespace GameShift.Core.Optimization;
 ///
 /// All values are read before writing and stored for clean revert.
 /// </summary>
-public class SessionSystemTweaksOptimizer : IOptimization
+public class SessionSystemTweaksOptimizer : IOptimization, IJournaledOptimization
 {
     private readonly ILogger _logger = SettingsManager.Logger;
     private readonly List<RegistryBackup> _backups = new();
     private int? _originalAspmValue;
+    private SystemContext? _context;
 
     public const string OptimizationId = "Session System Tweaks";
     public string Name => OptimizationId;
@@ -50,6 +53,30 @@ public class SessionSystemTweaksOptimizer : IOptimization
 
     public Task<bool> ApplyAsync(SystemStateSnapshot snapshot, GameProfile profile)
     {
+        CanApply(new SystemContext { Profile = profile, Snapshot = snapshot });
+        var result = Apply();
+        return Task.FromResult(result.State == OptimizationState.Applied);
+    }
+
+    // ── IJournaledOptimization ────────────────────────────────────────────────
+
+    public bool CanApply(SystemContext context)
+    {
+        _context = context;
+        return true;
+    }
+
+    public OptimizationResult Apply()
+    {
+        // Already applied: do NOT re-capture state. Re-reading the registry now would record the
+        // already-modified gaming values as the "original" and corrupt revert. The engine guards
+        // against this too, but keep the module self-protecting.
+        if (IsApplied)
+        {
+            _logger.Warning("[SessionSystemTweaks] Apply called while already applied; preserving original baseline");
+            return new OptimizationResult(OptimizationId, BuildOriginalJson(), string.Empty, OptimizationState.Applied);
+        }
+
         try
         {
             _backups.Clear();
@@ -63,20 +90,49 @@ public class SessionSystemTweaksOptimizer : IOptimization
             _logger.Information(
                 "[SessionSystemTweaks] Applied {Count} registry values + PCIe ASPM",
                 _backups.Count);
-            return Task.FromResult(true);
+            return new OptimizationResult(OptimizationId, BuildOriginalJson(), string.Empty, OptimizationState.Applied);
         }
         catch (Exception ex)
         {
             _logger.Error(ex, "[SessionSystemTweaks] Apply failed");
-            return Task.FromResult(false);
+            return new OptimizationResult(OptimizationId, string.Empty, string.Empty, OptimizationState.Failed, ex.Message);
         }
+    }
+
+    /// <summary>
+    /// Serializes the captured registry backups + original ASPM value to the journal OriginalValue
+    /// string so the watchdog can restore them after a crash with no live instance state.
+    /// </summary>
+    private string BuildOriginalJson()
+    {
+        var payload = new SessionRevertPayload
+        {
+            Aspm = _originalAspmValue,
+            Backups = _backups.Select(b => new SessionBackupEntry
+            {
+                Hklm = b.IsHklm,
+                Path = b.SubKeyPath,
+                Name = b.ValueName,
+                Existed = b.PreviouslyExisted,
+                Kind = b.ValueKind.ToString(),
+                Value = b.PreviouslyExisted ? b.PreviousValue : null
+            }).ToList()
+        };
+        return JsonSerializer.Serialize(payload);
     }
 
     public Task<bool> RevertAsync(SystemStateSnapshot snapshot)
     {
         if (!IsApplied)
             return Task.FromResult(true);
+        var result = Revert();
+        return Task.FromResult(result.State == OptimizationState.Reverted);
+    }
 
+    public bool Verify() => IsApplied;
+
+    public OptimizationResult Revert()
+    {
         try
         {
             // Revert registry values in reverse order
@@ -125,14 +181,87 @@ public class SessionSystemTweaksOptimizer : IOptimization
 
             IsApplied = false;
             _logger.Information("[SessionSystemTweaks] Reverted all session tweaks");
-            return Task.FromResult(true);
+            return new OptimizationResult(OptimizationId, string.Empty, string.Empty, OptimizationState.Reverted);
         }
         catch (Exception ex)
         {
             _logger.Error(ex, "[SessionSystemTweaks] Revert failed");
             IsApplied = false;
-            return Task.FromResult(false);
+            return new OptimizationResult(OptimizationId, string.Empty, string.Empty, OptimizationState.Failed, ex.Message);
         }
+    }
+
+    /// <summary>
+    /// Watchdog recovery: restores the registry values and PCIe ASPM from the journaled
+    /// OriginalValue JSON without any live instance state.
+    /// </summary>
+    public OptimizationResult RevertFromRecord(string originalValueJson)
+    {
+        try
+        {
+            var payload = JsonSerializer.Deserialize<SessionRevertPayload>(originalValueJson);
+            if (payload == null)
+                return new OptimizationResult(OptimizationId, string.Empty, string.Empty, OptimizationState.Failed, "Failed to parse originalValueJson");
+
+            // Restore registry values in reverse (LIFO) order.
+            for (int i = payload.Backups.Count - 1; i >= 0; i--)
+            {
+                var b = payload.Backups[i];
+                try
+                {
+                    var root = b.Hklm ? Registry.LocalMachine : Registry.CurrentUser;
+                    using var key = root.OpenSubKey(b.Path, writable: true);
+                    if (key == null) continue;
+
+                    if (!b.Existed)
+                    {
+                        key.DeleteValue(b.Name, throwOnMissingValue: false);
+                    }
+                    else if (b.Value is JsonElement el)
+                    {
+                        if (string.Equals(b.Kind, "String", StringComparison.Ordinal))
+                            key.SetValue(b.Name, el.GetString() ?? "", RegistryValueKind.String);
+                        else
+                            key.SetValue(b.Name, el.GetInt32(), RegistryValueKind.DWord);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.Warning(ex, "[SessionSystemTweaks] RevertFromRecord failed for {Path}\\{Name}", b.Path, b.Name);
+                }
+            }
+
+            if (payload.Aspm.HasValue)
+            {
+                RunPowercfg($"/setacvalueindex SCHEME_CURRENT {PcieSubgroupGuid} {AspmSettingGuid} {payload.Aspm.Value}");
+                RunPowercfg("/setactive SCHEME_CURRENT");
+            }
+
+            return new OptimizationResult(OptimizationId, string.Empty, string.Empty, OptimizationState.Reverted);
+        }
+        catch (Exception ex)
+        {
+            _logger.Error(ex, "[SessionSystemTweaks] RevertFromRecord failed");
+            return new OptimizationResult(OptimizationId, string.Empty, string.Empty, OptimizationState.Failed, ex.Message);
+        }
+    }
+
+    // ── Journal payload DTOs ────────────────────────────────────────────────────
+
+    private sealed class SessionRevertPayload
+    {
+        public List<SessionBackupEntry> Backups { get; set; } = new();
+        public int? Aspm { get; set; }
+    }
+
+    private sealed class SessionBackupEntry
+    {
+        public bool Hklm { get; set; }
+        public string Path { get; set; } = "";
+        public string Name { get; set; } = "";
+        public bool Existed { get; set; }
+        public string Kind { get; set; } = "";
+        public object? Value { get; set; }
     }
 
     // ── 9A: Multimedia SystemProfile (MMCSS) ──────────────────────────────────
@@ -206,13 +335,21 @@ public class SessionSystemTweaksOptimizer : IOptimization
             // Read current ASPM value
             _originalAspmValue = ReadPowercfgValue(PcieSubgroupGuid, AspmSettingGuid);
 
+            // Never change a value we couldn't capture - without a baseline there is nothing to
+            // revert to, so leave ASPM untouched if the pre-apply read failed.
+            if (_originalAspmValue == null)
+            {
+                _logger.Warning("[SessionSystemTweaks] 9F: skipped - could not read current PCIe ASPM value");
+                return;
+            }
+
             // Set to 0 (Off)
             RunPowercfg($"/setacvalueindex SCHEME_CURRENT {PcieSubgroupGuid} {AspmSettingGuid} 0");
             RunPowercfg("/setactive SCHEME_CURRENT");
 
             _logger.Information(
                 "[SessionSystemTweaks] 9F: PCIe ASPM disabled (was: {Original})",
-                _originalAspmValue?.ToString() ?? "unknown");
+                _originalAspmValue.Value);
         }
         catch (Exception ex)
         {

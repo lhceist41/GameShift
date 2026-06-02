@@ -31,6 +31,11 @@ public class WatchdogRevertEngine
             [CpuParkingManager.OptimizationId] = () => new CpuParkingManager(),
             [ProcessPriorityBooster.OptimizationId] = () => new ProcessPriorityBooster(),
             [HybridCpuDetector.OptimizationId] = () => new HybridCpuDetector(),
+            [TimerResolutionManager.OptimizationId] = () => new TimerResolutionManager(),
+            [SessionSystemTweaksOptimizer.OptimizationId] = () => new SessionSystemTweaksOptimizer(),
+            [ServiceSuppressor.OptimizationId] = () => new ServiceSuppressor(),
+            [GpuDriverOptimizer.OptimizationId] = () => new GpuDriverOptimizer(),
+            [CompetitiveMode.OptimizationId] = () => new CompetitiveMode(),
         };
 
     public WatchdogRevertEngine(ILogger logger)

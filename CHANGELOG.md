@@ -13,6 +13,17 @@ All notable changes to GameShift are documented here.
 ### Fixed
 
 - **Fixed two spots that could crash the app** - the Quick Optimize button and the ping monitor's one-second timer now fully guard against exceptions, so a hiccup in either can't take the whole app down with it.
+- **Optimizations now revert to your exact prior state** - a pass over the apply/revert code fixed cases where reverting wrote a guessed Windows default (or left a registry value/key behind) instead of restoring what was there before, or deleting what GameShift created. Covers the page file, Win32 priority separation, process priority, CPU parking, MMCSS, GPU/USB interrupt-affinity keys, and the Discord-overlay tweak.
+- **Core isolation actually reserves cores now** - the `ReservedCpuSets` bitmask was indexed by CPU Set ID (which starts at 0x100) instead of logical-processor number, so Windows reserved nothing. It now reserves the cores you select.
+- **External-tool tweaks no longer report false success** - `fsutil` (last-access timestamps), `schtasks`, and firewall-rule commands now check their exit code and kill on timeout, so a failed apply or revert is reported as failed instead of silently "succeeding." MMCSS apply is now atomic too (a partial write is rolled back).
+- **Windows Defender exclusions are no longer clobbered** - the per-game Defender exclusion action only removes exclusions it actually created, never your pre-existing ones, and skips entirely if it can't read the current list.
+- **Safer background-process handling** - FACEIT anti-cheat is now protected from ProBalance restraint; background processes are tracked by name as well as PID so a reused PID can't reset the wrong process; and EcoQoS is only cleared on processes GameShift actually throttled.
+- **V-Cache and LP-core pinning run by default again** - `HybridCpuDetector` was gated behind a P-core-only toggle that's off by default, which silently disabled AMD X3D V-Cache CCD pinning and Intel LP-core exclusion for everyone. It's now driven by topology plus the relevant per-feature toggles.
+
+### Crash Recovery
+
+- **Five more optimizations survive a main-app crash** - `GpuDriverOptimizer`, `SessionSystemTweaksOptimizer`, `TimerResolutionManager`, `CompetitiveMode`, and `ServiceSuppressor` now implement `IJournaledOptimization` and are registered with the watchdog. The persistent state they change (GPU driver + TDR registry, MMCSS/USB-suspend/PCIe-ASPM, the Win11 global timer key, the Discord overlay key, and stopped services) is now restored after a crash instead of being left applied. The watchdog recovers 13 optimization classes, up from 8.
+- **No more double-apply baseline corruption** - `OptimizationEngine` now skips any optimization that's already applied, so running "Optimize Now" and then launching a game can't overwrite the captured original values and break revert.
 
 ## [3.7.0] - 2026-04-22
 

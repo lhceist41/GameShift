@@ -74,9 +74,12 @@ public class GameProfileTests
         var profile = GameProfile.CreateDefault();
 
         // Opt-in toggles default to false
-        Assert.False(profile.IsOptimizationEnabled(HybridCpuDetector.OptimizationId));
         Assert.False(profile.IsOptimizationEnabled(MpoToggle.OptimizationId));
         Assert.False(profile.IsOptimizationEnabled(CompetitiveMode.OptimizationId));
+
+        // HybridCpuDetector is enabled by default because V-Cache CCD pinning (PinToVCacheCcd)
+        // defaults on; the module no-ops on non-X3D / non-hybrid topologies.
+        Assert.True(profile.IsOptimizationEnabled(HybridCpuDetector.OptimizationId));
     }
 
     // ── OptimizationId consistency ────────────────────────────────────
@@ -268,6 +271,7 @@ public class GameProfileTests
         ReduceVisualEffects = false,
         OptimizeNetwork = false,
         UsePerformanceCoresOnly = false,
+        PinToVCacheCcd = false,
         DisableMpo = false,
         EnableCompetitiveMode = false,
         EnableGpuOptimization = false,

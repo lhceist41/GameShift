@@ -1,7 +1,9 @@
 using System.Management;
+using System.Text.Json;
 using Microsoft.Win32;
 using GameShift.Core.Config;
 using GameShift.Core.Detection;
+using GameShift.Core.Journal;
 using GameShift.Core.Optimization.Gpu;
 using GameShift.Core.Profiles;
 using GameShift.Core.System;
@@ -23,10 +25,11 @@ namespace GameShift.Core.Optimization;
 /// active_session.json for crash recovery. The existing SystemStateSnapshot
 /// serialization handles GPU entries automatically.
 /// </summary>
-public class GpuDriverOptimizer : IOptimization
+public class GpuDriverOptimizer : IOptimization, IJournaledOptimization
 {
     private readonly ILogger _logger = SettingsManager.Logger;
     private bool _isApplied;
+    private SystemContext? _context;
 
     // Cached GPU vendor detection result (only detect once per Apply)
     private GpuVendor _detectedVendor = GpuVendor.Unknown;
@@ -71,6 +74,44 @@ public class GpuDriverOptimizer : IOptimization
     /// </summary>
     public Task<bool> ApplyAsync(SystemStateSnapshot snapshot, GameProfile profile)
     {
+        CanApply(new SystemContext { Profile = profile, Snapshot = snapshot });
+        var result = Apply();
+        return Task.FromResult(result.State == OptimizationState.Applied);
+    }
+
+    // ── IJournaledOptimization ────────────────────────────────────────────────
+
+    public bool CanApply(SystemContext context)
+    {
+        _context = context;
+        return true;
+    }
+
+    public OptimizationResult Apply()
+    {
+        if (_context == null)
+            return new OptimizationResult(OptimizationId, string.Empty, string.Empty, OptimizationState.Failed, "No context");
+
+        bool success = ApplyInternal(_context.Snapshot, _context.Profile);
+
+        var entries = _registryChanges.Select(c => new GpuChangeEntry
+        {
+            KeyPath = c.KeyPath,
+            ValueName = c.ValueName,
+            Existed = c.PreviouslyExisted,
+            Kind = c.ValueKind.ToString(),
+            Value = c.PreviouslyExisted ? c.PreviousValue : null
+        }).ToList();
+
+        return new OptimizationResult(
+            OptimizationId,
+            JsonSerializer.Serialize(entries),
+            string.Empty,
+            success ? OptimizationState.Applied : OptimizationState.Failed);
+    }
+
+    private bool ApplyInternal(SystemStateSnapshot snapshot, GameProfile profile)
+    {
         try
         {
             _logger.Information(
@@ -84,7 +125,7 @@ public class GpuDriverOptimizer : IOptimization
             {
                 _logger.Warning(
                     "[GpuDriverOptimizer] No supported GPU vendor detected (NVIDIA or AMD required). Skipping GPU optimizations.");
-                return Task.FromResult(false);
+                return false;
             }
 
             _logger.Information(
@@ -116,14 +157,14 @@ public class GpuDriverOptimizer : IOptimization
                     "[GpuDriverOptimizer] GPU optimizations partially or fully failed");
             }
 
-            return Task.FromResult(success);
+            return success;
         }
         catch (Exception ex)
         {
             _logger.Error(
                 ex,
                 "[GpuDriverOptimizer] Failed to apply GPU driver optimizations");
-            return Task.FromResult(false);
+            return false;
         }
     }
 
@@ -133,10 +174,17 @@ public class GpuDriverOptimizer : IOptimization
     /// </summary>
     public Task<bool> RevertAsync(SystemStateSnapshot snapshot)
     {
+        if (!_isApplied) return Task.FromResult(true);
+        var result = Revert();
+        return Task.FromResult(result.State == OptimizationState.Reverted);
+    }
+
+    public bool Verify() => _isApplied;
+
+    public OptimizationResult Revert()
+    {
         if (!_isApplied)
-        {
-            return Task.FromResult(true); // No-op if not applied
-        }
+            return new OptimizationResult(OptimizationId, string.Empty, string.Empty, OptimizationState.Reverted);
 
         try
         {
@@ -232,15 +280,78 @@ public class GpuDriverOptimizer : IOptimization
             _logger.Warning(
                 "[GpuDriverOptimizer] Some GPU driver settings may require a driver restart to take full effect");
 
-            return Task.FromResult(failCount == 0);
+            return new OptimizationResult(OptimizationId, string.Empty, string.Empty,
+                failCount == 0 ? OptimizationState.Reverted : OptimizationState.Failed);
         }
         catch (Exception ex)
         {
             _logger.Error(
                 ex,
                 "[GpuDriverOptimizer] Failed to revert GPU driver optimizations");
-            return Task.FromResult(false);
+            return new OptimizationResult(OptimizationId, string.Empty, string.Empty, OptimizationState.Failed, ex.Message);
         }
+    }
+
+    /// <summary>
+    /// Watchdog recovery: restores the registry changes recorded in the journal OriginalValue JSON.
+    /// SDK-level driver settings (NvAPI DRS / ADLX) need the live session and cannot be reverted
+    /// statelessly, so only the persistent registry state (P-states, TDR, shader cache, etc.) is restored.
+    /// </summary>
+    public OptimizationResult RevertFromRecord(string originalValueJson)
+    {
+        try
+        {
+            var entries = JsonSerializer.Deserialize<List<GpuChangeEntry>>(originalValueJson) ?? new List<GpuChangeEntry>();
+
+            int successCount = 0, failCount = 0;
+            for (int i = entries.Count - 1; i >= 0; i--)
+            {
+                var e = entries[i];
+                try
+                {
+                    if (!e.Existed)
+                    {
+                        DeleteRegistryValue(e.KeyPath, e.ValueName);
+                    }
+                    else if (e.Value is JsonElement el)
+                    {
+                        var kind = Enum.TryParse<RegistryValueKind>(e.Kind, out var k) ? k : RegistryValueKind.DWord;
+                        object restored = kind switch
+                        {
+                            RegistryValueKind.Binary => el.GetBytesFromBase64(),
+                            RegistryValueKind.String or RegistryValueKind.ExpandString => el.GetString() ?? "",
+                            RegistryValueKind.QWord => el.GetInt64(),
+                            _ => el.GetInt32()
+                        };
+                        Registry.SetValue(e.KeyPath, e.ValueName, restored, kind);
+                    }
+                    successCount++;
+                }
+                catch (Exception ex)
+                {
+                    failCount++;
+                    _logger.Warning(ex, "[GpuDriverOptimizer] RevertFromRecord failed for {KeyPath}\\{ValueName}", e.KeyPath, e.ValueName);
+                }
+            }
+
+            _logger.Information("[GpuDriverOptimizer] RevertFromRecord - {Success} restored, {Fail} failed", successCount, failCount);
+            return new OptimizationResult(OptimizationId, string.Empty, string.Empty,
+                failCount == 0 ? OptimizationState.Reverted : OptimizationState.Failed);
+        }
+        catch (Exception ex)
+        {
+            _logger.Error(ex, "[GpuDriverOptimizer] RevertFromRecord failed");
+            return new OptimizationResult(OptimizationId, string.Empty, string.Empty, OptimizationState.Failed, ex.Message);
+        }
+    }
+
+    private sealed class GpuChangeEntry
+    {
+        public string KeyPath { get; set; } = "";
+        public string ValueName { get; set; } = "";
+        public bool Existed { get; set; }
+        public string Kind { get; set; } = "";
+        public object? Value { get; set; }
     }
 
     // ════════════════════════════════════════════════════════════════════

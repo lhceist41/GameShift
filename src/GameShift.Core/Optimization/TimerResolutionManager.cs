@@ -1,4 +1,6 @@
+using System.Text.Json;
 using GameShift.Core.Config;
+using GameShift.Core.Journal;
 using GameShift.Core.Profiles;
 using GameShift.Core.System;
 using Microsoft.Win32;
@@ -11,7 +13,7 @@ namespace GameShift.Core.Optimization;
 /// Manages system timer resolution for reduced input latency during gameplay.
 /// On Windows 11, also sets GlobalTimerResolutionRequests to ensure system-wide effect.
 /// </summary>
-public class TimerResolutionManager : IOptimization
+public class TimerResolutionManager : IOptimization, IJournaledOptimization
 {
     /// <summary>
     /// Registry key path for Windows 11 global timer resolution workaround.
@@ -38,6 +40,9 @@ public class TimerResolutionManager : IOptimization
     private CancellationTokenSource? _timerCts;
     private int _appliedResolution;
     private bool _usingDedicatedThread;
+
+    // Context stored by CanApply() for the journaled Apply() path.
+    private SystemContext? _context;
 
     public const string OptimizationId = "System Timer Resolution Manager";
 
@@ -80,9 +85,32 @@ public class TimerResolutionManager : IOptimization
     /// </summary>
     public Task<bool> ApplyAsync(SystemStateSnapshot snapshot, GameProfile profile)
     {
+        CanApply(new SystemContext { Profile = profile, Snapshot = snapshot });
+        var result = Apply();
+        return Task.FromResult(result.State == OptimizationState.Applied);
+    }
+
+    // ── IJournaledOptimization ────────────────────────────────────────────────
+
+    /// <summary>Pre-flight check; stores context for Apply(). Always applies when available.</summary>
+    public bool CanApply(SystemContext context)
+    {
+        _context = context;
+        return true;
+    }
+
+    /// <summary>
+    /// Sets the system timer resolution and (on Win11) GlobalTimerResolutionRequests. The returned
+    /// OriginalValue JSON carries ONLY the persistent registry state - the timer-resolution request
+    /// is process-scoped and self-resets if the process dies, so the watchdog never restores it.
+    /// </summary>
+    public OptimizationResult Apply()
+    {
+        var snapshot = _context?.Snapshot;
+        var profile = _context?.Profile;
+
         try
         {
-            // Query current timer resolution
             int queryResult = NativeInterop.NtQueryTimerResolution(
                 out int minResolution,
                 out int maxResolution,
@@ -91,49 +119,45 @@ public class TimerResolutionManager : IOptimization
             if (queryResult != 0)
             {
                 SettingsManager.Logger.Error(
-                    "[TimerResolutionManager] NtQueryTimerResolution failed with NTSTATUS {Status}",
-                    queryResult);
-                return Task.FromResult(false);
+                    "[TimerResolutionManager] NtQueryTimerResolution failed with NTSTATUS {Status}", queryResult);
+                return Fail($"NtQueryTimerResolution failed ({queryResult})");
             }
 
             SettingsManager.Logger.Information(
                 "[TimerResolutionManager] Current timer resolution: {Current} (min: {Min}, max: {Max}) in 100ns units",
-                currentResolution,
-                minResolution,
-                maxResolution);
+                currentResolution, minResolution, maxResolution);
 
-            // Record original resolution
-            snapshot.RecordTimerResolution(currentResolution);
+            snapshot?.RecordTimerResolution(currentResolution);
 
-            // Win11 GlobalTimerResolutionRequests - MUST be set BEFORE NtSetTimerResolution
-            // This is a prerequisite for both session timer and Background Mode timer to work globally.
-            // Only relevant on Win11 (build >= 22000) - Win10 always uses global timer resolution.
+            // Win11 GlobalTimerResolutionRequests - the only persistent (reboot-surviving) state.
             ApplyGlobalTimerRegistryKey();
 
-            // Competitive: 0.5ms (5000) for minimum latency; Casual: 1ms (10000) for lower overhead
-            int desiredResolution = profile.Intensity == OptimizationIntensity.Competitive ? 5000 : 10000;
+            var originalState = new Dictionary<string, object?>();
+            if (_globalTimerKeyWasSet)
+                originalState[GlobalTimerResolutionValueName] =
+                    _globalTimerKeyExistedBefore ? _globalTimerOriginalValue : null;
 
+            int desiredResolution = profile?.Intensity == OptimizationIntensity.Competitive ? 5000 : 10000;
             int build = GetWindowsBuildNumber();
             bool isWin11 = build >= 22000;
 
-            if (isWin11)
-            {
-                // Win11: dedicated windowless thread prevents resolution revert on window minimize.
-                // On Win11, NtSetTimerResolution called from the WPF UI thread can be cancelled by
-                // the OS when the window is minimized (window occlusion). A non-UI thread with no
-                // HWND association is unaffected by this behavior.
-                return ApplyOnDedicatedThread(desiredResolution);
-            }
-            else
-            {
-                // Win10: direct call - no window occlusion issue, resolution is process-wide
-                return ApplyDirect(desiredResolution);
-            }
+            bool success = isWin11
+                ? ApplyOnDedicatedThread(desiredResolution).Result
+                : ApplyDirect(desiredResolution).Result;
+
+            if (!success)
+                return Fail("NtSetTimerResolution failed");
+
+            return new OptimizationResult(
+                OptimizationId,
+                JsonSerializer.Serialize(originalState),
+                JsonSerializer.Serialize(new { applied = desiredResolution }),
+                OptimizationState.Applied);
         }
         catch (Exception ex)
         {
             SettingsManager.Logger.Error(ex, "[TimerResolutionManager] Failed to apply timer resolution");
-            return Task.FromResult(false);
+            return Fail(ex.Message);
         }
     }
 
@@ -246,11 +270,21 @@ public class TimerResolutionManager : IOptimization
     /// </summary>
     public Task<bool> RevertAsync(SystemStateSnapshot snapshot)
     {
+        if (!IsApplied) return Task.FromResult(true);
+        var result = Revert();
+        return Task.FromResult(result.State == OptimizationState.Reverted);
+    }
+
+    /// <summary>
+    /// Reverts the live timer-resolution request (releasing the dedicated thread / direct request)
+    /// and restores the Win11 GlobalTimerResolutionRequests registry value.
+    /// </summary>
+    public OptimizationResult Revert()
+    {
         try
         {
             if (_usingDedicatedThread)
             {
-                // Signal the timer thread to release the resolution request and exit
                 _timerCts?.Cancel();
                 _timerThread?.Join(TimeSpan.FromSeconds(2));
                 _timerThread = null;
@@ -264,41 +298,87 @@ public class TimerResolutionManager : IOptimization
             }
             else
             {
-                // Win10 direct release - must pass the resolution that was actually set,
-                // not the original snapshot value, to properly release the request
-                int setResult = NativeInterop.NtSetTimerResolution(
-                    _appliedResolution,
-                    false, // Release the resolution request
-                    out int actualResolution);
-
+                int setResult = NativeInterop.NtSetTimerResolution(_appliedResolution, false, out int actualResolution);
                 if (setResult == 0)
-                {
                     SettingsManager.Logger.Information(
                         "[TimerResolutionManager] Reverted timer resolution (released {Applied}, actual: {Actual}) in 100ns units",
-                        _appliedResolution,
-                        actualResolution);
-                }
+                        _appliedResolution, actualResolution);
                 else
-                {
                     SettingsManager.Logger.Warning(
-                        "[TimerResolutionManager] NtSetTimerResolution revert returned NTSTATUS {Status}",
-                        setResult);
-                }
+                        "[TimerResolutionManager] NtSetTimerResolution revert returned NTSTATUS {Status}", setResult);
             }
 
-            // Revert Win11 GlobalTimerResolutionRequests registry key
             RevertGlobalTimerRegistryKey();
 
             IsApplied = false;
-            return Task.FromResult(true);
+            return new OptimizationResult(OptimizationId, string.Empty, string.Empty, OptimizationState.Reverted);
         }
         catch (Exception ex)
         {
             SettingsManager.Logger.Error(ex, "[TimerResolutionManager] Failed to revert timer resolution");
             IsApplied = false;
-            return Task.FromResult(false);
+            return RevertFail(ex.Message);
         }
     }
+
+    /// <summary>Confirms the timer resolution request is still in effect.</summary>
+    public bool Verify()
+    {
+        if (!IsApplied) return false;
+        try
+        {
+            int r = NativeInterop.NtQueryTimerResolution(out _, out _, out int current);
+            return r == 0 && current <= _appliedResolution;
+        }
+        catch { return false; }
+    }
+
+    /// <summary>
+    /// Watchdog recovery: the process-scoped timer request is already gone with the crashed
+    /// process; only the persistent GlobalTimerResolutionRequests registry value is restored here.
+    /// </summary>
+    public OptimizationResult RevertFromRecord(string originalValueJson)
+    {
+        try
+        {
+            var values = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(originalValueJson);
+            if (values == null)
+                return RevertFail("Failed to parse originalValueJson");
+
+            if (values.TryGetValue(GlobalTimerResolutionValueName, out var el))
+            {
+                using var key = Registry.LocalMachine.OpenSubKey(GlobalTimerResolutionKeyPath, writable: true);
+                if (key != null)
+                {
+                    if (el.ValueKind == JsonValueKind.Null)
+                    {
+                        key.DeleteValue(GlobalTimerResolutionValueName, throwOnMissingValue: false);
+                        SettingsManager.Logger.Information(
+                            "[TimerResolutionManager] Deleted GlobalTimerResolutionRequests (was absent before session)");
+                    }
+                    else if (el.ValueKind == JsonValueKind.Number)
+                    {
+                        key.SetValue(GlobalTimerResolutionValueName, el.GetInt32(), RegistryValueKind.DWord);
+                        SettingsManager.Logger.Information(
+                            "[TimerResolutionManager] Restored GlobalTimerResolutionRequests = {Value}", el.GetInt32());
+                    }
+                }
+            }
+
+            return new OptimizationResult(OptimizationId, string.Empty, string.Empty, OptimizationState.Reverted);
+        }
+        catch (Exception ex)
+        {
+            SettingsManager.Logger.Error(ex, "[TimerResolutionManager] RevertFromRecord failed");
+            return RevertFail(ex.Message);
+        }
+    }
+
+    private static OptimizationResult Fail(string error) =>
+        new(OptimizationId, string.Empty, string.Empty, OptimizationState.Failed, error);
+
+    private static OptimizationResult RevertFail(string error) =>
+        new(OptimizationId, string.Empty, string.Empty, OptimizationState.Failed, error);
 
     // ── Win11 GlobalTimerResolutionRequests helpers ──────────────────────────
 

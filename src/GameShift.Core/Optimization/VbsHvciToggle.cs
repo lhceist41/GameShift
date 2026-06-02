@@ -342,6 +342,19 @@ public class VbsHvciToggle
             // Restore hypervisor launch type
             SetHypervisorLaunchType(off: false);
 
+            // Remove the RequirePlatformSecurityFeatures value GameShift wrote on disable. The
+            // original wasn't captured and is absent on most consumer systems, so deleting it
+            // (rather than guessing 1) is the correct revert - UEFI/Group Policy re-asserts if needed.
+            try
+            {
+                using var dgKey = Registry.LocalMachine.OpenSubKey(DeviceGuardPath, writable: true);
+                dgKey?.DeleteValue("RequirePlatformSecurityFeatures", throwOnMissingValue: false);
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning(ex, "VbsHvciToggle: Failed to remove RequirePlatformSecurityFeatures");
+            }
+
             // Update tracking
             var settings = SettingsManager.Load();
             settings.VbsHvciDisabledByGameShift = false;

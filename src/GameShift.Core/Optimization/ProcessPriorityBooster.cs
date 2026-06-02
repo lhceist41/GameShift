@@ -649,7 +649,7 @@ public class ProcessPriorityBooster : IOptimization, IJournaledOptimization
     /// </summary>
     private void RevertPrioritySeparation()
     {
-        if (!_prioritySeparationApplied || !_originalPrioritySeparation.HasValue)
+        if (!_prioritySeparationApplied)
             return;
 
         try
@@ -664,12 +664,22 @@ public class ProcessPriorityBooster : IOptimization, IJournaledOptimization
                 return;
             }
 
-            key.SetValue("Win32PrioritySeparation", _originalPrioritySeparation.Value, RegistryValueKind.DWord);
-            _prioritySeparationApplied = false;
+            if (_originalPrioritySeparation.HasValue)
+            {
+                key.SetValue("Win32PrioritySeparation", _originalPrioritySeparation.Value, RegistryValueKind.DWord);
+                _logger.Information(
+                    "[ProcessPriorityBooster] Win32PrioritySeparation restored to 0x{Original:X2}",
+                    _originalPrioritySeparation.Value);
+            }
+            else
+            {
+                // Value did not exist before Apply - delete the one we created (don't leave a default).
+                key.DeleteValue("Win32PrioritySeparation", throwOnMissingValue: false);
+                _logger.Information(
+                    "[ProcessPriorityBooster] Win32PrioritySeparation deleted (was absent before apply)");
+            }
 
-            _logger.Information(
-                "[ProcessPriorityBooster] Win32PrioritySeparation restored to 0x{Original:X2}",
-                _originalPrioritySeparation.Value);
+            _prioritySeparationApplied = false;
         }
         catch (Exception ex)
         {
