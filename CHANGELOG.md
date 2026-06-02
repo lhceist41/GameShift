@@ -2,6 +2,12 @@
 
 All notable changes to GameShift are documented here.
 
+## [Unreleased]
+
+### Performance
+
+- **Faster cold start** - ReadyToRun is enabled again, so the published app ships pre-compiled to native code and skips JIT-compiling its startup path on launch.
+
 ## [3.8.0] - 2026-06-02
 
 ### Performance

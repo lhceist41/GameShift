@@ -50,17 +50,38 @@
     <PublishTrimmed>false</PublishTrimmed>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
 
-    <!-- ReadyToRun is disabled: Microsoft.Diagnostics.Tracing.TraceEvent ships Dia2Lib.dll in a way
-         that breaks crossgen2 (NETSDK1096 "Multiple input files matching same simple name"), which
-         fails `dotnet publish -r win-x64`. PublishReadyToRunExclude doesn't help (the failure is a
-         duplicate compiler input, before per-assembly exclusion). Single-file + no-compression below
-         still avoid the temp-unpack cold-start cost. Re-enable once the TraceEvent duplicate is fixed. -->
-    <PublishReadyToRun>false</PublishReadyToRun>
+    <!-- ReadyToRun pre-compiles IL to native code so the app starts without JIT-ing on the hot path.
+         crossgen2 runs in composite mode here (single-file + self-contained). Microsoft.Diagnostics.Tracing.TraceEvent
+         lists two of its managed COM-interop assemblies (Dia2Lib.dll, TraceReloggerLib.dll) in the publish
+         set twice, which makes crossgen2 abort with NETSDK1096 "Multiple input files matching same simple
+         name". PublishReadyToRunExclude can't fix it - the duplicate is a compiler *input*, gathered before
+         per-assembly exclusion. The _DeduplicateResolvedFileToPublish target below drops the exact-duplicate
+         entries before R2R runs; the rest of the app is R2R-compiled normally. -->
+    <PublishReadyToRun>true</PublishReadyToRun>
 
     <!-- Compression shrinks the download but forces the entire self-contained bundle to be
          decompressed to a temp directory on every cold start, adding seconds to first launch.
          For a performance tool, a fast start matters more than a smaller download. -->
     <EnableCompressionInSingleFile>false</EnableCompressionInSingleFile>
   </PropertyGroup>
+
+  <!-- Microsoft.Diagnostics.Tracing.TraceEvent (the DPC-latency ETW tracing in GameShift.Core/Monitoring)
+       adds four of its assemblies to the publish set twice with an identical source path and destination:
+       the managed COM-interop shims Dia2Lib.dll and TraceReloggerLib.dll (R2R-compiled), plus the native
+       KernelTraceControl.dll and msdia140.dll. In composite ReadyToRun mode crossgen2 sees the two managed
+       duplicates as inputs with the same simple name and aborts with NETSDK1096. Collapse the redundant
+       entries before R2R compilation gathers its inputs. Each duplicate is byte-identical with the same
+       RelativePath, so removing the extra copy leaves the published output unchanged. This target only runs
+       during a ReadyToRun publish (_PrepareForReadyToRunCompilation is reached only when PublishReadyToRun
+       is true), so normal builds and tests are unaffected. -->
+  <Target Name="_DeduplicateResolvedFileToPublish" BeforeTargets="_PrepareForReadyToRunCompilation">
+    <RemoveDuplicates Inputs="@(ResolvedFileToPublish)">
+      <Output TaskParameter="Filtered" ItemName="_DedupedResolvedFileToPublish" />
+    </RemoveDuplicates>
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" />
+      <ResolvedFileToPublish Include="@(_DedupedResolvedFileToPublish)" />
+    </ItemGroup>
+  </Target>
 
 </Project>
