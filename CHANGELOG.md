@@ -2,11 +2,15 @@
 
 All notable changes to GameShift are documented here.
 
-## [Unreleased]
+## [3.8.1] - 2026-06-02
 
 ### Performance
 
 - **Faster cold start** - ReadyToRun is enabled again, so the published app ships pre-compiled to native code and skips JIT-compiling its startup path on launch.
+
+### Fixed
+
+- **A second launch no longer crashes on exit** - starting GameShift while it's already running correctly tells the first instance to show its window, but the second process then tried to release a single-instance mutex it never owned - throwing on the way out (exit code 4 and a stray crash log). It now releases the mutex only when it actually owns it.
 
 ## [3.8.0] - 2026-06-02
 
@@ -15,6 +19,10 @@ All notable changes to GameShift are documented here.
 - **Faster, smoother startup** - the main window now appears within a fraction of a second showing a brief loading state, while core services (hardware detection, performance counters, registry/WMI queries) initialize on a background thread instead of blocking the UI thread. Previously the window didn't paint until all startup work had finished.
 - **Faster cold start** - single-file compression is now off, so the self-contained bundle no longer unpacks to a temp directory on every launch and the app starts straight from disk. Slightly larger download in exchange for a faster start.
 - **Less work on every launch** - "Start with Windows" registration now checks the existing scheduled task on disk and only re-creates it when it's actually missing or stale, instead of spawning `schtasks.exe` on every launch.
+
+### Changed
+
+- **Simpler navigation by default** - Easy Mode is now the default, the sidebar is grouped into sections, optimization labels are plainer and less jargon-heavy, and the first-run wizard was streamlined - a less overwhelming layout out of the box.
 
 ### Fixed
 

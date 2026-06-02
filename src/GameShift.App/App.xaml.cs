@@ -25,6 +25,10 @@ public partial class App : Application
 {
     private static Mutex? _singleInstanceMutex;
 
+    // True only when THIS process created (and therefore owns) the single-instance mutex. A 2nd
+    // instance gets createdNew == false, never owns it, and must NOT call ReleaseMutex() on exit.
+    private static bool _ownsMutex;
+
     private TrayIconManager? _trayManager;
     private MainWindow? _mainWindow;
     private GlobalHotkeyService? _hotkeyService;
@@ -73,6 +77,7 @@ public partial class App : Application
 
         // Single-instance guard: only one GameShift process allowed
         _singleInstanceMutex = new Mutex(true, "Global\\GameShift_SingleInstance", out bool createdNew);
+        _ownsMutex = createdNew; // we own the mutex only if we created it
         if (!createdNew)
         {
             WriteDiag("Single-instance check FAILED - another instance is running.");
@@ -597,8 +602,14 @@ public partial class App : Application
             Log.Warning(ex, "Failed to clean up lockfile during shutdown");
         }
 
-        // Release single-instance mutex
-        _singleInstanceMutex?.ReleaseMutex();
+        // Release the single-instance mutex only if THIS instance owns it. A 2nd instance signals the
+        // first and exits without owning it - calling ReleaseMutex() there throws ApplicationException
+        // ("synchronization method called from an unsynchronized block") and crashes the exit path.
+        if (_ownsMutex)
+        {
+            try { _singleInstanceMutex?.ReleaseMutex(); }
+            catch (ApplicationException) { /* not owner / already released - nothing to do */ }
+        }
         _singleInstanceMutex?.Dispose();
 
         base.OnExit(e);
