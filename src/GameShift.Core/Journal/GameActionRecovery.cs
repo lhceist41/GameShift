@@ -64,12 +64,29 @@ public static class GameActionRecovery
         {
             key.DeleteValue(name, throwOnMissingValue: false);
             logger.Information("[GameActionRecovery] Deleted {Hive}\\{Path}\\{Name} (created by GameShift)", hive, path, name);
+            return;
         }
-        else if (root.TryGetProperty("value", out var v) && v.ValueKind == JsonValueKind.String)
+
+        if (!root.TryGetProperty("value", out var v) || v.ValueKind == JsonValueKind.Null) return;
+
+        // Restore with the original value's type - never coerce DWORD/QWORD/BINARY to REG_SZ.
+        string kind = root.TryGetProperty("kind", out var k) ? k.GetString() ?? "String" : "String";
+        switch (kind)
         {
-            key.SetValue(name, v.GetString() ?? "", RegistryValueKind.String);
-            logger.Information("[GameActionRecovery] Restored {Hive}\\{Path}\\{Name}", hive, path, name);
+            case "DWord":
+                key.SetValue(name, v.GetInt32(), RegistryValueKind.DWord);
+                break;
+            case "QWord":
+                key.SetValue(name, v.GetInt64(), RegistryValueKind.QWord);
+                break;
+            case "Binary":
+                key.SetValue(name, v.GetBytesFromBase64(), RegistryValueKind.Binary);
+                break;
+            default:
+                key.SetValue(name, v.GetString() ?? "", RegistryValueKind.String);
+                break;
         }
+        logger.Information("[GameActionRecovery] Restored {Hive}\\{Path}\\{Name} ({Kind})", hive, path, name, kind);
     }
 
     private static void RevertFirewall(string payload, ILogger logger)

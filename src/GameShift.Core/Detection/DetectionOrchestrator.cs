@@ -245,6 +245,9 @@ public class DetectionOrchestrator
                         {
                             try
                             {
+                                // Give the action the real detected install path so it can target the
+                                // actual location (e.g. Defender exclusions) rather than a hardcoded default.
+                                action.ExecutablePath = e.ExecutablePath;
                                 action.Apply(_actionSnapshot);
                                 _logger.Information("Applied game action: {ActionName}", action.Name);
 

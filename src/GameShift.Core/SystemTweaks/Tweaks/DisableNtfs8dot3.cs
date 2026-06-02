@@ -54,10 +54,23 @@ public class DisableNtfs8dot3 : ISystemTweak
             using var key = Registry.LocalMachine.OpenSubKey(KeyPath, writable: true);
             if (key == null) return false;
 
-            if (val.ValueKind == JsonValueKind.Null)
-                key.DeleteValue(ValueName, throwOnMissingValue: false);
-            else
-                key.SetValue(ValueName, val.GetInt32(), RegistryValueKind.DWord);
+            // Restore by the original value's JSON type. A non-DWORD original (corrupted or
+            // third-party value) must not make GetInt32() throw and abort the revert - which would
+            // leave our value applied permanently.
+            switch (val.ValueKind)
+            {
+                case JsonValueKind.Null:
+                    key.DeleteValue(ValueName, throwOnMissingValue: false);
+                    break;
+                case JsonValueKind.Number:
+                    key.SetValue(ValueName, val.GetInt32(), RegistryValueKind.DWord);
+                    break;
+                case JsonValueKind.String:
+                    key.SetValue(ValueName, val.GetString() ?? "", RegistryValueKind.String);
+                    break;
+                default:
+                    return false;
+            }
 
             return true;
         }

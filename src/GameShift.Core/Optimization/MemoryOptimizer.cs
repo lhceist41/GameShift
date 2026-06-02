@@ -581,14 +581,19 @@ public class MemoryOptimizer : IOptimization
 
         try
         {
-            NativeInterop.SetProcessWorkingSetSizeEx(
+            bool ok = NativeInterop.SetProcessWorkingSetSizeEx(
                 handle,
                 (IntPtr)(-1),
                 (IntPtr)(-1),
                 NativeInterop.QUOTA_LIMITS_HARDWS_MIN_DISABLE);
 
-            SettingsManager.Logger.Information(
-                "[MemoryOptimizer] Hard minimum working set cleared on game PID {Pid}", _hardMinGamePid);
+            if (ok)
+                SettingsManager.Logger.Information(
+                    "[MemoryOptimizer] Hard minimum working set cleared on game PID {Pid}", _hardMinGamePid);
+            else
+                SettingsManager.Logger.Warning(
+                    "[MemoryOptimizer] Failed to clear hard-min working set on PID {Pid} - Win32 error {Err}; the OS will resume trimming on process exit",
+                    _hardMinGamePid, Marshal.GetLastWin32Error());
         }
         finally
         {

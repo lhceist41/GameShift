@@ -7,7 +7,7 @@ namespace GameShift.Core.Optimization;
 /// <summary>
 /// ProBalance-style dynamic background CPU restraint during gaming sessions.
 ///
-/// Every 2 seconds, samples CPU usage of all non-game processes using
+/// Every 5 seconds, samples CPU usage of all non-game processes using
 /// <see cref="Process.TotalProcessorTime"/> deltas. If a background process
 /// exceeds 15% CPU for 3 consecutive samples, it is demoted to
 /// <see cref="ProcessPriorityClass.BelowNormal"/>. When it drops below threshold
@@ -59,7 +59,8 @@ public sealed class ProBalanceService : IDisposable
     private Timer? _timer;
     private string[] _gameProcessNames = Array.Empty<string>();
     private int _gamePid;
-    private bool _running;
+    // volatile: read in the timer callback (OnSample) without the lock, written from Start/Stop.
+    private volatile bool _running;
 
     // ── Public API ────────────────────────────────────────────────────────────
 

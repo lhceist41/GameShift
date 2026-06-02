@@ -89,6 +89,12 @@ public class SystemStateSnapshot
     public string? IdleDisableSchemeGuid { get; set; }
 
     /// <summary>
+    /// Processor idle (C-state) original AC/DC values captured when CpuParkingManager limited
+    /// C-states. Used by crash recovery to restore them, not just re-hide the settings.
+    /// </summary>
+    public List<Optimization.CpuParkingSnapshotEntry> IdleDisableEntries { get; set; } = new();
+
+    /// <summary>
     /// IFEO (Image File Execution Options) PerfOptions entries created by GameShift.
     /// Key: IFEO subkey path (e.g., "SOFTWARE\Microsoft\Windows NT\...\game.exe\PerfOptions")
     /// Value: JSON of original values if the key existed, or null if GameShift created it.
@@ -266,9 +272,13 @@ public class SystemStateSnapshot
     /// Used for crash recovery to re-enable idle if GameShift crashes during gaming.
     /// </summary>
     /// <param name="schemeGuid">Active power scheme GUID where idle was disabled</param>
-    public void RecordIdleDisableState(string schemeGuid)
+    /// <param name="entries">Captured original AC/DC values for each C-state setting, so crash
+    /// recovery can restore them rather than only re-hiding the settings</param>
+    public void RecordIdleDisableState(string schemeGuid, List<Optimization.CpuParkingSnapshotEntry> entries)
     {
         IdleDisableSchemeGuid ??= schemeGuid;
+        if (entries.Count > 0)
+            IdleDisableEntries = entries;
     }
 
     /// <summary>

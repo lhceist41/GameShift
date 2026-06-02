@@ -513,6 +513,9 @@ public class PowerPlanSwitcher : IOptimization, IJournaledOptimization
     {
         int applied = 0;
 
+        // AC slots only - DC (battery) values are deliberately left at the user's settings so gaming
+        // overrides never degrade battery life on a laptop running unplugged. Revert therefore only
+        // needs to restore AC, which it does.
         foreach (var (subGroup, setting, value, desc) in SessionOverrides)
         {
             try

@@ -138,20 +138,27 @@ public class MpoToggle : IOptimization, IJournaledOptimization
 
             // Read and store existing value for clean revert
             var existingValue = key.GetValue(OverlayTestModeValue);
-            if (existingValue != null)
+            if (existingValue is int existingOtm)
             {
                 _previousValueExisted = true;
-                _previousValue = (int)existingValue;
+                _previousValue = existingOtm;
                 _logger.Debug(
                     "[MpoToggle] Existing {ValueName} = {OldValue}, will restore on revert",
                     OverlayTestModeValue, _previousValue);
             }
             else
             {
+                // Absent, or an unexpected non-DWORD type - don't hard-cast (that would throw and
+                // abort the entire apply). Treat as not-present so revert removes our DWORD write.
                 _previousValueExisted = false;
-                _logger.Debug(
-                    "[MpoToggle] No existing {ValueName} value, will delete on revert",
-                    OverlayTestModeValue);
+                if (existingValue != null)
+                    _logger.Warning(
+                        "[MpoToggle] {ValueName} has unexpected type {Type}; will delete on revert",
+                        OverlayTestModeValue, existingValue.GetType().Name);
+                else
+                    _logger.Debug(
+                        "[MpoToggle] No existing {ValueName} value, will delete on revert",
+                        OverlayTestModeValue);
             }
 
             // Build original state snapshot for journal
@@ -189,14 +196,18 @@ public class MpoToggle : IOptimization, IJournaledOptimization
 
                 // EnableOverlay = 0 in same DWM key
                 var existingEnableOverlay = key.GetValue(EnableOverlayValue);
-                if (existingEnableOverlay != null)
+                if (existingEnableOverlay is int existingEo)
                 {
                     _enableOverlayPreviouslyExisted = true;
-                    _enableOverlayPreviousValue = (int)existingEnableOverlay;
+                    _enableOverlayPreviousValue = existingEo;
                 }
                 else
                 {
                     _enableOverlayPreviouslyExisted = false;
+                    if (existingEnableOverlay != null)
+                        _logger.Warning(
+                            "[MpoToggle] {ValueName} has unexpected type {Type}; will delete on revert",
+                            EnableOverlayValue, existingEnableOverlay.GetType().Name);
                 }
 
                 originalState[EnableOverlayValue] = _enableOverlayPreviouslyExisted ? _enableOverlayPreviousValue : null;
@@ -218,14 +229,18 @@ public class MpoToggle : IOptimization, IJournaledOptimization
                 if (gfxKey != null)
                 {
                     var existingDisableOverlays = gfxKey.GetValue(DisableOverlaysValue);
-                    if (existingDisableOverlays != null)
+                    if (existingDisableOverlays is int existingDov)
                     {
                         _disableOverlaysPreviouslyExisted = true;
-                        _disableOverlaysPreviousValue = (int)existingDisableOverlays;
+                        _disableOverlaysPreviousValue = existingDov;
                     }
                     else
                     {
                         _disableOverlaysPreviouslyExisted = false;
+                        if (existingDisableOverlays != null)
+                            _logger.Warning(
+                                "[MpoToggle] {ValueName} has unexpected type {Type}; will delete on revert",
+                                DisableOverlaysValue, existingDisableOverlays.GetType().Name);
                     }
 
                     originalState[DisableOverlaysValue] = _disableOverlaysPreviouslyExisted ? _disableOverlaysPreviousValue : null;
@@ -283,6 +298,9 @@ public class MpoToggle : IOptimization, IJournaledOptimization
                 _logger.Error(
                     "[MpoToggle] Failed to open registry key {RegistryPath} for writing during revert",
                     DwmRegistryPath);
+                // Once revert has been attempted the module must not keep claiming it is applied -
+                // a latched _isApplied would block re-apply (engine guard) and break Verify().
+                _isApplied = false;
                 return RevertFail("Failed to open DWM registry key");
             }
 
@@ -355,6 +373,7 @@ public class MpoToggle : IOptimization, IJournaledOptimization
         catch (Exception ex)
         {
             _logger.Error(ex, "[MpoToggle] Failed to revert MPO Toggle");
+            _isApplied = false;
             return RevertFail(ex.Message);
         }
     }

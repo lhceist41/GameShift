@@ -631,20 +631,21 @@ public class NetworkOptimizer : IOptimization, IJournaledOptimization
                     using var adapterKey = baseKey.OpenSubKey(original.SubKeyName, writable: true);
                     if (adapterKey == null) continue;
 
-                    // Restore each value to its original state
-                    if (original.InterruptModeration != null)
+                    // Only restore values Apply actually changed. Apply skips any value already at the
+                    // optimized "0", so a captured "0" means "unchanged" - writing it back is redundant.
+                    if (original.InterruptModeration is not null and not "0")
                         adapterKey.SetValue("*InterruptModeration", original.InterruptModeration, RegistryValueKind.String);
 
-                    if (original.LsoV2IPv4 != null)
+                    if (original.LsoV2IPv4 is not null and not "0")
                         adapterKey.SetValue("*LsoV2IPv4", original.LsoV2IPv4, RegistryValueKind.String);
 
-                    if (original.LsoV2IPv6 != null)
+                    if (original.LsoV2IPv6 is not null and not "0")
                         adapterKey.SetValue("*LsoV2IPv6", original.LsoV2IPv6, RegistryValueKind.String);
 
-                    if (original.RscIPv4 != null)
+                    if (original.RscIPv4 is not null and not "0")
                         adapterKey.SetValue("*RscIPv4", original.RscIPv4, RegistryValueKind.String);
 
-                    if (original.RscIPv6 != null)
+                    if (original.RscIPv6 is not null and not "0")
                         adapterKey.SetValue("*RscIPv6", original.RscIPv6, RegistryValueKind.String);
 
                     _logger.Information(
@@ -1079,7 +1080,13 @@ public class NetworkOptimizer : IOptimization, IJournaledOptimization
         string output = process.StandardOutput.ReadToEnd();
         stderrTask.Wait(5000);
 
-        process.WaitForExit(5000);
+        if (!process.WaitForExit(5000))
+        {
+            // Don't leave a hung netsh child running - kill it and report failure.
+            try { process.Kill(); } catch { /* best effort */ }
+            return (-1, output);
+        }
+
         return (process.ExitCode, output);
     }
 }

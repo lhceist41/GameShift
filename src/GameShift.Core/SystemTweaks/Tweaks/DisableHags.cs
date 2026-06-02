@@ -137,12 +137,19 @@ public class DisableHags : ISystemTweak
         catch { return false; }
     }
 
+    private bool _recommendationEvaluated;
+
     /// <summary>
     /// Evaluates the HAGS recommendation based on GPU generation, Frame Gen capability,
-    /// and Windows version stability.
+    /// and Windows version stability. Idempotent - the recommendation depends only on the GPU and
+    /// Windows version (static at runtime), so repeated calls (e.g. from DetectIsApplied) are cheap
+    /// no-ops instead of re-running WMI/registry I/O.
     /// </summary>
     public void EvaluateRecommendation()
     {
+        if (_recommendationEvaluated) return;
+        _recommendationEvaluated = true;
+
         string gpuName;
         try
         {

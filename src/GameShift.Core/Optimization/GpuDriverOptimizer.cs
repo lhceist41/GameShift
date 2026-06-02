@@ -144,11 +144,20 @@ public class GpuDriverOptimizer : IOptimization, IJournaledOptimization
             // ── Step 3: TDR timeout extension (all vendors) ──
             ApplyTdrTweaks(snapshot);
 
+            // Mark applied if ANY registry change was recorded - including TDR-only changes when the
+            // vendor-specific step failed - so Revert/watchdog undoes them instead of orphaning them.
+            _isApplied = _registryChanges.Count > 0;
+
             if (success)
             {
-                _isApplied = true;
                 _logger.Information(
                     "[GpuDriverOptimizer] GPU optimizations applied successfully ({Count} registry values modified)",
+                    _registryChanges.Count);
+            }
+            else if (_isApplied)
+            {
+                _logger.Warning(
+                    "[GpuDriverOptimizer] GPU vendor step failed, but {Count} change(s) (e.g. TDR) were recorded and will be reverted",
                     _registryChanges.Count);
             }
             else
@@ -157,7 +166,8 @@ public class GpuDriverOptimizer : IOptimization, IJournaledOptimization
                     "[GpuDriverOptimizer] GPU optimizations partially or fully failed");
             }
 
-            return success;
+            // Treat any recorded change as "applied" so the engine journals it for clean revert.
+            return success || _isApplied;
         }
         catch (Exception ex)
         {

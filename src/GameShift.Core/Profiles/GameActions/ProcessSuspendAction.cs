@@ -11,23 +11,9 @@ namespace GameShift.Core.Profiles.GameActions;
 /// </summary>
 public class ProcessSuspendAction : GameAction
 {
-    /// <summary>
-    /// Processes that must never be suspended - anti-cheat software and security agents.
-    /// Case-insensitive comparison.
-    /// </summary>
-    private static readonly HashSet<string> AntiCheatBlocklist = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "vgc.exe",
-        "vgtray.exe",
-        "EasyAntiCheat.exe",
-        "EasyAntiCheat_EOS.exe",
-        "BEService.exe",
-        "BattlEye.exe",
-        "FACEITClient.exe"
-    };
-
     private readonly string _name;
     private readonly string _processName;
+    private readonly string _description;
     private readonly List<int> _suspendedPids = new();
 
     /// <param name="name">Display name, e.g. "LoL Client Suspension".</param>
@@ -37,10 +23,14 @@ public class ProcessSuspendAction : GameAction
     {
         _name = name;
         _processName = processName;
+        _description = description;
     }
 
     /// <inheritdoc/>
     public override string Name => _name;
+
+    /// <inheritdoc/>
+    public override string Impact => _description;
 
     /// <inheritdoc/>
     public override void Apply(SystemStateSnapshot snapshot)
@@ -50,7 +40,7 @@ public class ProcessSuspendAction : GameAction
             ? _processName
             : _processName + ".exe";
 
-        if (AntiCheatBlocklist.Contains(processNameWithExt))
+        if (GameActionGuards.AntiCheatBlocklist.Contains(processNameWithExt))
         {
             Log.Warning(
                 "ProcessSuspendAction: Refusing to suspend blocklisted process {ProcessName}",

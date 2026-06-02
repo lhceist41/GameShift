@@ -141,6 +141,15 @@ public class IoPriorityManager : IOptimization
                                     "[IoPriorityManager] Restored I/O priority: {Name} (PID {Pid}) → {Priority}",
                                     state.ProcessName, state.ProcessId, state.OriginalIoPriority);
                             }
+                            else
+                            {
+                                // Don't swallow a failed restore - surface it so the process isn't left
+                                // silently demoted (it self-heals on the process's next restart).
+                                skippedCount++;
+                                SettingsManager.Logger.Warning(
+                                    "[IoPriorityManager] Failed to restore I/O priority for {Name} (PID {Pid}): NTSTATUS 0x{Status:X8}",
+                                    state.ProcessName, state.ProcessId, status);
+                            }
                         }
                         finally
                         {

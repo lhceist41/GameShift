@@ -83,14 +83,18 @@ public class OneTimeTipAction : GameAction
                 return;
             }
 
-            // Show tip via toast notification
+            // Persist the dismissal FIRST. Tips are applied sequentially by the orchestrator, so the
+            // load-modify-save window here is not contended in practice; if concurrent settings
+            // writers are ever added, this should move behind a shared settings lock.
+            settings.DismissedTips.Add(_tipId);
+            SettingsManager.Save(settings);
+
+            // Fire the toast only AFTER the dismissal is durably saved, so a Save failure can't show
+            // the tip without recording it (which would make it re-appear next session).
             Log.Information(
                 "OneTimeTipAction: {TipMessage} [Tip ID: {TipId}]",
                 _tipMessage, _tipId);
             TipTriggered?.Invoke(_tipMessage);
-
-            settings.DismissedTips.Add(_tipId);
-            SettingsManager.Save(settings);
 
             Log.Information(
                 "OneTimeTipAction: Tip '{TipId}' shown and marked as dismissed",

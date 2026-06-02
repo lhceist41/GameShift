@@ -12,20 +12,6 @@ namespace GameShift.Core.Profiles.GameActions;
 /// </summary>
 public class ProcessPrioritySetAction : GameAction
 {
-    /// <summary>
-    /// Processes that must never have priority changed - anti-cheat software and security agents.
-    /// </summary>
-    private static readonly HashSet<string> AntiCheatBlocklist = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "vgc.exe",
-        "vgtray.exe",
-        "EasyAntiCheat.exe",
-        "EasyAntiCheat_EOS.exe",
-        "BEService.exe",
-        "BattlEye.exe",
-        "FACEITClient.exe"
-    };
-
     private readonly string _name;
     private readonly string _processName;
     private readonly ProcessPriorityClass _targetPriority;
@@ -56,7 +42,7 @@ public class ProcessPrioritySetAction : GameAction
             ? _processName
             : _processName + ".exe";
 
-        if (AntiCheatBlocklist.Contains(processNameWithExt))
+        if (GameActionGuards.AntiCheatBlocklist.Contains(processNameWithExt))
         {
             Log.Warning(
                 "ProcessPrioritySetAction: Refusing to modify priority of blocklisted process {ProcessName}",

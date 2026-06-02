@@ -45,7 +45,14 @@ public class DefenderExclusionAction : GameAction
             return;
         }
 
-        foreach (var path in _exclusionPaths)
+        // Effective paths: the configured (default-install) paths plus, when known, the directory of
+        // the actually-detected executable so non-default install locations are covered too.
+        var effectivePaths = new List<string>(_exclusionPaths);
+        var exeDir = string.IsNullOrEmpty(ExecutablePath) ? null : Path.GetDirectoryName(ExecutablePath);
+        if (!string.IsNullOrEmpty(exeDir) && !effectivePaths.Contains(exeDir, StringComparer.OrdinalIgnoreCase))
+            effectivePaths.Add(exeDir);
+
+        foreach (var path in effectivePaths)
         {
             if (existing.Contains(path))
             {
@@ -63,10 +70,21 @@ public class DefenderExclusionAction : GameAction
                     UseShellExecute = false
                 };
                 using var process = Process.Start(psi);
-                if (process != null && !process.WaitForExit(15_000))
+                if (process == null)
+                {
+                    Log.Warning("DefenderExclusionAction: Failed to start PowerShell for {Path}", path);
+                    continue;
+                }
+                if (!process.WaitForExit(15_000))
                 {
                     Log.Warning("DefenderExclusionAction: PowerShell timed out adding exclusion for {Path}, killing process", path);
                     try { process.Kill(); } catch { }
+                    continue; // not added - don't record as created, so Revert won't remove it
+                }
+                if (process.ExitCode != 0)
+                {
+                    Log.Warning("DefenderExclusionAction: Add-MpPreference failed (exit {Exit}) for {Path}", process.ExitCode, path);
+                    continue; // not added - don't record as created
                 }
                 _createdPaths.Add(path);
                 Log.Information("DefenderExclusionAction: Added exclusion path {Path}", path);

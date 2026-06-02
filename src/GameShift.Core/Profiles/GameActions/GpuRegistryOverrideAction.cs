@@ -27,6 +27,8 @@ public class GpuRegistryOverrideAction : GameAction
     private bool _previouslyExisted;
     private bool _applied;
     private string? _appliedSubkeyPath;
+    private RegistryValueKind _previousKind = RegistryValueKind.String;
+    private object? _previousRawValue;
 
     /// <param name="name">Display name, e.g. "LoL AMD Anti-Lag Disable".</param>
     /// <param name="requiredVendor">GPU vendor this applies to (e.g. GpuVendor.Amd).</param>
@@ -124,6 +126,14 @@ public class GpuRegistryOverrideAction : GameAction
         var currentValue = key.GetValue(_umdValueName);
         _previouslyExisted = currentValue != null;
         _previousValue = currentValue?.ToString();
+        _previousRawValue = currentValue;
+        if (_previouslyExisted)
+        {
+            // Preserve the original value's type so Revert restores it faithfully instead of
+            // coercing a REG_DWORD/QWORD/BINARY value to REG_SZ.
+            try { _previousKind = key.GetValueKind(_umdValueName); }
+            catch { _previousKind = RegistryValueKind.String; }
+        }
         _appliedSubkeyPath = keyPath;
 
         key.SetValue(_umdValueName, _gameActiveValue, RegistryValueKind.String);
@@ -154,12 +164,12 @@ public class GpuRegistryOverrideAction : GameAction
                 return;
             }
 
-            if (_previouslyExisted && _previousValue != null)
+            if (_previouslyExisted && _previousRawValue != null)
             {
-                key.SetValue(_umdValueName, _previousValue, RegistryValueKind.String);
+                key.SetValue(_umdValueName, _previousRawValue, _previousKind);
                 Log.Information(
-                    "GpuRegistryOverrideAction: Restored {Path}\\{ValueName} = {Value}",
-                    _appliedSubkeyPath, _umdValueName, _previousValue);
+                    "GpuRegistryOverrideAction: Restored {Path}\\{ValueName} = {Value} ({Kind})",
+                    _appliedSubkeyPath, _umdValueName, _previousValue, _previousKind);
             }
             else
             {
@@ -188,12 +198,25 @@ public class GpuRegistryOverrideAction : GameAction
             hive = "HKLM",
             path = _appliedSubkeyPath,
             name = _umdValueName,
-            kind = "String",
+            kind = _previousKind.ToString(),
             existed = _previouslyExisted,
-            value = _previouslyExisted ? _previousValue : null
+            value = _previouslyExisted ? EncodeValueForJson(_previousRawValue, _previousKind) : null
         };
         return new GameActionRevertRecord("registry", JsonSerializer.Serialize(payload));
     }
+
+    /// <summary>
+    /// Encodes a registry value for the crash-recovery JSON payload in a type-faithful way so
+    /// <see cref="Journal.GameActionRecovery"/> can restore it with the correct kind:
+    /// DWord → int, QWord → long, Binary → base64 string, everything else → string.
+    /// </summary>
+    private static object? EncodeValueForJson(object? raw, RegistryValueKind kind) => kind switch
+    {
+        RegistryValueKind.Binary => raw is byte[] b ? (object?)Convert.ToBase64String(b) : null,
+        RegistryValueKind.DWord => raw is int i ? (object?)i : null,
+        RegistryValueKind.QWord => raw is long l ? (object?)l : null,
+        _ => raw?.ToString()
+    };
 
     /// <summary>
     /// Finds the driver subkey under the display adapter class GUID that matches

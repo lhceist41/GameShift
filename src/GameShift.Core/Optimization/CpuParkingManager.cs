@@ -199,13 +199,17 @@ public class CpuParkingManager : IOptimization, IJournaledOptimization
                     _originalStates.Add(new ParkingOriginalState(
                         settingGuid, settingName, originalAc, originalDc));
 
-                    // Set AC value
-                    RunPowercfg(
-                        $"/setacvalueindex {_activeSchemeGuid} {ProcessorSubGroupGuid} {settingGuid} {targetValue}");
+                    // Only modify a value we successfully captured. If the original could not be read
+                    // we must NOT write the gaming value - Revert skips null originals, so writing it
+                    // would leave the gaming value applied. Skipping keeps Apply/Revert symmetric.
+                    if (originalAc != null)
+                        RunPowercfg(
+                            $"/setacvalueindex {_activeSchemeGuid} {ProcessorSubGroupGuid} {settingGuid} {targetValue}");
 
                     // Set DC value (for laptop users)
-                    RunPowercfg(
-                        $"/setdcvalueindex {_activeSchemeGuid} {ProcessorSubGroupGuid} {settingGuid} {targetValue}");
+                    if (originalDc != null)
+                        RunPowercfg(
+                            $"/setdcvalueindex {_activeSchemeGuid} {ProcessorSubGroupGuid} {settingGuid} {targetValue}");
 
                     SettingsManager.Logger.Debug(
                         "[CpuParkingManager] Set {Setting}={Value} (original AC={OrigAc}, DC={OrigDc})",
@@ -228,7 +232,10 @@ public class CpuParkingManager : IOptimization, IJournaledOptimization
                 profile.Intensity == OptimizationIntensity.Competitive)
             {
                 ApplyCStateLimiting();
-                snapshot?.RecordIdleDisableState(_activeSchemeGuid);
+                snapshot?.RecordIdleDisableState(
+                    _activeSchemeGuid,
+                    _cStateOriginals.Select(s => new CpuParkingSnapshotEntry(
+                        s.Guid, s.OrigAc, s.OrigDc)).ToList());
             }
 
             // Apply changes to the active scheme
@@ -566,25 +573,37 @@ public class CpuParkingManager : IOptimization, IJournaledOptimization
     }
 
     /// <summary>
-    /// Crash recovery: restores processor idle state from a previous crashed session.
-    /// If GameShift crashed while idle was disabled (IDLEDISABLE=1), re-enables it.
-    /// Also restores the time check interval to 15ms for responsive frequency scaling.
+    /// Crash recovery: restores processor idle (C-state) configuration from a previous crashed
+    /// session by writing back each setting's captured original AC/DC value, then re-hides the
+    /// advanced C-state options so the power plan looks exactly as it did before gaming.
     /// </summary>
-    public static void CleanupStaleIdleDisable(string schemeGuid)
+    public static void CleanupStaleIdleDisable(string schemeGuid, List<CpuParkingSnapshotEntry> entries)
     {
         try
         {
-            // Reset all C-state limiting settings to safe defaults
+            // Restore each C-state setting's captured original AC/DC value BEFORE re-hiding it, so a
+            // crash leaves the user's idle configuration as it was - not stuck at the gaming values.
+            foreach (var entry in entries)
+            {
+                if (entry.OriginalAcValue != null)
+                    RunPowercfg(
+                        $"/setacvalueindex {schemeGuid} {ProcessorSubGroupGuid} {entry.SettingGuid} {entry.OriginalAcValue}");
+                if (entry.OriginalDcValue != null)
+                    RunPowercfg(
+                        $"/setdcvalueindex {schemeGuid} {ProcessorSubGroupGuid} {entry.SettingGuid} {entry.OriginalDcValue}");
+            }
+
+            // Re-hide all C-state limiting settings (they are hidden advanced options by default).
             foreach (var (guid, _, _) in CStateLimitSettings)
             {
-                // Re-hide the setting
                 RunPowercfg($"-attributes {ProcessorSubGroupGuid} {guid} +ATTRIB_HIDE");
             }
 
             RunPowercfg($"/setactive {schemeGuid}");
 
             SettingsManager.Logger.Information(
-                "[CpuParkingManager] Cleaned up stale C-state limit state for scheme {Guid}", schemeGuid);
+                "[CpuParkingManager] Cleaned up stale C-state limit state for scheme {Guid} ({Count} settings restored)",
+                schemeGuid, entries.Count);
         }
         catch (Exception ex)
         {

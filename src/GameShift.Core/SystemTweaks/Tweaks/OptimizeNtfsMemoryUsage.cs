@@ -17,7 +17,9 @@ public class OptimizeNtfsMemoryUsage : ISystemTweak
     public string Name => "Increase NTFS Memory Usage";
     public string Description => "Allows NTFS to use more memory for filesystem metadata caching, reducing disk I/O.";
     public string Category => "Filesystem";
-    public bool RequiresReboot => false;
+    // NtfsMemoryUsage is consumed by ntfs.sys during driver init at boot - writing it at runtime
+    // has no effect until the next reboot (same as the sibling DisableLastAccessTimestamp tweak).
+    public bool RequiresReboot => true;
 
     private const string KeyPath = @"SYSTEM\CurrentControlSet\Control\FileSystem";
     private const string ValueName = "NtfsMemoryUsage";
@@ -41,6 +43,10 @@ public class OptimizeNtfsMemoryUsage : ISystemTweak
         key.SetValue(ValueName, 2, RegistryValueKind.DWord);
 
         Log.Information("[NtfsMemoryUsage] Set to 2 (was: {Original})", original ?? "<not set>");
+        if (original is not null and not int)
+            Log.Warning(
+                "[NtfsMemoryUsage] Original value has unexpected type {Type} - it will be removed, not restored, on revert",
+                original.GetType().Name);
         return JsonSerializer.Serialize(original is int o ? o : (int?)null);
     }
 

@@ -117,6 +117,11 @@ public class WatchdogRevertEngine
                 GameActionRecovery.Revert(ga.Kind, ga.Payload, _logger);
         }
 
+        // Reset any background processes left demoted by the crashed session. These tweaks (memory/IO
+        // priority, EcoQoS, CPU-set) are volatile and have no per-PID journal, but a long-lived process
+        // can stay demoted until it restarts - re-resolve by name and write OS defaults.
+        BackgroundProcessTargets.ResetDemotedProcessesToDefaults();
+
         // Stamp the journal with the recovery time so the main app's
         // DeactivateProfileAsync can detect that the watchdog has already
         // reverted and skip its own redundant LIFO revert.

@@ -34,6 +34,10 @@ public partial class App : Application
     // Holds event subscriptions for clean unsubscription in OnExit
     private EventSubscriptions? _eventSubs;
 
+    // Static OneTimeTipAction.TipTriggered subscription - held so OnExit can unsubscribe it; the
+    // static event would otherwise keep this App's lambda (and the Dispatcher it captures) alive.
+    private Action<string>? _tipTriggeredHandler;
+
     /// <summary>
     /// True when the tray icon was created successfully. When false (tray creation failed),
     /// closing the window exits the app instead of hiding to tray.
@@ -159,11 +163,12 @@ public partial class App : Application
             // Back on the UI thread now that services exist.
             _eventSubs = EventWiringHelper.WireAll(Services);
 
-            // Wire game tip notifications to snackbar toast
-            OneTimeTipAction.TipTriggered += message =>
+            // Wire game tip notifications to snackbar toast (held in a field so OnExit can unsubscribe)
+            _tipTriggeredHandler = message =>
             {
                 Dispatcher.InvokeAsync(() => _mainWindow?.ShowToast("Game Tip", message, TimeSpan.FromSeconds(6)));
             };
+            OneTimeTipAction.TipTriggered += _tipTriggeredHandler;
 
             WriteDiag("Core services wired OK");
 
@@ -487,6 +492,13 @@ public partial class App : Application
     protected override void OnExit(ExitEventArgs e)
     {
         Log.Information("GameShift shutting down normally");
+
+        // Unsubscribe the static tip-toast handler so it does not outlive the App instance.
+        if (_tipTriggeredHandler != null)
+        {
+            OneTimeTipAction.TipTriggered -= _tipTriggeredHandler;
+            _tipTriggeredHandler = null;
+        }
 
         // Release long-lived page ViewModel event subscriptions (DashboardViewModel,
         // etc.) BEFORE disposing core services so their handlers do not fire during

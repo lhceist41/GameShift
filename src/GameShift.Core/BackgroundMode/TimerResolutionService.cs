@@ -17,6 +17,12 @@ public class TimerResolutionService : IDisposable
     private int _originalResolution;
     private int _appliedResolution;
 
+    // GlobalTimerResolutionRequests registry workaround - capture so Stop() can restore/delete it
+    // instead of leaving the key permanently set to 1 after Background Mode is turned off.
+    private bool _globalTimerReqApplied;
+    private bool _globalTimerReqExisted;
+    private int _globalTimerReqOriginal;
+
     public bool IsLocked => _isLocked;
 
     /// <summary>
@@ -79,6 +85,8 @@ public class TimerResolutionService : IDisposable
             SettingsManager.Logger.Warning(ex, "[TimerResolutionService] Failed to release timer lock");
         }
 
+        RestoreRegistryWorkaround();
+
         _isLocked = false;
     }
 
@@ -98,7 +106,13 @@ public class TimerResolutionService : IDisposable
             using var key = Registry.LocalMachine.OpenSubKey(GlobalTimerResolutionKeyPath, writable: true);
             if (key != null)
             {
+                var existing = key.GetValue(GlobalTimerResolutionValueName);
+                _globalTimerReqExisted = existing is int;
+                if (existing is int existingValue)
+                    _globalTimerReqOriginal = existingValue;
+
                 key.SetValue(GlobalTimerResolutionValueName, 1, RegistryValueKind.DWord);
+                _globalTimerReqApplied = true;
                 SettingsManager.Logger.Debug("[TimerResolutionService] Set Win11 24H2 registry workaround");
             }
         }
@@ -109,6 +123,33 @@ public class TimerResolutionService : IDisposable
         catch (Exception ex)
         {
             SettingsManager.Logger.Warning(ex, "[TimerResolutionService] Registry workaround failed");
+        }
+    }
+
+    /// <summary>
+    /// Restores (or deletes) GlobalTimerResolutionRequests to its pre-Start value. Only acts if the
+    /// workaround was actually applied, so it never touches a value we did not set.
+    /// </summary>
+    private void RestoreRegistryWorkaround()
+    {
+        if (!_globalTimerReqApplied) return;
+
+        try
+        {
+            using var key = Registry.LocalMachine.OpenSubKey(GlobalTimerResolutionKeyPath, writable: true);
+            if (key == null) return;
+
+            if (_globalTimerReqExisted)
+                key.SetValue(GlobalTimerResolutionValueName, _globalTimerReqOriginal, RegistryValueKind.DWord);
+            else
+                key.DeleteValue(GlobalTimerResolutionValueName, throwOnMissingValue: false);
+
+            _globalTimerReqApplied = false;
+            SettingsManager.Logger.Debug("[TimerResolutionService] Restored Win11 24H2 registry workaround");
+        }
+        catch (Exception ex)
+        {
+            SettingsManager.Logger.Warning(ex, "[TimerResolutionService] Failed to restore registry workaround");
         }
     }
 

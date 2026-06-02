@@ -35,22 +35,32 @@ public class DisableGameDvr : ISystemTweak
 
     public string? Apply()
     {
+        // Each original is captured BEFORE its SetValue, so on a partial-apply failure the
+        // dictionary already covers every value that was actually written. Returning that
+        // partial baseline (instead of letting the exception discard it) lets the manager
+        // persist a revert record so the orphaned writes can be undone.
         var originals = new Dictionary<string, object?>();
-
-        // HKCU entries
-        foreach (var (path, name, value) in RegistryEntries)
+        try
         {
-            using var key = Registry.CurrentUser.CreateSubKey(path);
-            originals[$"HKCU\\{path}\\{name}"] = key.GetValue(name);
-            key.SetValue(name, value, RegistryValueKind.DWord);
+            // HKCU entries
+            foreach (var (path, name, value) in RegistryEntries)
+            {
+                using var key = Registry.CurrentUser.CreateSubKey(path);
+                originals[$"HKCU\\{path}\\{name}"] = key.GetValue(name);
+                key.SetValue(name, value, RegistryValueKind.DWord);
+            }
+
+            // HKLM policy entry
+            using var policyKey = Registry.LocalMachine.CreateSubKey(@"SOFTWARE\Policies\Microsoft\Windows\GameDVR");
+            originals[@"HKLM\SOFTWARE\Policies\Microsoft\Windows\GameDVR\AllowGameDVR"] = policyKey.GetValue("AllowGameDVR");
+            policyKey.SetValue("AllowGameDVR", 0, RegistryValueKind.DWord);
+
+            return JsonSerializer.Serialize(originals);
         }
-
-        // HKLM policy entry
-        using var policyKey = Registry.LocalMachine.CreateSubKey(@"SOFTWARE\Policies\Microsoft\Windows\GameDVR");
-        originals[@"HKLM\SOFTWARE\Policies\Microsoft\Windows\GameDVR\AllowGameDVR"] = policyKey.GetValue("AllowGameDVR");
-        policyKey.SetValue("AllowGameDVR", 0, RegistryValueKind.DWord);
-
-        return JsonSerializer.Serialize(originals);
+        catch
+        {
+            return originals.Count > 0 ? JsonSerializer.Serialize(originals) : null;
+        }
     }
 
     public bool Revert(string? originalValuesJson)

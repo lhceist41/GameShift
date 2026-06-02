@@ -1,9 +1,20 @@
+using System.Diagnostics;
+using System.Runtime.InteropServices;
+using GameShift.Core.Config;
+using GameShift.Core.System;
+
 namespace GameShift.Core.Optimization;
 
 /// <summary>
 /// Shared configuration for which background processes GameShift manages during gaming sessions.
-/// Used by IoPriorityManager, EfficiencyModeController, and MemoryOptimizer.
-/// Centralizes process targeting to ensure all three modules agree on what to demote.
+/// Used by IoPriorityManager, EfficiencyModeController, MemoryOptimizer and CpuSchedulingOptimizer.
+/// Centralizes process targeting to ensure all modules agree on what to demote.
+///
+/// The demotions these modules apply (memory priority, I/O priority, EcoQoS, CPU-set affinity) are
+/// volatile - they do not survive a process exit or reboot - so there is no per-PID state to journal.
+/// But if GameShift crashes mid-session a long-lived background process can stay demoted until it
+/// restarts. <see cref="ResetDemotedProcessesToDefaults"/> handles that during crash recovery by
+/// re-resolving the targets by NAME and writing OS defaults.
 /// </summary>
 public static class BackgroundProcessTargets
 {
@@ -130,5 +141,90 @@ public static class BackgroundProcessTargets
         if (NeverDemote.Contains(processName)) return false;
         if (activeGameProcessNames.Contains(processName, StringComparer.OrdinalIgnoreCase)) return false;
         return AlwaysDemote.Contains(processName);
+    }
+
+    /// <summary>
+    /// Crash recovery: resets every live process in <see cref="AlwaysDemote"/> (and not in
+    /// <see cref="NeverDemote"/>) back to OS-default memory priority (Normal), I/O priority (Normal),
+    /// power throttling (EcoQoS cleared) and CPU-set affinity (cleared). Re-resolves by NAME because
+    /// the original PIDs are gone after a crash. Idempotent and safe - writing the defaults to an
+    /// already-default process is a no-op. Called from the watchdog and the startup crash handler.
+    /// </summary>
+    /// <returns>The number of processes successfully reset.</returns>
+    public static int ResetDemotedProcessesToDefaults()
+    {
+        int reset = 0;
+        foreach (var proc in Process.GetProcesses())
+        {
+            try
+            {
+                if (!AlwaysDemote.Contains(proc.ProcessName) || NeverDemote.Contains(proc.ProcessName))
+                    continue;
+
+                if (ResetProcessToDefaults(proc.Id))
+                    reset++;
+            }
+            catch { /* process may have exited between enumeration and open - ignore */ }
+            finally { proc.Dispose(); }
+        }
+
+        if (reset > 0)
+            SettingsManager.Logger.Information(
+                "[BackgroundProcessTargets] Crash recovery: reset {Count} background process(es) to default priorities",
+                reset);
+
+        return reset;
+    }
+
+    private static bool ResetProcessToDefaults(int pid)
+    {
+        IntPtr h = NativeInterop.OpenProcess(
+            NativeInterop.PROCESS_SET_INFORMATION | NativeInterop.PROCESS_QUERY_LIMITED_INFORMATION,
+            false, pid);
+        if (h == IntPtr.Zero) return false;
+
+        try
+        {
+            // Memory priority → Normal (5)
+            SetProcessStruct(h, NativeInterop.ProcessMemoryPriority,
+                new NativeInterop.MEMORY_PRIORITY_INFORMATION { MemoryPriority = 5 });
+
+            // Power throttling (EcoQoS) → cleared: ControlMask 0 hands control back to the OS.
+            SetProcessStruct(h, NativeInterop.ProcessPowerThrottling,
+                new NativeInterop.PROCESS_POWER_THROTTLING_STATE
+                {
+                    Version = NativeInterop.PROCESS_POWER_THROTTLING_CURRENT_VERSION,
+                    ControlMask = 0,
+                    StateMask = 0
+                });
+
+            // I/O priority → Normal (2)
+            int io = NativeInterop.IoPriorityNormal;
+            NativeInterop.NtSetInformationProcess(h, NativeInterop.ProcessIoPriority, ref io, sizeof(int));
+
+            // CPU-set affinity → cleared (threads may run anywhere again). 22H2+ only; ignore failures.
+            try { NativeInterop.SetProcessDefaultCpuSetMasks(h, null, 0); } catch { /* pre-22H2 */ }
+
+            return true;
+        }
+        finally
+        {
+            NativeInterop.CloseHandle(h);
+        }
+    }
+
+    private static void SetProcessStruct<T>(IntPtr hProcess, int infoClass, T value) where T : struct
+    {
+        int size = Marshal.SizeOf<T>();
+        IntPtr ptr = Marshal.AllocHGlobal(size);
+        try
+        {
+            Marshal.StructureToPtr(value, ptr, false);
+            NativeInterop.SetProcessInformation(hProcess, infoClass, ptr, size);
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(ptr);
+        }
     }
 }

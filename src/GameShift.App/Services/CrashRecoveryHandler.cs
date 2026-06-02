@@ -46,7 +46,7 @@ public static class CrashRecoveryHandler
                         Log.Information("Crash recovery: restoring processor idle state for scheme {Guid}",
                             snapshot.IdleDisableSchemeGuid);
                         GameShift.Core.Optimization.CpuParkingManager.CleanupStaleIdleDisable(
-                            snapshot.IdleDisableSchemeGuid);
+                            snapshot.IdleDisableSchemeGuid, snapshot.IdleDisableEntries);
                     }
 
                     // Restore active power plan
@@ -110,6 +110,10 @@ public static class CrashRecoveryHandler
                             Log.Warning(ex, "Crash recovery: failed to restore Win32PrioritySeparation");
                         }
                     }
+
+                    // Reset background processes that were demoted (volatile tweaks can linger on a
+                    // still-running process after a crash). Name-based - independent of the snapshot.
+                    GameShift.Core.Optimization.BackgroundProcessTargets.ResetDemotedProcessesToDefaults();
                 }
 
                 MessageBox.Show(

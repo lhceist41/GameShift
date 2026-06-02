@@ -32,6 +32,10 @@ public class PciDeviceInterruptInfo
     /// <summary>Hardware supports MSI (MessageSignaledInterruptProperties key exists).</summary>
     public bool MsiSupported { get; set; }
 
+    /// <summary>Whether the MSISupported value itself existed at scan time, so revert can delete a
+    /// value GameShift created rather than write a guessed default (e.g. 0).</summary>
+    public bool MsiValueExisted { get; set; }
+
     /// <summary>MSI is currently enabled (MSISupported = 1).</summary>
     public bool MsiEnabled { get; set; }
 

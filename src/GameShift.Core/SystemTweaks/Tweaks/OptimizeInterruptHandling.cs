@@ -143,11 +143,18 @@ public class OptimizeInterruptHandling : ISystemTweak
 
         bool changed = false;
 
+        // Capture MSI value/key existence so revert can restore-or-delete faithfully.
+        backup.GpuMsiValueExisted = PrimaryGpu.MsiValueExisted;
+        backup.GpuMsiKeyExisted = PrimaryGpu.MsiSupported;
+
         // Enable MSI if supported but not enabled
         if (PrimaryGpu.ShouldEnableMsi)
         {
             if (EnableMsi(PrimaryGpu))
+            {
                 changed = true;
+                backup.GpuMsiChanged = true;
+            }
         }
 
         // Set affinity to recommended non-Core-0 P-core
@@ -166,11 +173,17 @@ public class OptimizeInterruptHandling : ISystemTweak
                     PrimaryUsb.DisplayName, RecommendedCore);
             }
 
+            backup.UsbMsiValueExisted = PrimaryUsb.MsiValueExisted;
+            backup.UsbMsiKeyExisted = PrimaryUsb.MsiSupported;
+
             // Enable MSI on USB host controller if supported
             if (PrimaryUsb.ShouldEnableMsi)
             {
                 if (EnableMsi(PrimaryUsb))
+                {
                     changed = true;
+                    backup.UsbMsiChanged = true;
+                }
             }
 
             backup.UsbDeviceId = PrimaryUsb.DeviceId;
@@ -205,13 +218,26 @@ public class OptimizeInterruptHandling : ISystemTweak
             string msiKeyPath = $@"{PciEnumPath}\{backup.DeviceId}\{backup.InstanceId}\Device Parameters\Interrupt Management\MessageSignaledInterruptProperties";
             string affinityKeyPath = $@"{PciEnumPath}\{backup.DeviceId}\{backup.InstanceId}\Device Parameters\Interrupt Management\Affinity Policy";
 
-            // Restore MSI state
+            // Restore MSI state - only if Apply actually changed it, and restore-or-delete based on
+            // whether the MSISupported value existed before (never write a guessed default).
             try
             {
-                using var msiKey = Registry.LocalMachine.OpenSubKey(msiKeyPath, writable: true);
-                if (msiKey != null)
+                if (backup.GpuMsiChanged)
                 {
-                    msiKey.SetValue("MSISupported", backup.OriginalMsiEnabled ? 1 : 0, RegistryValueKind.DWord);
+                    using (var msiKey = Registry.LocalMachine.OpenSubKey(msiKeyPath, writable: true))
+                    {
+                        if (msiKey != null)
+                        {
+                            if (backup.GpuMsiValueExisted)
+                                msiKey.SetValue("MSISupported", backup.OriginalMsiEnabled ? 1 : 0, RegistryValueKind.DWord);
+                            else
+                                msiKey.DeleteValue("MSISupported", throwOnMissingValue: false);
+                        }
+                    }
+
+                    // If EnableMsi created the MSI key itself (absent before Apply), remove the orphan.
+                    if (!backup.GpuMsiKeyExisted)
+                        DeleteKeyIfEmpty(msiKeyPath);
                 }
             }
             catch (Exception ex)
@@ -286,14 +312,25 @@ public class OptimizeInterruptHandling : ISystemTweak
                     Log.Warning(ex, "[InterruptAffinity] Failed to restore USB affinity");
                 }
 
-                // Restore USB MSI
-                if (backup.UsbOriginalMsiEnabled.HasValue)
+                // Restore USB MSI - only if Apply changed it; restore-or-delete by prior existence.
+                if (backup.UsbMsiChanged)
                 {
                     string usbMsiPath = $@"{PciEnumPath}\{backup.UsbDeviceId}\{backup.UsbInstanceId}\Device Parameters\Interrupt Management\MessageSignaledInterruptProperties";
                     try
                     {
-                        using var usbMsiKey = Registry.LocalMachine.OpenSubKey(usbMsiPath, writable: true);
-                        usbMsiKey?.SetValue("MSISupported", backup.UsbOriginalMsiEnabled.Value ? 1 : 0, RegistryValueKind.DWord);
+                        using (var usbMsiKey = Registry.LocalMachine.OpenSubKey(usbMsiPath, writable: true))
+                        {
+                            if (usbMsiKey != null)
+                            {
+                                if (backup.UsbMsiValueExisted)
+                                    usbMsiKey.SetValue("MSISupported", (backup.UsbOriginalMsiEnabled ?? false) ? 1 : 0, RegistryValueKind.DWord);
+                                else
+                                    usbMsiKey.DeleteValue("MSISupported", throwOnMissingValue: false);
+                            }
+                        }
+
+                        if (!backup.UsbMsiKeyExisted)
+                            DeleteKeyIfEmpty(usbMsiPath);
                     }
                     catch (Exception ex)
                     {
@@ -413,6 +450,7 @@ public class OptimizeInterruptHandling : ISystemTweak
                         IsUsb = isUsb,
                         MsiEnabled = msiSupported == 1,
                         MsiSupported = msiKey != null,
+                        MsiValueExisted = msiKey?.GetValue("MSISupported") != null,
                         MessageNumberLimit = messageNumberLimit,
                         DevicePolicy = devicePolicy,
                         CurrentAffinityMask = assignmentSetOverride,
@@ -577,6 +615,12 @@ public class InterruptBackupState
     public byte[]? OriginalAffinityMask { get; set; }
     public bool GpuAffinityKeyExisted { get; set; }
 
+    // GPU MSI revert bookkeeping: only undo MSI if Apply actually changed it, and restore-or-delete
+    // based on whether the value/key existed before (never write a guessed default).
+    public bool GpuMsiChanged { get; set; }
+    public bool GpuMsiValueExisted { get; set; }
+    public bool GpuMsiKeyExisted { get; set; }
+
     // USB host controller
     public string? UsbDeviceId { get; set; }
     public string? UsbInstanceId { get; set; }
@@ -584,4 +628,7 @@ public class InterruptBackupState
     public byte[]? UsbOriginalAffinityMask { get; set; }
     public bool? UsbOriginalMsiEnabled { get; set; }
     public bool UsbAffinityKeyExisted { get; set; }
+    public bool UsbMsiChanged { get; set; }
+    public bool UsbMsiValueExisted { get; set; }
+    public bool UsbMsiKeyExisted { get; set; }
 }

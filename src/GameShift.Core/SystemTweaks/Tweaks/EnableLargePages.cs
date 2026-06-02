@@ -44,13 +44,16 @@ public class EnableLargePages : ISystemTweak
         bool alreadyHad = HasLockMemoryPrivilege();
         if (alreadyHad)
         {
+            // Record that the privilege pre-existed so Revert leaves it alone - instead of returning
+            // null, which the manager would store as a stale applied-with-no-originals entry.
             Log.Information("[LargePages] SeLockMemoryPrivilege already granted");
-            return null;
+            return JsonSerializer.Serialize(new { WasGranted = true });
         }
 
         if (!GrantLockMemoryPrivilege())
         {
-            return null;
+            // Throw so the manager records a failure rather than a stale applied-state with no originals.
+            throw new InvalidOperationException("Failed to grant SeLockMemoryPrivilege");
         }
 
         Log.Information("[LargePages] SeLockMemoryPrivilege granted - logoff/reboot required");

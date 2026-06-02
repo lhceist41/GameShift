@@ -26,6 +26,13 @@ public abstract class GameAction
     public virtual bool IsConditional => false;
 
     /// <summary>
+    /// The detected game's executable path, set by the orchestrator before Apply so actions can
+    /// resolve the real install location at runtime (e.g. Defender exclusions for non-default
+    /// installs). Null if not provided.
+    /// </summary>
+    public string? ExecutablePath { get; set; }
+
+    /// <summary>
     /// Returns true if this action should be applied given the hardware context.
     /// Override for hardware-dependent actions. Default: always true.
     /// </summary>

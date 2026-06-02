@@ -90,6 +90,7 @@ public class OptimizeMmcss : ISystemTweak
                 }
             }
 
+            bool gamesRestored = true;
             using (var gamesKey = Registry.LocalMachine.OpenSubKey(GamesPath, writable: true))
             {
                 if (gamesKey != null)
@@ -99,9 +100,22 @@ public class OptimizeMmcss : ISystemTweak
                     RestoreStringValue(gamesKey, "Scheduling Category", originals);
                     RestoreStringValue(gamesKey, "SFIO Priority", originals);
                 }
+                else
+                {
+                    // Couldn't open the Games subkey - if we captured any non-null original for those
+                    // four values, this is a real restoration failure, not a silent no-op.
+                    foreach (var n in new[] { "GPU Priority", "Priority", "Scheduling Category", "SFIO Priority" })
+                    {
+                        if (originals.TryGetValue(n, out var v) && v.ValueKind != JsonValueKind.Null)
+                        {
+                            gamesRestored = false;
+                            break;
+                        }
+                    }
+                }
             }
 
-            return true;
+            return gamesRestored;
         }
         catch { return false; }
     }

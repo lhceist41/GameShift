@@ -936,7 +936,9 @@ public class HybridCpuDetector : IOptimization, IJournaledOptimization
                     {
                         perfKey.DeleteValue("CpuAffinityMask", throwOnMissingValue: false);
 
-                        shouldDeleteSubKey = !_ifeoPerfOptionsPreviouslyExisted && perfKey.ValueCount == 0;
+                        shouldDeleteSubKey = !_ifeoPerfOptionsPreviouslyExisted
+                            && perfKey.ValueCount == 0
+                            && perfKey.SubKeyCount == 0;
                     }
                 } // perfKey closed here - safe to delete subkey
 

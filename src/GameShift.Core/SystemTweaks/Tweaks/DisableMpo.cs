@@ -34,21 +34,34 @@ public class DisableMpo : ISystemTweak
         using var gfxKey = Registry.LocalMachine.CreateSubKey(GraphicsDriversKeyPath);
         var originalDisableOverlays = gfxKey.GetValue("DisableOverlays");
 
-        // Core MPO disable (all Windows versions)
-        dwmKey.SetValue("OverlayTestMode", 5, RegistryValueKind.DWord);
-
-        // 24H2 Chromium freezing fix
-        dwmKey.SetValue("OverlayMinFPS", 0, RegistryValueKind.DWord);
-
-        // 25H2 forward-compatibility
-        gfxKey.SetValue("DisableOverlays", 1, RegistryValueKind.DWord);
-
-        return JsonSerializer.Serialize(new
+        // Capture the full baseline up-front so a mid-write failure can be fully rolled back.
+        var originalJson = JsonSerializer.Serialize(new
         {
             OverlayTestMode = originalOverlayTestMode,
             OverlayMinFPS = originalOverlayMinFPS,
             DisableOverlays = originalDisableOverlays
         });
+
+        try
+        {
+            // Core MPO disable (all Windows versions)
+            dwmKey.SetValue("OverlayTestMode", 5, RegistryValueKind.DWord);
+
+            // 24H2 Chromium freezing fix
+            dwmKey.SetValue("OverlayMinFPS", 0, RegistryValueKind.DWord);
+
+            // 25H2 forward-compatibility
+            gfxKey.SetValue("DisableOverlays", 1, RegistryValueKind.DWord);
+
+            return originalJson;
+        }
+        catch
+        {
+            // Roll back any partial writes from the captured baseline, then signal failure so the
+            // manager records no applied-state for a tweak that didn't fully apply.
+            try { Revert(originalJson); } catch { /* best effort */ }
+            return null;
+        }
     }
 
     public bool Revert(string? originalValuesJson)

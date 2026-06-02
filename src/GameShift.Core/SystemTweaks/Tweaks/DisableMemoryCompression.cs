@@ -25,10 +25,14 @@ public class DisableMemoryCompression : ISystemTweak
     /// Whether this tweak is applicable to the current system (32GB+ RAM).
     /// When false, the UI should gray out the toggle.
     /// </summary>
-    public bool IsApplicable => DetectTotalRamGb() >= 32;
+    // Physical RAM doesn't change at runtime - detect once. WMI is expensive and these are read
+    // from the Settings UI on every render pass.
+    private static readonly double _totalRamGb = DetectTotalRamGb();
+
+    public bool IsApplicable => _totalRamGb >= 32;
 
     /// <summary>Total RAM in GB for UI display.</summary>
-    public double TotalRamGb => DetectTotalRamGb();
+    public double TotalRamGb => _totalRamGb;
 
     public bool DetectIsApplied()
     {
@@ -44,10 +48,12 @@ public class DisableMemoryCompression : ISystemTweak
 
     public string? Apply()
     {
+        // Throw (rather than return null) on failure so SystemTweaksManager records a failure, not a
+        // bogus "applied (no original)" state that can never be cleanly reverted.
         if (!IsApplicable)
         {
             Log.Warning("[MemoryCompression] Cannot disable - system has less than 32GB RAM");
-            return null;
+            throw new InvalidOperationException("Memory compression tweak requires 32GB+ RAM");
         }
 
         bool wasEnabled = IsMemoryCompressionEnabled();
@@ -58,7 +64,7 @@ public class DisableMemoryCompression : ISystemTweak
         if (exitCode != 0)
         {
             Log.Warning("[MemoryCompression] Failed to disable: {Output}", output);
-            return null;
+            throw new InvalidOperationException($"Disable-MMAgent failed (exit {exitCode}): {output}");
         }
 
         Log.Information("[MemoryCompression] Disabled - reboot required");
@@ -165,7 +171,13 @@ public class DisableMemoryCompression : ISystemTweak
             var stderrTask = Task.Run(() => { error = process.StandardError.ReadToEnd(); });
             var output = process.StandardOutput.ReadToEnd();
             stderrTask.Wait(10000);
-            process.WaitForExit(10000);
+            if (!process.WaitForExit(10000))
+            {
+                // Don't leave a hung PowerShell child running, and don't read ExitCode (it throws
+                // while the process is still alive).
+                try { process.Kill(); } catch { /* best effort */ }
+                return (-1, "PowerShell timed out");
+            }
 
             return (process.ExitCode, string.IsNullOrEmpty(output) ? error : output);
         }

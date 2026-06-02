@@ -41,10 +41,23 @@ public class DisableUsbSelectiveSuspend : ISystemTweak
         int originalAc = QueryPowerSettingValue("AC");
         int originalDc = QueryPowerSettingValue("DC");
 
-        // Set to 0 (disabled) on both AC and DC
-        RunPowercfg($"/setacvalueindex SCHEME_CURRENT {UsbSubGroupGuid} {UsbSuspendSettingGuid} 0");
-        RunPowercfg($"/setdcvalueindex SCHEME_CURRENT {UsbSubGroupGuid} {UsbSuspendSettingGuid} 0");
-        RunPowercfg("/setactive SCHEME_CURRENT");
+        // Set to 0 (disabled) on both AC and DC, checking each powercfg exit code.
+        var (acExit, _) = RunPowercfg($"/setacvalueindex SCHEME_CURRENT {UsbSubGroupGuid} {UsbSuspendSettingGuid} 0");
+        var (dcExit, _) = RunPowercfg($"/setdcvalueindex SCHEME_CURRENT {UsbSubGroupGuid} {UsbSuspendSettingGuid} 0");
+        var (activeExit, _) = RunPowercfg("/setactive SCHEME_CURRENT");
+
+        if (acExit != 0 || dcExit != 0 || activeExit != 0)
+        {
+            // Roll back any partial change, then throw so the manager records a failure rather than a
+            // stale applied-state. Only restore values we actually captured (>= 0).
+            if (originalAc >= 0)
+                RunPowercfg($"/setacvalueindex SCHEME_CURRENT {UsbSubGroupGuid} {UsbSuspendSettingGuid} {originalAc}");
+            if (originalDc >= 0)
+                RunPowercfg($"/setdcvalueindex SCHEME_CURRENT {UsbSubGroupGuid} {UsbSuspendSettingGuid} {originalDc}");
+            RunPowercfg("/setactive SCHEME_CURRENT");
+            throw new InvalidOperationException(
+                $"powercfg failed disabling USB selective suspend (ac={acExit}, dc={dcExit}, active={activeExit})");
+        }
 
         return JsonSerializer.Serialize(new { OriginalAc = originalAc, OriginalDc = originalDc });
     }
@@ -58,10 +71,10 @@ public class DisableUsbSelectiveSuspend : ISystemTweak
             int originalAc = doc.RootElement.GetProperty("OriginalAc").GetInt32();
             int originalDc = doc.RootElement.GetProperty("OriginalDc").GetInt32();
 
-            RunPowercfg($"/setacvalueindex SCHEME_CURRENT {UsbSubGroupGuid} {UsbSuspendSettingGuid} {originalAc}");
-            RunPowercfg($"/setdcvalueindex SCHEME_CURRENT {UsbSubGroupGuid} {UsbSuspendSettingGuid} {originalDc}");
+            var (acExit, _) = RunPowercfg($"/setacvalueindex SCHEME_CURRENT {UsbSubGroupGuid} {UsbSuspendSettingGuid} {originalAc}");
+            var (dcExit, _) = RunPowercfg($"/setdcvalueindex SCHEME_CURRENT {UsbSubGroupGuid} {UsbSuspendSettingGuid} {originalDc}");
             RunPowercfg("/setactive SCHEME_CURRENT");
-            return true;
+            return acExit == 0 && dcExit == 0;
         }
         catch { return false; }
     }
@@ -73,8 +86,8 @@ public class DisableUsbSelectiveSuspend : ISystemTweak
     /// <returns>Setting value (0 = disabled, 1 = enabled), or -1 on failure</returns>
     private static int QueryPowerSettingValue(string powerType)
     {
-        var output = RunPowercfg($"/query SCHEME_CURRENT {UsbSubGroupGuid} {UsbSuspendSettingGuid}");
-        if (output == null) return -1;
+        var (exitCode, output) = RunPowercfg($"/query SCHEME_CURRENT {UsbSubGroupGuid} {UsbSuspendSettingGuid}");
+        if (exitCode != 0) return -1;
 
         // Parse "Current AC Power Setting Index: 0x00000001" or "Current DC Power Setting Index: ..."
         var pattern = $@"Current {powerType} Power Setting Index:\s*0x([0-9a-fA-F]+)";
@@ -82,7 +95,7 @@ public class DisableUsbSelectiveSuspend : ISystemTweak
         return match.Success ? Convert.ToInt32(match.Groups[1].Value, 16) : -1;
     }
 
-    private static string? RunPowercfg(string arguments)
+    private static (int exitCode, string output) RunPowercfg(string arguments)
     {
         try
         {
@@ -97,18 +110,22 @@ public class DisableUsbSelectiveSuspend : ISystemTweak
             };
 
             using var process = Process.Start(psi);
-            if (process == null) return null;
+            if (process == null) return (-1, "");
 
             var stderr = "";
             var stderrTask = Task.Run(() => { stderr = process.StandardError.ReadToEnd(); });
             var output = process.StandardOutput.ReadToEnd();
             stderrTask.Wait(5000);
-            process.WaitForExit(5000);
-            return output;
+            if (!process.WaitForExit(5000))
+            {
+                try { process.Kill(); } catch { /* best effort */ }
+                return (-1, output);
+            }
+            return (process.ExitCode, output);
         }
         catch
         {
-            return null;
+            return (-1, "");
         }
     }
 }

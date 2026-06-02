@@ -56,7 +56,9 @@ public class EfficiencyModeController : IOptimization
                 SettingsManager.Logger.Information(
                     "[EfficiencyModeController] Efficiency Mode not available on Windows 10 (build {Build}) - skipping",
                     build);
-                IsApplied = true;
+                // Leave IsApplied false - nothing was modified, so it must not inflate the session
+                // applied-count or imply there is state to revert.
+                IsApplied = false;
                 return Task.FromResult(true); // Not a failure, just not applicable
             }
 

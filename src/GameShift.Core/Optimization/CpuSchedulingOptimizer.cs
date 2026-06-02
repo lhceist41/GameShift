@@ -58,7 +58,11 @@ public class CpuSchedulingOptimizer : IOptimization
     private bool _gameCpuSetApplied;
     private readonly List<(int Pid, string Name)> _bgCpuSetPids = new();
     private readonly List<(int Pid, string Name, bool WasEcoQos)> _bgThrottlePids = new();
+    private readonly HashSet<int> _processedBgPids = new(); // PIDs already handled, so rescans skip them
     private readonly object _lock = new();
+
+    // Periodic rescan so background processes spawned after launch are also routed to E-cores / EcoQoS.
+    private Timer? _rescanTimer;
 
     // ── IOptimization ─────────────────────────────────────────────────────────
 
@@ -127,12 +131,15 @@ public class CpuSchedulingOptimizer : IOptimization
                                 }
                             }
 
-                            // HighQoS: disable power throttling
-                            ApplyPowerThrottling(hGame, disableThrottling: true);
-                            _gameHighQosApplied = true;
-                            _logger.Information(
-                                "[CpuSchedulingOptimizer] Game (PID {Pid}) → HighQoS (power throttling disabled)",
-                                _gamePid);
+                            // HighQoS: disable power throttling. Only record applied if the call
+                            // actually succeeded, so revert doesn't touch a process we never changed.
+                            if (ApplyPowerThrottling(hGame, disableThrottling: true))
+                            {
+                                _gameHighQosApplied = true;
+                                _logger.Information(
+                                    "[CpuSchedulingOptimizer] Game (PID {Pid}) → HighQoS (power throttling disabled)",
+                                    _gamePid);
+                            }
                         }
                         finally
                         {
@@ -150,6 +157,14 @@ public class CpuSchedulingOptimizer : IOptimization
             var gameProcessNames = ResolveGameProcessNames(profile);
             AssignBackgroundProcesses(gameProcessNames);
 
+            // Periodically rescan so background processes spawned AFTER launch are also routed.
+            // Only new PIDs are touched (see _processedBgPids), so this is safe to call repeatedly.
+            _rescanTimer = new Timer(
+                _ => { try { AssignBackgroundProcesses(gameProcessNames); } catch { /* best effort */ } },
+                null,
+                TimeSpan.FromSeconds(30),
+                TimeSpan.FromSeconds(30));
+
             IsApplied = true;
             return Task.FromResult(true);
         }
@@ -165,6 +180,17 @@ public class CpuSchedulingOptimizer : IOptimization
         try
         {
             _logger.Information("[CpuSchedulingOptimizer] Reverting CPU scheduling changes");
+
+            // Stop the rescan timer and wait for any in-flight callback to finish BEFORE reading or
+            // clearing the PID lists, so a pending rescan can't repopulate them after revert.
+            if (_rescanTimer != null)
+            {
+                _rescanTimer.Change(Timeout.Infinite, Timeout.Infinite);
+                using var waitHandle = new ManualResetEvent(false);
+                _rescanTimer.Dispose(waitHandle);
+                waitHandle.WaitOne(TimeSpan.FromSeconds(5));
+                _rescanTimer = null;
+            }
 
             // Revert game CPU Sets
             if (_gameCpuSetApplied && _gamePid > 0)
@@ -274,6 +300,7 @@ public class CpuSchedulingOptimizer : IOptimization
                     catch { /* Process may have exited */ }
                 }
                 _bgThrottlePids.Clear();
+                _processedBgPids.Clear();
             }
 
             _logger.Information("[CpuSchedulingOptimizer] Revert complete");
@@ -418,6 +445,10 @@ public class CpuSchedulingOptimizer : IOptimization
                 if (!BackgroundProcessTargets.ShouldDemote(process.ProcessName, gameProcessNames))
                     continue;
 
+                // Skip PIDs already handled, so the periodic rescan only touches new processes and
+                // never recaptures wasEcoQos=true for a process WE just put into EcoQoS.
+                lock (_lock) { if (!_processedBgPids.Add(process.Id)) continue; }
+
                 var hProc = NativeInterop.OpenProcess(
                     NativeInterop.PROCESS_SET_INFORMATION | NativeInterop.PROCESS_QUERY_LIMITED_INFORMATION,
                     false, process.Id);
@@ -444,9 +475,11 @@ public class CpuSchedulingOptimizer : IOptimization
                     // EcoQoS: enable power throttling. Capture whether the process was already
                     // throttled so revert can leave the OS/other tools' setting intact.
                     bool wasEcoQos = IsEcoQosEnabled(hProc);
-                    ApplyPowerThrottling(hProc, disableThrottling: false);
-                    lock (_lock) { _bgThrottlePids.Add((process.Id, process.ProcessName, wasEcoQos)); }
-                    throttleCount++;
+                    if (ApplyPowerThrottling(hProc, disableThrottling: false))
+                    {
+                        lock (_lock) { _bgThrottlePids.Add((process.Id, process.ProcessName, wasEcoQos)); }
+                        throttleCount++;
+                    }
                 }
                 finally
                 {
@@ -470,7 +503,7 @@ public class CpuSchedulingOptimizer : IOptimization
     /// Sets power throttling on a process handle.
     /// <paramref name="disableThrottling"/> = true → HighQoS (game); false → EcoQoS (background).
     /// </summary>
-    private static void ApplyPowerThrottling(IntPtr hProcess, bool disableThrottling)
+    private static bool ApplyPowerThrottling(IntPtr hProcess, bool disableThrottling)
     {
         var state = new NativeInterop.PROCESS_POWER_THROTTLING_STATE
         {
@@ -484,7 +517,7 @@ public class CpuSchedulingOptimizer : IOptimization
         try
         {
             Marshal.StructureToPtr(state, ptr, false);
-            NativeInterop.SetProcessInformation(
+            return NativeInterop.SetProcessInformation(
                 hProcess,
                 NativeInterop.ProcessPowerThrottling,
                 ptr, size);
