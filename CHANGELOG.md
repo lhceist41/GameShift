@@ -24,6 +24,7 @@ All notable changes to GameShift are documented here.
 
 - **Five more optimizations survive a main-app crash** - `GpuDriverOptimizer`, `SessionSystemTweaksOptimizer`, `TimerResolutionManager`, `CompetitiveMode`, and `ServiceSuppressor` now implement `IJournaledOptimization` and are registered with the watchdog. The persistent state they change (GPU driver + TDR registry, MMCSS/USB-suspend/PCIe-ASPM, the Win11 global timer key, the Discord overlay key, and stopped services) is now restored after a crash instead of being left applied. The watchdog recovers 13 optimization classes, up from 8.
 - **No more double-apply baseline corruption** - `OptimizationEngine` now skips any optimization that's already applied, so running "Optimize Now" and then launching a game can't overwrite the captured original values and break revert.
+- **Per-game actions survive a crash too** - firewall rules, Defender exclusions, GPU-registry overrides and fullscreen-optimization keys created for a game are now journaled as self-describing records, so the watchdog removes or restores them after a crash instead of leaving them applied. Previously only `IOptimization` modules were recoverable; GameActions ran through a separate in-memory path that was lost on a crash.
 
 ## [3.7.0] - 2026-04-22
 

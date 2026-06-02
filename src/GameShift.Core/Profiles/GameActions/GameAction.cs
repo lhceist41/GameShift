@@ -44,4 +44,19 @@ public abstract class GameAction
     /// Must not throw - log errors and return gracefully.
     /// </summary>
     public abstract void Revert(SystemStateSnapshot snapshot);
+
+    /// <summary>
+    /// Returns a self-describing record of how to undo this action's PERSISTENT state after a
+    /// crash (registry value, firewall rule, Defender exclusion), or null if there is nothing
+    /// crash-recoverable. Called by the orchestrator after a successful Apply and written to the
+    /// journal so the watchdog can revert it without reconstructing this instance.
+    /// </summary>
+    public virtual GameActionRevertRecord? GetCrashRevertRecord() => null;
 }
+
+/// <summary>
+/// Self-describing revert record for a <see cref="GameAction"/>. <see cref="Kind"/> selects the
+/// undo path (<c>registry</c> / <c>firewall</c> / <c>defender</c>); <see cref="Payload"/> is
+/// kind-specific JSON. Persisted via <c>GameActionJournalEntry</c> for crash recovery.
+/// </summary>
+public sealed record GameActionRevertRecord(string Kind, string Payload);

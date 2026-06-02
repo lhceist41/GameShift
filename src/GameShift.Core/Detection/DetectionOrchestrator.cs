@@ -247,6 +247,12 @@ public class DetectionOrchestrator
                             {
                                 action.Apply(_actionSnapshot);
                                 _logger.Information("Applied game action: {ActionName}", action.Name);
+
+                                // Journal a reversible record so the watchdog can undo this action's
+                                // persistent state (registry/firewall/Defender) after a crash.
+                                var crashRecord = action.GetCrashRevertRecord();
+                                if (crashRecord != null)
+                                    _engine.Journal.RecordGameAction(crashRecord.Kind, crashRecord.Payload);
                             }
                             catch (Exception ex)
                             {

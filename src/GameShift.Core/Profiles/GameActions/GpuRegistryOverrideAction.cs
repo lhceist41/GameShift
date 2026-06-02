@@ -1,3 +1,4 @@
+using System.Text.Json;
 using GameShift.Core.Detection;
 using GameShift.Core.System;
 using Microsoft.Win32;
@@ -176,6 +177,22 @@ public class GpuRegistryOverrideAction : GameAction
                 "GpuRegistryOverrideAction: Failed to revert override for {ValueName}",
                 _umdValueName);
         }
+    }
+
+    /// <inheritdoc/>
+    public override GameActionRevertRecord? GetCrashRevertRecord()
+    {
+        if (!_applied || _appliedSubkeyPath == null) return null;
+        var payload = new
+        {
+            hive = "HKLM",
+            path = _appliedSubkeyPath,
+            name = _umdValueName,
+            kind = "String",
+            existed = _previouslyExisted,
+            value = _previouslyExisted ? _previousValue : null
+        };
+        return new GameActionRevertRecord("registry", JsonSerializer.Serialize(payload));
     }
 
     /// <summary>

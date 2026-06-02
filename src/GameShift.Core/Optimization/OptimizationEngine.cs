@@ -46,6 +46,12 @@ public class OptimizationEngine : IDisposable
     private readonly ILogger _logger;
     private readonly List<IOptimization> _optimizations;
     private readonly JournalManager _journal;
+
+    /// <summary>
+    /// The session journal, shared with the detection layer so per-game GameActions can be recorded
+    /// for crash recovery against the same in-memory session as the optimizations.
+    /// </summary>
+    internal JournalManager Journal => _journal;
     private readonly RegistryChangeMonitor _registryMonitor;
     private readonly ProBalanceService _proBalance;
 

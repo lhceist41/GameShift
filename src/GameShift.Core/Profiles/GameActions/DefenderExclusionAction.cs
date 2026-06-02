@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.Json;
 using GameShift.Core.System;
 using Serilog;
 
@@ -107,6 +108,13 @@ public class DefenderExclusionAction : GameAction
         }
 
         _createdPaths.Clear();
+    }
+
+    /// <inheritdoc/>
+    public override GameActionRevertRecord? GetCrashRevertRecord()
+    {
+        if (_createdPaths.Count == 0) return null;
+        return new GameActionRevertRecord("defender", JsonSerializer.Serialize(new { paths = _createdPaths }));
     }
 
     /// <summary>

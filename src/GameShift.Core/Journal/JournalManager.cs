@@ -31,6 +31,18 @@ public class JournalEntry
     public DateTimeOffset AppliedAt { get; set; }
 }
 
+/// <summary>
+/// A self-describing, reversible record of a per-game GameAction, so the watchdog can undo it
+/// after a crash without reconstructing the original action instance. <see cref="Kind"/> selects
+/// the undo path (registry / firewall / defender); <see cref="Payload"/> is kind-specific JSON.
+/// </summary>
+public class GameActionJournalEntry
+{
+    public string Kind { get; set; } = string.Empty;
+    public string Payload { get; set; } = string.Empty;
+    public DateTimeOffset AppliedAt { get; set; }
+}
+
 /// <summary>Root journal document written to state.json.</summary>
 public class SessionJournalData
 {
@@ -41,6 +53,7 @@ public class SessionJournalData
     public bool SessionActive { get; set; }
     public ActiveGameInfo? ActiveGame { get; set; }
     public List<JournalEntry> Optimizations { get; set; } = new();
+    public List<GameActionJournalEntry> GameActions { get; set; } = new();
 
     // ── Boot recovery metadata ────────────────────────────────────────────────
 
@@ -194,6 +207,24 @@ public class JournalManager
                 State = result.State.ToString(),
                 OriginalValue = result.OriginalValue,
                 AppliedValue = result.AppliedValue,
+                AppliedAt = DateTimeOffset.UtcNow
+            });
+            Save();
+        }
+    }
+
+    /// <summary>
+    /// Appends a reversible per-game GameAction record to the journal so the watchdog can undo it
+    /// after a crash. Uses the same in-memory session journal as the engine (share one instance).
+    /// </summary>
+    public void RecordGameAction(string kind, string payload)
+    {
+        lock (_lock)
+        {
+            _current.GameActions.Add(new GameActionJournalEntry
+            {
+                Kind = kind,
+                Payload = payload,
                 AppliedAt = DateTimeOffset.UtcNow
             });
             Save();

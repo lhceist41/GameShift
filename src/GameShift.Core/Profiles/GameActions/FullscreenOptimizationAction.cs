@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Win32;
 using GameShift.Core.System;
 using Serilog;
@@ -17,6 +18,11 @@ public class FullscreenOptimizationAction : GameAction
     private readonly string _name;
     private readonly string _executablePath;
     private readonly bool _includeDpiOverride;
+
+    // Captured at Apply time so the crash-revert record can restore/delete the value statelessly.
+    private bool _applied;
+    private bool _previouslyExisted;
+    private string? _previousValue;
 
     /// <param name="name">Display name, e.g. "Valorant Fullscreen Opt-Out".</param>
     /// <param name="executablePath">Full path to the game executable used as the registry value name.</param>
@@ -52,12 +58,15 @@ public class FullscreenOptimizationAction : GameAction
 
             // Snapshot existing value before overwriting
             var existingValue = key.GetValue(_executablePath);
+            _previouslyExisted = existingValue != null;
+            _previousValue = existingValue?.ToString();
             if (existingValue != null)
             {
                 snapshot.RecordRegistryValue(LayersKeyPath, _executablePath, existingValue);
             }
 
             key.SetValue(_executablePath, GetLayerValue());
+            _applied = true;
             Log.Information(
                 "FullscreenOptimizationAction: Set DISABLEDXMAXIMIZEDWINDOWEDMODE for {ExePath}",
                 _executablePath);
@@ -107,5 +116,21 @@ public class FullscreenOptimizationAction : GameAction
                 "FullscreenOptimizationAction: Failed to revert registry value for {ExePath}",
                 _executablePath);
         }
+    }
+
+    /// <inheritdoc/>
+    public override GameActionRevertRecord? GetCrashRevertRecord()
+    {
+        if (!_applied) return null;
+        var payload = new
+        {
+            hive = "HKCU",
+            path = LayersKeyPath,
+            name = _executablePath,
+            kind = "String",
+            existed = _previouslyExisted,
+            value = _previouslyExisted ? _previousValue : null
+        };
+        return new GameActionRevertRecord("registry", JsonSerializer.Serialize(payload));
     }
 }

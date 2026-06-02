@@ -107,6 +107,16 @@ public class WatchdogRevertEngine
             }
         }
 
+        // Revert per-game actions (firewall rules, Defender exclusions, registry overrides). These
+        // have no factory - they're undone generically from their self-describing journal records.
+        if (journalData.GameActions.Count > 0)
+        {
+            _logger.Information(
+                "[WatchdogRevertEngine] {Count} GameAction(s) to revert", journalData.GameActions.Count);
+            foreach (var ga in journalData.GameActions)
+                GameActionRecovery.Revert(ga.Kind, ga.Payload, _logger);
+        }
+
         // Stamp the journal with the recovery time so the main app's
         // DeactivateProfileAsync can detect that the watchdog has already
         // reverted and skip its own redundant LIFO revert.

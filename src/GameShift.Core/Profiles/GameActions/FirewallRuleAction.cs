@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.Json;
 using GameShift.Core.System;
 using Serilog;
 
@@ -142,6 +143,13 @@ public class FirewallRuleAction : GameAction
                 "FirewallRuleAction: Failed to remove firewall rule '{RuleName}'",
                 _ruleName);
         }
+    }
+
+    /// <inheritdoc/>
+    public override GameActionRevertRecord? GetCrashRevertRecord()
+    {
+        if (!_ruleCreated) return null;
+        return new GameActionRevertRecord("firewall", JsonSerializer.Serialize(new { ruleName = _ruleName }));
     }
 
     /// <summary>
