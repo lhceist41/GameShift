@@ -38,9 +38,9 @@
     <Description>Automatic gaming performance optimizer for Windows</Description>
     <Company>GameShift</Company>
     <Copyright>Copyright (c) 2026 GameShift Contributors. MIT License.</Copyright>
-    <Version>3.7.0</Version>
-    <AssemblyVersion>3.7.0.0</AssemblyVersion>
-    <FileVersion>3.7.0.0</FileVersion>
+    <Version>3.8.0</Version>
+    <AssemblyVersion>3.8.0.0</AssemblyVersion>
+    <FileVersion>3.8.0.0</FileVersion>
 
     <!-- Publish configuration for single-file self-contained exe -->
     <!-- RuntimeIdentifier is NOT set here to avoid changing debug output paths. -->
@@ -50,10 +50,12 @@
     <PublishTrimmed>false</PublishTrimmed>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
 
-    <!-- Precompile IL to native code (ReadyToRun) so the app skips cold JIT on launch.
-         Only takes effect when publishing with a RuntimeIdentifier (dotnet publish -r win-x64),
-         so plain `dotnet build` and debug runs are unchanged. Largest single cold-start win. -->
-    <PublishReadyToRun>true</PublishReadyToRun>
+    <!-- ReadyToRun is disabled: Microsoft.Diagnostics.Tracing.TraceEvent ships Dia2Lib.dll in a way
+         that breaks crossgen2 (NETSDK1096 "Multiple input files matching same simple name"), which
+         fails `dotnet publish -r win-x64`. PublishReadyToRunExclude doesn't help (the failure is a
+         duplicate compiler input, before per-assembly exclusion). Single-file + no-compression below
+         still avoid the temp-unpack cold-start cost. Re-enable once the TraceEvent duplicate is fixed. -->
+    <PublishReadyToRun>false</PublishReadyToRun>
 
     <!-- Compression shrinks the download but forces the entire self-contained bundle to be
          decompressed to a temp directory on every cold start, adding seconds to first launch.
