@@ -2,6 +2,17 @@
 
 All notable changes to GameShift are documented here.
 
+## [Unreleased]
+
+### Added
+
+- **Continuous integration** - every push and pull request now builds the solution with warnings treated as errors, runs the full test suite, and verifies formatting on GitHub Actions. Pull requests additionally run the real win-x64 single-file publish, the exact step that broke silently before 3.8.1. Pushing a release tag publishes the exe as a build artifact and drafts the GitHub release automatically.
+- **Crash-recovery contract tests** - new tests lock in the invariants behind the journal and watchdog design: every journaled optimization must have a watchdog recovery factory (and vice versa), every factory must build the module it claims to, recovery must never throw or report success on corrupt journal data, and the registry crash-restore path is verified end to end for all four value types (String, DWord, QWord, Binary). Test count: 187 to 205.
+
+### Fixed
+
+- **Recovery no longer reports success on corrupt journal data** - found by the new contract tests: the service suppressor and GPU driver optimizer treated an unreadable journal record as "nothing to do" and reported a successful revert. Both now report a failure so the recovery log tells the truth.
+
 ## [3.8.1] - 2026-06-02
 
 ### Performance

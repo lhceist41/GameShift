@@ -20,7 +20,9 @@ public class WatchdogRevertEngine
 
     // Registry of optimization factories keyed by Name.
     // Add entries here as more optimizations migrate to IJournaledOptimization.
-    private static readonly Dictionary<string, Func<IJournaledOptimization>> DefaultFactories =
+    // Internal (not private) so JournaledOptimizationContractTests can assert the closure
+    // invariant: every IJournaledOptimization implementor has a factory here and vice versa.
+    internal static readonly Dictionary<string, Func<IJournaledOptimization>> DefaultFactories =
         new(StringComparer.Ordinal)
         {
             [MpoToggle.OptimizationId] = () => new MpoToggle(),

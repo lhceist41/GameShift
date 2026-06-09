@@ -121,6 +121,8 @@ Nothing fancy here. It's just me reviewing, so keep it simple:
 
 That last point matters more than any template. I mostly need to know it actually works on a real machine.
 
+CI runs automatically on every PR: build with warnings as errors, the full test suite, the formatting check, and the real win-x64 single-file publish. A red check means it will not merge, so running steps 3 and 4 locally first saves you a round trip.
+
 ## Issue Guidelines
 
 - Search existing issues before opening a new one

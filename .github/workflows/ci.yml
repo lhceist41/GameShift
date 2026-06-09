@@ -1,0 +1,99 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+    tags: ['v*']
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  checks:
+    name: Build, test, format
+    runs-on: windows-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 9
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      # Repo policy: zero warnings. Enforce it so a new warning fails the build here
+      # instead of slipping into master.
+      - name: Build (warnings are errors)
+        run: dotnet build --nologo --verbosity minimal -warnaserror
+
+      - name: Test
+        run: dotnet test --nologo --verbosity normal --no-build
+
+      - name: Format check
+        run: dotnet format --verify-no-changes
+
+  # The publish step is the only thing that exercises ReadyToRun, the crossgen2 dedup
+  # target, and single-file packaging. It broke silently before 3.8.1 because nothing
+  # ran it between releases. Run it on every pull request and on release tags.
+  publish:
+    name: Publish win-x64 single file
+    if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/tags/v')
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 9
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Publish
+        run: dotnet publish src/GameShift.App/GameShift.App.csproj -c Release -r win-x64 --nologo
+
+      - name: Verify artifact
+        shell: pwsh
+        run: |
+          $exe = "src/GameShift.App/bin/Release/net9.0-windows10.0.19041.0/win-x64/publish/GameShift.App.exe"
+          if (-not (Test-Path $exe)) { throw "GameShift.App.exe missing from publish output" }
+          $vi = (Get-Item $exe).VersionInfo
+          Write-Host "Published GameShift.App.exe $($vi.FileVersion) ($([math]::Round((Get-Item $exe).Length / 1MB)) MB)"
+
+      - name: Upload artifact (tags only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@v4
+        with:
+          name: GameShift.App.exe
+          path: src/GameShift.App/bin/Release/net9.0-windows10.0.19041.0/win-x64/publish/GameShift.App.exe
+          retention-days: 14
+
+      # Drafts the release so a human (or the release flow) only has to paste the
+      # CHANGELOG section and press publish. The asset name must stay exactly
+      # GameShift.App.exe: the in-app updater matches it by name.
+      - name: Draft GitHub release (tags only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          $exe = "src/GameShift.App/bin/Release/net9.0-windows10.0.19041.0/win-x64/publish/GameShift.App.exe"
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "Release $tag already exists, uploading asset only"
+            gh release upload $tag $exe --clobber
+          } else {
+            gh release create $tag $exe --draft --title "GameShift $($tag.TrimStart('v'))" --notes "Draft created by CI. Replace this text with the CHANGELOG section for $tag, then publish."
+          }

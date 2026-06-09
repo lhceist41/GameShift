@@ -311,7 +311,15 @@ public class GpuDriverOptimizer : IOptimization, IJournaledOptimization
     {
         try
         {
-            var entries = JsonSerializer.Deserialize<List<GpuChangeEntry>>(originalValueJson) ?? new List<GpuChangeEntry>();
+            var entries = JsonSerializer.Deserialize<List<GpuChangeEntry>>(originalValueJson);
+            if (entries == null)
+            {
+                // Apply always journals a list (at minimum "[]"); a literal JSON null means the
+                // record is corrupt. Report failure instead of claiming a successful revert.
+                return new OptimizationResult(
+                    OptimizationId, string.Empty, string.Empty, OptimizationState.Failed,
+                    "Corrupt journal record (null entry list)");
+            }
 
             int successCount = 0, failCount = 0;
             for (int i = entries.Count - 1; i >= 0; i--)

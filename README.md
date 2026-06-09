@@ -1,6 +1,7 @@
 <h1 align="center">GameShift</h1>
 
 <p align="center">
+  <a href="https://github.com/lhceist41/GameShift/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/lhceist41/GameShift/ci.yml?style=for-the-badge&label=CI" alt="CI"/></a>
   <a href="https://github.com/lhceist41/GameShift/releases/latest"><img src="https://img.shields.io/github/v/release/lhceist41/GameShift?style=for-the-badge&color=00c853" alt="Latest Release"/></a>
   <img src="https://img.shields.io/github/downloads/lhceist41/GameShift/total?style=for-the-badge&color=00f0ff" alt="Total Downloads"/>
   <img src="https://img.shields.io/badge/.NET-9-512bd4?style=for-the-badge&logo=dotnet&logoColor=white" alt=".NET 9"/>

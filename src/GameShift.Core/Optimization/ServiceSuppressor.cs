@@ -346,7 +346,16 @@ public class ServiceSuppressor : IOptimization, IJournaledOptimization
         try
         {
             var payload = JsonSerializer.Deserialize<ServiceRevertPayload>(originalValueJson);
-            RestartServices(payload?.Services ?? new List<string>());
+            if (payload == null)
+            {
+                // Apply always journals a payload object; a literal JSON null means the record is
+                // corrupt. Report failure instead of claiming a successful revert.
+                return new OptimizationResult(
+                    OptimizationId, string.Empty, string.Empty, OptimizationState.Failed,
+                    "Corrupt journal record (null payload)");
+            }
+
+            RestartServices(payload.Services ?? new List<string>());
             return new OptimizationResult(OptimizationId, string.Empty, string.Empty, OptimizationState.Reverted);
         }
         catch (Exception ex)
