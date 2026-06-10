@@ -252,8 +252,28 @@ public class ServiceSuppressor : IOptimization, IJournaledOptimization
                 // Only stop if currently running
                 if (sc.Status == ServiceControllerStatus.Running)
                 {
-                    // Record original state before making changes
+                    // ServiceController.Stop() also stops every RUNNING dependent service.
+                    // Enumerate them first so (a) we refuse to cascade into a never-stop
+                    // service, and (b) every cascade-stopped dependent is recorded and
+                    // restarted on revert. Found by the revert-symmetry harness: stopping a
+                    // tier service left its dependent WdiSystemHost stopped after the session.
+                    var runningDependents = CollectRunningDependents(sc, svcInfo.ServiceName);
+
+                    var protectedDependent = runningDependents
+                        .FirstOrDefault(d => NeverStopServices.Contains(d));
+                    if (protectedDependent != null)
+                    {
+                        SettingsManager.Logger.Warning(
+                            "[ServiceSuppressor] Not stopping {ServiceName}: running dependent {Dependent} is in the never-stop safety list",
+                            svcInfo.ServiceName, protectedDependent);
+                        skippedCount++;
+                        continue;
+                    }
+
+                    // Record original state before making changes (parent and dependents)
                     snapshot.RecordServiceState(svcInfo.ServiceName, sc.Status);
+                    foreach (var dependent in runningDependents)
+                        snapshot.RecordServiceState(dependent, ServiceControllerStatus.Running);
 
                     SettingsManager.Logger.Debug(
                         "[ServiceSuppressor] Stopping service {ServiceName} ({DisplayName})",
@@ -267,7 +287,20 @@ public class ServiceSuppressor : IOptimization, IJournaledOptimization
                         "[ServiceSuppressor] Successfully stopped service {ServiceName}",
                         svcInfo.ServiceName);
 
-                    _stoppedServices.Add(svcInfo.ServiceName);
+                    // Parent first so revert starts it before its dependents; a dependent's
+                    // Start() also pulls required services up, so order is belt and suspenders.
+                    if (!_stoppedServices.Contains(svcInfo.ServiceName, StringComparer.OrdinalIgnoreCase))
+                        _stoppedServices.Add(svcInfo.ServiceName);
+                    foreach (var dependent in runningDependents)
+                    {
+                        if (!_stoppedServices.Contains(dependent, StringComparer.OrdinalIgnoreCase))
+                        {
+                            _stoppedServices.Add(dependent);
+                            SettingsManager.Logger.Information(
+                                "[ServiceSuppressor] Dependent service {Dependent} was cascade-stopped with {ServiceName} and will be restarted on revert",
+                                dependent, svcInfo.ServiceName);
+                        }
+                    }
                     stoppedCount++;
                 }
                 else
@@ -363,6 +396,84 @@ public class ServiceSuppressor : IOptimization, IJournaledOptimization
             SettingsManager.Logger.Error(ex, "[ServiceSuppressor] RevertFromRecord failed");
             return new OptimizationResult(OptimizationId, string.Empty, string.Empty, OptimizationState.Failed, ex.Message);
         }
+    }
+
+    /// <summary>
+    /// Collects every RUNNING service that would be cascade-stopped by stopping
+    /// <paramref name="parentName"/> (breadth-first over DependentServices, so dependents of
+    /// dependents are included). Discovery order places each service after the one it depends
+    /// on, which is the correct restart order. Per-service query errors are tolerated: a
+    /// dependent we cannot inspect is simply not recorded, matching today's behavior.
+    /// </summary>
+    private static List<string> CollectRunningDependents(ServiceController parent, string parentName)
+    {
+        var result = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { parentName };
+        var queue = new Queue<ServiceController>();
+        queue.Enqueue(parent);
+
+        try
+        {
+            while (queue.Count > 0)
+            {
+                var current = queue.Dequeue();
+                ServiceController[] dependents;
+                try
+                {
+                    dependents = current.DependentServices;
+                }
+                catch (Exception ex)
+                {
+                    SettingsManager.Logger.Debug(
+                        "[ServiceSuppressor] Could not enumerate dependents of {ServiceName}: {Message}",
+                        current.ServiceName, ex.Message);
+                    continue;
+                }
+
+                foreach (var dependent in dependents)
+                {
+                    try
+                    {
+                        if (!seen.Add(dependent.ServiceName))
+                        {
+                            dependent.Dispose();
+                            continue;
+                        }
+
+                        if (dependent.Status is ServiceControllerStatus.Running
+                            or ServiceControllerStatus.StartPending)
+                        {
+                            result.Add(dependent.ServiceName);
+                            queue.Enqueue(dependent); // keep walking; dispose after dequeue pass
+                        }
+                        else
+                        {
+                            dependent.Dispose();
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        SettingsManager.Logger.Debug(
+                            "[ServiceSuppressor] Could not inspect dependent service: {Message}", ex.Message);
+                        dependent.Dispose();
+                    }
+                }
+
+                if (!ReferenceEquals(current, parent))
+                    current.Dispose();
+            }
+        }
+        finally
+        {
+            while (queue.Count > 0)
+            {
+                var leftover = queue.Dequeue();
+                if (!ReferenceEquals(leftover, parent))
+                    leftover.Dispose();
+            }
+        }
+
+        return result;
     }
 
     private static void RestartServices(IReadOnlyList<string> serviceNames)

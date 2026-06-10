@@ -13,6 +13,7 @@ All notable changes to GameShift are documented here.
 ### Fixed
 
 - **Recovery no longer reports success on corrupt journal data** - found by the new contract tests: the service suppressor and GPU driver optimizer treated an unreadable journal record as "nothing to do" and reported a successful revert. Both now report a failure so the recovery log tells the truth.
+- **Cascade-stopped services are now restored on revert** - found by the new revert-symmetry harness on its very first live run: stopping a Windows service also stops every service that depends on it, but only the directly targeted service was recorded, so dependents (for example the Diagnostic System Host) stayed stopped after the session. The suppressor now enumerates running dependents before stopping, records each one for restart, and refuses to stop a service at all if the cascade would take down anything on the never-stop safety list, closing an indirect path around that protection.
 
 ## [3.8.1] - 2026-06-02
 
