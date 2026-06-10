@@ -123,6 +123,8 @@ That last point matters more than any template. I mostly need to know it actuall
 
 CI runs automatically on every PR: build with warnings as errors, the full test suite, the formatting check, and the real win-x64 single-file publish. A red check means it will not merge, so running steps 3 and 4 locally first saves you a round trip.
 
+An additional informational job runs the live revert-symmetry cycle on the throwaway CI runner: it applies a maximum-coverage session, reverts it, and diffs a full system-state snapshot to prove zero residue. If your change touches an optimization's apply or revert path, check that job's log.
+
 ## Issue Guidelines
 
 - Search existing issues before opening a new one

@@ -42,6 +42,32 @@ jobs:
       - name: Format check
         run: dotnet format --verify-no-changes
 
+  # Trust-contract verification: runs a REAL probe -> apply-all -> revert-all -> probe cycle on
+  # the ephemeral runner (elevated, throwaway VM) and requires zero persistent residue. This is
+  # the only check that exercises the actual Windows registry/powercfg/service behavior end to
+  # end. Informational (continue-on-error) while it accumulates baseline runs; promote it to a
+  # required check once it has proven stable across environments.
+  revert-symmetry:
+    name: Revert symmetry (informational)
+    runs-on: windows-latest
+    continue-on-error: true
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 9
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Build
+        run: dotnet build --nologo --verbosity minimal
+
+      - name: Run live revert-symmetry cycle
+        env:
+          GAMESHIFT_VERIFY_REVERT: '1'
+        run: dotnet test --nologo --no-build --filter "FullyQualifiedName~FullSessionCycle" --logger "console;verbosity=detailed"
+
   # The publish step is the only thing that exercises ReadyToRun, the crossgen2 dedup
   # target, and single-file packaging. It broke silently before 3.8.1 because nothing
   # ran it between releases. Run it on every pull request and on release tags.
