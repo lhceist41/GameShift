@@ -70,6 +70,13 @@ public sealed class RevertVerificationResult
 /// churn on the probed surface). Service status and scheduled task items are only failures when
 /// the mid-probe shows GameShift itself touched them; otherwise a difference is reported as
 /// external drift, because Windows starts and stops unrelated services on its own schedule.
+/// Demand-start (Manual) services are a special case even when touched: their running state is
+/// OS-managed process lifetime, not configuration. Example: stopping the Diagnostic Policy
+/// Service makes its WDI worker host (WdiSystemHost) idle-exit with no SCM dependency edge, and
+/// Windows relaunches it only when a diagnostic scenario next needs it. Restoring such state
+/// would be restoring noise that decays minutes later, so it is reported as drift. Automatic
+/// services GameShift touched, every start type, and the whole registry/power surface remain
+/// hard contractual failures.
 ///
 /// The run uses the real journal, so if the harness dies mid-cycle the existing watchdog and
 /// boot recovery revert the session exactly like a crashed game session. Deliberately session-
@@ -127,6 +134,55 @@ public static class RevertVerificationRunner
         SuppressDefenderScheduledScan = false,
     };
 
+    /// <summary>
+    /// Splits the residual differences into hard failures and informational drift. Pure, so the
+    /// policy itself is unit-tested:
+    /// registry/power/service-start-type differences are always failures; scheduled task and
+    /// service STATUS differences are failures only when the session touched them; and a touched
+    /// service status is still only drift when the service is demand-start (Manual or Disabled),
+    /// because Windows owns the process lifetime of demand-start services.
+    /// </summary>
+    internal static (List<StateDifference> Failures, List<StateDifference> Drift) ClassifyResidual(
+        StateProbe before, IReadOnlySet<string> touchedKeys, IReadOnlyList<StateDifference> residual)
+    {
+        var failures = new List<StateDifference>();
+        var drift = new List<StateDifference>();
+
+        foreach (var diff in residual)
+        {
+            bool isServiceStatus = diff.Key.StartsWith("svc:status:", StringComparison.OrdinalIgnoreCase);
+            bool isTask = diff.Key.StartsWith("task:", StringComparison.OrdinalIgnoreCase);
+
+            if (!isServiceStatus && !isTask)
+            {
+                failures.Add(diff);   // registry, power, service start types: always contractual
+                continue;
+            }
+
+            if (!touchedKeys.Contains(diff.Key))
+            {
+                drift.Add(diff);      // background churn by Windows itself, not GameShift residue
+                continue;
+            }
+
+            if (isServiceStatus)
+            {
+                var serviceName = diff.Key["svc:status:".Length..];
+                bool autoStart = before.Items.TryGetValue($"svc:start:{serviceName}", out var startType)
+                    && startType is "Automatic" or "Boot" or "System";
+                if (!autoStart)
+                {
+                    drift.Add(diff);  // demand-start: OS-managed process lifetime, self-heals
+                    continue;
+                }
+            }
+
+            failures.Add(diff);
+        }
+
+        return (failures, drift);
+    }
+
     public static async Task<RevertVerificationResult> RunAsync(ILogger logger)
     {
         var prober = new SystemStateProber();
@@ -179,18 +235,7 @@ public static class RevertVerificationRunner
         var touchedKeys = new HashSet<string>(appliedChanges.Select(d => d.Key), StringComparer.OrdinalIgnoreCase);
 
         var residual = ProbeComparison.Compare(before, after);
-        var failures = new List<StateDifference>();
-        var drift = new List<StateDifference>();
-
-        foreach (var diff in residual)
-        {
-            bool churnProne = diff.Key.StartsWith("svc:status:", StringComparison.OrdinalIgnoreCase)
-                           || diff.Key.StartsWith("task:", StringComparison.OrdinalIgnoreCase);
-            if (churnProne && !touchedKeys.Contains(diff.Key))
-                drift.Add(diff);   // background churn by Windows itself, not GameShift residue
-            else
-                failures.Add(diff);
-        }
+        var (failures, drift) = ClassifyResidual(before, touchedKeys, residual);
 
         return new RevertVerificationResult
         {

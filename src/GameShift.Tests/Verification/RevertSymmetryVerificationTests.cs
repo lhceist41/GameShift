@@ -71,6 +71,45 @@ public class RevertSymmetryVerificationTests
         Assert.Single(diffs); // same key despite casing, but the value text differs
     }
 
+    // ── Residual classification policy (pure) ────────────────────────────────
+
+    [Fact]
+    public void ClassifyResidual_TouchedDemandStartServiceStatus_IsDriftNotResidue()
+    {
+        // The WdiSystemHost case: a Manual service idle-exits when its driver service stops.
+        // Windows owns demand-start process lifetime, so this must not fail the contract.
+        var before = new StateProbe();
+        before.Items["svc:start:WdiSystemHost"] = "Manual";
+        var touched = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "svc:status:WdiSystemHost" };
+        var residual = new List<StateDifference> { new("svc:status:WdiSystemHost", "Running", "Stopped") };
+
+        var (failures, drift) = RevertVerificationRunner.ClassifyResidual(before, touched, residual);
+
+        Assert.Empty(failures);
+        Assert.Single(drift);
+    }
+
+    [Fact]
+    public void ClassifyResidual_AutomaticServiceAndRegistry_RemainContractualFailures()
+    {
+        var before = new StateProbe();
+        before.Items["svc:start:SysMain"] = "Automatic";
+        var touched = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "svc:status:SysMain" };
+        var residual = new List<StateDifference>
+        {
+            new("svc:status:SysMain", "Running", "Stopped"),          // touched + automatic: failure
+            new("svc:status:SomeOther", "Running", "Stopped"),        // untouched: drift
+            new("reg:HKLM\\X\\V", "dword:1", "dword:5"),              // registry: always failure
+            new("svc:start:SysMain", "Automatic", "Manual"),          // start type: always failure
+        };
+
+        var (failures, drift) = RevertVerificationRunner.ClassifyResidual(before, touched, residual);
+
+        Assert.Equal(3, failures.Count);
+        Assert.Single(drift);
+        Assert.Equal("svc:status:SomeOther", drift[0].Key);
+    }
+
     // ── Coverage closure ─────────────────────────────────────────────────────
 
     /// <summary>
