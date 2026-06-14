@@ -20,6 +20,12 @@ public class KernelTuningSetting
     public required string Risk { get; init; }
     public required string Tier { get; init; }
     public required string Description { get; init; }
+
+    /// <summary>
+    /// True for settings that force a platform/periodic timer (disabledynamictick, useplatformtick).
+    /// These degrade performance on AMD / invariant-TSC systems and are gated off there.
+    /// </summary>
+    public bool PlatformTimerTweak { get; init; }
 }
 
 /// <summary>
@@ -93,6 +99,7 @@ public class KernelTuningManager
             RevertArgs = "/deletevalue disabledynamictick",
             Risk = "Low",
             Tier = "Competitive",
+            PlatformTimerTweak = true,
             Description = "Consistent timer interrupts reduce jitter. Slightly increases idle power."
         },
         new()
@@ -105,6 +112,7 @@ public class KernelTuningManager
             RevertArgs = "/deletevalue useplatformtick",
             Risk = "Low",
             Tier = "Competitive",
+            PlatformTimerTweak = true,
             Description = "Forces HPET/TSC as timer source for more accurate timing."
         },
         new()
@@ -212,6 +220,17 @@ public class KernelTuningManager
         if (Blocklisted.Contains(setting.BcdKey))
             return (false, $"Setting '{setting.BcdKey}' is blocklisted for safety.");
 
+        // Forcing the platform/periodic timer degrades performance on AMD (invariant TSC):
+        // Windows logs HAL event 17 and Kernel-Power 508. Refuse to apply it there, but never
+        // block Revert() so a value set before this guard existed can still be removed.
+        if (setting.PlatformTimerTweak && CpuCapabilities.PlatformTimerTweaksHarmful)
+        {
+            _logger.Information(
+                "[KernelTuning] Skipping {Name}: forcing the platform timer degrades performance on AMD/invariant-TSC CPUs.",
+                setting.DisplayName);
+            return (false, $"{setting.DisplayName} is not applied on AMD CPUs: forcing the platform timer degrades performance (Windows logs HAL event 17 and Kernel-Power 508).");
+        }
+
         _logger.Information("[KernelTuning] Applying: bcdedit {Args}", setting.ApplyArgs);
         var (success, output) = RunBcdedit(setting.ApplyArgs);
 
@@ -221,7 +240,8 @@ public class KernelTuningManager
             return (false, $"bcdedit failed: {output}");
         }
 
-        // Record in journal
+        // Record in journal. This MUST stay below the platform-timer guard above: a refused apply
+        // never reaches here, so nothing that was not applied is ever journaled for revert.
         try
         {
             var journal = new JournalManager();
@@ -280,16 +300,28 @@ public class KernelTuningManager
     }
 
     /// <summary>
-    /// Returns the settings applicable to the given tier.
+    /// Returns the settings applicable to the given tier on this machine.
     /// Competitive = all 6. Casual = x2apicpolicy + useplatformclock only.
+    /// On AMD / invariant-TSC CPUs the platform-timer tweaks (disabledynamictick, useplatformtick)
+    /// are excluded because they degrade performance there.
     /// </summary>
-    public static KernelTuningSetting[] GetSettingsForTier(string tier)
-    {
-        if (string.Equals(tier, "Competitive", StringComparison.OrdinalIgnoreCase))
-            return AllSettings;
+    public static KernelTuningSetting[] GetSettingsForTier(string tier) =>
+        GetSettingsForTier(tier, CpuCapabilities.PlatformTimerTweaksHarmful);
 
-        // Casual: only low-risk, broadly safe settings
-        return AllSettings.Where(s => s.Tier == "Both").ToArray();
+    /// <summary>
+    /// Pure tier selection, separated from hardware detection so the policy is unit-testable.
+    /// </summary>
+    internal static KernelTuningSetting[] GetSettingsForTier(string tier, bool excludePlatformTimerTweaks)
+    {
+        IEnumerable<KernelTuningSetting> settings =
+            string.Equals(tier, "Competitive", StringComparison.OrdinalIgnoreCase)
+                ? AllSettings
+                : AllSettings.Where(s => s.Tier == "Both"); // Casual: only broadly safe settings
+
+        if (excludePlatformTimerTweaks)
+            settings = settings.Where(s => !s.PlatformTimerTweak);
+
+        return settings.ToArray();
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

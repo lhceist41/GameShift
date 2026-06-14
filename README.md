@@ -118,7 +118,7 @@ Available through the DPC Doctor page with per-setting control and full rollback
 | **GPU Interrupt Affinity** | Pins GPU interrupts to a specific P-core (not core 0) for consistent DPC latency. |
 | **USB Controller Affinity** | Pins USB host controller interrupts to reduce input latency. |
 | **MSI Mode** | Enables Message Signaled Interrupts for GPU and USB controllers where supported. |
-| **BCDEdit Kernel Tuning** | Configures `disabledynamictick`, `useplatformtick`, `tscsyncpolicy enhanced`, `x2apicpolicy enable` for improved timer accuracy and interrupt routing. Competitive tier includes hypervisor disable (with Hyper-V/WSL2/Docker dependency check). |
+| **BCDEdit Kernel Tuning** | Configures `tscsyncpolicy enhanced` and `x2apicpolicy enable` for improved timer accuracy and interrupt routing. Competitive tier includes hypervisor disable (with Hyper-V/WSL2/Docker dependency check). The platform-timer tweaks (`disabledynamictick`, `useplatformtick`) are skipped on AMD CPUs, where forcing the platform timer degrades performance. |
 
 > [!WARNING]
 > Interrupt affinity and BCDEdit changes require a reboot. GameShift tracks pending reboot fixes in the state journal and prompts you when a restart is needed.
@@ -281,7 +281,7 @@ When Background Mode is enabled, GameShift creates a custom power plan cloned fr
 <details>
 <summary><strong>What is the difference between Competitive and Casual?</strong></summary>
 <br/>
-Competitive enables aggressive optimizations: processor idle disable (forces C0 state), 0.5ms timer resolution, MPO disable, all BCDEdit kernel tunings. Casual uses gentler settings (1.0ms timer, no idle disable, no MPO change) suitable for single-player and story-driven games. Built-in profiles assign the appropriate tier automatically - Valorant and osu! default to Competitive, single-player titles default to Casual. You can change the intensity per game in the profile editor.
+Competitive enables aggressive optimizations: processor idle disable (forces C0 state), 0.5ms timer resolution, MPO disable, and the BCDEdit kernel tunings (the platform-timer tweaks are skipped on AMD, where they degrade performance). Casual uses gentler settings (1.0ms timer, no idle disable, no MPO change) suitable for single-player and story-driven games. Built-in profiles assign the appropriate tier automatically - Valorant and osu! default to Competitive, single-player titles default to Casual. You can change the intensity per game in the profile editor.
 </details>
 
 <details>

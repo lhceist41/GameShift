@@ -744,6 +744,16 @@ public class DpcDoctorViewModel : INotifyPropertyChanged
                     }
                 }
 
+                // Platform-timer tweaks degrade performance on AMD: warn (and Apply will refuse).
+                // Still shown so a value set earlier can be reverted.
+                if (setting.PlatformTimerTweak && !item.IsApplied &&
+                    GameShift.Core.System.CpuCapabilities.PlatformTimerTweaksHarmful)
+                {
+                    item.HasWarning = true;
+                    item.WarningMessage =
+                        "Not recommended on AMD CPUs: forcing the platform timer degrades performance (Windows logs HAL event 17 and Kernel-Power 508).";
+                }
+
                 KernelTuningItems.Add(item);
             }
         }

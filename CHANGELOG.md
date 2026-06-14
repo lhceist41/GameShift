@@ -2,6 +2,12 @@
 
 All notable changes to GameShift are documented here.
 
+## [Unreleased]
+
+### Fixed
+
+- **Platform-timer kernel tweaks no longer applied on AMD** - the BCD kernel tuning options "Disable Dynamic Tick" and "Use Platform Tick" force Windows onto a platform/periodic timer, which on AMD Ryzen (and any CPU with an invariant TSC) degrades performance instead of helping. Windows itself flags this with HAL event 17 ("the clock interrupt is backed by a platform timer instead of a per-processor source. Performance may be degraded.") and Kernel-Power event 508 ("the system has been constrained to a periodic tick."). GameShift now detects the CPU vendor via CPUID and refuses to apply these two tweaks on AMD, and the DPC Doctor page marks them as not recommended there. Reverting is always allowed, so a value set before this change can still be removed.
+
 ## [3.8.2] - 2026-06-10
 
 ### Added
