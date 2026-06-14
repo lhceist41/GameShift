@@ -228,8 +228,26 @@ public class DpcFixEngine
 
     // -- BcdEdit fixes ─────────────────────────────────────────────
 
+    /// <summary>
+    /// True when a bcdedit command would force a platform/periodic timer (useplatformtick or
+    /// disabledynamictick set on), which degrades performance on AMD / invariant-TSC CPUs.
+    /// Pure so the policy is unit-testable. Only blocks applies (/set), never reverts.
+    /// </summary>
+    internal static bool ShouldSkipBcdApply(string? command, bool platformTimerTweaksHarmful)
+    {
+        if (!platformTimerTweaksHarmful || string.IsNullOrEmpty(command)) return false;
+        if (!command.Contains("/set", StringComparison.OrdinalIgnoreCase)) return false;
+        return command.Contains("useplatformtick", StringComparison.OrdinalIgnoreCase)
+            || command.Contains("disabledynamictick", StringComparison.OrdinalIgnoreCase);
+    }
+
     private DpcFixResult ApplyBcdEditFix(DriverAutoFix fix)
     {
+        // Forcing the platform timer degrades performance on AMD (HAL event 17, Kernel-Power 508).
+        // Refuse to apply it there; RevertBcdEditFix is never gated so a prior value can be removed.
+        if (ShouldSkipBcdApply(fix.Command, CpuCapabilities.PlatformTimerTweaksHarmful))
+            return new DpcFixResult { Success = false, Message = "Skipped on AMD: forcing the platform timer degrades performance (Windows logs HAL event 17 and Kernel-Power 508)." };
+
         var (success, output) = RunProcess(NativeInterop.SystemExePath("bcdedit.exe"), fix.Command!.Replace("bcdedit ", ""));
         if (!success)
             return new DpcFixResult { Success = false, Message = $"bcdedit failed: {output}" };
