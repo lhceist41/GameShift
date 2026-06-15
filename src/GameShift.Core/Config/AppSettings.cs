@@ -51,6 +51,19 @@ public class AppSettings
     public bool VbsHvciDisabledByGameShift { get; set; } = false;
 
     /// <summary>
+    /// Whether RequirePlatformSecurityFeatures existed before GameShift cleared it, so re-enable can
+    /// restore the original value instead of deleting it (deleting weakens enforcement on machines
+    /// where an OEM/MDM/policy set it directly in the Control hive).
+    /// </summary>
+    public bool VbsHvciOriginalRpsfExisted { get; set; } = false;
+
+    /// <summary>
+    /// The original RequirePlatformSecurityFeatures DWORD captured before disable. Valid only when
+    /// <see cref="VbsHvciOriginalRpsfExisted"/> is true.
+    /// </summary>
+    public int VbsHvciOriginalRpsfValue { get; set; } = 0;
+
+    /// <summary>
     /// Whether user dismissed the VBS/HVCI performance warning banner.
     /// </summary>
     public bool VbsHvciNotificationDismissed { get; set; } = false;

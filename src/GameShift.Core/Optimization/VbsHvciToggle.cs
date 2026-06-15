@@ -205,6 +205,26 @@ public class VbsHvciToggle
 
             _logger.Information("VbsHvciToggle: Disabling VBS and HVCI");
 
+            // Capture the original RequirePlatformSecurityFeatures and persist our intent BEFORE
+            // mutating the registry, so a failure partway through can never lose the original: a
+            // later re-capture would otherwise read back our own 0 and, on re-enable, restore the
+            // wrong value. Capture only on the FIRST disable. Persisting the flag this early can, if
+            // a subsequent write fails, leave a "disabled by GameShift" flag with nothing actually
+            // disabled - that is harmless, because re-enable rewrites the enabled values and restores
+            // the captured original (both no-ops in that case).
+            var settings = SettingsManager.Load();
+            if (!settings.VbsHvciDisabledByGameShift)
+            {
+                using (var dgRead = Registry.LocalMachine.OpenSubKey(DeviceGuardPath))
+                {
+                    var originalRpsf = dgRead?.GetValue("RequirePlatformSecurityFeatures") as int?;
+                    settings.VbsHvciOriginalRpsfExisted = originalRpsf.HasValue;
+                    settings.VbsHvciOriginalRpsfValue = originalRpsf ?? 0;
+                }
+                settings.VbsHvciDisabledByGameShift = true;
+                SettingsManager.Save(settings);
+            }
+
             // 1. Disable HVCI (Memory Integrity)
             bool hvciResult = WriteRegistryDword(HvciScenarioPath, HvciValueName, 0);
             if (!hvciResult)
@@ -221,18 +241,13 @@ public class VbsHvciToggle
                 return false;
             }
 
-            // 3. Clear RequirePlatformSecurityFeatures (prevents UEFI from re-enabling)
+            // 3. Clear RequirePlatformSecurityFeatures (original captured and persisted above).
             WriteRegistryDword(DeviceGuardPath, "RequirePlatformSecurityFeatures", 0);
 
             // 4. Disable hypervisor launch - without this, the hypervisor still loads
             //    at boot and Windows can re-enable VBS despite registry values being 0.
             //    This is the most common reason VBS disable doesn't persist after reboot.
             SetHypervisorLaunchType(off: true);
-
-            // Track that GameShift performed this change
-            var settings = SettingsManager.Load();
-            settings.VbsHvciDisabledByGameShift = true;
-            SettingsManager.Save(settings);
 
             _logger.Information(
                 "VbsHvciToggle: VBS and HVCI disabled successfully. Reboot required for changes to take effect");
@@ -342,22 +357,30 @@ public class VbsHvciToggle
             // Restore hypervisor launch type
             SetHypervisorLaunchType(off: false);
 
-            // Remove the RequirePlatformSecurityFeatures value GameShift wrote on disable. The
-            // original wasn't captured and is absent on most consumer systems, so deleting it
-            // (rather than guessing 1) is the correct revert - UEFI/Group Policy re-asserts if needed.
+            // Restore RequirePlatformSecurityFeatures to its captured original: if it existed before
+            // GameShift cleared it, write the captured DWORD back so platform-security enforcement is
+            // restored exactly as it was; otherwise delete it (the consumer-default absent state).
+            var settings = SettingsManager.Load();
             try
             {
                 using var dgKey = Registry.LocalMachine.OpenSubKey(DeviceGuardPath, writable: true);
-                dgKey?.DeleteValue("RequirePlatformSecurityFeatures", throwOnMissingValue: false);
+                if (dgKey != null)
+                {
+                    if (settings.VbsHvciOriginalRpsfExisted)
+                        dgKey.SetValue("RequirePlatformSecurityFeatures", settings.VbsHvciOriginalRpsfValue, RegistryValueKind.DWord);
+                    else
+                        dgKey.DeleteValue("RequirePlatformSecurityFeatures", throwOnMissingValue: false);
+                }
             }
             catch (Exception ex)
             {
-                _logger.Warning(ex, "VbsHvciToggle: Failed to remove RequirePlatformSecurityFeatures");
+                _logger.Warning(ex, "VbsHvciToggle: Failed to restore RequirePlatformSecurityFeatures");
             }
 
-            // Update tracking
-            var settings = SettingsManager.Load();
+            // Update tracking (clear the captured original now that it has been restored)
             settings.VbsHvciDisabledByGameShift = false;
+            settings.VbsHvciOriginalRpsfExisted = false;
+            settings.VbsHvciOriginalRpsfValue = 0;
             SettingsManager.Save(settings);
 
             _logger.Information(

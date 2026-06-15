@@ -78,6 +78,14 @@ public class OptimizeInterruptHandling : ISystemTweak
         return null;
     }
 
+    /// <summary>
+    /// True for discrete GPU vendors (NVIDIA VEN_10DE, AMD VEN_1002). Used to prefer the gaming
+    /// dGPU over an integrated adapter (e.g. Intel VEN_8086) when choosing which GPU to optimize.
+    /// </summary>
+    private static bool IsDiscreteGpu(string deviceId) =>
+        deviceId.Contains("VEN_10DE", StringComparison.OrdinalIgnoreCase) ||
+        deviceId.Contains("VEN_1002", StringComparison.OrdinalIgnoreCase);
+
     private const string PciEnumPath = @"SYSTEM\CurrentControlSet\Enum\PCI";
 
     // Class GUIDs
@@ -157,13 +165,18 @@ public class OptimizeInterruptHandling : ISystemTweak
             }
         }
 
-        // Set affinity to recommended non-Core-0 P-core
+        // Set affinity to a recommended non-Core-0 core. Skipped (RecommendedCore < 0) on CPUs
+        // where a valid single-group core cannot be chosen (too few cores, or >64 logical
+        // processors / multiple processor groups, which this flat KAFFINITY mask cannot express).
         RecommendedCore = RecommendInterruptCore();
-        if (SetInterruptAffinity(PrimaryGpu, RecommendedCore))
+        if (RecommendedCore >= 0 && SetInterruptAffinity(PrimaryGpu, RecommendedCore))
             changed = true;
 
         // ── USB host controller affinity (same core as GPU for input latency) ──
-        if (PrimaryUsb != null)
+        // We deliberately do NOT force MSI on the USB host controller. A controller that fails to
+        // initialize under forced MSI leaves the user with no keyboard/mouse and no way to reach
+        // the in-app revert. Affinity pinning does not change interrupt delivery mode and is safe.
+        if (PrimaryUsb != null && RecommendedCore >= 0)
         {
             if (SetInterruptAffinity(PrimaryUsb, RecommendedCore))
             {
@@ -171,19 +184,6 @@ public class OptimizeInterruptHandling : ISystemTweak
                 Log.Information(
                     "[InterruptAffinity] USB controller {Device} affinity set to Core {Core}",
                     PrimaryUsb.DisplayName, RecommendedCore);
-            }
-
-            backup.UsbMsiValueExisted = PrimaryUsb.MsiValueExisted;
-            backup.UsbMsiKeyExisted = PrimaryUsb.MsiSupported;
-
-            // Enable MSI on USB host controller if supported
-            if (PrimaryUsb.ShouldEnableMsi)
-            {
-                if (EnableMsi(PrimaryUsb))
-                {
-                    changed = true;
-                    backup.UsbMsiChanged = true;
-                }
             }
 
             backup.UsbDeviceId = PrimaryUsb.DeviceId;
@@ -460,8 +460,11 @@ public class OptimizeInterruptHandling : ISystemTweak
                 }
             }
 
-            // Set primary GPU (first non-virtual GPU found)
-            PrimaryGpu = DetectedDevices.FirstOrDefault(d => d.IsGpu);
+            // Prefer a discrete GPU (NVIDIA/AMD) over an integrated one. On a hybrid laptop or a
+            // desktop with an active iGPU, "first display adapter found" can be the integrated
+            // adapter - the actual display path and the worst device to risk an interrupt change on.
+            PrimaryGpu = DetectedDevices.FirstOrDefault(d => d.IsGpu && IsDiscreteGpu(d.DeviceId))
+                         ?? DetectedDevices.FirstOrDefault(d => d.IsGpu);
             PrimaryUsb = DetectedDevices.FirstOrDefault(d => d.IsUsb);
         }
         catch (Exception ex)
@@ -486,15 +489,17 @@ public class OptimizeInterruptHandling : ISystemTweak
             using var key = Registry.LocalMachine.OpenSubKey(msiKeyPath, writable: true);
             if (key == null)
             {
-                // Create the key structure
-                using var parentKey = Registry.LocalMachine.CreateSubKey(msiKeyPath);
-                parentKey.SetValue("MSISupported", 1, RegistryValueKind.DWord);
-            }
-            else
-            {
-                key.SetValue("MSISupported", 1, RegistryValueKind.DWord);
+                // The MessageSignaledInterruptProperties node is absent: the device never advertised
+                // MSI capability. Do NOT fabricate it. Forcing MSI on a device whose driver/firmware
+                // does not support it is a known cause of post-reboot device failure (GPU Code 10 /
+                // black screen, or a dead USB host controller). We only ever flip an existing node.
+                Log.Information(
+                    "[InterruptAffinity] Skipping MSI for {Device}: no MSI capability node present",
+                    device.DisplayName);
+                return false;
             }
 
+            key.SetValue("MSISupported", 1, RegistryValueKind.DWord);
             Log.Information("[InterruptAffinity] MSI enabled for {Device}", device.DisplayName);
             return true;
         }
@@ -513,6 +518,17 @@ public class OptimizeInterruptHandling : ISystemTweak
     /// </summary>
     private static bool SetInterruptAffinity(PciDeviceInterruptInfo device, int targetCore)
     {
+        // Guard the bit shift and the single-group mask: targetCore must be a real core in
+        // [1, ProcessorCount) and below 64 (1UL << 64 is undefined and wraps to bit 0, silently
+        // pinning to Core 0 - the exact core we are trying to avoid). Out of range -> write nothing.
+        if (targetCore < 1 || targetCore >= 64 || targetCore >= Environment.ProcessorCount)
+        {
+            Log.Warning(
+                "[InterruptAffinity] Skipping affinity for {Device}: target core {Core} invalid (logical processors={Lp})",
+                device.DisplayName, targetCore, Environment.ProcessorCount);
+            return false;
+        }
+
         try
         {
             string affinityKeyPath = $@"{device.RegistryBasePath}\Device Parameters\Interrupt Management\Affinity Policy";
@@ -545,27 +561,35 @@ public class OptimizeInterruptHandling : ISystemTweak
     }
 
     /// <summary>
-    /// Recommends the best core for GPU/USB interrupts based on CPU topology.
+    /// Recommends the best core for GPU/USB interrupts based on CPU topology, or -1 when interrupt
+    /// pinning should be skipped entirely.
     /// Rules:
-    ///   1. Never Core 0 (system work, mouse input, scheduler)
-    ///   2. P-core on hybrid CPUs (never E-core for GPU interrupts)
-    ///   3. Last P-core (highest index) that is NOT core 0 - dedicated to interrupt work
-    ///   4. Fallback: core 2 on non-hybrid CPUs
+    ///   1. Skip (-1) on CPUs with fewer than 4 logical processors (too few to dedicate one) or
+    ///      more than 64 (multiple processor groups, which this flat single-group mask cannot
+    ///      express - a wrong-group/wrapped mask would silently pin to Core 0).
+    ///   2. Never Core 0 (system work, mouse input, scheduler).
+    ///   3. Last P-core (highest index) on hybrid CPUs, never an E-core.
+    ///   4. Fallback: last core on non-hybrid CPUs.
+    /// The returned index is always validated to be in [1, ProcessorCount) and below 64.
     /// </summary>
     private static int RecommendInterruptCore()
     {
+        int lp = Environment.ProcessorCount;
+        var pCoreIndices = new List<int>();
+        int totalDetected = 0;
+
         try
         {
             const string cpuRegPath = @"HARDWARE\DESCRIPTION\System\CentralProcessor";
             using var cpuKey = Registry.LocalMachine.OpenSubKey(cpuRegPath);
             if (cpuKey != null)
             {
-                var pCoreIndices = new List<int>();
                 var allIndices = cpuKey.GetSubKeyNames()
                     .Select(s => int.TryParse(s, out int idx) ? idx : -1)
                     .Where(i => i >= 0)
                     .OrderBy(i => i)
                     .ToList();
+                totalDetected = allIndices.Count;
 
                 foreach (var idx in allIndices)
                 {
@@ -576,20 +600,6 @@ public class OptimizeInterruptHandling : ISystemTweak
                     if (effClass is int eff && eff == 0)
                         pCoreIndices.Add(idx);
                 }
-
-                bool isHybrid = pCoreIndices.Count > 0 && pCoreIndices.Count < allIndices.Count;
-
-                if (isHybrid && pCoreIndices.Count > 1)
-                {
-                    // Last P-core (highest index) that is not core 0
-                    var last = pCoreIndices.Last();
-                    if (last != 0)
-                        return last;
-
-                    // Extremely unlikely: all P-cores except 0 were filtered?
-                    // Fall back to second P-core
-                    return pCoreIndices[1];
-                }
             }
         }
         catch (Exception ex)
@@ -597,8 +607,32 @@ public class OptimizeInterruptHandling : ISystemTweak
             Log.Warning(ex, "[InterruptAffinity] Failed to detect CPU topology, defaulting to last core");
         }
 
-        // Non-hybrid: use the last core (avoids core 0 and its HT sibling)
-        return Math.Max(2, Environment.ProcessorCount - 1);
+        return ChooseInterruptCore(lp, pCoreIndices, totalDetected);
+    }
+
+    /// <summary>
+    /// Pure core-selection policy, separated from registry/topology reads so it is unit-testable.
+    /// Returns the target interrupt core, or -1 when pinning should be skipped:
+    ///   - fewer than 4 logical processors (too few to dedicate one), or
+    ///   - more than 64 (multiple processor groups this flat KAFFINITY mask cannot express).
+    /// On hybrid CPUs it prefers the last P-core; otherwise the last core. The result is always a
+    /// valid, non-zero core index below 64 and below <paramref name="logicalProcessors"/>.
+    /// </summary>
+    internal static int ChooseInterruptCore(int logicalProcessors, IReadOnlyList<int> pCoreIndices, int totalDetectedCores)
+    {
+        if (logicalProcessors < 4 || logicalProcessors > 64) return -1;
+
+        int candidate = logicalProcessors - 1; // default: last core (avoids Core 0 and its HT sibling)
+
+        bool isHybrid = pCoreIndices.Count > 0 && pCoreIndices.Count < totalDetectedCores;
+        if (isHybrid && pCoreIndices.Count > 1)
+        {
+            int lastPCore = pCoreIndices[^1];
+            if (lastPCore >= 1) candidate = lastPCore;
+        }
+
+        if (candidate < 1 || candidate >= 64 || candidate >= logicalProcessors) return -1;
+        return candidate;
     }
 }
 

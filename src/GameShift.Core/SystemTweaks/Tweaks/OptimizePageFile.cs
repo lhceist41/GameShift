@@ -1,3 +1,4 @@
+using System.Management;
 using System.Text.Json;
 using Microsoft.Win32;
 
@@ -51,16 +52,37 @@ public class OptimizePageFile : ISystemTweak
         using var key = Registry.LocalMachine.OpenSubKey(KeyPath, writable: true);
         if (key == null) return null;
 
-        // Record original value
+        // Defensive: never set a fixed page file the system drive cannot hold. The UI also checks
+        // this before calling, so this only fires for non-UI callers.
+        var space = CheckSystemDriveSpace();
+        if (!space.Ok)
+            throw new InvalidOperationException(
+                $"Insufficient free space for a fixed page file: need ~{space.NeededMB} MB, have {space.FreeMB} MB.");
+
+        // Record original value (preserved verbatim for revert)
         var original = key.GetValue(ValueName) as string[];
 
-        // Calculate optimal page file size based on installed RAM
         int pageFileSizeMB = GetOptimalPageFileSizeMB();
         string systemDrive = Path.GetPathRoot(Environment.SystemDirectory) ?? @"C:\";
-        string driveLetterOnly = systemDrive.TrimEnd('\\');
+        string driveLetterOnly = systemDrive.TrimEnd('\\'); // e.g. "C:"
         string fixedEntry = $"{driveLetterOnly}\\pagefile.sys {pageFileSizeMB} {pageFileSizeMB}";
 
-        key.SetValue(ValueName, new[] { fixedEntry }, RegistryValueKind.MultiString);
+        // Preserve any page file the user deliberately placed on OTHER drives; only replace the
+        // system-drive entry. Flattening a multi-drive layout onto C: can fill the boot drive and
+        // discard the user's larger data-drive page file.
+        var entries = new List<string>();
+        if (original != null)
+        {
+            foreach (var entry in original)
+            {
+                var firstToken = entry.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "";
+                if (!firstToken.StartsWith(driveLetterOnly, StringComparison.OrdinalIgnoreCase))
+                    entries.Add(entry); // keep non-system-drive page file as-is
+            }
+        }
+        entries.Add(fixedEntry);
+
+        key.SetValue(ValueName, entries.ToArray(), RegistryValueKind.MultiString);
 
         return JsonSerializer.Serialize(new { PagingFiles = original });
     }
@@ -99,28 +121,63 @@ public class OptimizePageFile : ISystemTweak
         catch { return false; }
     }
 
+    /// <summary>The fixed page file size (MB) GameShift would set on this machine.</summary>
+    public static int ComputeFixedSizeMB() => GetOptimalPageFileSizeMB();
+
     /// <summary>
-    /// Determines optimal fixed page file size based on installed RAM.
+    /// Whether the system drive has room for the fixed page file plus headroom. Returns Ok=true
+    /// when free space cannot be determined (do not block on uncertainty).
     /// </summary>
-    private static int GetOptimalPageFileSizeMB()
+    public static (bool Ok, long NeededMB, long FreeMB) CheckSystemDriveSpace()
     {
+        long neededMB = GetOptimalPageFileSizeMB() + 4096; // page file + 4 GB headroom
         try
         {
-            long totalRamBytes = GC.GetGCMemoryInfo().TotalAvailableMemoryBytes;
-            long totalRamMB = totalRamBytes / (1024 * 1024);
-
-            return totalRamMB switch
-            {
-                <= 8192 => 8192,   // 8GB RAM → 8GB pagefile
-                <= 16384 => 8192,  // 16GB RAM → 8GB pagefile
-                <= 32768 => 4096,  // 32GB RAM → 4GB pagefile
-                <= 65536 => 4096,  // 64GB RAM → 4GB pagefile
-                _ => 2048          // 128GB+ → 2GB pagefile
-            };
+            string systemDrive = Path.GetPathRoot(Environment.SystemDirectory) ?? @"C:\";
+            var di = new DriveInfo(systemDrive);
+            long freeMB = di.AvailableFreeSpace / (1024 * 1024);
+            return (freeMB >= neededMB, neededMB, freeMB);
         }
         catch
         {
-            return 4096; // Safe default
+            return (true, neededMB, -1);
         }
+    }
+
+    /// <summary>
+    /// Determines the fixed page file size from installed physical RAM. The size is never reduced
+    /// below 8 GB: a tiny fixed page file lowers the commit limit (out-of-memory risk) and can stop
+    /// Windows from writing a kernel crash dump. Reads RAM via WMI (TotalPhysicalMemory) rather than
+    /// GC.GetGCMemoryInfo, which can be skewed by job-object/container limits.
+    /// </summary>
+    private static int GetOptimalPageFileSizeMB() => SizeForRamMB(GetPhysicalRamMB());
+
+    /// <summary>
+    /// Pure sizing policy (separated for unit testing). Never returns less than 8 GB so the page
+    /// file cannot be shrunk below a size that would lower the commit limit or break kernel dumps.
+    /// </summary>
+    internal static int SizeForRamMB(long ramMB) => ramMB switch
+    {
+        <= 16384 => 8192,   // up to 16GB RAM -> 8GB page file
+        <= 65536 => 16384,  // 32-64GB RAM   -> 16GB page file
+        _ => 24576          // 128GB+ RAM     -> 24GB page file
+    };
+
+    private static long GetPhysicalRamMB()
+    {
+        try
+        {
+            using var searcher = new ManagementObjectSearcher("SELECT TotalPhysicalMemory FROM Win32_ComputerSystem");
+            foreach (var obj in searcher.Get())
+            {
+                if (obj["TotalPhysicalMemory"] is ulong bytes && bytes > 0)
+                    return (long)(bytes / (1024UL * 1024UL));
+            }
+        }
+        catch
+        {
+            // fall through to the GC-based estimate
+        }
+        return GC.GetGCMemoryInfo().TotalAvailableMemoryBytes / (1024 * 1024);
     }
 }

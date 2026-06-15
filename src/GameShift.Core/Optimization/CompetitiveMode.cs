@@ -106,9 +106,16 @@ public class CompetitiveMode : IOptimization, IJournaledOptimization
 
         bool success = ApplyInternal(_context.Profile);
 
-        // Only the persistent Discord-overlay registry value is journaled for crash recovery -
-        // process suspends are process-scoped and can't be reverted from a record.
-        var payload = new { discordModified = _discordOverlayWasEnabled, discordPrev = _discordOverlayPreviousValue };
+        // Journal the Discord-overlay registry value AND the suspended process PIDs/names, so that
+        // if GameShift crashes mid-session the watchdog/boot-recovery can both restore the registry
+        // and RESUME the frozen apps (Discord/Steam/NVIDIA). A PID alone is enough to resume (see
+        // ResumeProcess), and the watchdog runs as SYSTEM, so this recovery is reachable after a crash.
+        var payload = new
+        {
+            discordModified = _discordOverlayWasEnabled,
+            discordPrev = _discordOverlayPreviousValue,
+            suspended = _suspendedProcesses.Select(p => new { pid = p.ProcessId, name = p.ProcessName }).ToArray(),
+        };
         return new OptimizationResult(
             OptimizationId,
             JsonSerializer.Serialize(payload),
@@ -249,9 +256,11 @@ public class CompetitiveMode : IOptimization, IJournaledOptimization
     }
 
     /// <summary>
-    /// Watchdog recovery: only the persistent Discord-overlay registry value is restored. Suspended
-    /// processes are gone with the crashed session (or remain frozen until they exit) and cannot be
-    /// resumed without live handles, so they are not part of the journaled recovery.
+    /// Watchdog/boot recovery after a crash: restores the persistent Discord-overlay registry value
+    /// AND resumes the processes that were suspended during the session (Discord/Steam/NVIDIA),
+    /// using the PIDs/names journaled in Apply. A PID alone is enough to resume (see ResumeProcess),
+    /// and the watchdog runs as SYSTEM, so these apps are not left frozen after a crash. Each resume
+    /// is guarded against PID reuse.
     /// </summary>
     public OptimizationResult RevertFromRecord(string originalValueJson)
     {
@@ -275,6 +284,22 @@ public class CompetitiveMode : IOptimization, IJournaledOptimization
                     {
                         key.DeleteValue(DiscordOverlayEnabledValue, throwOnMissingValue: false);
                         _logger.Information("[CompetitiveMode] Deleted Discord overlay value (was absent before session)");
+                    }
+                }
+            }
+
+            // Resume any processes suspended during the crashed session so Discord/Steam/NVIDIA are
+            // not left frozen. PID reuse is guarded inside ResumeSuspendedByRecord.
+            if (root.TryGetProperty("suspended", out var susp) && susp.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in susp.EnumerateArray())
+                {
+                    if (item.TryGetProperty("pid", out var pidEl) && pidEl.TryGetInt32(out int pid) &&
+                        item.TryGetProperty("name", out var nameEl))
+                    {
+                        var name = nameEl.GetString();
+                        if (!string.IsNullOrEmpty(name))
+                            ResumeSuspendedByRecord(pid, name);
                     }
                 }
             }
@@ -483,6 +508,41 @@ public class CompetitiveMode : IOptimization, IJournaledOptimization
                 NativeInterop.CloseHandle(handle);
             }
         }
+    }
+
+    /// <summary>
+    /// Resumes a single journaled process by PID after a crash (used by RevertFromRecord), guarding
+    /// against PID reuse: if the PID now belongs to a different process, or has already exited, it is
+    /// left untouched.
+    /// </summary>
+    private void ResumeSuspendedByRecord(int processId, string processName)
+    {
+        try
+        {
+            using var check = Process.GetProcessById(processId);
+            if (!string.Equals(check.ProcessName, processName, StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.Warning(
+                    "[CompetitiveMode] PID reuse detected on recovery - PID {ProcessId} is now {NewName}, expected {OldName}, skipping resume",
+                    processId, check.ProcessName, processName);
+                return;
+            }
+        }
+        catch (ArgumentException)
+        {
+            // Process already exited - nothing to resume.
+            return;
+        }
+        catch (InvalidOperationException)
+        {
+            // Process exited between lookup and access (race) - nothing to resume.
+            return;
+        }
+
+        ResumeProcess(processId, processName);
+        _logger.Information(
+            "[CompetitiveMode] Resumed {ProcessName} (PID: {ProcessId}) during crash recovery",
+            processName, processId);
     }
 
     /// <summary>

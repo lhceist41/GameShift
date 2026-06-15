@@ -259,12 +259,17 @@ public partial class SettingsPage : Page
             if (result != MessageBoxResult.Yes) return;
             mgr.ApplyTweak(tweak);
         }
-        else if (tweak is GameShift.Core.SystemTweaks.Tweaks.OptimizeInterruptHandling)
+        else if (tweak is GameShift.Core.SystemTweaks.Tweaks.OptimizeInterruptHandling interrupt)
         {
+            interrupt.ScanDevices();
+            var gpuName = interrupt.PrimaryGpu?.DisplayName ?? "your primary GPU";
             var result = MessageBox.Show(
-                "This modifies PCI device interrupt configuration (MSI mode and CPU affinity). " +
-                "Incorrect settings can cause system instability. A reboot is required.\n\nContinue?",
-                "Interrupt Optimization",
+                $"This enables MSI mode for {gpuName} and pins GPU/USB interrupts to a dedicated core.\n\n" +
+                "It takes effect on the NEXT REBOOT and is stored in the device configuration. On rare " +
+                "hardware a device can fail to start under MSI after reboot (black screen, or an " +
+                "unresponsive keyboard/mouse). If that happens the in-app revert is unreachable and you " +
+                "would need Windows Safe Mode to recover.\n\nContinue?",
+                "Interrupt Optimization (reboot required)",
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Warning);
             if (result != MessageBoxResult.Yes) return;
@@ -295,6 +300,33 @@ public partial class SettingsPage : Page
                 "Large Pages Privilege",
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Question);
+            if (result != MessageBoxResult.Yes) return;
+            mgr.ApplyTweak(tweak);
+        }
+        else if (tweak is GameShift.Core.SystemTweaks.Tweaks.OptimizePageFile)
+        {
+            // Free-space guard: a fixed page file on a near-full system drive can fail to allocate
+            // or fill the boot drive.
+            var space = GameShift.Core.SystemTweaks.Tweaks.OptimizePageFile.CheckSystemDriveSpace();
+            if (!space.Ok)
+            {
+                MessageBox.Show(
+                    $"Not enough free space on the system drive to safely set a fixed page file " +
+                    $"(needs about {space.NeededMB / 1024} GB, {(space.FreeMB < 0 ? 0 : space.FreeMB) / 1024} GB free).\n\n" +
+                    "Free up space and try again.",
+                    "Page File",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+                return;
+            }
+
+            var result = MessageBox.Show(
+                $"This sets a fixed {GameShift.Core.SystemTweaks.Tweaks.OptimizePageFile.ComputeFixedSizeMB() / 1024} GB page file on your system drive to prevent " +
+                "dynamic-resize stutter. It replaces the current automatic sizing and requires a reboot. " +
+                "Any page file you placed on another drive is kept.\n\nContinue?",
+                "Fixed Page File (reboot required)",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning);
             if (result != MessageBoxResult.Yes) return;
             mgr.ApplyTweak(tweak);
         }
