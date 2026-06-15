@@ -4,6 +4,8 @@ All notable changes to GameShift are documented here.
 
 ## [Unreleased]
 
+## [3.8.4] - 2026-06-15
+
 ### Added
 
 - **One-click fix for a leftover AMD timer setting** - if an older GameShift version left the platform-timer BCD tweaks (`disabledynamictick` / `useplatformtick`) set on an AMD CPU, the Dashboard now shows an advisory with a "Fix & Restart" button that reverts them and reboots to restore the efficient per-core timer. The check is skipped entirely on non-AMD systems and runs off the UI thread, and the advisory can be dismissed.
