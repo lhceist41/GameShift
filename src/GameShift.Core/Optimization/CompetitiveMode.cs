@@ -31,6 +31,7 @@ public class CompetitiveMode : IOptimization, IJournaledOptimization
     private readonly List<string> _killedProcessNames = new();
     private bool _discordOverlayWasEnabled;
     private object? _discordOverlayPreviousValue;
+    private bool _frameCapHintWritten;
     private global::System.Threading.Timer? _safetyTimer;
 
     // ── Anti-cheat blocklist - NEVER interact with these processes ──
@@ -106,6 +107,19 @@ public class CompetitiveMode : IOptimization, IJournaledOptimization
 
         bool success = ApplyInternal(_context.Profile);
 
+        // If ApplyInternal failed part-way but already committed externally-visible state
+        // (suspended processes or the Discord-overlay registry value), keep the optimization
+        // tracked so the engine reverts it instead of orphaning it. The engine only reverts
+        // optimizations that report Applied, and Revert() short-circuits on !_isApplied, so we
+        // must both report Applied and mark applied here.
+        bool committed = _suspendedProcesses.Count > 0 || _discordOverlayWasEnabled || _frameCapHintWritten;
+        if (!success && committed)
+        {
+            _isApplied = true;
+            _logger.Warning(
+                "[CompetitiveMode] Apply failed mid-way but state was committed - tracking for revert.");
+        }
+
         // Journal the Discord-overlay registry value AND the suspended process PIDs/names, so that
         // if GameShift crashes mid-session the watchdog/boot-recovery can both restore the registry
         // and RESUME the frozen apps (Discord/Steam/NVIDIA). A PID alone is enough to resume (see
@@ -120,7 +134,7 @@ public class CompetitiveMode : IOptimization, IJournaledOptimization
             OptimizationId,
             JsonSerializer.Serialize(payload),
             string.Empty,
-            success ? OptimizationState.Applied : OptimizationState.Failed);
+            (success || committed) ? OptimizationState.Applied : OptimizationState.Failed);
     }
 
     private bool ApplyInternal(GameProfile profile)
@@ -760,10 +774,12 @@ public class CompetitiveMode : IOptimization, IJournaledOptimization
 
             _discordOverlayPreviousValue = key.GetValue(DiscordOverlayEnabledValue);
 
-            key.SetValue(DiscordOverlayEnabledValue, 0, RegistryValueKind.DWord);
-            // Mark as modified regardless of whether the value pre-existed, so revert always undoes
-            // our write - restore the old value, or delete the one we created.
+            // Mark as modified BEFORE the write (regardless of whether the value pre-existed) so that
+            // even if SetValue throws after partially committing, revert still undoes our write -
+            // restoring the old value, or deleting the one we created. Setting this flag after the
+            // write would leave the registry changed but un-reverted if an exception fired in between.
             _discordOverlayWasEnabled = true;
+            key.SetValue(DiscordOverlayEnabledValue, 0, RegistryValueKind.DWord);
 
             _logger.Information(
                 "[CompetitiveMode] Disabled Discord overlay via registry (previous value: {PreviousValue})",
@@ -856,6 +872,7 @@ public class CompetitiveMode : IOptimization, IJournaledOptimization
             }
 
             File.WriteAllText(FrameCapHintPath, json);
+            _frameCapHintWritten = true;
 
             _logger.Information(
                 "[CompetitiveMode] Frame cap hint written: {FrameCap} ({RefreshRate}Hz monitor)",
@@ -883,6 +900,7 @@ public class CompetitiveMode : IOptimization, IJournaledOptimization
                 _logger.Information(
                     "[CompetitiveMode] Deleted frame cap hint file");
             }
+            _frameCapHintWritten = false;
         }
         catch (Exception ex)
         {

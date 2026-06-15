@@ -158,6 +158,22 @@ public class NetworkOptimizer : IOptimization, IJournaledOptimization
         catch (Exception ex)
         {
             _logger.Warning(ex, "[NetworkOptimizer] Failed to apply");
+
+            // If persistent changes were already committed before the exception, keep the
+            // optimization tracked so the engine reverts them instead of orphaning them.
+            // (The engine only reverts optimizations that report Applied.)
+            if (_originalState.Count > 0 || _modifiedInterfaceIds.Count > 0 || _nicOriginalStates.Count > 0)
+            {
+                IsApplied = true;
+                string original;
+                try { original = SerializeState(_originalState); }
+                catch { original = string.Empty; }
+                _logger.Warning(
+                    "[NetworkOptimizer] Apply failed mid-way but {Count} change(s) were committed - " +
+                    "tracking for revert.", _originalState.Count);
+                return new OptimizationResult(OptimizationId, original, string.Empty, OptimizationState.Applied);
+            }
+
             IsApplied = false;
             return Fail(ex.Message);
         }
@@ -330,6 +346,12 @@ public class NetworkOptimizer : IOptimization, IJournaledOptimization
 
                     string registryPath = $@"HKLM\{TcpipInterfacesPath}\{interfaceId}";
 
+                    // Track this interface for revert BEFORE writing, so a failure between the two
+                    // SetValue calls still restores whatever was written. The live revert iterates
+                    // this list and RestoreRegistryDwordFromState no-ops for any value that was not
+                    // recorded, so tracking an interface whose writes only partly landed is safe.
+                    _modifiedInterfaceIds.Add(interfaceId);
+
                     // Record and set TcpAckFrequency
                     object? currentAckFreq = interfaceKey.GetValue("TcpAckFrequency");
                     RecordRegistry(registryPath, "TcpAckFrequency", currentAckFreq);
@@ -342,7 +364,6 @@ public class NetworkOptimizer : IOptimization, IJournaledOptimization
                     snapshot?.RecordRegistryValue(registryPath, "TCPNoDelay", currentNoDelay ?? "__NOT_SET__");
                     interfaceKey.SetValue("TCPNoDelay", 1, RegistryValueKind.DWord);
 
-                    _modifiedInterfaceIds.Add(interfaceId);
                     modifiedCount++;
                 }
                 catch (Exception ex)

@@ -95,6 +95,22 @@ public class SessionSystemTweaksOptimizer : IOptimization, IJournaledOptimizatio
         catch (Exception ex)
         {
             _logger.Error(ex, "[SessionSystemTweaks] Apply failed");
+
+            // If persistent changes were already committed before the exception, keep the
+            // optimization tracked so the engine reverts them instead of orphaning them.
+            // (The engine only reverts optimizations that report Applied.)
+            if (_backups.Count > 0 || _originalAspmValue.HasValue)
+            {
+                IsApplied = true;
+                string original;
+                try { original = BuildOriginalJson(); }
+                catch { original = string.Empty; }
+                _logger.Warning(
+                    "[SessionSystemTweaks] Apply failed mid-way but {Count} registry change(s) were committed - " +
+                    "tracking for revert.", _backups.Count);
+                return new OptimizationResult(OptimizationId, original, string.Empty, OptimizationState.Applied);
+            }
+
             return new OptimizationResult(OptimizationId, string.Empty, string.Empty, OptimizationState.Failed, ex.Message);
         }
     }

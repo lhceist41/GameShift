@@ -4,6 +4,10 @@ All notable changes to GameShift are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Optimizations never leave a partial change behind on an unexpected error** - several session optimizations apply multiple system changes in sequence (network tweaks, session system tweaks, CPU core unparking, MPO toggle, Competitive Mode, scheduled-task suppression). Previously, if an unexpected error interrupted one of them part-way through, the changes already made were reported as a failure and therefore never reverted, so they could persist after the game closed. Each now tracks exactly what it committed and reverts only that on session end (and via crash recovery), even when a later step fails. This also closes two related gaps: Competitive Mode could leave the Discord-overlay registry value changed if an error struck at the instant it was written, and CPU core unparking could leave its low-latency idle (C-state) values applied if that step failed part-way.
+
 ## [3.8.5] - 2026-06-15
 
 ### Fixed

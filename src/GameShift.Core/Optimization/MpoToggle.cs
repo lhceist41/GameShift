@@ -32,6 +32,13 @@ public class MpoToggle : IOptimization, IJournaledOptimization
     private bool _disableOverlaysPreviouslyExisted;
     private int _disableOverlaysPreviousValue;
 
+    // Tracks which registry values were actually written, so that if Apply() throws part-way
+    // through, Revert() only touches the values it really changed (never deletes a pre-existing
+    // value we never wrote). Reset at the start of each Apply().
+    private bool _overlayTestModeWritten;
+    private bool _enableOverlayWritten;
+    private bool _disableOverlaysWritten;
+
     // Context stored by CanApply() for use by Apply()
     private SystemContext? _context;
 
@@ -127,6 +134,10 @@ public class MpoToggle : IOptimization, IJournaledOptimization
             _logger.Information(
                 "[MpoToggle] Applying MPO Toggle - disabling Multiplane Overlay via registry");
 
+            _overlayTestModeWritten = false;
+            _enableOverlayWritten = false;
+            _disableOverlaysWritten = false;
+
             using var key = Registry.LocalMachine.OpenSubKey(DwmRegistryPath, writable: true);
             if (key == null)
             {
@@ -169,6 +180,7 @@ public class MpoToggle : IOptimization, IJournaledOptimization
 
             // Set OverlayTestMode = 5 to disable MPO
             key.SetValue(OverlayTestModeValue, 5, RegistryValueKind.DWord);
+            _overlayTestModeWritten = true;
             VerifyRegistryValue(DwmRegistryPath, OverlayTestModeValue, 5);
 
             _logger.Information(
@@ -213,6 +225,7 @@ public class MpoToggle : IOptimization, IJournaledOptimization
                 originalState[EnableOverlayValue] = _enableOverlayPreviouslyExisted ? _enableOverlayPreviousValue : null;
 
                 key.SetValue(EnableOverlayValue, 0, RegistryValueKind.DWord);
+                _enableOverlayWritten = true;
                 VerifyRegistryValue(DwmRegistryPath, EnableOverlayValue, 0);
                 snapshot?.RecordRegistryValue(@"HKLM\" + DwmRegistryPath, EnableOverlayValue,
                     _enableOverlayPreviouslyExisted ? _enableOverlayPreviousValue : (object)"<not set>");
@@ -246,6 +259,7 @@ public class MpoToggle : IOptimization, IJournaledOptimization
                     originalState[DisableOverlaysValue] = _disableOverlaysPreviouslyExisted ? _disableOverlaysPreviousValue : null;
 
                     gfxKey.SetValue(DisableOverlaysValue, 1, RegistryValueKind.DWord);
+                    _disableOverlaysWritten = true;
                     VerifyRegistryValue(GraphicsDriversPath, DisableOverlaysValue, 1);
                     snapshot?.RecordRegistryValue(@"HKLM\" + GraphicsDriversPath, DisableOverlaysValue,
                         _disableOverlaysPreviouslyExisted ? _disableOverlaysPreviousValue : (object)"<not set>");
@@ -278,6 +292,30 @@ public class MpoToggle : IOptimization, IJournaledOptimization
         catch (Exception ex)
         {
             _logger.Error(ex, "[MpoToggle] Failed to apply MPO Toggle");
+
+            // If any registry value was already written before the exception, keep the optimization
+            // tracked so the engine reverts it instead of orphaning it. The journal record carries
+            // only the keys we actually wrote, so the watchdog restores exactly those.
+            if (_overlayTestModeWritten || _enableOverlayWritten || _disableOverlaysWritten)
+            {
+                _isApplied = true;
+                var original = new Dictionary<string, object?>();
+                if (_overlayTestModeWritten)
+                    original[OverlayTestModeValue] = _previousValueExisted ? _previousValue : null;
+                if (_enableOverlayWritten)
+                    original[EnableOverlayValue] = _enableOverlayPreviouslyExisted ? _enableOverlayPreviousValue : null;
+                if (_disableOverlaysWritten)
+                    original[DisableOverlaysValue] = _disableOverlaysPreviouslyExisted ? _disableOverlaysPreviousValue : null;
+
+                string json;
+                try { json = JsonSerializer.Serialize(original); }
+                catch { json = string.Empty; }
+
+                _logger.Warning(
+                    "[MpoToggle] Apply failed mid-way but registry changes were committed - tracking for revert.");
+                return new OptimizationResult(OptimizationId, json, string.Empty, OptimizationState.Applied);
+            }
+
             return Fail(ex.Message);
         }
     }
@@ -304,14 +342,14 @@ public class MpoToggle : IOptimization, IJournaledOptimization
                 return RevertFail("Failed to open DWM registry key");
             }
 
-            if (_previousValueExisted)
+            if (_overlayTestModeWritten && _previousValueExisted)
             {
                 key.SetValue(OverlayTestModeValue, _previousValue, RegistryValueKind.DWord);
                 _logger.Information(
                     "[MpoToggle] Restored {RegistryPath}\\{ValueName} = {RestoredValue}",
                     @"HKLM\" + DwmRegistryPath, OverlayTestModeValue, _previousValue);
             }
-            else
+            else if (_overlayTestModeWritten)
             {
                 key.DeleteValue(OverlayTestModeValue, throwOnMissingValue: false);
                 _logger.Information(
@@ -322,14 +360,14 @@ public class MpoToggle : IOptimization, IJournaledOptimization
             // ── Revert 24H2 extended keys ──
             if (_is24H2OrLater)
             {
-                if (_enableOverlayPreviouslyExisted)
+                if (_enableOverlayWritten && _enableOverlayPreviouslyExisted)
                 {
                     key.SetValue(EnableOverlayValue, _enableOverlayPreviousValue, RegistryValueKind.DWord);
                     _logger.Information(
                         "[MpoToggle] Restored {RegistryPath}\\{ValueName} = {RestoredValue}",
                         @"HKLM\" + DwmRegistryPath, EnableOverlayValue, _enableOverlayPreviousValue);
                 }
-                else
+                else if (_enableOverlayWritten)
                 {
                     key.DeleteValue(EnableOverlayValue, throwOnMissingValue: false);
                     _logger.Information(
@@ -340,14 +378,14 @@ public class MpoToggle : IOptimization, IJournaledOptimization
                 using var gfxKey = Registry.LocalMachine.OpenSubKey(GraphicsDriversPath, writable: true);
                 if (gfxKey != null)
                 {
-                    if (_disableOverlaysPreviouslyExisted)
+                    if (_disableOverlaysWritten && _disableOverlaysPreviouslyExisted)
                     {
                         gfxKey.SetValue(DisableOverlaysValue, _disableOverlaysPreviousValue, RegistryValueKind.DWord);
                         _logger.Information(
                             "[MpoToggle] Restored {RegistryPath}\\{ValueName} = {RestoredValue}",
                             @"HKLM\" + GraphicsDriversPath, DisableOverlaysValue, _disableOverlaysPreviousValue);
                     }
-                    else
+                    else if (_disableOverlaysWritten)
                     {
                         gfxKey.DeleteValue(DisableOverlaysValue, throwOnMissingValue: false);
                         _logger.Information(

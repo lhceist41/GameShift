@@ -222,6 +222,22 @@ public class ScheduledTaskSuppressor : IOptimization, IJournaledOptimization
         catch (Exception ex)
         {
             SettingsManager.Logger.Error(ex, "[ScheduledTaskSuppressor] Apply failed");
+
+            // If tasks were already disabled before the exception, keep the optimization tracked so
+            // the engine re-enables them on revert instead of leaving them disabled. (The engine only
+            // reverts optimizations that report Applied.)
+            if (_disabledTasks.Count > 0)
+            {
+                _isApplied = true;
+                string json;
+                try { json = JsonSerializer.Serialize(new { disabledTasks = _disabledTasks.Select(t => t.TaskPath).ToList() }); }
+                catch { json = string.Empty; }
+                SettingsManager.Logger.Warning(
+                    "[ScheduledTaskSuppressor] Apply failed mid-way but {Count} task(s) were disabled - tracking for revert.",
+                    _disabledTasks.Count);
+                return new OptimizationResult(OptimizationId, json, json, OptimizationState.Applied);
+            }
+
             return Fail(ex.Message);
         }
     }

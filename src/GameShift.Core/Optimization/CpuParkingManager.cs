@@ -266,6 +266,23 @@ public class CpuParkingManager : IOptimization, IJournaledOptimization
         catch (Exception ex)
         {
             SettingsManager.Logger.Error(ex, "[CpuParkingManager] Apply failed");
+
+            // If persistent powercfg changes were already committed before the exception, keep the
+            // optimization tracked so the engine reverts them instead of orphaning them.
+            // (The engine only reverts optimizations that report Applied. Revert skips entries whose
+            // original could not be captured, so tracking is safe even for partially-written state.)
+            if (_originalStates.Count > 0 || _cStateOriginals.Count > 0)
+            {
+                IsApplied = true;
+                string original;
+                try { original = BuildOriginalStateJson(); }
+                catch { original = string.Empty; }
+                SettingsManager.Logger.Warning(
+                    "[CpuParkingManager] Apply failed mid-way but {Count} setting(s) were captured - " +
+                    "tracking for revert.", _originalStates.Count);
+                return new OptimizationResult(OptimizationId, original, string.Empty, OptimizationState.Applied);
+            }
+
             return Fail(ex.Message);
         }
     }
@@ -630,6 +647,12 @@ public class CpuParkingManager : IOptimization, IJournaledOptimization
         {
             _cStateOriginals.Clear();
 
+            // Mark applied up-front: the loop unhides power settings (a persistent attribute change)
+            // before writing values, so Revert must run RevertCStateLimiting (which re-hides and
+            // restores) even if a later iteration throws. Without this, a mid-loop failure would be
+            // swallowed below and leave C-state changes orphaned inside a 'successful' apply.
+            _idleDisableApplied = true;
+
             foreach (var (guid, name, targetValue) in CStateLimitSettings)
             {
                 // Unhide the setting so powercfg can access it
@@ -640,9 +663,14 @@ public class CpuParkingManager : IOptimization, IJournaledOptimization
                 string? origDc = QueryPowerSettingValue(_activeSchemeGuid, guid, "DC");
                 _cStateOriginals.Add((guid, name, origAc, origDc));
 
-                // Apply gaming values
-                RunPowercfg($"/setacvalueindex {_activeSchemeGuid} {ProcessorSubGroupGuid} {guid} {targetValue}");
-                RunPowercfg($"/setdcvalueindex {_activeSchemeGuid} {ProcessorSubGroupGuid} {guid} {targetValue}");
+                // Only write a value we successfully captured, so Apply/Revert stay symmetric:
+                // RevertCStateLimiting restores only non-null originals, so writing a gaming value
+                // whose original could not be read would leave it un-restorable. (Mirrors the
+                // null-gating used for the core-parking writes above.)
+                if (origAc != null)
+                    RunPowercfg($"/setacvalueindex {_activeSchemeGuid} {ProcessorSubGroupGuid} {guid} {targetValue}");
+                if (origDc != null)
+                    RunPowercfg($"/setdcvalueindex {_activeSchemeGuid} {ProcessorSubGroupGuid} {guid} {targetValue}");
 
                 SettingsManager.Logger.Debug(
                     "[CpuParkingManager] C-state limit: {Name} = {Value} (was AC={Ac}, DC={Dc})",
@@ -650,7 +678,6 @@ public class CpuParkingManager : IOptimization, IJournaledOptimization
             }
 
             RunPowercfg($"/setactive {_activeSchemeGuid}");
-            _idleDisableApplied = true;
 
             SettingsManager.Logger.Information(
                 "[CpuParkingManager] Low-latency idle mode applied (C1 max depth, {Count} settings)",
