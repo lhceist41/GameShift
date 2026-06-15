@@ -4,6 +4,13 @@ All notable changes to GameShift are documented here.
 
 ## [Unreleased]
 
+## [3.8.5] - 2026-06-15
+
+### Fixed
+
+- **No leftover scheduling value when a priority boost can't be applied** - if the per-game priority boost couldn't be applied to the running process (its process ID had been recycled, the process exited at the instant of launch, or an anti-cheat blocked the write), GameShift reported the optimization as failed even though it had already set the system-wide Win32PrioritySeparation scheduling value first. A failed optimization is never reverted, so that value was left changed after the game closed. The scheduling tweak is now tracked and reverted correctly in that case, and a failed per-process boost no longer discards it.
+- **No leftover timer value when the timer request fails** - the high-resolution timer optimization wrote the persistent GlobalTimerResolutionRequests registry value before requesting the timer resolution; if that request failed, the optimization reported failure and left the registry value behind. It is now tracked and reverted even when the live timer request fails.
+
 ## [3.8.4] - 2026-06-15
 
 ### Added
