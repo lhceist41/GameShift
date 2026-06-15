@@ -270,9 +270,9 @@ public class VbsHvciToggle
     /// </summary>
     public static void ScheduleReboot(string? reason = null)
     {
-        var comment = string.IsNullOrEmpty(reason)
+        var comment = (string.IsNullOrEmpty(reason)
             ? "GameShift: Disabling Memory Integrity for better gaming performance."
-            : reason;
+            : reason).Replace("\"", string.Empty);
         Process.Start(new ProcessStartInfo
         {
             FileName = NativeInterop.SystemExePath("shutdown.exe"),

@@ -216,7 +216,10 @@ public class JournalManager
         }
         catch
         {
-            return false;
+            // The file exists (the write landed) but we couldn't read it back right now - e.g. a
+            // transient AV lock. Don't raise a false "recovery unavailable" alarm; treat only a
+            // genuinely missing file as a persistence failure.
+            return File.Exists(_journalPath);
         }
     }
 
