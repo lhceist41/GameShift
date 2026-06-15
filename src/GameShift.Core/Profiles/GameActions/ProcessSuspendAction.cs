@@ -105,10 +105,20 @@ public class ProcessSuspendAction : GameAction
             IntPtr handle = IntPtr.Zero;
             try
             {
-                // Verify process still exists before attempting resume
+                // Verify the PID still belongs to the same process before resuming. Without the
+                // name check, a reused PID could resume an unrelated process.
                 try
                 {
-                    _ = Process.GetProcessById(pid);
+                    using var check = Process.GetProcessById(pid);
+                    var expected = Path.GetFileNameWithoutExtension(_processName);
+                    if (!string.IsNullOrEmpty(expected) &&
+                        !string.Equals(check.ProcessName, expected, StringComparison.OrdinalIgnoreCase))
+                    {
+                        Log.Warning(
+                            "ProcessSuspendAction: PID {Pid} is now {Actual}, expected {Expected}, skipping resume",
+                            pid, check.ProcessName, expected);
+                        continue;
+                    }
                 }
                 catch (ArgumentException)
                 {

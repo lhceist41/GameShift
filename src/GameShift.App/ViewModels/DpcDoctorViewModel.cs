@@ -475,12 +475,20 @@ public class DpcDoctorViewModel : INotifyPropertyChanged
                     row.AvgUs = stats.AverageExecutionMicroseconds;
                     row.Severity = stats.Severity;
 
-                    // Copy sparkline data
-                    var sparkline = new double[stats.HistoryCount];
-                    for (int j = 0; j < stats.HistoryCount; j++)
+                    // Copy sparkline data under the stats lock so the ETW thread can't grow the
+                    // history (and shift indices) mid-copy - prevents a torn frame and a rare
+                    // IndexOutOfRange when HistoryCount increments during the loop.
+                    double[] sparkline;
+                    lock (stats.SyncRoot)
                     {
-                        var idx = (stats.HistoryIndex - stats.HistoryCount + j + 60) % 60;
-                        sparkline[j] = stats.RecentHistory[idx];
+                        int count = stats.HistoryCount;
+                        int index = stats.HistoryIndex;
+                        sparkline = new double[count];
+                        for (int j = 0; j < count; j++)
+                        {
+                            var idx = (index - count + j + 60) % 60;
+                            sparkline[j] = stats.RecentHistory[idx];
+                        }
                     }
                     row.SparklineData = sparkline;
                 }

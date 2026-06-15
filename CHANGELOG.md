@@ -18,6 +18,8 @@ All notable changes to GameShift are documented here.
 - **Self-heals a missed game-exit** - a periodic liveness check reconciles tracked games whose stop event was dropped (possible on the WMI fallback under load), so optimizations reliably revert once the game is actually gone instead of staying applied until the app restarts. It is conservative: a game is only reconciled when its process is provably gone, never on a transient lookup failure.
 - **Kernel-memory tweak rolls back a partial apply** - if applying the kernel-memory tweak failed after the first of its two registry writes, the first value was left changed but untracked (un-revertable). It now rolls back on a mid-apply failure, matching the other multi-write tweaks.
 - **Per-game firewall rules are never orphaned** - if creating a per-game firewall rule timed out (PowerShell slow to exit), the rule could be created yet recorded as not-created and left behind permanently. The timeout path now marks it for cleanup so the rule is removed on revert.
+- **Crash-recovery write failures are surfaced** - if the session journal can't be written when a game starts (disk full, folder not writable, AV lock), GameShift now logs it as an error so it is visible that crash recovery is unavailable for that session, instead of failing silently. The normal game-close revert is unaffected.
+- **DPC Doctor sparkline reads safely** - the per-driver latency history is now snapshotted under its lock when the chart is drawn, avoiding a torn frame and a rare index error during live capture.
 
 ## [3.8.3] - 2026-06-15
 

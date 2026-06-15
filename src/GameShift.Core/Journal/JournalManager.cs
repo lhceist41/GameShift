@@ -191,6 +191,32 @@ public class JournalManager
                 Optimizations = new List<JournalEntry>()
             };
             Save();
+
+            // Crash recovery for journaled optimizations depends on this write landing. If it did
+            // not persist (disk full, ProgramData not writable, AV lock), the watchdog/boot recovery
+            // cannot revert after a crash - surface it loudly instead of failing silently. The
+            // in-memory revert path still works for a normal game-close, so we do not abort the apply.
+            if (!VerifySessionPersisted())
+            {
+                _logger.Error(
+                    "[JournalManager] Session journal did not persist to {Path} - crash recovery is unavailable for this session",
+                    _journalPath);
+            }
+        }
+    }
+
+    /// <summary>Reads the journal back from disk and confirms an active session was recorded.</summary>
+    private bool VerifySessionPersisted()
+    {
+        try
+        {
+            if (!File.Exists(_journalPath)) return false;
+            var data = JsonSerializer.Deserialize<SessionJournalData>(File.ReadAllText(_journalPath));
+            return data?.SessionActive == true;
+        }
+        catch
+        {
+            return false;
         }
     }
 
