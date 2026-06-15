@@ -69,6 +69,12 @@ public class AppSettings
     public bool VbsHvciNotificationDismissed { get; set; } = false;
 
     /// <summary>
+    /// Whether the user dismissed the advisory offering to remove leftover AMD platform-timer BCD
+    /// tweaks (disabledynamictick / useplatformtick) applied by an older GameShift version.
+    /// </summary>
+    public bool AmdPlatformTimerAdvisoryDismissed { get; set; } = false;
+
+    /// <summary>
     /// Last time VBS/HVCI state was checked. Null if never checked.
     /// </summary>
     public DateTime? VbsHvciLastChecked { get; set; } = null;

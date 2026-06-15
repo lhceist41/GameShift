@@ -72,6 +72,7 @@ public class DashboardViewModel : INotifyPropertyChanged
     public PerformanceMonitorViewModel Perf { get; }
     public PingMonitorViewModel Ping { get; }
     public VbsAdvisoryViewModel Vbs { get; }
+    public AmdTimerAdvisoryViewModel AmdTimer { get; }
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -246,6 +247,7 @@ public class DashboardViewModel : INotifyPropertyChanged
         Perf = new PerformanceMonitorViewModel(perfMonitor);
         Ping = new PingMonitorViewModel(pingMonitor);
         Vbs = new VbsAdvisoryViewModel(vbsHvciToggle);
+        AmdTimer = new AmdTimerAdvisoryViewModel();
 
         // Subscribe to engine events for optimization state changes
         _engine.OptimizationApplied += OnOptimizationApplied;

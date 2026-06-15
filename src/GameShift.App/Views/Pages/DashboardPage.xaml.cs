@@ -143,6 +143,35 @@ public partial class DashboardPage : Page
         }
     }
 
+    private void OnFixAmdTimerClicked(object sender, RoutedEventArgs e)
+    {
+        var vm = DataContext as DashboardViewModel;
+        if (vm == null) return;
+
+        var confirm = MessageBox.Show(
+            "Remove the leftover platform-timer setting and restart now? This restores your AMD CPU's " +
+            "efficient per-core timer. Windows will restart in 30 seconds.",
+            "Fix AMD Timer Setting",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Question);
+        if (confirm != MessageBoxResult.Yes) return;
+
+        if (vm.AmdTimer.Fix())
+        {
+            GameShift.Core.Optimization.VbsHvciToggle.ScheduleReboot("GameShift: restoring the AMD per-core timer.");
+        }
+        else
+        {
+            MessageBox.Show("Could not apply the fix. Check the logs for details.",
+                "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private void OnDismissAmdTimerClicked(object sender, RoutedEventArgs e)
+    {
+        (DataContext as DashboardViewModel)?.AmdTimer.DismissBanner();
+    }
+
     private void OnReEnableVbsClicked(object sender, RoutedEventArgs e)
     {
         var vm = DataContext as DashboardViewModel;

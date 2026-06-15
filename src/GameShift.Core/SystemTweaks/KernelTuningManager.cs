@@ -324,6 +324,38 @@ public class KernelTuningManager
         return settings.ToArray();
     }
 
+    // ── AMD platform-timer leftover detection ──────────────────────────────────
+
+    /// <summary>
+    /// On AMD, returns the platform-timer tweaks (disabledynamictick / useplatformtick) that are
+    /// currently SET in BCD. These degrade performance on AMD and were applied by older GameShift
+    /// versions; the app offers a one-click revert + reboot. Empty on non-AMD or when none are set.
+    /// </summary>
+    public List<KernelTuningSetting> GetActivePlatformTimerTweaksToFix() =>
+        SelectActivePlatformTimerTweaks(CpuCapabilities.PlatformTimerTweaksHarmful, ReadCurrentValues());
+
+    /// <summary>
+    /// Pure selection so the policy is unit-testable: the platform-timer settings that are both
+    /// flagged harmful for this CPU and currently enabled in the supplied BCD values.
+    /// </summary>
+    internal static List<KernelTuningSetting> SelectActivePlatformTimerTweaks(
+        bool harmful, IReadOnlyDictionary<string, string?> currentValues)
+    {
+        if (!harmful) return new List<KernelTuningSetting>();
+
+        return AllSettings
+            .Where(s => s.PlatformTimerTweak
+                && currentValues.TryGetValue(s.BcdKey, out var value)
+                && IsEnabledBcdValue(value))
+            .ToList();
+    }
+
+    private static bool IsEnabledBcdValue(string? value) =>
+        !string.IsNullOrEmpty(value)
+        && (value.Equals("Yes", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("true", StringComparison.OrdinalIgnoreCase)
+            || value.Trim() == "1");
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private static (bool Success, string Output) RunBcdedit(string arguments)

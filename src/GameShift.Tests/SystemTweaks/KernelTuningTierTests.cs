@@ -64,4 +64,52 @@ public class KernelTuningTierTests
 
         Assert.Equal(new[] { "disabledynamictick", "useplatformtick" }, flagged);
     }
+
+    // ── SelectActivePlatformTimerTweaks (pure detection) ─────────────────────
+
+    [Fact]
+    public void SelectActivePlatformTimerTweaks_NotHarmful_ReturnsEmpty()
+    {
+        var values = new Dictionary<string, string?>
+        {
+            ["useplatformtick"] = "Yes",
+            ["disabledynamictick"] = "Yes",
+        };
+        Assert.Empty(KernelTuningManager.SelectActivePlatformTimerTweaks(harmful: false, values));
+    }
+
+    [Fact]
+    public void SelectActivePlatformTimerTweaks_BothSet_ReturnsBoth()
+    {
+        var values = new Dictionary<string, string?>
+        {
+            ["useplatformtick"] = "Yes",
+            ["disabledynamictick"] = "Yes",
+            ["x2apicpolicy"] = "Enable", // not a platform-timer tweak - must be ignored
+        };
+        var ids = KernelTuningManager.SelectActivePlatformTimerTweaks(harmful: true, values)
+            .Select(s => s.Id).ToHashSet();
+
+        Assert.Equal(2, ids.Count);
+        Assert.Contains("useplatformtick", ids);
+        Assert.Contains("disabledynamictick", ids);
+        Assert.DoesNotContain("x2apicpolicy", ids);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("No")]
+    public void SelectActivePlatformTimerTweaks_OnlyEnabledValuesCount(string? disabledValue)
+    {
+        var values = new Dictionary<string, string?>
+        {
+            ["useplatformtick"] = "Yes",
+            ["disabledynamictick"] = disabledValue,
+        };
+        var ids = KernelTuningManager.SelectActivePlatformTimerTweaks(harmful: true, values)
+            .Select(s => s.Id).ToList();
+
+        Assert.Equal(new[] { "useplatformtick" }, ids);
+    }
 }

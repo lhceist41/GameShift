@@ -182,6 +182,35 @@
                 </DockPanel>
             </Border>
 
+            <!-- AMD platform-timer leftover advisory (amber) - one-click revert + reboot -->
+            <Border CornerRadius="8" Padding="15" Margin="0,0,0,12"
+                    Background="{DynamicResource GS.Badge.Warning.Bg}"
+                    BorderBrush="{DynamicResource GS.Status.Warning}" BorderThickness="1"
+                    Visibility="{Binding AmdTimer.ShowBanner, Converter={StaticResource BoolToVisibility}}">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal"
+                                VerticalAlignment="Center" Margin="10,0,0,0">
+                        <Button Content="Fix &amp; Restart" Padding="10,4"
+                                Background="{DynamicResource GS.Status.Warning}" Foreground="White"
+                                BorderThickness="0" Cursor="Hand" FontSize="12"
+                                Click="OnFixAmdTimerClicked" Margin="0,0,8,0"/>
+                        <Button Content="Dismiss" Padding="10,4"
+                                Background="{DynamicResource GS.Surface.Card}"
+                                Foreground="{DynamicResource GS.Text.Primary}"
+                                BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1"
+                                Cursor="Hand" FontSize="12"
+                                Click="OnDismissAmdTimerClicked"/>
+                    </StackPanel>
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="AMD Timer Setting" FontWeight="Bold" FontSize="13"
+                                   Foreground="{DynamicResource GS.Status.Warning}"/>
+                        <TextBlock Text="{Binding AmdTimer.BannerMessage, Mode=OneWay}"
+                                   FontSize="12" Foreground="{DynamicResource GS.Text.Primary}"
+                                   TextWrapping="Wrap"/>
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+
             <!-- DPC Spike Alert Banner (red) - with Troubleshoot + Dismiss buttons -->
             <Border Background="{DynamicResource GS.Badge.Error.Bg}"
                     CornerRadius="8" Padding="15" Margin="0,0,0,12"

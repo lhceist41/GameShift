@@ -268,12 +268,15 @@ public class VbsHvciToggle
     /// Only call this after the user explicitly confirms they want to reboot.
     /// NEVER call automatically.
     /// </summary>
-    public static void ScheduleReboot()
+    public static void ScheduleReboot(string? reason = null)
     {
+        var comment = string.IsNullOrEmpty(reason)
+            ? "GameShift: Disabling Memory Integrity for better gaming performance."
+            : reason;
         Process.Start(new ProcessStartInfo
         {
             FileName = NativeInterop.SystemExePath("shutdown.exe"),
-            Arguments = "/r /t 30 /c \"GameShift: Disabling Memory Integrity for better gaming performance.\"",
+            Arguments = $"/r /t 30 /c \"{comment}\"",
             UseShellExecute = false,
             CreateNoWindow = true
         });
