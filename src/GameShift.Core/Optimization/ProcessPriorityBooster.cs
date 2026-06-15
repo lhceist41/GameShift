@@ -191,6 +191,18 @@ public class ProcessPriorityBooster : IOptimization, IJournaledOptimization
         {
             using var process = Process.GetProcessById(profile.ProcessId);
 
+            // Guard against PID reuse: if the PID no longer belongs to the detected game (it exited
+            // and Windows recycled the PID), don't boost an unrelated process.
+            var expectedName = Path.GetFileNameWithoutExtension(profile.ExecutableName);
+            if (!string.IsNullOrEmpty(expectedName) &&
+                !string.Equals(process.ProcessName, expectedName, StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.Warning(
+                    "[ProcessPriorityBooster] PID {ProcessId} is now {Actual}, expected {Expected} - skipping priority boost",
+                    profile.ProcessId, process.ProcessName, expectedName);
+                return false;
+            }
+
             // Record original priority before changing
             var originalPriority = process.PriorityClass;
             snapshot.RecordProcessPriority(profile.ProcessId, originalPriority);
@@ -208,8 +220,10 @@ public class ProcessPriorityBooster : IOptimization, IJournaledOptimization
             _usedIfeo = false;
             return true;
         }
-        catch (ArgumentException)
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
         {
+            // ArgumentException: no process with that PID. InvalidOperationException: the
+            // process exited between GetProcessById and the property read (PID-reuse race).
             _logger.Warning(
                 "[ProcessPriorityBooster] Game process {ProcessId} not found - may have exited",
                 profile.ProcessId);

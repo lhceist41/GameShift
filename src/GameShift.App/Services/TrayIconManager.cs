@@ -42,6 +42,11 @@ public class TrayIconManager : IDisposable
     private int _sessionOptimizationCount;
     private int _sessionFailedCount;
 
+    // Session-stat fields above are written from the DPC-sample timer, the optimization-engine
+    // thread, and the detector thread, and read when building the summary toast. Guard them all
+    // with this lock so the toast figures are consistent (these are cosmetic stats only).
+    private readonly object _statsLock = new();
+
     /// <summary>
     /// Gets whether game monitoring is currently paused by the user.
     /// </summary>
@@ -262,7 +267,7 @@ public class TrayIconManager : IDisposable
     {
         try
         {
-            _sessionOptimizationCount++;
+            lock (_statsLock) { _sessionOptimizationCount++; }
             Application.Current.Dispatcher.Invoke(UpdateTrayState);
         }
         catch (Exception ex)
@@ -275,7 +280,7 @@ public class TrayIconManager : IDisposable
     {
         try
         {
-            _sessionFailedCount++;
+            lock (_statsLock) { _sessionFailedCount++; }
         }
         catch (Exception ex)
         {
@@ -300,15 +305,18 @@ public class TrayIconManager : IDisposable
         try
         {
             // Track session start for post-session summary
-            if (_sessionStartTime == null)
+            lock (_statsLock)
             {
-                _sessionStartTime = DateTime.Now;
-                _sessionGameName = e.GameName;
-                _sessionPeakDpc = 0;
-                _sessionDpcSum = 0;
-                _sessionDpcSampleCount = 0;
-                _sessionOptimizationCount = 0;
-                _sessionFailedCount = 0;
+                if (_sessionStartTime == null)
+                {
+                    _sessionStartTime = DateTime.Now;
+                    _sessionGameName = e.GameName;
+                    _sessionPeakDpc = 0;
+                    _sessionDpcSum = 0;
+                    _sessionDpcSampleCount = 0;
+                    _sessionOptimizationCount = 0;
+                    _sessionFailedCount = 0;
+                }
             }
 
             if (_settings.ShowNotifications && _settings.ShowGameDetectedToast)
@@ -361,11 +369,14 @@ public class TrayIconManager : IDisposable
     {
         if (_orchestrator.IsOptimizing)
         {
-            if (latencyMicroseconds > _sessionPeakDpc)
-                _sessionPeakDpc = latencyMicroseconds;
+            lock (_statsLock)
+            {
+                if (latencyMicroseconds > _sessionPeakDpc)
+                    _sessionPeakDpc = latencyMicroseconds;
 
-            _sessionDpcSum += latencyMicroseconds;
-            _sessionDpcSampleCount++;
+                _sessionDpcSum += latencyMicroseconds;
+                _sessionDpcSampleCount++;
+            }
         }
     }
 
@@ -379,12 +390,20 @@ public class TrayIconManager : IDisposable
                 return;
             }
 
-            var duration = DateTime.Now - (_sessionStartTime ?? DateTime.Now);
-            var avgDpc = _sessionDpcSampleCount > 0 ? _sessionDpcSum / _sessionDpcSampleCount : 0;
-            var peakDpc = _sessionPeakDpc;
-            var gameName = _sessionGameName ?? "Unknown Game";
-            var optCount = _sessionOptimizationCount;
-            var failedCount = _sessionFailedCount;
+            DateTime? startTime;
+            double avgDpc, peakDpc;
+            string gameName;
+            int optCount, failedCount;
+            lock (_statsLock)
+            {
+                startTime = _sessionStartTime;
+                avgDpc = _sessionDpcSampleCount > 0 ? _sessionDpcSum / _sessionDpcSampleCount : 0;
+                peakDpc = _sessionPeakDpc;
+                gameName = _sessionGameName ?? "Unknown Game";
+                optCount = _sessionOptimizationCount;
+                failedCount = _sessionFailedCount;
+            }
+            var duration = DateTime.Now - (startTime ?? DateTime.Now);
 
             var toast = new ToastNotificationWindow();
             toast.SetSessionData(gameName, duration, optCount, failedCount, avgDpc, peakDpc);
@@ -416,20 +435,28 @@ public class TrayIconManager : IDisposable
         try
         {
             // Show post-session toast BEFORE clearing session data
-            if (_sessionStartTime.HasValue)
+            bool hasSession;
+            lock (_statsLock)
+            {
+                hasSession = _sessionStartTime.HasValue;
+            }
+            if (hasSession)
             {
                 Application.Current.Dispatcher.Invoke(() => ShowSessionSummaryToast());
             }
 
             _hasDpcWarning = false;
 
-            _sessionStartTime = null;
-            _sessionGameName = null;
-            _sessionPeakDpc = 0;
-            _sessionDpcSum = 0;
-            _sessionDpcSampleCount = 0;
-            _sessionOptimizationCount = 0;
-            _sessionFailedCount = 0;
+            lock (_statsLock)
+            {
+                _sessionStartTime = null;
+                _sessionGameName = null;
+                _sessionPeakDpc = 0;
+                _sessionDpcSum = 0;
+                _sessionDpcSampleCount = 0;
+                _sessionOptimizationCount = 0;
+                _sessionFailedCount = 0;
+            }
 
             Application.Current.Dispatcher.Invoke(UpdateTrayState);
         }

@@ -696,30 +696,53 @@ public class HybridCpuDetector : IOptimization, IJournaledOptimization
 
         using (process)
         {
-            // Record original affinity for snapshot (legacy format for crash recovery compatibility)
-            snapshot.RecordProcessAffinity(profile.ProcessId, process.ProcessorAffinity);
-
-            bool success = SetDefaultCpuSets(profile.ProcessId, targetCpuSets, (uint)targetCpuSets.Length);
-
-            if (success)
+            try
             {
-                _pinnedProcessId = profile.ProcessId;
-                _usedCpuSets = true;
-                _usedIfeo = false;
-                IsApplied = true;
+                // Guard against PID reuse: if the PID no longer belongs to the detected game, don't pin
+                // an unrelated process.
+                var expectedName = Path.GetFileNameWithoutExtension(profile.ExecutableName);
+                if (!string.IsNullOrEmpty(expectedName) &&
+                    !string.Equals(process.ProcessName, expectedName, StringComparison.OrdinalIgnoreCase))
+                {
+                    SettingsManager.Logger.Warning(
+                        "[HybridCpuDetector] PID {Pid} is now {Actual}, expected {Expected} - skipping CPU-set pin",
+                        profile.ProcessId, process.ProcessName, expectedName);
+                    return false;
+                }
 
-                SettingsManager.Logger.Information(
-                    "[HybridCpuDetector] Pinned {ProcessName} (PID {Pid}) to {Count} CPU Sets via SetProcessDefaultCpuSets",
-                    process.ProcessName, profile.ProcessId, targetCpuSets.Length);
+                // Record original affinity for snapshot (legacy format for crash recovery compatibility)
+                snapshot.RecordProcessAffinity(profile.ProcessId, process.ProcessorAffinity);
+
+                bool success = SetDefaultCpuSets(profile.ProcessId, targetCpuSets, (uint)targetCpuSets.Length);
+
+                if (success)
+                {
+                    _pinnedProcessId = profile.ProcessId;
+                    _usedCpuSets = true;
+                    _usedIfeo = false;
+                    IsApplied = true;
+
+                    SettingsManager.Logger.Information(
+                        "[HybridCpuDetector] Pinned {ProcessName} (PID {Pid}) to {Count} CPU Sets via SetProcessDefaultCpuSets",
+                        process.ProcessName, profile.ProcessId, targetCpuSets.Length);
+                }
+                else
+                {
+                    int error = Marshal.GetLastWin32Error();
+                    SettingsManager.Logger.Warning(
+                        "[HybridCpuDetector] SetProcessDefaultCpuSets failed with error {Error}", error);
+                }
+
+                return success;
             }
-            else
+            catch (InvalidOperationException)
             {
-                int error = Marshal.GetLastWin32Error();
+                // Process exited between GetProcessById and the property read (PID-reuse race).
                 SettingsManager.Logger.Warning(
-                    "[HybridCpuDetector] SetProcessDefaultCpuSets failed with error {Error}", error);
+                    "[HybridCpuDetector] Game process {ProcessId} exited during CPU-set pin - skipping",
+                    profile.ProcessId);
+                return false;
             }
-
-            return success;
         }
     }
 

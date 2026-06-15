@@ -196,6 +196,30 @@ public class DetectionOrchestrator
 
                     profile.ProcessId = e.ProcessId;
 
+                    // Ensure the profile carries the detected executable so the IFEO fallback can
+                    // target the image and the apply modules can verify process identity.
+                    if (string.IsNullOrEmpty(profile.ExecutableName))
+                        profile.ExecutableName = executableName;
+                    if (string.IsNullOrEmpty(profile.ExecutablePath))
+                        profile.ExecutablePath = e.ExecutablePath;
+
+                    // Backfill anti-cheat metadata for built-in titles that resolved to the default
+                    // profile (their kernel anti-cheat is known in BuiltInProfiles but not on the
+                    // default GameProfile). This routes EAC/BattlEye games through the IFEO-at-launch
+                    // path instead of a direct priority/affinity write the anti-cheat would just block.
+                    if (profile.AntiCheat == AntiCheatType.None)
+                    {
+                        var builtIn = GameShift.Core.GameProfiles.BuiltInProfiles.GetAll().FirstOrDefault(b =>
+                            b.ProcessNames.Any(pn => string.Equals(pn, executableName, StringComparison.OrdinalIgnoreCase)));
+                        if (builtIn != null && builtIn.AntiCheat != AntiCheatType.None)
+                        {
+                            profile.AntiCheat = builtIn.AntiCheat;
+                            _logger.Information(
+                                "Backfilled anti-cheat {AntiCheat} for {GameName} from built-in profile",
+                                builtIn.AntiCheat, e.GameName);
+                        }
+                    }
+
                     // If profile has no custom memory threshold, use global setting
                     if (profile.MemoryThresholdMB == 0)
                     {

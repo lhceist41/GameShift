@@ -350,27 +350,6 @@ public class SystemStateSnapshot
     }
 
     /// <summary>
-    /// Saves this snapshot to a lockfile for crash recovery.
-    /// The lockfile indicates an active optimization session.
-    /// </summary>
-    /// <param name="path">Full path to the lockfile (typically %AppData%/GameShift/active_session.json)</param>
-    public void SaveToLockfile(string path)
-    {
-        var directory = Path.GetDirectoryName(path);
-        if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
-        {
-            Directory.CreateDirectory(directory);
-        }
-
-        var json = JsonSerializer.Serialize(this, new JsonSerializerOptions
-        {
-            WriteIndented = true
-        });
-
-        File.WriteAllText(path, json);
-    }
-
-    /// <summary>
     /// Loads a snapshot from a lockfile.
     /// Used during startup to detect and recover from crashes.
     /// </summary>

@@ -57,8 +57,11 @@ public class OptimizationEngine : IDisposable
 
     /// <summary>
     /// Number of optimizations currently applied (used by SessionTracker for session stats).
+    /// Backed by a separate counter so cross-thread readers (SessionTracker, dashboard) get a
+    /// consistent value without touching the Stack while it is mutated under the semaphore.
     /// </summary>
-    public int AppliedCount => _appliedOptimizations.Count;
+    public int AppliedCount => Volatile.Read(ref _appliedCount);
+    private int _appliedCount;
 
     /// <summary>
     /// Fired when an optimization is successfully applied.
@@ -181,6 +184,7 @@ public class OptimizationEngine : IDisposable
                     {
                         // Track for LIFO revert
                         _appliedOptimizations.Push(optimization);
+                        Interlocked.Increment(ref _appliedCount);
                         _logger.Information("Successfully applied: {OptimizationName}", optimization.Name);
 
                         // Queue UI notification - fired outside semaphore below
@@ -205,11 +209,11 @@ public class OptimizationEngine : IDisposable
             }
 
             _logger.Information("Profile activation complete. Applied {AppliedCount}, skipped {SkippedCount} (disabled in profile or Background Mode).",
-                _appliedOptimizations.Count, skippedCount);
+                _appliedCount, skippedCount);
 
             // Start registry change monitoring so external modifications are detected
             // during the gaming session (e.g. Windows Update agent, other apps).
-            if (_appliedOptimizations.Count > 0)
+            if (_appliedCount > 0)
                 _registryMonitor.StartSession();
 
             // Start ProBalance dynamic CPU restraint if enabled in settings
@@ -291,12 +295,13 @@ public class OptimizationEngine : IDisposable
                 _registryMonitor.StopSession();
 
                 _appliedOptimizations.Clear(); // Clear in-memory tracking
+                Interlocked.Exchange(ref _appliedCount, 0);
                 _snapshot = null;
                 return;
             }
 
             _logger.Information("Deactivating profile. Reverting {Count} optimizations in LIFO order.",
-                _appliedOptimizations.Count);
+                _appliedCount);
 
             // Stop ProBalance - restore all restrained processes before reverting optimizations
             _proBalance.Stop();
@@ -307,6 +312,7 @@ public class OptimizationEngine : IDisposable
             // Revert in reverse order (LIFO via Stack)
             while (_appliedOptimizations.TryPop(out var optimization))
             {
+                Interlocked.Decrement(ref _appliedCount);
                 try
                 {
                     _logger.Debug("Reverting optimization: {OptimizationName}", optimization.Name);
