@@ -36,6 +36,15 @@ public class GameProfileManager : IDisposable
     private readonly object _processNamesLock = new();
 
     /// <summary>
+    /// Serializes the whole game-start and game-stop handlers. Under the WMI fallback monitor,
+    /// start and stop events arrive on two independent threads; without this, a start writing the
+    /// revert-state collections could race a stop iterating+clearing them (enumerator throw, and a
+    /// stuck _activeProfile that blocks all further optimization). Nests over _processNamesLock
+    /// (the start/stop cores acquire that inner lock; IsActiveGameProcess never takes _sessionLock).
+    /// </summary>
+    private readonly object _sessionLock = new();
+
+    /// <summary>
     /// Thread-safe check whether a process name is currently managed by an active game
     /// profile session. Replaces direct access to the internal HashSet to avoid torn
     /// reads during concurrent Add/Clear.
@@ -98,6 +107,14 @@ public class GameProfileManager : IDisposable
     /// Called when a game starts. Finds matching profile and applies session optimizations.
     /// </summary>
     public void OnGameStarted(object? sender, GameDetectedEventArgs e)
+    {
+        lock (_sessionLock)
+        {
+            OnGameStartedCore(sender, e);
+        }
+    }
+
+    private void OnGameStartedCore(object? sender, GameDetectedEventArgs e)
     {
         var settings = SettingsManager.Load();
         if (settings.GameProfiles?.Enabled == false) return;
@@ -219,6 +236,14 @@ public class GameProfileManager : IDisposable
     /// Called when all games stop. Reverts session optimizations.
     /// </summary>
     public void OnAllGamesStopped(object? sender, EventArgs e)
+    {
+        lock (_sessionLock)
+        {
+            OnAllGamesStoppedCore(sender, e);
+        }
+    }
+
+    private void OnAllGamesStoppedCore(object? sender, EventArgs e)
     {
         if (_activeProfile == null) return;
 

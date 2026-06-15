@@ -1,4 +1,5 @@
 using System.Management;
+using GameShift.Core.Config;
 
 namespace GameShift.Core.Detection;
 
@@ -47,25 +48,44 @@ public sealed class WmiProcessMonitor : IProcessMonitor
 
     private void OnStart(object sender, EventArrivedEventArgs e)
     {
-        var pid = Convert.ToInt32(e.NewEvent.Properties["ProcessID"].Value);
-        var name = e.NewEvent.Properties["ProcessName"].Value?.ToString() ?? string.Empty;
-
-        ProcessStarted?.Invoke(new ProcessStartEventData
+        // EventArrived runs on a WMI delivery thread; an exception escaping here is not caught by
+        // any app-level handler and would terminate the process. Contain and log instead - a single
+        // dropped process event is harmless. The event object is COM-backed and disposed promptly.
+        try
         {
-            ProcessId = pid,
-            ImageFileName = name,   // WMI provides filename only, not full path
-            Timestamp = DateTime.UtcNow
-        });
+            using ManagementBaseObject ev = e.NewEvent;
+            var pid = Convert.ToInt32(ev.Properties["ProcessID"].Value);
+            var name = ev.Properties["ProcessName"].Value?.ToString() ?? string.Empty;
+
+            ProcessStarted?.Invoke(new ProcessStartEventData
+            {
+                ProcessId = pid,
+                ImageFileName = name,   // WMI provides filename only, not full path
+                Timestamp = DateTime.UtcNow
+            });
+        }
+        catch (Exception ex)
+        {
+            SettingsManager.Logger.Warning(ex, "[WmiProcessMonitor] Failed to handle process-start event");
+        }
     }
 
     private void OnStop(object sender, EventArrivedEventArgs e)
     {
-        var pid = Convert.ToInt32(e.NewEvent.Properties["ProcessID"].Value);
-
-        ProcessStopped?.Invoke(new ProcessStopEventData
+        try
         {
-            ProcessId = pid,
-            Timestamp = DateTime.UtcNow
-        });
+            using ManagementBaseObject ev = e.NewEvent;
+            var pid = Convert.ToInt32(ev.Properties["ProcessID"].Value);
+
+            ProcessStopped?.Invoke(new ProcessStopEventData
+            {
+                ProcessId = pid,
+                Timestamp = DateTime.UtcNow
+            });
+        }
+        catch (Exception ex)
+        {
+            SettingsManager.Logger.Warning(ex, "[WmiProcessMonitor] Failed to handle process-stop event");
+        }
     }
 }

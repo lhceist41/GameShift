@@ -8,6 +8,13 @@ All notable changes to GameShift are documented here.
 
 - **One-click fix for a leftover AMD timer setting** - if an older GameShift version left the platform-timer BCD tweaks (`disabledynamictick` / `useplatformtick`) set on an AMD CPU, the Dashboard now shows an advisory with a "Fix & Restart" button that reverts them and reboots to restore the efficient per-core timer. The check is skipped entirely on non-AMD systems and runs off the UI thread, and the advisory can be dismissed.
 
+### Fixed
+
+- **Hardened the WMI process-detection fallback** - on systems where the ETW process monitor is unavailable and GameShift falls back to WMI, an exception while handling a process start/stop event ran on a background thread that no global handler covered and could terminate the app. The handlers are now guarded, and the COM-backed WMI event objects are disposed rather than left for finalization.
+- **Game start/stop handling is race-free** - the per-game profile start and stop handlers are now serialized, so under the WMI fallback a start and a concurrent stop can no longer throw or leave the session stuck in a state that silently disables further optimization.
+- **Temperature monitoring cannot race its own shutdown** - the 2-second sensor poll and disposal are now serialized, so the hardware-monitor driver state can never be torn down while a reading is in flight.
+- **No hang on exit** - quitting GameShift at the same instant a game closes could deadlock the shutdown revert; the revert now runs off the UI thread and game monitoring is stopped first, so exit is always clean.
+
 ## [3.8.3] - 2026-06-15
 
 ### Fixed

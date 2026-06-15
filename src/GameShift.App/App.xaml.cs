@@ -521,11 +521,17 @@ public partial class App : Application
         // Deactivate any active optimizations.
         // Block synchronously - async void can be killed by the framework before
         // the await completes, leaving optimizations un-reverted.
+        // Stop game monitoring FIRST so a game-close event can't kick off a concurrent revert that
+        // holds the engine semaphore while we block on it below.
+        Services.Detector?.StopMonitoring();
+
         if (Services.Orchestrator?.IsOptimizing == true && Services.Engine != null)
         {
             try
             {
-                Services.Engine.DeactivateProfileAsync().GetAwaiter().GetResult();
+                // Run on a thread-pool thread so async continuations don't post back to the (blocked)
+                // UI dispatcher - avoids a sync-over-async deadlock that would hang the app on exit.
+                Task.Run(() => Services.Engine.DeactivateProfileAsync()).GetAwaiter().GetResult();
                 Log.Information("Optimizations deactivated during shutdown");
             }
             catch (Exception ex)

@@ -25,6 +25,13 @@ public class TemperatureMonitor : IDisposable
     private bool _disposed;
     private readonly ILogger _logger;
 
+    /// <summary>
+    /// Serializes a hardware read (which goes through the LibreHardwareMonitor ring-0 driver) against
+    /// Dispose()'s _computer.Close() (which tears that driver state down), so a close can never race
+    /// an in-flight Update().
+    /// </summary>
+    private readonly object _updateLock = new();
+
     public float CurrentCpuTemp { get; private set; }
     public float CurrentGpuTemp { get; private set; }
     public float MinCpuTemp { get; private set; }
@@ -95,38 +102,31 @@ public class TemperatureMonitor : IDisposable
 
     private void OnTimerElapsed(object? sender, global::System.Timers.ElapsedEventArgs e)
     {
-        if (_computer == null || !IsAvailable) return;
+        // Skip after disposal, and serialize against Dispose()'s Close() so the ring-0 driver state
+        // cannot be torn down while this read is in flight.
+        if (_disposed) return;
 
-        try
+        lock (_updateLock)
         {
-            float cpuTemp = 0;
-            float gpuTemp = 0;
-            bool foundCpu = false;
-            bool foundGpu = false;
+            if (_disposed || _computer == null || !IsAvailable) return;
 
-            foreach (var hardware in _computer.Hardware)
+            try
             {
-                hardware.Update();
+                float cpuTemp = 0;
+                float gpuTemp = 0;
+                bool foundCpu = false;
+                bool foundGpu = false;
 
-                if (hardware.HardwareType == LibreHardwareMonitor.Hardware.HardwareType.Cpu && !foundCpu)
+                foreach (var hardware in _computer.Hardware)
                 {
-                    foreach (var sensor in hardware.Sensors)
-                    {
-                        if (sensor.SensorType == LibreHardwareMonitor.Hardware.SensorType.Temperature &&
-                            sensor.Name.Contains("Package", StringComparison.OrdinalIgnoreCase) &&
-                            sensor.Value.HasValue)
-                        {
-                            cpuTemp = sensor.Value.Value;
-                            foundCpu = true;
-                            break;
-                        }
-                    }
-                    // Fallback: first temp sensor
-                    if (!foundCpu)
+                    hardware.Update();
+
+                    if (hardware.HardwareType == LibreHardwareMonitor.Hardware.HardwareType.Cpu && !foundCpu)
                     {
                         foreach (var sensor in hardware.Sensors)
                         {
                             if (sensor.SensorType == LibreHardwareMonitor.Hardware.SensorType.Temperature &&
+                                sensor.Name.Contains("Package", StringComparison.OrdinalIgnoreCase) &&
                                 sensor.Value.HasValue)
                             {
                                 cpuTemp = sensor.Value.Value;
@@ -134,53 +134,67 @@ public class TemperatureMonitor : IDisposable
                                 break;
                             }
                         }
-                    }
-                }
-
-                if ((hardware.HardwareType == LibreHardwareMonitor.Hardware.HardwareType.GpuNvidia ||
-                     hardware.HardwareType == LibreHardwareMonitor.Hardware.HardwareType.GpuAmd ||
-                     hardware.HardwareType == LibreHardwareMonitor.Hardware.HardwareType.GpuIntel) && !foundGpu)
-                {
-                    foreach (var sensor in hardware.Sensors)
-                    {
-                        if (sensor.SensorType == LibreHardwareMonitor.Hardware.SensorType.Temperature &&
-                            sensor.Value.HasValue)
+                        // Fallback: first temp sensor
+                        if (!foundCpu)
                         {
-                            gpuTemp = sensor.Value.Value;
-                            foundGpu = true;
-                            break;
+                            foreach (var sensor in hardware.Sensors)
+                            {
+                                if (sensor.SensorType == LibreHardwareMonitor.Hardware.SensorType.Temperature &&
+                                    sensor.Value.HasValue)
+                                {
+                                    cpuTemp = sensor.Value.Value;
+                                    foundCpu = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    if ((hardware.HardwareType == LibreHardwareMonitor.Hardware.HardwareType.GpuNvidia ||
+                         hardware.HardwareType == LibreHardwareMonitor.Hardware.HardwareType.GpuAmd ||
+                         hardware.HardwareType == LibreHardwareMonitor.Hardware.HardwareType.GpuIntel) && !foundGpu)
+                    {
+                        foreach (var sensor in hardware.Sensors)
+                        {
+                            if (sensor.SensorType == LibreHardwareMonitor.Hardware.SensorType.Temperature &&
+                                sensor.Value.HasValue)
+                            {
+                                gpuTemp = sensor.Value.Value;
+                                foundGpu = true;
+                                break;
+                            }
                         }
                     }
                 }
-            }
 
-            CurrentCpuTemp = cpuTemp;
-            CurrentGpuTemp = gpuTemp;
+                CurrentCpuTemp = cpuTemp;
+                CurrentGpuTemp = gpuTemp;
 
-            if (cpuTemp > 0 || gpuTemp > 0)
-            {
-                if (!_hasFirstReading)
+                if (cpuTemp > 0 || gpuTemp > 0)
                 {
-                    if (cpuTemp > 0) { MinCpuTemp = cpuTemp; MaxCpuTemp = cpuTemp; }
-                    if (gpuTemp > 0) { MinGpuTemp = gpuTemp; MaxGpuTemp = gpuTemp; }
-                    _hasFirstReading = true;
+                    if (!_hasFirstReading)
+                    {
+                        if (cpuTemp > 0) { MinCpuTemp = cpuTemp; MaxCpuTemp = cpuTemp; }
+                        if (gpuTemp > 0) { MinGpuTemp = gpuTemp; MaxGpuTemp = gpuTemp; }
+                        _hasFirstReading = true;
+                    }
+                    else
+                    {
+                        if (cpuTemp > 0) { MinCpuTemp = Math.Min(MinCpuTemp, cpuTemp); MaxCpuTemp = Math.Max(MaxCpuTemp, cpuTemp); }
+                        if (gpuTemp > 0) { MinGpuTemp = Math.Min(MinGpuTemp, gpuTemp); MaxGpuTemp = Math.Max(MaxGpuTemp, gpuTemp); }
+                    }
                 }
-                else
-                {
-                    if (cpuTemp > 0) { MinCpuTemp = Math.Min(MinCpuTemp, cpuTemp); MaxCpuTemp = Math.Max(MaxCpuTemp, cpuTemp); }
-                    if (gpuTemp > 0) { MinGpuTemp = Math.Min(MinGpuTemp, gpuTemp); MaxGpuTemp = Math.Max(MaxGpuTemp, gpuTemp); }
-                }
-            }
 
-            TemperatureUpdated?.Invoke(this, new TemperatureSample
+                TemperatureUpdated?.Invoke(this, new TemperatureSample
+                {
+                    CpuTempCelsius = cpuTemp,
+                    GpuTempCelsius = gpuTemp
+                });
+            }
+            catch (Exception ex)
             {
-                CpuTempCelsius = cpuTemp,
-                GpuTempCelsius = gpuTemp
-            });
-        }
-        catch (Exception ex)
-        {
-            _logger.Warning(ex, "Error reading temperature sensors");
+                _logger.Warning(ex, "Error reading temperature sensors");
+            }
         }
     }
 
@@ -190,7 +204,11 @@ public class TemperatureMonitor : IDisposable
         _disposed = true;
         _timer.Enabled = false;
         _timer.Dispose();
-        try { _computer?.Close(); } catch { }
+        // Wait for any in-flight read to finish (it holds _updateLock) before closing the driver.
+        lock (_updateLock)
+        {
+            try { _computer?.Close(); } catch { }
+        }
         GC.SuppressFinalize(this);
     }
 }
