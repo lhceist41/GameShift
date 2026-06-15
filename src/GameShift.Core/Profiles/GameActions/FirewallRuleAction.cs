@@ -66,13 +66,24 @@ public class FirewallRuleAction : GameAction
             };
 
             using var process = Process.Start(psi);
-            if (process != null && !process.WaitForExit(15_000))
+            if (process == null)
+            {
+                Log.Warning("FirewallRuleAction: failed to start PowerShell for rule '{RuleName}'", _ruleName);
+                return;
+            }
+
+            if (!process.WaitForExit(15_000))
             {
                 Log.Warning("FirewallRuleAction: PowerShell timed out creating rule '{RuleName}', killing process", _ruleName);
                 try { process.Kill(); } catch { }
+
+                // The cmdlet may have created the rule before powershell.exe was slow to exit. Mark it
+                // created so Revert's idempotent removal cleans it up rather than orphaning the rule.
+                _ruleCreated = true;
+                return;
             }
 
-            if (process?.ExitCode == 0)
+            if (process.ExitCode == 0)
             {
                 _ruleCreated = true;
                 Log.Information(
@@ -83,7 +94,7 @@ public class FirewallRuleAction : GameAction
             {
                 Log.Warning(
                     "FirewallRuleAction: PowerShell exited with code {ExitCode} for rule '{RuleName}'",
-                    process?.ExitCode, _ruleName);
+                    process.ExitCode, _ruleName);
             }
         }
         catch (Exception ex)

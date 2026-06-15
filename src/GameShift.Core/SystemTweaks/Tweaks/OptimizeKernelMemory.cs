@@ -42,8 +42,19 @@ public class OptimizeKernelMemory : ISystemTweak
         var origDpe = key.GetValue("DisablePagingExecutive");
         var origLsc = key.GetValue("LargeSystemCache");
 
-        key.SetValue("DisablePagingExecutive", 1, RegistryValueKind.DWord);
-        key.SetValue("LargeSystemCache", 0, RegistryValueKind.DWord);
+        try
+        {
+            key.SetValue("DisablePagingExecutive", 1, RegistryValueKind.DWord);
+            key.SetValue("LargeSystemCache", 0, RegistryValueKind.DWord);
+        }
+        catch
+        {
+            // Roll back any value already written so a mid-Apply failure never leaves an untracked,
+            // half-applied state (the caller only persists the revert baseline if Apply succeeds).
+            RestoreValue(key, "DisablePagingExecutive", origDpe);
+            RestoreValue(key, "LargeSystemCache", origLsc);
+            throw;
+        }
 
         Log.Information(
             "[KernelMemory] DisablePagingExecutive=1 (was: {Dpe}), LargeSystemCache=0 (was: {Lsc})",
@@ -86,6 +97,18 @@ public class OptimizeKernelMemory : ISystemTweak
             Log.Warning(ex, "[KernelMemory] Revert failed");
             return false;
         }
+    }
+
+    private static void RestoreValue(RegistryKey key, string name, object? original)
+    {
+        try
+        {
+            if (original is int value)
+                key.SetValue(name, value, RegistryValueKind.DWord);
+            else
+                key.DeleteValue(name, throwOnMissingValue: false);
+        }
+        catch { /* best-effort rollback */ }
     }
 
     private class KernelMemoryBackup

@@ -16,6 +16,8 @@ All notable changes to GameShift are documented here.
 - **No hang on exit** - quitting GameShift at the same instant a game closes could deadlock the shutdown revert; the revert now runs off the UI thread and game monitoring is stopped first, so exit is always clean.
 - **Detection no longer optimizes the wrong process** - executables that can live inside a game's install folder (platform stubs like `start_protected_game.exe`, EasyAntiCheat/BattlEye launchers, crash reporters, redistributables/installers) are no longer matched as the game. This stops optimizations from targeting a helper process and prevents a premature full revert when that helper exits mid-game.
 - **Self-heals a missed game-exit** - a periodic liveness check reconciles tracked games whose stop event was dropped (possible on the WMI fallback under load), so optimizations reliably revert once the game is actually gone instead of staying applied until the app restarts. It is conservative: a game is only reconciled when its process is provably gone, never on a transient lookup failure.
+- **Kernel-memory tweak rolls back a partial apply** - if applying the kernel-memory tweak failed after the first of its two registry writes, the first value was left changed but untracked (un-revertable). It now rolls back on a mid-apply failure, matching the other multi-write tweaks.
+- **Per-game firewall rules are never orphaned** - if creating a per-game firewall rule timed out (PowerShell slow to exit), the rule could be created yet recorded as not-created and left behind permanently. The timeout path now marks it for cleanup so the rule is removed on revert.
 
 ## [3.8.3] - 2026-06-15
 
