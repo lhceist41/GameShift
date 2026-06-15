@@ -117,6 +117,9 @@ public class ProcessPriorityBooster : IOptimization, IJournaledOptimization
         _ifeoSubKeyPath = string.Empty;
         _ifeoPerfOptionsPreviouslyExisted = false;
         _ifeoOriginalValues = null;
+        _boostedProcessId = 0;
+        _originalPrioritySeparation = null;
+        _prioritySeparationApplied = false;
 
         try
         {
@@ -134,7 +137,12 @@ public class ProcessPriorityBooster : IOptimization, IJournaledOptimization
                 pathSuccess = ApplyViaRuntimeApi(snapshot, profile);
             }
 
-            if (!pathSuccess)
+            // A failed per-process priority boost (PID reuse, the game process exited, or an
+            // anti-cheat block) must NOT orphan the system-wide Win32PrioritySeparation tweak
+            // that was already applied above. If that change was made, the optimization must
+            // still be tracked so the engine reverts it on session end. Only report a hard
+            // failure when nothing was changed at all (so there is no residue to revert).
+            if (!pathSuccess && !_prioritySeparationApplied)
                 return Fail("Failed to apply priority boost");
 
             IsApplied = true;

@@ -145,8 +145,20 @@ public class TimerResolutionManager : IOptimization, IJournaledOptimization
                 ? ApplyOnDedicatedThread(desiredResolution).Result
                 : ApplyDirect(desiredResolution).Result;
 
-            if (!success)
+            // A failed live NtSetTimerResolution must NOT orphan the persistent
+            // GlobalTimerResolutionRequests registry value written above. If that registry
+            // change was made, keep the optimization tracked so the engine reverts it; only
+            // report a hard failure when nothing persistent was changed.
+            if (!success && !_globalTimerKeyWasSet)
                 return Fail("NtSetTimerResolution failed");
+
+            if (!success)
+            {
+                SettingsManager.Logger.Warning(
+                    "[TimerResolutionManager] NtSetTimerResolution failed, but GlobalTimerResolutionRequests " +
+                    "was set - tracking for revert of the persistent registry value only.");
+                IsApplied = true; // ApplyOnDedicatedThread/ApplyDirect only set this on success
+            }
 
             return new OptimizationResult(
                 OptimizationId,
@@ -296,7 +308,7 @@ public class TimerResolutionManager : IOptimization, IJournaledOptimization
                     "[TimerResolutionManager] Reverted timer resolution - released {Resolution} via dedicated thread",
                     _appliedResolution);
             }
-            else
+            else if (_appliedResolution > 0)
             {
                 int setResult = NativeInterop.NtSetTimerResolution(_appliedResolution, false, out int actualResolution);
                 if (setResult == 0)
@@ -325,6 +337,11 @@ public class TimerResolutionManager : IOptimization, IJournaledOptimization
     public bool Verify()
     {
         if (!IsApplied) return false;
+        // Registry-only partial apply (the live NtSetTimerResolution failed but the persistent
+        // GlobalTimerResolutionRequests key was set): there is no live timer request to query, so
+        // the persistent registry state is what we track. Treat it as verified.
+        if (_appliedResolution <= 0)
+            return _globalTimerKeyWasSet;
         try
         {
             int r = NativeInterop.NtQueryTimerResolution(out _, out _, out int current);
