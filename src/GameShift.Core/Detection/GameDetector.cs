@@ -37,6 +37,7 @@ public class GameDetector : IDisposable
     private readonly ILogger _logger;
 
     private IProcessMonitor? _processMonitor;
+    private global::System.Timers.Timer? _livenessTimer;
     private bool _disposed;
 
     /// <summary>
@@ -181,6 +182,13 @@ public class GameDetector : IDisposable
             _processMonitor = ProcessMonitorFactory.Create(_logger);
             _processMonitor.ProcessStarted += OnProcessStarted;
             _processMonitor.ProcessStopped += OnProcessStopped;
+
+            // Liveness sweep: a self-heal for a dropped/missed process-stop event (the WMI fallback
+            // can drop Win32_ProcessStopTrace under load). Without this, a missed stop would leave
+            // the game in _activeGames forever, so optimizations would never revert until restart.
+            _livenessTimer = new global::System.Timers.Timer(7000) { AutoReset = true };
+            _livenessTimer.Elapsed += ReconcileActiveGames;
+            _livenessTimer.Start();
         }
         catch (Exception ex)
         {
@@ -195,6 +203,13 @@ public class GameDetector : IDisposable
     /// </summary>
     public void StopMonitoring()
     {
+        if (_livenessTimer != null)
+        {
+            _livenessTimer.Stop();
+            _livenessTimer.Dispose();
+            _livenessTimer = null;
+        }
+
         if (_processMonitor != null)
         {
             _processMonitor.Stop();
@@ -257,34 +272,115 @@ public class GameDetector : IDisposable
     {
         try
         {
-            if (_activeGames.TryRemove(data.ProcessId, out var gameInfo))
-            {
-                _logger.Information("Game exited: {GameName} (PID: {ProcessId})",
-                    gameInfo.GameName, data.ProcessId);
-
-                // Fire GameStopped event
-                GameStopped?.Invoke(this, new GameDetectedEventArgs(
-                    gameInfo.Id,
-                    gameInfo.GameName,
-                    gameInfo.ExecutablePath,
-                    data.ProcessId,
-                    gameInfo.LauncherSource));
-
-                // Check if all games have stopped. _activeGames is a ConcurrentDictionary
-                // so IsEmpty is thread-safe on its own. Fire the event OUTSIDE any lock
-                // so subscribers can safely call back into the detector without deadlock risk.
-                if (_activeGames.IsEmpty)
-                {
-                    _logger.Information("All games exited - ready for optimization revert");
-                    AllGamesStopped?.Invoke(this, EventArgs.Empty);
-                }
-            }
+            HandleGameExited(data.ProcessId);
         }
         catch (Exception ex)
         {
             _logger.Error(ex, "Error processing process stop event");
         }
     }
+
+    /// <summary>
+    /// Removes a tracked game by PID and fires GameStopped (and AllGamesStopped when the last one
+    /// exits). Shared by the process-stop event and the liveness sweep. TryRemove is atomic, so if
+    /// both fire for the same PID only one wins and the events fire exactly once.
+    /// </summary>
+    private void HandleGameExited(int processId)
+    {
+        if (_activeGames.TryRemove(processId, out var gameInfo))
+        {
+            _logger.Information("Game exited: {GameName} (PID: {ProcessId})",
+                gameInfo.GameName, processId);
+
+            // Fire GameStopped event
+            GameStopped?.Invoke(this, new GameDetectedEventArgs(
+                gameInfo.Id,
+                gameInfo.GameName,
+                gameInfo.ExecutablePath,
+                processId,
+                gameInfo.LauncherSource));
+
+            // Check if all games have stopped. _activeGames is a ConcurrentDictionary
+            // so IsEmpty is thread-safe on its own. Fire the event OUTSIDE any lock
+            // so subscribers can safely call back into the detector without deadlock risk.
+            if (_activeGames.IsEmpty)
+            {
+                _logger.Information("All games exited - ready for optimization revert");
+                AllGamesStopped?.Invoke(this, EventArgs.Empty);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Periodic reconciliation: drops tracked games whose process has actually exited but whose
+    /// stop event was missed. Conservative - only acts when a process is provably gone (no such PID,
+    /// or the PID now belongs to a differently-named process); transient/access-denied lookups are
+    /// treated as "still alive" so a game is never reverted out from under the user on uncertainty.
+    /// </summary>
+    private void ReconcileActiveGames(object? sender, global::System.Timers.ElapsedEventArgs e)
+    {
+        try
+        {
+            foreach (var (pid, gameInfo) in _activeGames.ToArray())
+            {
+                if (IsTrackedGameGone(pid, gameInfo))
+                {
+                    _logger.Information(
+                        "Liveness sweep: tracked game {GameName} (PID: {ProcessId}) is gone - reconciling missed stop event",
+                        gameInfo.GameName, pid);
+                    HandleGameExited(pid);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.Warning(ex, "Error during active-game liveness sweep");
+        }
+    }
+
+    private static bool IsTrackedGameGone(int processId, GameInfo gameInfo)
+    {
+        try
+        {
+            using var process = Process.GetProcessById(processId);
+
+            // PID exists but now belongs to a different image -> the original game exited and the
+            // PID was reused. Treat as gone (compare against the tracked exe name).
+            var expected = Path.GetFileNameWithoutExtension(gameInfo.ExecutablePath);
+            return !string.IsNullOrEmpty(expected)
+                && !string.Equals(process.ProcessName, expected, StringComparison.OrdinalIgnoreCase);
+        }
+        catch (ArgumentException)
+        {
+            return true; // no process with this PID -> definitely gone
+        }
+        catch
+        {
+            return false; // access denied / transient -> assume alive; never revert on uncertainty
+        }
+    }
+
+    /// <summary>
+    /// Executables that can live inside a game's install directory but are NOT the game: platform
+    /// stubs, anti-cheat launchers, crash reporters, redistributables/installers. Matching any of
+    /// these as "the game" would optimize the wrong process and cause a premature revert when it
+    /// exits. Compared case-insensitively; crash-handler variants are matched by substring below.
+    /// </summary>
+    private static readonly HashSet<string> NonGameHelperExes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "start_protected_game.exe",
+        "easyanticheat.exe", "easyanticheat_eos.exe", "easyanticheat_setup.exe",
+        "beservice.exe", "belauncher.exe", "battleye.exe",
+        "unrealcefsubprocess.exe", "unrealversionselector.exe",
+        "vc_redist.x64.exe", "vc_redist.x86.exe", "vcredist_x64.exe", "vcredist_x86.exe",
+        "dxsetup.exe", "setup.exe", "uninstall.exe",
+    };
+
+    private static bool IsNonGameHelper(string exeName) =>
+        NonGameHelperExes.Contains(exeName)
+        || exeName.Contains("crashpad", StringComparison.OrdinalIgnoreCase)
+        || exeName.Contains("crashhandler", StringComparison.OrdinalIgnoreCase)
+        || exeName.Contains("crashreport", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Attempts to match a process against known game install directories.
@@ -297,6 +393,14 @@ public class GameDetector : IDisposable
     {
         // Normalize path for comparison
         var normalizedPath = Path.GetFullPath(executablePath);
+
+        // Never treat a known non-game helper (platform stub, anti-cheat launcher, crash reporter,
+        // redist/installer) as the game, even when it lives under the game's install directory.
+        // Matching one would optimize the wrong process and, when it exits, trigger a premature
+        // full revert while the real game is still running.
+        var exeName = Path.GetFileName(normalizedPath);
+        if (IsNonGameHelper(exeName))
+            return null;
 
         // Take a snapshot under the lock so we can iterate safely without
         // holding the lock for the entire matching duration.
@@ -330,7 +434,6 @@ public class GameDetector : IDisposable
 
         // Tertiary matching strategy: check exe name against BuiltInProfiles ProcessNames.
         // Catches games installed outside of scanned launcher directories (standalone launchers, etc.)
-        var exeName = Path.GetFileName(normalizedPath);
         foreach (var builtIn in BuiltInProfiles.GetAll())
         {
             foreach (var pn in builtIn.ProcessNames)

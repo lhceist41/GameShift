@@ -14,6 +14,8 @@ All notable changes to GameShift are documented here.
 - **Game start/stop handling is race-free** - the per-game profile start and stop handlers are now serialized, so under the WMI fallback a start and a concurrent stop can no longer throw or leave the session stuck in a state that silently disables further optimization.
 - **Temperature monitoring cannot race its own shutdown** - the 2-second sensor poll and disposal are now serialized, so the hardware-monitor driver state can never be torn down while a reading is in flight.
 - **No hang on exit** - quitting GameShift at the same instant a game closes could deadlock the shutdown revert; the revert now runs off the UI thread and game monitoring is stopped first, so exit is always clean.
+- **Detection no longer optimizes the wrong process** - executables that can live inside a game's install folder (platform stubs like `start_protected_game.exe`, EasyAntiCheat/BattlEye launchers, crash reporters, redistributables/installers) are no longer matched as the game. This stops optimizations from targeting a helper process and prevents a premature full revert when that helper exits mid-game.
+- **Self-heals a missed game-exit** - a periodic liveness check reconciles tracked games whose stop event was dropped (possible on the WMI fallback under load), so optimizations reliably revert once the game is actually gone instead of staying applied until the app restarts. It is conservative: a game is only reconciled when its process is provably gone, never on a transient lookup failure.
 
 ## [3.8.3] - 2026-06-15
 
