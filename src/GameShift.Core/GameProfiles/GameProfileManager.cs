@@ -133,41 +133,56 @@ public class GameProfileManager : IDisposable
         // Apply user overrides
         var overrides = settings.GameProfiles?.ProfileOverrides?.GetValueOrDefault(profile.Id);
 
-        // 1. Set game process priority
-        try
+        // Steps 1 & 2 (game-process priority/affinity) are skipped on kernel-anti-cheat-protected
+        // games: externally modifying a Ring-0-protected process is the access pattern anti-cheats
+        // flag, and the write is usually blocked anyway. The IOptimization path (ProcessPriorityBooster)
+        // already applies these via IFEO at process-creation time for such titles. Launcher
+        // priorities (step 3) target unprotected launcher processes and are still applied.
+        bool kernelAntiCheat = GameShift.Core.Optimization.AntiCheatDetector.IsKernelLevel(profile.AntiCheat);
+        if (kernelAntiCheat)
         {
-            var targetPriority = Enum.TryParse<ProcessPriorityClass>(overrides?.CustomPriority, true, out var customPri)
-                ? customPri : profile.GamePriority;
-
-            using var proc = Process.GetProcessById(e.ProcessId);
-            _originalPriorities[e.ProcessId] = proc.PriorityClass;
-            proc.PriorityClass = targetPriority;
             SettingsManager.Logger.Information(
-                "[GameProfiles] Set {Exe} (PID {Pid}) priority to {Priority}",
-                exeName, e.ProcessId, targetPriority);
+                "[GameProfiles] {Exe} is protected by {AntiCheat} - skipping live priority/affinity (applied via IFEO at launch instead)",
+                exeName, profile.AntiCheat);
         }
-        catch (Exception ex)
+        else
         {
-            SettingsManager.Logger.Warning(ex, "[GameProfiles] Failed to set game priority for PID {Pid}", e.ProcessId);
-        }
-
-        // 2. Set game process affinity
-        try
-        {
-            var affinityMask = overrides?.CustomAffinityMask ?? IntelHybridDetector.GetAffinityMask(profile);
-            if (affinityMask != 0)
+            // 1. Set game process priority
+            try
             {
+                var targetPriority = Enum.TryParse<ProcessPriorityClass>(overrides?.CustomPriority, true, out var customPri)
+                    ? customPri : profile.GamePriority;
+
                 using var proc = Process.GetProcessById(e.ProcessId);
-                _originalAffinities[e.ProcessId] = proc.ProcessorAffinity;
-                proc.ProcessorAffinity = (IntPtr)affinityMask;
+                _originalPriorities[e.ProcessId] = proc.PriorityClass;
+                proc.PriorityClass = targetPriority;
                 SettingsManager.Logger.Information(
-                    "[GameProfiles] Set {Exe} (PID {Pid}) affinity to 0x{Mask:X}",
-                    exeName, e.ProcessId, affinityMask);
+                    "[GameProfiles] Set {Exe} (PID {Pid}) priority to {Priority}",
+                    exeName, e.ProcessId, targetPriority);
             }
-        }
-        catch (Exception ex)
-        {
-            SettingsManager.Logger.Warning(ex, "[GameProfiles] Failed to set game affinity for PID {Pid}", e.ProcessId);
+            catch (Exception ex)
+            {
+                SettingsManager.Logger.Warning(ex, "[GameProfiles] Failed to set game priority for PID {Pid}", e.ProcessId);
+            }
+
+            // 2. Set game process affinity
+            try
+            {
+                var affinityMask = overrides?.CustomAffinityMask ?? IntelHybridDetector.GetAffinityMask(profile);
+                if (affinityMask != 0)
+                {
+                    using var proc = Process.GetProcessById(e.ProcessId);
+                    _originalAffinities[e.ProcessId] = proc.ProcessorAffinity;
+                    proc.ProcessorAffinity = (IntPtr)affinityMask;
+                    SettingsManager.Logger.Information(
+                        "[GameProfiles] Set {Exe} (PID {Pid}) affinity to 0x{Mask:X}",
+                        exeName, e.ProcessId, affinityMask);
+                }
+            }
+            catch (Exception ex)
+            {
+                SettingsManager.Logger.Warning(ex, "[GameProfiles] Failed to set game affinity for PID {Pid}", e.ProcessId);
+            }
         }
 
         // 3. Set launcher priorities

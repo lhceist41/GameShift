@@ -357,6 +357,26 @@ public partial class SettingsPage : Page
         }
     }
 
+    private void OnRestoreAllTweaksClicked(object sender, RoutedEventArgs e)
+    {
+        var mgr = App.Services.TweaksMgr;
+        if (mgr == null) return;
+
+        var confirm = MessageBox.Show(
+            "Restore all system tweaks GameShift applied back to their original values? " +
+            "Some changes require a reboot to fully take effect.",
+            "Restore All Tweaks",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Question);
+        if (confirm != MessageBoxResult.Yes) return;
+
+        int count = mgr.RevertAllTweaks();
+        PopulateTweaksList();
+        (DataContext as SettingsViewModel)!.StatusMessage = count > 0
+            ? $"{count} tweaks restored to their original values."
+            : "No GameShift-applied tweaks to restore.";
+    }
+
     private void PopulateProfilesList()
     {
         var mgr = App.Services.GameProfileMgr;

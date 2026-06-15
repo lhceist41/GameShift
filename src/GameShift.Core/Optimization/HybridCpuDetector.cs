@@ -649,6 +649,28 @@ public class HybridCpuDetector : IOptimization, IJournaledOptimization
     }
 
     /// <summary>
+    /// Sets (or clears, when cpuSets is null/count 0) a process's default CPU sets using a
+    /// minimal-rights handle (PROCESS_SET_LIMITED_INFORMATION) opened by us, rather than
+    /// Process.Handle which opens PROCESS_ALL_ACCESS. This avoids opening a full-access handle on an
+    /// anti-cheat-protected game process (the access pattern anti-cheats are most likely to flag),
+    /// matching the minimal-rights approach used elsewhere in the codebase. Returns false if the
+    /// handle could not be opened or the call failed (callers degrade gracefully).
+    /// </summary>
+    private static bool SetDefaultCpuSets(int processId, uint[]? cpuSets, uint count)
+    {
+        IntPtr handle = NativeInterop.OpenProcess(NativeInterop.PROCESS_SET_LIMITED_INFORMATION, false, processId);
+        if (handle == IntPtr.Zero) return false;
+        try
+        {
+            return NativeInterop.SetProcessDefaultCpuSets(handle, cpuSets, count);
+        }
+        finally
+        {
+            NativeInterop.CloseHandle(handle);
+        }
+    }
+
+    /// <summary>
     /// Applies CPU Set pinning via SetProcessDefaultCpuSets (runtime API path).
     /// </summary>
     private bool ApplyViaCpuSets(SystemStateSnapshot snapshot, GameProfile profile, uint[] targetCpuSets)
@@ -677,10 +699,7 @@ public class HybridCpuDetector : IOptimization, IJournaledOptimization
             // Record original affinity for snapshot (legacy format for crash recovery compatibility)
             snapshot.RecordProcessAffinity(profile.ProcessId, process.ProcessorAffinity);
 
-            bool success = NativeInterop.SetProcessDefaultCpuSets(
-                process.Handle,
-                targetCpuSets,
-                (uint)targetCpuSets.Length);
+            bool success = SetDefaultCpuSets(profile.ProcessId, targetCpuSets, (uint)targetCpuSets.Length);
 
             if (success)
             {
@@ -735,10 +754,7 @@ public class HybridCpuDetector : IOptimization, IJournaledOptimization
                     // we fall through to the IFEO path.
                     var originalAffinity = process.ProcessorAffinity;
 
-                    bool success = NativeInterop.SetProcessDefaultCpuSets(
-                        process.Handle,
-                        targetCpuSets,
-                        (uint)targetCpuSets.Length);
+                    bool success = SetDefaultCpuSets(profile.ProcessId, targetCpuSets, (uint)targetCpuSets.Length);
 
                     if (success)
                     {
@@ -783,7 +799,7 @@ public class HybridCpuDetector : IOptimization, IJournaledOptimization
         {
             using var process = Process.GetProcessById(_pinnedProcessId);
 
-            NativeInterop.SetProcessDefaultCpuSets(process.Handle, null, 0);
+            SetDefaultCpuSets(_pinnedProcessId, null, 0);
 
             SettingsManager.Logger.Information(
                 "[HybridCpuDetector] CPU Set pinning removed for {ProcessName} (PID {Pid})",

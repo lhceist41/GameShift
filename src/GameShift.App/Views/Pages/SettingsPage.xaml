@@ -324,8 +324,14 @@
                                 Background="{DynamicResource GS.Accent.Primary}"
                                 Foreground="White" BorderThickness="0"
                                 FontWeight="SemiBold" Cursor="Hand"
-                                HorizontalAlignment="Left" Margin="0,0,0,12"
+                                HorizontalAlignment="Left" Margin="0,0,0,8"
                                 Click="OnApplyAllTweaksClicked"/>
+                        <Button Content="Restore All GameShift Tweaks" Padding="12,6"
+                                Background="{DynamicResource GS.Surface.Border}"
+                                Foreground="{DynamicResource GS.Text.Primary}" BorderThickness="0"
+                                FontWeight="SemiBold" Cursor="Hand"
+                                HorizontalAlignment="Left" Margin="0,0,0,12"
+                                Click="OnRestoreAllTweaksClicked"/>
                     </StackPanel>
                 </Border>
 

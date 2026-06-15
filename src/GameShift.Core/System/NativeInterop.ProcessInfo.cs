@@ -129,6 +129,13 @@ public static partial class NativeInterop
     /// </summary>
     internal const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
 
+    /// <summary>
+    /// Minimal access right required to set a process's default CPU sets / limited info.
+    /// PROCESS_SET_LIMITED_INFORMATION = 0x2000. Used instead of Process.Handle (PROCESS_ALL_ACCESS)
+    /// so GameShift does not open a full-access handle on an anti-cheat-protected game process.
+    /// </summary>
+    internal const uint PROCESS_SET_LIMITED_INFORMATION = 0x2000;
+
     // ============================================================
     // kernel32.dll - CPU Set APIs (Hybrid CPU support)
     // ============================================================

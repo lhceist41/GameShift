@@ -112,8 +112,19 @@ public partial class DashboardPage : Page
             return;
         }
 
+        // Warn if disabling the hypervisor will break Hyper-V / WSL2 / Docker (same check the
+        // DPC Doctor BCD path uses). Informed consent, not a hard block - the user may not care.
+        var depMsg = "";
+        try
+        {
+            var deps = new GameShift.Core.SystemTweaks.KernelTuningManager().CheckHypervisorDependencies();
+            if (deps.HasDependencies)
+                depMsg = "\n\n" + deps.Summary + " They will stop working until you Re-enable Memory Integrity and reboot.";
+        }
+        catch { /* dependency check is best-effort */ }
+
         var result = MessageBox.Show(
-            "This will disable Memory Integrity (VBS/HVCI) and schedule a reboot in 30 seconds.\n\nContinue?",
+            "This will disable Memory Integrity (VBS/HVCI) and schedule a reboot in 30 seconds." + depMsg + "\n\nContinue?",
             "Disable Memory Integrity",
             MessageBoxButton.YesNo,
             MessageBoxImage.Warning);

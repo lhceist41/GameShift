@@ -16,6 +16,8 @@ namespace GameShift.Core.Journal;
 ///   <item><c>registry</c> - { hive, path, name, kind, existed, value } - restore or delete a value.</item>
 ///   <item><c>firewall</c> - { ruleName } - remove the firewall rule GameShift created.</item>
 ///   <item><c>defender</c> - { paths: [...] } - remove the Defender exclusions GameShift created.</item>
+///   <item><c>suspend</c> - { name, pids: [...] } - resume processes suspended during the session
+///   (PID-reuse guarded) so they are not left frozen after a crash.</item>
 /// </list>
 /// All operations are idempotent, so a double-revert (e.g. watchdog + a partial normal revert) is safe.
 /// </summary>
@@ -30,6 +32,7 @@ public static class GameActionRecovery
                 case "registry": RevertRegistry(payload, logger); break;
                 case "firewall": RevertFirewall(payload, logger); break;
                 case "defender": RevertDefender(payload, logger); break;
+                case "suspend": RevertSuspend(payload, logger); break;
                 default:
                     logger.Warning("[GameActionRecovery] Unknown GameAction kind '{Kind}' - skipping", kind);
                     break;
@@ -112,6 +115,50 @@ public static class GameActionRecovery
 
             RunPowerShell($"Remove-MpPreference -ExclusionPath '{path.Replace("'", "''")}' -ErrorAction SilentlyContinue");
             logger.Information("[GameActionRecovery] Removed Defender exclusion '{Path}'", path);
+        }
+    }
+
+    private static void RevertSuspend(string payload, ILogger logger)
+    {
+        using var doc = JsonDocument.Parse(payload);
+        var root = doc.RootElement;
+
+        string name = root.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "";
+        string bareName = Path.GetFileNameWithoutExtension(name);
+        if (!root.TryGetProperty("pids", out var pids) || pids.ValueKind != JsonValueKind.Array) return;
+
+        foreach (var element in pids.EnumerateArray())
+        {
+            if (!element.TryGetInt32(out int pid)) continue;
+
+            // PID-reuse guard: only resume if the PID still belongs to the same-named process.
+            try
+            {
+                using var proc = Process.GetProcessById(pid);
+                if (!string.IsNullOrEmpty(bareName) &&
+                    !string.Equals(proc.ProcessName, bareName, StringComparison.OrdinalIgnoreCase))
+                {
+                    logger.Warning(
+                        "[GameActionRecovery] PID {Pid} is now {Actual}, expected {Expected} - skipping resume",
+                        pid, proc.ProcessName, bareName);
+                    continue;
+                }
+            }
+            catch (ArgumentException) { continue; }        // process already exited
+            catch (InvalidOperationException) { continue; } // exited between lookup and access
+
+            IntPtr handle = NativeInterop.OpenProcess(NativeInterop.PROCESS_SUSPEND_RESUME, false, pid);
+            if (handle == IntPtr.Zero) continue;
+            try
+            {
+                int status = NativeInterop.NtResumeProcess(handle);
+                if (status == 0)
+                    logger.Information("[GameActionRecovery] Resumed {Name} (PID {Pid}) after crash", name, pid);
+            }
+            finally
+            {
+                NativeInterop.CloseHandle(handle);
+            }
         }
     }
 

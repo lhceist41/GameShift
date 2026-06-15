@@ -66,6 +66,17 @@ public static class AntiCheatDetector
     }
 
     /// <summary>
+    /// Whether an anti-cheat runs at the kernel level (Ring 0), where externally modifying the
+    /// protected game process (priority, affinity, suspend) is risky and should be avoided in favor
+    /// of process-creation-time mechanisms. True for everything except None and the user-mode
+    /// Valve Anti-Cheat. Proprietary is treated as kernel-level on purpose: when the anti-cheat is
+    /// unknown, the safe default is to skip external writes and let the IFEO path apply the same
+    /// changes at launch, rather than risk poking a protected process.
+    /// </summary>
+    public static bool IsKernelLevel(AntiCheatType type) =>
+        type is not (AntiCheatType.None or AntiCheatType.ValveAntiCheat);
+
+    /// <summary>
     /// Returns true if any installed anti-cheat requires VBS/HVCI to be enabled.
     /// Currently: Riot Vanguard and FACEIT Anti-Cheat.
     /// </summary>

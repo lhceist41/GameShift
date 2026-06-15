@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.Json;
 using GameShift.Core.System;
 using Serilog;
 
@@ -156,5 +157,17 @@ public class ProcessSuspendAction : GameAction
         }
 
         _suspendedPids.Clear();
+    }
+
+    /// <summary>
+    /// Crash-recovery record: the PIDs suspended during Apply, so the watchdog/boot-recovery can
+    /// resume them if the main app crashes before Revert runs (otherwise they stay frozen until they
+    /// exit). The process name is included so recovery can guard against PID reuse.
+    /// </summary>
+    public override GameActionRevertRecord? GetCrashRevertRecord()
+    {
+        if (_suspendedPids.Count == 0) return null;
+        var payload = JsonSerializer.Serialize(new { name = _processName, pids = _suspendedPids.ToArray() });
+        return new GameActionRevertRecord("suspend", payload);
     }
 }

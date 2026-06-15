@@ -158,6 +158,32 @@ public class SystemTweaksManager
     }
 
     /// <summary>
+    /// Reverts every tweak GameShift applied, restoring each from its captured original values.
+    /// Gives users a single "restore everything" action so persistent tweaks are not left behind
+    /// when they were never individually toggled back. Returns the count successfully reverted.
+    /// </summary>
+    public int RevertAllTweaks()
+    {
+        var settings = SettingsManager.Load();
+        var applied = settings.SystemTweaks?.AppliedTweaks;
+        if (applied == null || applied.Count == 0) return 0;
+
+        // Snapshot the class names first: RevertTweak mutates the AppliedTweaks dictionary.
+        var classNames = applied
+            .Where(kv => kv.Value.IsAppliedByGameShift)
+            .Select(kv => kv.Key)
+            .ToList();
+
+        int count = 0;
+        foreach (var className in classNames)
+        {
+            var tweak = _tweaks.FirstOrDefault(t => t.GetType().Name == className);
+            if (tweak != null && RevertTweak(tweak)) count++;
+        }
+        return count;
+    }
+
+    /// <summary>
     /// Applies all recommended tweaks.
     /// Exclusions:
     ///   - DisableMemoryIntegrity: security/anti-cheat gated, never auto-applied
