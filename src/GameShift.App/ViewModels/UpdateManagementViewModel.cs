@@ -174,6 +174,7 @@ public class UpdateManagementViewModel : INotifyPropertyChanged
                     _pendingUpdate.DownloadUrl!,
                     targetPath,
                     _pendingUpdate.DownloadSize,
+                    _pendingUpdate.ExpectedSha256,
                     progress,
                     _downloadCts.Token));
 

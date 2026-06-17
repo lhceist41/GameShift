@@ -168,6 +168,7 @@ public partial class UpdateWindow : Window
                 _updateInfo.DownloadUrl!,
                 targetPath,
                 _updateInfo.DownloadSize,
+                _updateInfo.ExpectedSha256,
                 progress,
                 _downloadCts.Token);
 

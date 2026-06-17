@@ -13,7 +13,7 @@
 <p align="center">
   <b>Intelligent, reversible Windows optimization for every game in your library.</b><br/>
   GameShift detects your games instantly, applies verified system-level optimizations per title,<br/>
-  and restores everything the moment you stop playing - with crash recovery that never leaves your system in a broken state.
+  and restores everything the moment you stop playing - every change is verified and fully reversible, recorded in an atomic state journal.
 </p>
 
 ---
@@ -38,7 +38,7 @@
 ## ✨ Features
 
 > [!NOTE]
-> Every optimization is fully reversible. GameShift records original values in a state journal before applying changes, verifies each change took effect, and auto-reverts in LIFO order when your game exits. A watchdog service and boot recovery task ensure your system is restored even after a crash or blue screen.
+> Every optimization is fully reversible. GameShift records original values in a state journal before applying changes, verifies each change took effect, and auto-reverts in LIFO order when your game exits. The journal is written atomically (temp file → rename) so it is never left half-written, even during a hard shutdown.
 
 ### Quick Start
 
@@ -147,9 +147,9 @@ graph LR
     G --> H[LIFO Revert & Verify]
 ```
 
-GameShift uses ETW (Event Tracing for Windows) kernel process events to detect game launches with sub-millisecond latency. When a game starts, the detection orchestrator matches it against your library, loads the appropriate profile, and applies each enabled optimization in sequence. Every change is recorded in a state journal with original and applied values so every modification can be deterministically reverted - even after a crash, blue screen, or power loss.
+GameShift uses ETW (Event Tracing for Windows) kernel process events to detect game launches with sub-millisecond latency. When a game starts, the detection orchestrator matches it against your library, loads the appropriate profile, and applies each enabled optimization in sequence. Every change is recorded in a state journal with original and applied values so every modification can be deterministically reverted and verified when your game exits.
 
-A background watchdog service monitors GameShift's health via heartbeat. If the app crashes, the watchdog reads the state journal and reverts all changes within 15 seconds. A boot recovery task handles blue screens and power loss by checking the journal on startup.
+The journal is written to `%ProgramData%\GameShift\state.json` with atomic writes, which is the foundation for automatic recovery after an app crash or blue screen (a watchdog service plus a boot-recovery task). That automatic crash recovery is in active development and is not enabled in the current build; in normal use, GameShift reverts every change when your game exits.
 
 Registry changes are monitored in real time via `RegNotifyChangeKeyValue`. If an external process (Windows Update, group policy, another tool) modifies a managed setting during a gaming session, GameShift detects and re-applies it automatically.
 
@@ -163,7 +163,7 @@ For games with kernel-level anti-cheat (EAC, BattlEye, RICOCHET, TencentACE), Ga
 
 1. Grab the latest `GameShift.App.exe` from the [Releases page](https://github.com/lhceist41/GameShift/releases/latest)
 2. Run as **Administrator** (required for service control, registry access, timer resolution, and power plan management)
-3. Complete the first-run wizard - GameShift auto-detects your installed games, scans your hardware, and installs the watchdog service
+3. Complete the first-run wizard - GameShift auto-detects your installed games and scans your hardware
 
 ### Build from Source
 
@@ -199,11 +199,10 @@ dotnet run --project src/GameShift.App
 > [!CAUTION]
 > Create a System Restore point before your first use. GameShift modifies system-level settings that are all reversible, but a restore point provides an extra safety net.
 
-### Three-layer crash recovery
+### Reversibility and the state journal
 
-1. **State Journal**  - Every optimization writes its original and applied values to `%ProgramData%\GameShift\state.json` using atomic writes (temp file → rename). Reverts happen in LIFO order with post-revert verification.
-2. **Watchdog Service**  - A lightweight Windows Service (`GameShift.Watchdog`) monitors the main app via named pipe heartbeat. If GameShift crashes, the watchdog detects it within 15 seconds and reverts all active optimizations from the journal.
-3. **Boot Recovery**  - A scheduled task runs at startup. If the journal shows an active session (meaning a BSOD or power loss occurred), it reverts all optimizations. Also detects Windows Update build changes and flags settings for re-verification.
+1. **State Journal**  - Every optimization writes its original and applied values to `%ProgramData%\GameShift\state.json` using atomic writes (temp file → rename). Reverts happen in LIFO order with post-revert verification when your game exits.
+2. **Automatic crash recovery (in development)**  - The journal is designed so a watchdog service and a boot-recovery task can restore your system after an app crash, blue screen, or power loss. These components are not enabled in the current build; in normal use, reverts occur when your game exits.
 
 ### What GameShift changes (and how it reverts)
 
@@ -269,7 +268,7 @@ Yes. GameShift is particularly effective on laptops where Windows aggressively t
 <details>
 <summary><strong>What happens if my PC crashes during optimization?</strong></summary>
 <br/>
-GameShift has three-layer crash recovery. A watchdog service detects app crashes within 15 seconds and reverts all changes. A boot recovery task handles blue screens and power loss by checking the state journal on startup. All original values are stored in <code>%ProgramData%\GameShift\state.json</code> using atomic writes, ensuring the journal is never corrupted even during a hard shutdown.
+GameShift reverts every change when your game exits, and records all original values in <code>%ProgramData%\GameShift\state.json</code> using atomic writes, so the journal is never corrupted even during a hard shutdown. Automatic recovery after an app crash or blue screen (a watchdog service plus a boot-recovery task) is in active development and is not enabled in the current build. As an extra safety net, create a System Restore point before first use, and persistent system tweaks can be undone any time from Settings via "Restore All GameShift Tweaks".
 </details>
 
 <details>
@@ -293,7 +292,7 @@ No. CPU Sets scheduling and Core Isolation are hybrid-only features, but everyth
 <details>
 <summary><strong>Why does Windows Defender flag GameShift?</strong></summary>
 <br/>
-GameShift modifies Windows services, writes to protected registry keys, manages ETW sessions, and changes system timer resolution. These behaviors are sometimes flagged by heuristic scanners. The application is open source and fully auditable. If Defender quarantines the executable, add an exclusion for <code>GameShift.App.exe</code> and <code>GameShift.Watchdog.exe</code>, or build from source.
+GameShift modifies Windows services, writes to protected registry keys, manages ETW sessions, and changes system timer resolution. These behaviors are sometimes flagged by heuristic scanners. The application is open source and fully auditable. If Defender quarantines the executable, add an exclusion for <code>GameShift.App.exe</code>, or build from source.
 </details>
 
 ---

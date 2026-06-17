@@ -68,13 +68,16 @@ public static class UpdateChecker
                 // Priority: exact exe match > any .exe asset > any .zip asset > source zipball.
                 string? downloadUrl = null;
                 long downloadSize = 0;
+                string? downloadDigest = null;
 
                 if (root.TryGetProperty("assets", out var assetsArray))
                 {
                     string? fallbackExeUrl = null;
                     long fallbackExeSize = 0;
+                    string? fallbackExeDigest = null;
                     string? fallbackZipUrl = null;
                     long fallbackZipSize = 0;
+                    string? fallbackZipDigest = null;
 
                     foreach (var asset in assetsArray.EnumerateArray())
                     {
@@ -83,6 +86,11 @@ public static class UpdateChecker
 
                         var url = asset.GetProperty("browser_download_url").GetString();
                         var size = asset.GetProperty("size").GetInt64();
+                        // GitHub reports a per-asset content digest ("sha256:<hex>"). The downloader
+                        // verifies the downloaded bytes against it before the binary is ever applied.
+                        var digest = asset.TryGetProperty("digest", out var digestProp)
+                            ? digestProp.GetString()
+                            : null;
 
                         // Priority 1: exact name match
                         if (assetName.Equals("GameShift.App.exe", StringComparison.OrdinalIgnoreCase) ||
@@ -90,6 +98,7 @@ public static class UpdateChecker
                         {
                             downloadUrl = url;
                             downloadSize = size;
+                            downloadDigest = digest;
                             break;
                         }
 
@@ -99,6 +108,7 @@ public static class UpdateChecker
                         {
                             fallbackExeUrl = url;
                             fallbackExeSize = size;
+                            fallbackExeDigest = digest;
                         }
 
                         // Priority 3: any .zip asset
@@ -107,6 +117,7 @@ public static class UpdateChecker
                         {
                             fallbackZipUrl = url;
                             fallbackZipSize = size;
+                            fallbackZipDigest = digest;
                         }
                     }
 
@@ -115,11 +126,13 @@ public static class UpdateChecker
                     {
                         downloadUrl = fallbackExeUrl;
                         downloadSize = fallbackExeSize;
+                        downloadDigest = fallbackExeDigest;
                     }
                     else if (downloadUrl == null && fallbackZipUrl != null)
                     {
                         downloadUrl = fallbackZipUrl;
                         downloadSize = fallbackZipSize;
+                        downloadDigest = fallbackZipDigest;
                     }
                 }
 
@@ -153,7 +166,8 @@ public static class UpdateChecker
                     ReleaseUrl = releaseUrl,
                     ReleaseNotes = body,
                     DownloadUrl = downloadUrl,
-                    DownloadSize = downloadSize
+                    DownloadSize = downloadSize,
+                    ExpectedSha256 = downloadDigest
                 };
             }
 
@@ -195,4 +209,12 @@ public class UpdateInfo
 
     /// <summary>File size in bytes (from GitHub asset metadata). Used for progress display.</summary>
     public long DownloadSize { get; set; }
+
+    /// <summary>
+    /// Expected content digest of the download asset, as reported by the GitHub releases API
+    /// (format "sha256:&lt;hex&gt;"). The downloader verifies the downloaded bytes against this
+    /// before the binary is staged/applied. Null when no digest is available (then the download
+    /// is refused, since the update is applied over the running elevated executable).
+    /// </summary>
+    public string? ExpectedSha256 { get; set; }
 }

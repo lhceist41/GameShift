@@ -70,6 +70,18 @@ public class ProfileManager
     }
 
     /// <summary>
+    /// Test constructor: persists to an explicit profiles directory instead of %AppData%.
+    /// Internal so production callers cannot depend on it.
+    /// </summary>
+    internal ProfileManager(string profilesDirectory)
+    {
+        _profilesDirectory = profilesDirectory;
+        _logger = SettingsManager.Logger;
+        if (!Directory.Exists(_profilesDirectory))
+            Directory.CreateDirectory(_profilesDirectory);
+    }
+
+    /// <summary>
     /// Gets the default profile used for games without a custom profile.
     /// Loads from default.json if it exists; otherwise returns hardcoded defaults.
     /// Caches the result for repeated calls; cache is invalidated when default profile is saved.

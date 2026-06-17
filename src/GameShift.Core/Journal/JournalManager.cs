@@ -1,3 +1,5 @@
+using System.Security.AccessControl;
+using System.Security.Principal;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using GameShift.Core.Config;
@@ -128,6 +130,8 @@ public class JournalManager
     // %ProgramData%\GameShift\state.json file. A per-instance lock would let
     // concurrent instances race on the shared .tmp file.
     private static readonly object _lock = new();
+    // Set once the production journal directory's ACL has been hardened this process.
+    private static bool _dirHardened;
     private SessionJournalData _current = new();
 
     private static readonly JsonSerializerOptions _writeOptions = new()
@@ -150,8 +154,70 @@ public class JournalManager
         _logger = SettingsManager.Logger;
         _journalPath = journalPath;
         var dir = Path.GetDirectoryName(_journalPath);
-        if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
-            Directory.CreateDirectory(dir);
+        if (!string.IsNullOrEmpty(dir))
+        {
+            if (!Directory.Exists(dir))
+                Directory.CreateDirectory(dir);
+
+            // Harden the shared %ProgramData%\GameShift directory once per process. By default it
+            // inherits ProgramData's ACL, which lets any standard user add files - so a low-priv
+            // user could plant or tamper with state.json, which the elevated app and the SYSTEM
+            // boot-recovery task consume (a privilege-escalation path). Lock it to SYSTEM/Admins
+            // full control and Users read-only. Only the real production directory is touched.
+            var defaultDir = Path.GetDirectoryName(GetDefaultJournalPath());
+            if (!_dirHardened &&
+                !string.IsNullOrEmpty(defaultDir) &&
+                string.Equals(dir, defaultDir, StringComparison.OrdinalIgnoreCase))
+            {
+                // Latch the flag only on success so a transient failure (AV/sharing lock) doesn't
+                // permanently disable hardening for the process - a later construction can retry.
+                if (TryHardenJournalDirectory(dir))
+                    _dirHardened = true;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Replaces the journal directory's DACL with an inheritance-protected set: SYSTEM and
+    /// Administrators get full control, BUILTIN\Users get read and execute only. This prevents a
+    /// standard user from creating or modifying state.json (which is consumed elevated and by the
+    /// SYSTEM boot-recovery task). Best-effort: logs and continues if the ACL cannot be changed
+    /// (e.g. the app is running non-elevated in a dev build).
+    /// </summary>
+    private bool TryHardenJournalDirectory(string dir)
+    {
+        if (!OperatingSystem.IsWindows())
+            return true; // nothing to do off-Windows; treat as done so we don't retry forever
+
+        try
+        {
+            var info = new DirectoryInfo(dir);
+            var security = new DirectorySecurity();
+
+            // Break inheritance and drop inherited ACEs (the permissive ProgramData ones).
+            security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+
+            var system = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
+            var admins = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
+            var users = new SecurityIdentifier(WellKnownSidType.BuiltinUsersSid, null);
+            const InheritanceFlags inherit = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit;
+
+            security.AddAccessRule(new FileSystemAccessRule(
+                system, FileSystemRights.FullControl, inherit, PropagationFlags.None, AccessControlType.Allow));
+            security.AddAccessRule(new FileSystemAccessRule(
+                admins, FileSystemRights.FullControl, inherit, PropagationFlags.None, AccessControlType.Allow));
+            security.AddAccessRule(new FileSystemAccessRule(
+                users, FileSystemRights.ReadAndExecute, inherit, PropagationFlags.None, AccessControlType.Allow));
+
+            info.SetAccessControl(security);
+            _logger.Information("[JournalManager] Hardened ACL on {Dir} (SYSTEM/Admins full, Users read-only)", dir);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.Warning(ex, "[JournalManager] Could not harden ACL on {Dir} (continuing)", dir);
+            return false;
+        }
     }
 
     private static string GetDefaultJournalPath()

@@ -189,6 +189,12 @@ public class GameDetector : IDisposable
             _livenessTimer = new global::System.Timers.Timer(7000) { AutoReset = true };
             _livenessTimer.Elapsed += ReconcileActiveGames;
             _livenessTimer.Start();
+
+            // One-time rundown of already-running processes: a game launched BEFORE GameShift
+            // started produces no start event, so without this it is never matched or optimized for
+            // the whole session. Runs on a background thread (MainModule reads can be slow);
+            // OnGameMatched is idempotent so it cannot double-fire with a concurrent live event.
+            global::System.Threading.Tasks.Task.Run(ScanRunningProcesses);
         }
         catch (Exception ex)
         {
@@ -218,6 +224,53 @@ public class GameDetector : IDisposable
         }
 
         _logger.Information("Process monitoring stopped");
+    }
+
+    /// <summary>
+    /// One-time scan of already-running processes at startup. A game launched before GameShift
+    /// started emits no ETW/WMI start event, so without this it would never be matched or optimized.
+    /// Reuses <see cref="MatchProcess"/> (same non-game-helper filter and known-game matching as
+    /// live events). Best-effort: processes whose module path can't be read (system/protected/
+    /// already-exited) are skipped. Must run after the library scan has populated known games.
+    /// </summary>
+    public void ScanRunningProcesses()
+    {
+        int matched = 0;
+        try
+        {
+            int currentPid = Environment.ProcessId;
+            foreach (var process in Process.GetProcesses())
+            {
+                try
+                {
+                    // Skip self and the Idle (0) / System (4) pseudo-processes, and anything a live
+                    // event already matched before the rundown reached it.
+                    if (process.Id == currentPid || process.Id <= 4 || _activeGames.ContainsKey(process.Id))
+                        continue;
+
+                    var path = process.MainModule?.FileName;
+                    if (string.IsNullOrEmpty(path))
+                        continue;
+
+                    if (MatchProcess(process.Id, path) != null)
+                        matched++;
+                }
+                catch
+                {
+                    // MainModule throws for system/protected/exited processes - skip them.
+                }
+                finally
+                {
+                    process.Dispose();
+                }
+            }
+
+            _logger.Information("Startup process rundown complete - matched {Count} already-running game(s)", matched);
+        }
+        catch (Exception ex)
+        {
+            _logger.Warning(ex, "Error during startup process rundown");
+        }
     }
 
     /// <summary>
@@ -475,7 +528,11 @@ public class GameDetector : IDisposable
     /// </summary>
     private GameInfo OnGameMatched(int processId, string executablePath, GameInfo game)
     {
-        _activeGames[processId] = game;
+        // Idempotent: the startup process rundown and a live ETW/WMI start event can both match the
+        // same PID. TryAdd ensures the game is tracked and GameStarted fires exactly once. PID reuse
+        // is handled separately (HandleGameExited removes the old PID before a new game can reuse it).
+        if (!_activeGames.TryAdd(processId, game))
+            return game;
 
         _logger.Information("Game detected: {GameName} (PID: {ProcessId}, Source: {LauncherSource})",
             game.GameName, processId, game.LauncherSource);

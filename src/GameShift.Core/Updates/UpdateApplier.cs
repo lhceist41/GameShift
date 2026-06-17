@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Security.Cryptography;
 using GameShift.Core.System;
 using Serilog;
 
@@ -46,6 +47,16 @@ public static class UpdateApplier
             if (!File.Exists(updateFile))
             {
                 Log.Error("UpdateApplier: Staged update not found at {Path}", updateFile);
+                return false;
+            }
+
+            // Re-verify the staged binary against its sidecar hash before moving it over the running
+            // elevated exe. The download is verified in-session, but the staged file can persist
+            // across sessions in a possibly user-writable directory, so re-check here (fail closed).
+            if (!VerifyStagedUpdate())
+            {
+                Log.Error("UpdateApplier: Staged update failed hash verification - refusing to apply and discarding");
+                TryDeleteStaged();
                 return false;
             }
 
@@ -100,6 +111,47 @@ public static class UpdateApplier
     }
 
     /// <summary>
+    /// Re-verifies the staged update file against its sidecar hash (written by UpdateDownloader at
+    /// verified-download time). Guards the apply path: the staged file is moved over the running
+    /// ELEVATED exe and its directory may be user-writable, so it must be re-checked before apply.
+    /// Returns false (fail closed) if the staged file or sidecar is missing, empty, or the hash differs.
+    /// </summary>
+    public static bool VerifyStagedUpdate()
+    {
+        try
+        {
+            var updateFile = GetUpdateStagingPath();
+            var sidecar = updateFile + ".sha256";
+            if (!File.Exists(updateFile) || !File.Exists(sidecar))
+                return false;
+
+            var expectedHex = File.ReadAllText(sidecar).Trim();
+            if (expectedHex.Length == 0)
+                return false;
+
+            using var stream = File.OpenRead(updateFile);
+            var actualHex = Convert.ToHexString(SHA256.HashData(stream));
+            var match = actualHex.Equals(expectedHex, StringComparison.OrdinalIgnoreCase);
+            if (!match)
+                Log.Error("UpdateApplier: Staged update hash mismatch (expected {Expected}, got {Actual})",
+                    expectedHex, actualHex);
+            return match;
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "UpdateApplier: Failed to verify staged update");
+            return false;
+        }
+    }
+
+    private static void TryDeleteStaged()
+    {
+        var updateFile = GetUpdateStagingPath();
+        try { if (File.Exists(updateFile)) File.Delete(updateFile); } catch { /* best effort */ }
+        try { if (File.Exists(updateFile + ".sha256")) File.Delete(updateFile + ".sha256"); } catch { /* best effort */ }
+    }
+
+    /// <summary>
     /// Cleans up leftover update artifacts from a previous update.
     /// Call at app startup.
     /// </summary>
@@ -115,6 +167,13 @@ public static class UpdateApplier
             {
                 File.Delete(updateFile);
                 Log.Debug("UpdateApplier: Cleaned up leftover .update file");
+            }
+
+            var sidecar = updateFile + ".sha256";
+            if (File.Exists(sidecar))
+            {
+                File.Delete(sidecar);
+                Log.Debug("UpdateApplier: Cleaned up leftover .update.sha256 sidecar");
             }
 
             // Clean up any leftover update batch scripts (name includes a random GUID)
