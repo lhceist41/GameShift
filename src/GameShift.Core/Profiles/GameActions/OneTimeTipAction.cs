@@ -73,9 +73,7 @@ public class OneTimeTipAction : GameAction
     {
         try
         {
-            var settings = SettingsManager.Load();
-
-            if (settings.DismissedTips.Contains(_tipId))
+            if (SettingsManager.Load().DismissedTips.Contains(_tipId))
             {
                 Log.Debug(
                     "OneTimeTipAction: Tip '{TipId}' already dismissed, skipping",
@@ -83,11 +81,27 @@ public class OneTimeTipAction : GameAction
                 return;
             }
 
-            // Persist the dismissal FIRST. Tips are applied sequentially by the orchestrator, so the
-            // load-modify-save window here is not contended in practice; if concurrent settings
-            // writers are ever added, this should move behind a shared settings lock.
-            settings.DismissedTips.Add(_tipId);
-            SettingsManager.Save(settings);
+            // Persist the dismissal FIRST, atomically. This runs on the detection thread and can
+            // race other settings writers, so use the transactional Update (load-modify-save under
+            // the shared lock) instead of a separate Load/Save. The inner re-check keeps it correct
+            // if another writer dismissed the tip in the meantime.
+            bool newlyDismissed = false;
+            SettingsManager.Update(settings =>
+            {
+                if (!settings.DismissedTips.Contains(_tipId))
+                {
+                    settings.DismissedTips.Add(_tipId);
+                    newlyDismissed = true;
+                }
+            });
+
+            if (!newlyDismissed)
+            {
+                Log.Debug(
+                    "OneTimeTipAction: Tip '{TipId}' already dismissed (concurrent), skipping",
+                    _tipId);
+                return;
+            }
 
             // Fire the toast only AFTER the dismissal is durably saved, so a Save failure can't show
             // the tip without recording it (which would make it re-appear next session).

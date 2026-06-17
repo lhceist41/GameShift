@@ -138,6 +138,27 @@ public static class SettingsManager
     }
 
     /// <summary>
+    /// Atomically applies a mutation to the settings: loads the current settings, runs
+    /// <paramref name="mutate"/>, and saves the result, all while holding the file lock. Use this
+    /// instead of a separate Load() -> mutate -> Save() when the caller may run concurrently with
+    /// another writer (e.g. a background detection-thread tip dismissal racing a UI settings save),
+    /// where the unguarded read-modify-write sequence can lose one writer's update.
+    /// </summary>
+    /// <param name="mutate">Mutation applied to the loaded settings before they are saved.</param>
+    public static void Update(Action<AppSettings> mutate)
+    {
+        ArgumentNullException.ThrowIfNull(mutate);
+        // Monitor (lock) is reentrant, so the nested Load()/Save() calls re-enter this same lock on
+        // this thread; the whole load-mutate-save is therefore atomic against other Update/Save callers.
+        lock (_fileLock)
+        {
+            var settings = Load();
+            mutate(settings);
+            Save(settings);
+        }
+    }
+
+    /// <summary>
     /// Configures Serilog with rolling file sink and settings-based log level.
     /// Uses structured logging with 31-day retention.
     /// </summary>

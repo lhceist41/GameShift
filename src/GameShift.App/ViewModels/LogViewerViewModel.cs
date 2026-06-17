@@ -21,6 +21,12 @@ public class LogViewerViewModel : INotifyPropertyChanged
     private string _statusText = "Ready";
     private string _currentLogPath = "";
 
+    // Single-flight guard: the file read/filter runs off the UI thread, so a timer tick or a
+    // search keystroke arriving while one is in flight is coalesced into a single rerun instead
+    // of overlapping (which could let a stale read overwrite a newer one). Touched only on the UI thread.
+    private bool _isRefreshing;
+    private bool _refreshQueued;
+
     public event PropertyChangedEventHandler? PropertyChanged;
 
     /// <summary>The displayed log content (filtered if search is active).</summary>
@@ -74,46 +80,79 @@ public class LogViewerViewModel : INotifyPropertyChanged
         _refreshTimer.Stop();
     }
 
-    /// <summary>Forces an immediate refresh of the log content.</summary>
+    /// <summary>
+    /// Refreshes the displayed log content. The file read, split and filter run on a background
+    /// thread (the log can be several MB and this is polled every 3s), then the bound properties
+    /// are updated back on the UI thread. Single-flighted so a tick or search keystroke arriving
+    /// mid-read is coalesced into one rerun rather than overlapping.
+    /// </summary>
     public void RefreshContent()
     {
-        try
+        if (_isRefreshing)
         {
-            _currentLogPath = GetTodaysLogPath();
-
-            if (!File.Exists(_currentLogPath))
-            {
-                LogContent = "No log file found for today.";
-                StatusText = "No log file";
-                return;
-            }
-
-            // Read file with sharing (Serilog holds a write lock)
-            string allText;
-            using (var fs = new FileStream(_currentLogPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
-            using (var reader = new StreamReader(fs))
-            {
-                allText = reader.ReadToEnd();
-            }
-
-            var lines = allText.Split('\n');
-
-            if (!string.IsNullOrWhiteSpace(SearchFilter))
-            {
-                lines = lines
-                    .Where(l => l.Contains(SearchFilter, StringComparison.OrdinalIgnoreCase))
-                    .ToArray();
-            }
-
-            LogContent = string.Join("\n", lines);
-            StatusText = $"{Path.GetFileName(_currentLogPath)} - {lines.Length} lines" +
-                (!string.IsNullOrWhiteSpace(SearchFilter) ? $" (filtered: \"{SearchFilter}\")" : "");
+            _refreshQueued = true;
+            return;
         }
-        catch (Exception ex)
+        _isRefreshing = true;
+
+        var filter = SearchFilter; // capture on the UI thread
+        var path = GetTodaysLogPath();
+
+        Task.Run(() =>
         {
-            LogContent = $"Error reading log: {ex.Message}";
-            StatusText = "Error";
-        }
+            string content, status;
+            try
+            {
+                if (!File.Exists(path))
+                {
+                    content = "No log file found for today.";
+                    status = "No log file";
+                }
+                else
+                {
+                    // Read with sharing (Serilog holds a write lock).
+                    string allText;
+                    using (var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                    using (var reader = new StreamReader(fs))
+                    {
+                        allText = reader.ReadToEnd();
+                    }
+
+                    var lines = allText.Split('\n');
+                    if (!string.IsNullOrWhiteSpace(filter))
+                    {
+                        lines = lines
+                            .Where(l => l.Contains(filter, StringComparison.OrdinalIgnoreCase))
+                            .ToArray();
+                    }
+
+                    content = string.Join("\n", lines);
+                    status = $"{Path.GetFileName(path)} - {lines.Length} lines" +
+                        (!string.IsNullOrWhiteSpace(filter) ? $" (filtered: \"{filter}\")" : "");
+                }
+            }
+            catch (Exception ex)
+            {
+                content = $"Error reading log: {ex.Message}";
+                status = "Error";
+            }
+
+            System.Windows.Application.Current?.Dispatcher.BeginInvoke(() =>
+            {
+                _currentLogPath = path;
+                LogContent = content;
+                StatusText = status;
+                _isRefreshing = false;
+
+                // A refresh was requested while this one was in flight (e.g. a search keystroke):
+                // run once more so the latest filter is applied.
+                if (_refreshQueued)
+                {
+                    _refreshQueued = false;
+                    RefreshContent();
+                }
+            });
+        });
     }
 
     /// <summary>Opens the log folder in Windows Explorer.</summary>
