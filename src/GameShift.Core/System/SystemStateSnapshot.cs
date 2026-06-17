@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.ServiceProcess;
-using System.Text.Json;
 
 namespace GameShift.Core.System;
 
@@ -295,94 +294,6 @@ public class SystemStateSnapshot
         if (!RegistryValues.ContainsKey(compositeKey))
         {
             RegistryValues[compositeKey] = originalValue;
-        }
-    }
-
-    /// <summary>
-    /// Cleans up stale IFEO PerfOptions entries from a previous crashed session.
-    /// Called during startup when a stale lockfile is found.
-    /// </summary>
-    /// <param name="snapshot">The snapshot loaded from the stale lockfile</param>
-    public static void CleanupStaleIfeoEntries(SystemStateSnapshot snapshot)
-    {
-        if (snapshot.IfeoEntries.Count == 0)
-            return;
-
-        foreach (var (subKeyPath, originalValueJson) in snapshot.IfeoEntries)
-        {
-            try
-            {
-                if (originalValueJson == null)
-                {
-                    // GameShift created this key - delete it entirely
-                    using var parentKey = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(
-                        subKeyPath.Contains("\\PerfOptions")
-                            ? subKeyPath[..subKeyPath.LastIndexOf("\\PerfOptions", StringComparison.Ordinal)]
-                            : subKeyPath,
-                        writable: true);
-
-                    parentKey?.DeleteSubKey("PerfOptions", throwOnMissingSubKey: false);
-                }
-                else
-                {
-                    // Original values existed - restore them
-                    var originalValues = JsonSerializer
-                        .Deserialize<Dictionary<string, int>>(originalValueJson);
-
-                    if (originalValues != null)
-                    {
-                        using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(subKeyPath, writable: true);
-                        if (key != null)
-                        {
-                            foreach (var (valueName, value) in originalValues)
-                            {
-                                key.SetValue(valueName, value, Microsoft.Win32.RegistryValueKind.DWord);
-                            }
-                        }
-                    }
-                }
-            }
-            catch
-            {
-                // Best-effort cleanup - log failure but continue
-            }
-        }
-    }
-
-    /// <summary>
-    /// Loads a snapshot from a lockfile.
-    /// Used during startup to detect and recover from crashes.
-    /// </summary>
-    /// <param name="path">Full path to the lockfile</param>
-    /// <returns>The loaded snapshot, or null if file doesn't exist or is invalid</returns>
-    public static SystemStateSnapshot? LoadFromLockfile(string path)
-    {
-        if (!File.Exists(path))
-        {
-            return null;
-        }
-
-        try
-        {
-            var json = File.ReadAllText(path);
-            return JsonSerializer.Deserialize<SystemStateSnapshot>(json);
-        }
-        catch
-        {
-            // Corrupted lockfile - treat as no lockfile
-            return null;
-        }
-    }
-
-    /// <summary>
-    /// Deletes the lockfile, indicating clean shutdown.
-    /// </summary>
-    /// <param name="path">Full path to the lockfile</param>
-    public static void DeleteLockfile(string path)
-    {
-        if (File.Exists(path))
-        {
-            File.Delete(path);
         }
     }
 }

@@ -144,7 +144,7 @@ public static class IntelHybridDetector
                     // Size (DWORD) at offset 0
                     // Type (CPU_SET_INFORMATION_TYPE) at offset 4
                     // Id at offset 8
-                    // Group at offset 12
+                    // Group (WORD) at offset 12
                     // LogicalProcessorIndex at offset 14
                     // CoreIndex at offset 15
                     // LastLevelCacheIndex at offset 16
@@ -154,16 +154,25 @@ public static class IntelHybridDetector
                     if (size == 0) break;
 
                     var efficiencyClass = Marshal.ReadByte(buffer, offset + 18);
+                    var group = Marshal.ReadInt16(buffer, offset + 12);
                     var logicalIndex = Marshal.ReadByte(buffer, offset + 14);
 
                     if (!results.ContainsKey(efficiencyClass))
                         results[efficiencyClass] = new CpuSetInfo(efficiencyClass, 0, 0);
 
+                    // A legacy 64-bit affinity mask can only represent logical processors 0..63 in
+                    // processor group 0. Mirror HybridCpuDetector's guard: only set a bit for an
+                    // in-range group-0 processor. Without this, LogicalProcessorIndex restarts at 0
+                    // in each group (and >= 64 wraps, since 1L << 64 == 1L << 0), so the P-core mask
+                    // collides on machines with more than 64 logical processors or multiple groups.
+                    // The logical-processor counts still include every processor regardless of group.
+                    long affinityBit = (group == 0 && logicalIndex < 64) ? (1L << logicalIndex) : 0;
+
                     var existing = results[efficiencyClass];
                     results[efficiencyClass] = existing with
                     {
                         LogicalProcessorCount = existing.LogicalProcessorCount + 1,
-                        AffinityMask = existing.AffinityMask | (1L << logicalIndex)
+                        AffinityMask = existing.AffinityMask | affinityBit
                     };
 
                     offset += size;

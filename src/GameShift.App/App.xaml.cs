@@ -592,22 +592,6 @@ public partial class App : Application
         // Dispose tray icon
         _trayManager?.Dispose();
 
-        // Clean up lockfile
-        var appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        var lockfilePath = Path.Combine(appDataPath, "GameShift", "active_session.json");
-
-        try
-        {
-            if (File.Exists(lockfilePath))
-            {
-                SystemStateSnapshot.DeleteLockfile(lockfilePath);
-            }
-        }
-        catch (Exception ex)
-        {
-            Log.Warning(ex, "Failed to clean up lockfile during shutdown");
-        }
-
         // Release the single-instance mutex only if THIS instance owns it. A 2nd instance signals the
         // first and exits without owning it - calling ReleaseMutex() there throws ApplicationException
         // ("synchronization method called from an unsynchronized block") and crashes the exit path.

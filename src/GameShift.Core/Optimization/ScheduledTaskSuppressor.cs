@@ -427,27 +427,6 @@ public class ScheduledTaskSuppressor : IOptimization, IJournaledOptimization
         return true; // Ready, Running, etc. = enabled
     }
 
-    /// <summary>
-    /// Crash recovery: re-enables orphaned disabled tasks from a previous crashed session.
-    /// Called during app startup when a stale lockfile is found.
-    /// </summary>
-    public static void CleanupStaleDisabledTasks(List<string> disabledTaskPaths)
-    {
-        if (disabledTaskPaths.Count == 0) return;
-
-        foreach (var taskPath in disabledTaskPaths)
-        {
-            try
-            {
-                RunSchtasks($"/change /tn \"{taskPath}\" /enable");
-            }
-            catch
-            {
-                // Best-effort cleanup
-            }
-        }
-    }
-
     private static string? RunSchtasks(string arguments)
     {
         try

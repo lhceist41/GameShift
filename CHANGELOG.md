@@ -4,6 +4,15 @@ All notable changes to GameShift are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **P-core affinity is correct on CPUs with more than 64 logical processors** - the Intel hybrid P-core detector built its P-core affinity mask without checking the processor group or bounding the logical-processor index. On machines with multiple processor groups (more than 64 logical processors) the mask bits wrapped around and collided (`1 << 64` is `1 << 0`), producing a wrong P-core mask. It now sets a bit only for an in-range logical processor in group 0, mirroring the guard already used by the main CPU-topology detector; the P/E logical-processor counts are unchanged.
+- **Concurrent writers can no longer clobber the crash-recovery journal** - the session journal (`%ProgramData%\GameShift\state.json`) is written by several components, each from its own in-memory copy: the optimization engine (active game session), the kernel-tuning and core-isolation tweaks, and the startup reader (pending reboot fixes / Windows-update warning). A whole-file write by one could overwrite the half owned by another - e.g. recording a pending reboot fix while a game was running could wipe the active session, and continuing a session could drop a pending reboot warning. Each save now re-reads the journal under the shared lock and merges back the half it does not own, so session state and recovery metadata are preserved independently. A pending reboot warning also now survives a game launching before you reboot.
+
+### Changed
+
+- **Removed dead snapshot/lockfile crash-recovery code** - the older snapshot-based recovery path (an `active_session.json` lockfile) stopped being written when the atomic state journal became the single source of truth, so the startup handler that read it could never fire. Removed that unreachable lockfile reader and restore code (and the stale code comments that referenced it). Crash-recovery behaviour is unchanged - it is handled by the journal-based path, which remains in development and not enabled in the current build, as the README documents.
+
 ## [3.8.6] - 2026-06-17
 
 ### Security

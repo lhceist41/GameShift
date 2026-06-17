@@ -256,7 +256,7 @@ public class JournalManager
                 },
                 Optimizations = new List<JournalEntry>()
             };
-            Save();
+            Save(SaveScope.SessionState);
 
             // Crash recovery for journaled optimizations depends on this write landing. If it did
             // not persist (disk full, ProgramData not writable, AV lock), the watchdog/boot recovery
@@ -304,7 +304,7 @@ public class JournalManager
                 AppliedValue = result.AppliedValue,
                 AppliedAt = DateTimeOffset.UtcNow
             });
-            Save();
+            Save(SaveScope.SessionState);
         }
     }
 
@@ -322,7 +322,7 @@ public class JournalManager
                 Payload = payload,
                 AppliedAt = DateTimeOffset.UtcNow
             });
-            Save();
+            Save(SaveScope.SessionState);
         }
     }
 
@@ -343,7 +343,7 @@ public class JournalManager
                     break;
                 }
             }
-            Save();
+            Save(SaveScope.SessionState);
         }
     }
 
@@ -355,7 +355,7 @@ public class JournalManager
         lock (_lock)
         {
             _current.SessionActive = false;
-            Save();
+            Save(SaveScope.SessionState);
         }
     }
 
@@ -369,7 +369,7 @@ public class JournalManager
         {
             _current.HasPendingRebootFixes = true;
             _current.PendingRebootFixDescriptions.Add(description);
-            Save();
+            Save(SaveScope.RecoveryMetadata);
         }
     }
 
@@ -406,7 +406,7 @@ public class JournalManager
         {
             _current.HasPendingRebootFixes = false;
             _current.PendingRebootFixDescriptions.Clear();
-            Save();
+            Save(SaveScope.RecoveryMetadata);
         }
     }
 
@@ -422,7 +422,7 @@ public class JournalManager
             _current.BuildChangedWarning = true;
             _current.BuildAtLastSession = buildAtLastSession;
             _current.BuildAtRecovery = buildAtRecovery;
-            Save();
+            Save(SaveScope.RecoveryMetadata);
         }
     }
 
@@ -453,7 +453,7 @@ public class JournalManager
             _current.BuildChangedWarning = false;
             _current.BuildAtLastSession = null;
             _current.BuildAtRecovery = null;
-            Save();
+            Save(SaveScope.RecoveryMetadata);
         }
     }
 
@@ -468,7 +468,7 @@ public class JournalManager
         lock (_lock)
         {
             _current.LastRecoveryTimestamp = utcNow;
-            Save();
+            Save(SaveScope.SessionState);
         }
     }
 
@@ -516,11 +516,89 @@ public class JournalManager
 
     // ── Atomic write ──────────────────────────────────────────────────────────
 
-    private void Save()
+    /// <summary>
+    /// Identifies which half of the journal a write owns. Several JournalManager instances
+    /// (OptimizationEngine, KernelTuningManager, CoreIsolationManager, the App-layer reader)
+    /// write the same state.json, each from its own in-memory <see cref="_current"/>. A naive
+    /// whole-file write would drop the half this instance did not touch, so the unowned half is
+    /// re-read from disk and preserved on every save.
+    /// </summary>
+    private enum SaveScope
+    {
+        /// <summary>
+        /// Active session state: ActiveGame, Optimizations, GameActions, session/recovery
+        /// timestamps, SessionActive. Owned by the optimization engine / watchdog recovery.
+        /// The boot-recovery metadata is preserved from disk.
+        /// </summary>
+        SessionState,
+
+        /// <summary>
+        /// Boot-recovery metadata: pending reboot-required fixes and the Windows-build-changed
+        /// warning. Owned by KernelTuningManager / CoreIsolationManager / boot recovery / the App
+        /// reader. The active session state is preserved from disk.
+        /// </summary>
+        RecoveryMetadata
+    }
+
+    /// <summary>
+    /// The boot-recovery metadata fields, written independently of the active session. Kept in
+    /// one place so <see cref="Save"/> can carry the half it does not own across a merge.
+    /// </summary>
+    private static void CopyRecoveryMetadata(SessionJournalData from, SessionJournalData to)
+    {
+        to.HasPendingRebootFixes = from.HasPendingRebootFixes;
+        to.PendingRebootFixDescriptions = from.PendingRebootFixDescriptions;
+        to.BuildChangedWarning = from.BuildChangedWarning;
+        to.BuildAtLastSession = from.BuildAtLastSession;
+        to.BuildAtRecovery = from.BuildAtRecovery;
+    }
+
+    /// <summary>Reads the on-disk journal without touching <see cref="_current"/>. Returns null
+    /// if the file is missing or cannot be parsed (the caller then writes unmerged).</summary>
+    private SessionJournalData? ReadFromDisk()
     {
         try
         {
-            var json = JsonSerializer.Serialize(_current, _writeOptions);
+            if (!File.Exists(_journalPath))
+                return null;
+            return JsonSerializer.Deserialize<SessionJournalData>(File.ReadAllText(_journalPath), _writeOptions);
+        }
+        catch (Exception ex)
+        {
+            _logger.Debug(ex, "[JournalManager] Could not re-read journal for merge at {Path}", _journalPath);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Persists the journal atomically (write to .tmp, then File.Move overwrite), merging back the
+    /// half of the document this write does not own so a concurrent instance's write is not lost.
+    /// The caller holds the static <see cref="_lock"/>, which makes this read-modify-write atomic
+    /// against the other instances sharing the same file.
+    /// </summary>
+    private void Save(SaveScope scope)
+    {
+        try
+        {
+            var toWrite = _current;
+            var disk = ReadFromDisk();
+            if (disk != null)
+            {
+                if (scope == SaveScope.SessionState)
+                {
+                    // This write owns the session; keep any recovery metadata another instance set.
+                    CopyRecoveryMetadata(from: disk, to: _current);
+                }
+                else
+                {
+                    // This write owns the recovery metadata; keep the session another instance owns
+                    // by writing the on-disk document with only our metadata overlaid onto it.
+                    CopyRecoveryMetadata(from: _current, to: disk);
+                    toWrite = disk;
+                }
+            }
+
+            var json = JsonSerializer.Serialize(toWrite, _writeOptions);
             var tempPath = _journalPath + ".tmp";
             File.WriteAllText(tempPath, json);
             File.Move(tempPath, _journalPath, overwrite: true); // Atomic on NTFS

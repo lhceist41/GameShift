@@ -101,6 +101,85 @@ public class JournalManagerTests
         Assert.NotNull(data);
     }
 
+    // ── Section-scoped merge (concurrent instances don't clobber each other) ──
+
+    [Fact]
+    public void SecondaryMetadataWrite_DoesNotClobberActiveSession()
+    {
+        using var temp = new TempPath();
+        var path = temp.GetFile("state.json");
+
+        // The optimization engine records an active session with an applied optimization.
+        var owner = new JournalManager(path);
+        owner.StartSession(NewTestProfile("steam_1", "Game1"));
+        owner.RecordApplied(NewAppliedResult("Opt1"));
+
+        // A secondary instance (e.g. KernelTuningManager applying a BCD tweak) records a pending
+        // reboot fix on the same file. A whole-file write of the secondary instance's own empty
+        // _current would have wiped the owner's active session; the section-scoped merge must
+        // preserve it.
+        var secondary = new JournalManager(path);
+        secondary.RecordPendingRebootFix("BCD: Disable dynamictick");
+
+        var disk = new JournalManager(path).LoadJournal();
+        Assert.NotNull(disk);
+        Assert.True(disk.SessionActive);
+        Assert.Equal("Game1", disk.ActiveGame?.Name);
+        Assert.Single(disk.Optimizations);
+        Assert.Equal("Opt1", disk.Optimizations[0].Name);
+
+        // ...and the newly recorded pending reboot fix is also present.
+        Assert.True(disk.HasPendingRebootFixes);
+        Assert.Contains("BCD: Disable dynamictick", disk.PendingRebootFixDescriptions);
+    }
+
+    [Fact]
+    public void SessionWrite_PreservesPendingRebootFixFromAnotherInstance()
+    {
+        using var temp = new TempPath();
+        var path = temp.GetFile("state.json");
+
+        var owner = new JournalManager(path);
+        owner.StartSession(NewTestProfile("steam_1", "Game1"));
+
+        // Another instance records a pending reboot fix on the same file.
+        var secondary = new JournalManager(path);
+        secondary.RecordPendingRebootFix("BCD: Disable dynamictick");
+
+        // The session owner keeps writing session state. Before the merge, this whole-file write
+        // dropped the secondary instance's pending reboot fix; now it must survive.
+        owner.RecordApplied(NewAppliedResult("Opt1"));
+
+        var disk = new JournalManager(path).LoadJournal();
+        Assert.NotNull(disk);
+        Assert.True(disk.SessionActive);
+        Assert.Single(disk.Optimizations);
+        Assert.True(disk.HasPendingRebootFixes);
+        Assert.Contains("BCD: Disable dynamictick", disk.PendingRebootFixDescriptions);
+    }
+
+    [Fact]
+    public void StartSession_PreservesPendingRebootFixWrittenBeforeTheSession()
+    {
+        using var temp = new TempPath();
+        var path = temp.GetFile("state.json");
+
+        // A reboot-required tweak is applied (and acknowledged later), then a game launches before
+        // the user reboots. Starting the session must not silently drop the pending reboot warning.
+        var tweaks = new JournalManager(path);
+        tweaks.RecordPendingRebootFix("BCD: Disable dynamictick");
+
+        var engine = new JournalManager(path);
+        engine.StartSession(NewTestProfile("steam_1", "Game1"));
+
+        var disk = new JournalManager(path).LoadJournal();
+        Assert.NotNull(disk);
+        Assert.True(disk.SessionActive);
+        Assert.Equal("Game1", disk.ActiveGame?.Name);
+        Assert.True(disk.HasPendingRebootFixes);
+        Assert.Contains("BCD: Disable dynamictick", disk.PendingRebootFixDescriptions);
+    }
+
     // ── LoadJournal SessionActive guard ───────────────────────────────────────
 
     [Fact]

@@ -19,8 +19,6 @@ namespace GameShift.Core.Optimization;
 /// Implements IJournaledOptimization so the watchdog can restore the original plan GUID
 /// and every overridden sub-setting (AC and DC values) from the serialized journal record,
 /// even after a main-app crash wipes the in-memory instance fields.
-/// Legacy crash recovery: the static CleanupStalePowerPlan method is preserved so the
-/// snapshot-based recovery path (active_session.json lockfile) still restores the active plan.
 /// </summary>
 public class PowerPlanSwitcher : IOptimization, IJournaledOptimization
 {
@@ -393,38 +391,6 @@ public class PowerPlanSwitcher : IOptimization, IJournaledOptimization
         {
             _logger.Error(ex, "[PowerPlanSwitcher] RevertFromRecord failed");
             return RevertFail(ex.Message);
-        }
-    }
-
-    /// <summary>
-    /// Static crash recovery: restores the original power plan from a saved snapshot GUID.
-    /// Called from App.xaml.cs crash recovery path (snapshot-based, separate from the journal).
-    /// Idempotent - safe to call even if the journal-driven watchdog revert has already run.
-    /// </summary>
-    public static void CleanupStalePowerPlan(Guid originalPlanGuid)
-    {
-        if (originalPlanGuid == Guid.Empty) return;
-
-        try
-        {
-            var guid = originalPlanGuid;
-            uint result = NativeInterop.PowerSetActiveScheme(IntPtr.Zero, ref guid);
-
-            if (result == 0)
-            {
-                Log.Information("[PowerPlanSwitcher] Crash recovery: restored power plan {Plan}", originalPlanGuid);
-                return;
-            }
-
-            // Original plan gone - fall back to Balanced
-            Log.Warning("[PowerPlanSwitcher] Crash recovery: original plan {Plan} missing, falling back to Balanced",
-                originalPlanGuid);
-            var balanced = BalancedGuid;
-            NativeInterop.PowerSetActiveScheme(IntPtr.Zero, ref balanced);
-        }
-        catch (Exception ex)
-        {
-            Log.Warning(ex, "[PowerPlanSwitcher] Crash recovery: failed to restore power plan");
         }
     }
 

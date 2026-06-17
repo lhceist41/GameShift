@@ -21,9 +21,9 @@ namespace GameShift.Core.Optimization;
 /// - Snapshot-based Apply/Revert for all registry changes
 /// - GameProfile toggle integration (EnableGpuOptimization master toggle)
 ///
-/// GPU registry changes are stored in snapshot.RegistryValues and persisted to
-/// active_session.json for crash recovery. The existing SystemStateSnapshot
-/// serialization handles GPU entries automatically.
+/// GPU registry changes are captured in the in-memory SystemStateSnapshot (RegistryValues) for
+/// end-of-session revert, and (via IJournaledOptimization) recorded in the state journal so the
+/// boot-recovery path can restore them after a crash.
 /// </summary>
 public class GpuDriverOptimizer : IOptimization, IJournaledOptimization
 {
