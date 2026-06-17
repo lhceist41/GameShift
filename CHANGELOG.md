@@ -4,6 +4,29 @@ All notable changes to GameShift are documented here.
 
 ## [Unreleased]
 
+## [3.8.6] - 2026-06-17
+
+### Security
+
+- **Updates are cryptographically verified before they are applied** - the auto-updater now checks the downloaded file's size and SHA-256 against the digest published by the GitHub release API, and refuses to apply anything it cannot verify (fail closed). The staged update is re-verified again, against a hash sidecar, immediately before it replaces the running executable. Previously the downloaded binary was applied over the elevated app with only a host-name check, so a corrupted or tampered release asset could have run with full privileges.
+- **Locked down the crash-recovery journal directory** - `%ProgramData%\GameShift` is now restricted to SYSTEM and Administrators (full control) and standard users (read-only), instead of inheriting the default permissions that let any user add files. This prevents a standard user from planting or tampering with the state journal that the elevated app and the recovery task act on.
+
+### Fixed
+
+- **A game already running when GameShift starts is now detected and optimized** - detection previously only reacted to games launched after GameShift was running, so a game started first got no profile or optimizations for the whole session. GameShift now scans already-running processes at startup. Detection is also idempotent, so a game can never be double-counted.
+- **Per-game settings no longer leak between games** - the default profile was shared by reference, so anti-cheat handling or other per-session state from one game could carry into the next. Each game now gets its own copy.
+- **Game profiles are saved atomically** - a profile is written to a temp file and moved into place, so a crash or full disk mid-save can no longer truncate it (a truncated profile was silently discarded, reverting your tuned settings to default).
+- **All optimization modules are shown** - the Optimizations page listed only 11 of the 17 modules; the six newer modules now appear with live status.
+- **The first-run wizard no longer freezes** - the initial game-library scan runs off the UI thread.
+- **DPC Doctor stops its kernel trace when you leave the page** - a manually started capture no longer keeps a system-wide ETW trace running in the background.
+- **System tools can't hang an optimization** - power-plan and scheduled-task helpers now time out and kill a wedged child process instead of blocking or throwing.
+- **The System page refresh is robust** - it no longer overlaps concurrent refreshes or gets stuck on "Loading" if a hardware query fails.
+- **Diagnostic log moved to %AppData%** - the startup diagnostic log is written under `%AppData%\GameShift` instead of the install directory.
+
+### Changed
+
+- **Documentation accuracy** - the README no longer advertises the watchdog service and boot-recovery task as shipping features. Automatic recovery after an app crash or blue screen is in development and not enabled in the current build; GameShift reverts changes when your game exits, backed by an atomic state journal.
+
 ## [3.8.5] - 2026-06-15
 
 ### Fixed
