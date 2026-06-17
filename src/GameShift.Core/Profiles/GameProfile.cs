@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using GameShift.Core.Optimization;
 
@@ -368,6 +369,21 @@ public class GameProfile
             Id = "default",
             GameName = "Default Profile"
         };
+    }
+
+    /// <summary>
+    /// Returns a deep copy of this profile. Used so the shared cached default profile can be
+    /// handed out without callers' per-session mutations (ProcessId, anti-cheat backfill,
+    /// intensity, executable info) leaking back into the cache and bleeding across games.
+    /// All persisted state round-trips through JSON; the runtime-only [JsonIgnore]
+    /// GameSpecificActions list is copied by reference so the clone stays faithful.
+    /// </summary>
+    public GameProfile Clone()
+    {
+        var json = JsonSerializer.Serialize(this);
+        var clone = JsonSerializer.Deserialize<GameProfile>(json) ?? CreateDefault();
+        clone.GameSpecificActions = new List<GameActions.GameAction>(GameSpecificActions);
+        return clone;
     }
 
     // ── Query methods ─────────────────────────────────────────────────

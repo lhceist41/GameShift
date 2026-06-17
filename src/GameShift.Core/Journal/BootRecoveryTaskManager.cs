@@ -169,7 +169,15 @@ public static class BootRecoveryTaskManager
         var stderrTask = Task.Run(() => { stderr = p.StandardError.ReadToEnd(); });
         var stdout = p.StandardOutput.ReadToEnd();
         stderrTask.Wait(30_000);
-        p.WaitForExit(30_000);
+
+        // Check WaitForExit before reading ExitCode: a wedged schtasks would otherwise throw
+        // InvalidOperationException on ExitCode and leak the child process. Kill and bail on timeout.
+        if (!p.WaitForExit(30_000))
+        {
+            try { p.Kill(entireProcessTree: true); } catch { /* best effort */ }
+            log.Warning("[BootRecoveryTask] schtasks timed out");
+            return;
+        }
         output = stdout;
 
         if (p.ExitCode != 0 && !string.IsNullOrWhiteSpace(stderr))

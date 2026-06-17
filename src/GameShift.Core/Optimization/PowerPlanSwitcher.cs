@@ -657,7 +657,15 @@ public class PowerPlanSwitcher : IOptimization, IJournaledOptimization
             var stderrTask = Task.Run(() => { stderr = process.StandardError.ReadToEnd(); });
             string stdout = process.StandardOutput.ReadToEnd();
             stderrTask.Wait(10_000);
-            process.WaitForExit(10_000);
+
+            // Check WaitForExit's result before reading ExitCode: if the process is still running
+            // (wedged child), reading ExitCode throws InvalidOperationException. Kill it and report
+            // failure instead so the apply/revert thread can't hang or crash.
+            if (!process.WaitForExit(10_000))
+            {
+                try { process.Kill(entireProcessTree: true); } catch { /* best effort */ }
+                return (false, "powercfg timed out");
+            }
 
             return (process.ExitCode == 0, stdout.Trim());
         }

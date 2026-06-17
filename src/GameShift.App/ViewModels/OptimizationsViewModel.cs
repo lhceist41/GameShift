@@ -63,16 +63,22 @@ public class OptimizationsViewModel : INotifyPropertyChanged
             coreGroup.Items.Add(CreateItem(_optimizations[i]));
         }
 
-        // Competitive v2.0: indices 8-9
-        for (int i = 8; i <= 9 && i < _optimizations.Count; i++)
+        // System Advisory: GpuDriverOptimizer (index 10)
+        const int advisoryIndex = 10;
+        if (_optimizations.Count > advisoryIndex)
         {
-            competitiveGroup.Items.Add(CreateItem(_optimizations[i]));
+            advisoryGroup.Items.Add(CreateItem(_optimizations[advisoryIndex]));
         }
 
-        // System Advisory: index 10
-        if (_optimizations.Count > 10)
+        // Competitive & Advanced (v2.0+): index 8, 9, and every module from 11 onward.
+        // This loop previously stopped at index 9, so the six v3/v4 modules (indices 11-16:
+        // ScheduledTaskSuppressor, CpuParkingManager, IoPriorityManager, EfficiencyModeController,
+        // CpuSchedulingOptimizer, SessionSystemTweaksOptimizer) were applied at runtime but never
+        // shown on the page. Derive from the full list so newly-registered modules can't go hidden.
+        for (int i = 8; i < _optimizations.Count; i++)
         {
-            advisoryGroup.Items.Add(CreateItem(_optimizations[10]));
+            if (i == advisoryIndex) continue; // GpuDriverOptimizer is shown under System Advisory
+            competitiveGroup.Items.Add(CreateItem(_optimizations[i]));
         }
 
         Groups.Add(coreGroup);

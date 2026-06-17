@@ -709,6 +709,12 @@ public class DpcDoctorViewModel : INotifyPropertyChanged
 
     public void Cleanup()
     {
+        // Stop any active ETW kernel trace before tearing down, otherwise a manually-started
+        // capture keeps a system-wide DPC/ISR trace + its processing thread running after the
+        // user navigates away (overhead while gaming, and it blocks tools like LatencyMon).
+        if (IsCapturing)
+            StopCapture();
+
         if (_traceEngine != null)
             _traceEngine.DriversUpdated -= OnDriversUpdated;
 

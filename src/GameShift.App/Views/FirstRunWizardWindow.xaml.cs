@@ -44,7 +44,7 @@ public partial class FirstRunWizardWindow : Window
         ShowStep(1);
     }
 
-    private void OnScanClicked(object sender, RoutedEventArgs e)
+    private async void OnScanClicked(object sender, RoutedEventArgs e)
     {
         // Disable scan button to prevent double-click
         ScanNowButton.IsEnabled = false;
@@ -52,8 +52,10 @@ public partial class FirstRunWizardWindow : Window
 
         try
         {
-            // App.Services.Detector is wired before wizard shows (after Step d in App.xaml.cs)
-            App.Services.Detector?.ScanLibraries();
+            // App.Services.Detector is wired before wizard shows (after Step d in App.xaml.cs).
+            // Run the (potentially slow) library scan off the UI thread so the very first window
+            // doesn't freeze ("Not Responding") while a large/slow game library is enumerated.
+            await Task.Run(() => App.Services.Detector?.ScanLibraries());
 
             // Get discovered game count from Detector.GetKnownGames()
             var knownGames = App.Services.Detector?.GetKnownGames();

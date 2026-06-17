@@ -79,37 +79,40 @@ public class ProfileManager
     {
         lock (_lock)
         {
-            if (_cachedDefault != null)
+            if (_cachedDefault == null)
             {
-                return _cachedDefault;
-            }
+                var defaultPath = Path.Combine(_profilesDirectory, "default.json");
 
-            var defaultPath = Path.Combine(_profilesDirectory, "default.json");
-
-            try
-            {
-                if (File.Exists(defaultPath))
+                try
                 {
-                    var json = File.ReadAllText(defaultPath);
-                    var profile = JsonSerializer.Deserialize<GameProfile>(json);
-
-                    if (profile != null)
+                    if (File.Exists(defaultPath))
                     {
-                        _cachedDefault = profile;
-                        _logger.Debug("Loaded default profile from {Path}", defaultPath);
-                        return _cachedDefault;
+                        var json = File.ReadAllText(defaultPath);
+                        var profile = JsonSerializer.Deserialize<GameProfile>(json);
+
+                        if (profile != null)
+                        {
+                            _cachedDefault = profile;
+                            _logger.Debug("Loaded default profile from {Path}", defaultPath);
+                        }
+                        else
+                        {
+                            _logger.Warning("Default profile file was null after deserialization, using hardcoded defaults");
+                        }
                     }
-
-                    _logger.Warning("Default profile file was null after deserialization, using hardcoded defaults");
                 }
-            }
-            catch (Exception ex)
-            {
-                _logger.Warning(ex, "Failed to load default profile from {Path}, using hardcoded defaults", defaultPath);
+                catch (Exception ex)
+                {
+                    _logger.Warning(ex, "Failed to load default profile from {Path}, using hardcoded defaults", defaultPath);
+                }
+
+                _cachedDefault ??= GameProfile.CreateDefault();
             }
 
-            _cachedDefault = GameProfile.CreateDefault();
-            return _cachedDefault;
+            // Return a clone, never the cached instance: callers (the detection orchestrator)
+            // mutate the returned profile per session (ProcessId, anti-cheat backfill, intensity),
+            // and handing out the shared cache would leak that state across games.
+            return _cachedDefault.Clone();
         }
     }
 
@@ -170,7 +173,13 @@ public class ProfileManager
                 var safeId = SanitizeGameId(profile.Id);
                 var profilePath = Path.Combine(_profilesDirectory, $"{safeId}.json");
                 var json = JsonSerializer.Serialize(profile, WriteOptions);
-                File.WriteAllText(profilePath, json);
+                // Atomic write: serialize to a temp file then move-replace, so a crash or full disk
+                // mid-write cannot truncate the profile. A truncated profile would fail to
+                // deserialize and GetProfileForGame would silently fall back to default, losing the
+                // user's tuned settings without warning. Mirrors SettingsManager/SessionHistoryStore.
+                var tmpPath = profilePath + ".tmp";
+                File.WriteAllText(tmpPath, json);
+                File.Move(tmpPath, profilePath, overwrite: true);
 
                 // Invalidate cached default if saving the default profile
                 if (profile.Id == "default")

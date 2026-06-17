@@ -133,9 +133,13 @@ public class SystemViewModel : INotifyPropertyChanged
 
     public async Task RefreshAsync()
     {
+        // Prevent overlapping refreshes (the constructor and the Refresh button both call this).
+        if (IsRefreshing) return;
         IsRefreshing = true;
 
-        await Task.Run(() =>
+        try
+        {
+            await Task.Run(() =>
         {
             // OS
             var os = SystemInfoGatherer.GetOsInfo();
@@ -226,8 +230,16 @@ public class SystemViewModel : INotifyPropertyChanged
                 }
             });
         });
-
-        IsRefreshing = false;
+        }
+        catch (Exception ex)
+        {
+            GameShift.Core.Config.SettingsManager.Logger.Warning(ex, "[SystemViewModel] System info refresh failed");
+        }
+        finally
+        {
+            // Always clear the busy flag so the System page can't get stuck on "Loading...".
+            IsRefreshing = false;
+        }
     }
 
     public void ToggleStartupApp(StartupAppItem item)

@@ -73,8 +73,9 @@ public static class Program
     }
 
     /// <summary>
-    /// Writes a diagnostic line to both stderr and a local diag file.
-    /// Uses the app's working directory (not AppData) so it's easy to find.
+    /// Writes a diagnostic line to both stderr and a per-user diag file under
+    /// %AppData%/GameShift. Avoids the working/install directory, which may be read-only
+    /// (Program Files) and where a pre-created/symlinked log file would be an injection target.
     /// </summary>
     private static void WriteDiag(string message)
     {
@@ -82,7 +83,10 @@ public static class Program
         Console.Error.WriteLine(line);
         try
         {
-            File.AppendAllText("gameshift-diag.log", line + Environment.NewLine);
+            var dir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "GameShift");
+            Directory.CreateDirectory(dir);
+            File.AppendAllText(Path.Combine(dir, "gameshift-diag.log"), line + Environment.NewLine);
         }
         catch { }
     }
