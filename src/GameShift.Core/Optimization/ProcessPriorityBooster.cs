@@ -141,8 +141,12 @@ public class ProcessPriorityBooster : IOptimization, IJournaledOptimization
             // anti-cheat block) must NOT orphan the system-wide Win32PrioritySeparation tweak
             // that was already applied above. If that change was made, the optimization must
             // still be tracked so the engine reverts it on session end. Only report a hard
-            // failure when nothing was changed at all (so there is no residue to revert).
-            if (!pathSuccess && !_prioritySeparationApplied)
+            // failure when there was a real game process to boost, that boost failed, AND nothing
+            // was changed system-wide. With no game to target (e.g. Quick Optimize / system-only
+            // optimize) the per-process boost is not applicable, so a no-op - including when
+            // Win32PrioritySeparation is already at the gaming value - is success, not failure.
+            bool hadGameToBoost = profile.ProcessId > 0;
+            if (!pathSuccess && !_prioritySeparationApplied && hadGameToBoost)
                 return Fail("Failed to apply priority boost");
 
             IsApplied = true;
