@@ -158,22 +158,11 @@ static void UninstallService()
 static void RunSc(string arguments)
 {
     Console.WriteLine($"  sc {arguments}");
-    using var p = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-    {
-        FileName = NativeInterop.SystemExePath("sc.exe"),
-        Arguments = arguments,
-        UseShellExecute = false,
-        RedirectStandardOutput = true,
-        RedirectStandardError = true,
-    });
+    var result = ProcessRunner.Run(NativeInterop.SystemExePath("sc.exe"), arguments, 30_000);
+    if (!result.Exited && !result.TimedOut) { Console.WriteLine("  (failed to start sc.exe)"); return; }
 
-    if (p == null) { Console.WriteLine("  (failed to start sc.exe)"); return; }
-
-    var stderr = "";
-    var stderrTask = Task.Run(() => { stderr = p.StandardError.ReadToEnd().Trim(); });
-    var stdout = p.StandardOutput.ReadToEnd().Trim();
-    stderrTask.Wait(30_000);
-    p.WaitForExit(30_000);
+    var stdout = result.StdOut.Trim();
+    var stderr = result.StdErr.Trim();
     if (!string.IsNullOrEmpty(stdout)) Console.WriteLine($"  {stdout}");
     if (!string.IsNullOrEmpty(stderr)) Console.WriteLine($"  ERROR: {stderr}");
 }

@@ -362,29 +362,15 @@ public class KernelTuningManager
     {
         try
         {
-            using var process = global::System.Diagnostics.Process.Start(
-                new global::System.Diagnostics.ProcessStartInfo
-                {
-                    FileName = NativeInterop.SystemExePath("bcdedit.exe"),
-                    Arguments = arguments,
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                });
-
-            if (process == null)
+            var result = ProcessRunner.Run(NativeInterop.SystemExePath("bcdedit.exe"), arguments, 15_000);
+            if (!result.Exited && !result.TimedOut)
                 return (false, "Failed to start bcdedit.exe");
 
-            var stderr = "";
-            var stderrTask = Task.Run(() => { stderr = process.StandardError.ReadToEnd(); });
-            var stdout = process.StandardOutput.ReadToEnd();
-            stderrTask.Wait(15_000);
-            process.WaitForExit(15_000);
+            if (result.Exited && result.ExitCode == 0)
+                return (true, result.StdOut);
 
-            return process.ExitCode == 0
-                ? (true, stdout)
-                : (false, !string.IsNullOrEmpty(stderr) ? stderr : stdout);
+            // Non-zero exit or timeout (child killed): report failure with stderr, falling back to stdout.
+            return (false, !string.IsNullOrEmpty(result.StdErr) ? result.StdErr : result.StdOut);
         }
         catch (Exception ex)
         {

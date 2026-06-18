@@ -265,26 +265,13 @@ public class EnableLargePages : ISystemTweak
     {
         try
         {
-            var psi = new ProcessStartInfo
-            {
-                FileName = fileName,
-                Arguments = arguments,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true
-            };
+            var result = ProcessRunner.Run(fileName, arguments, 15000);
+            if (!result.Exited && !result.TimedOut)
+                return (-1, "Failed to start process");
 
-            using var process = Process.Start(psi);
-            if (process == null) return (-1, "Failed to start process");
-
-            var error = "";
-            var stderrTask = Task.Run(() => { error = process.StandardError.ReadToEnd(); });
-            var output = process.StandardOutput.ReadToEnd();
-            stderrTask.Wait(15000);
-            process.WaitForExit(15000);
-
-            return (process.ExitCode, string.IsNullOrEmpty(output) ? error : output);
+            var output = string.IsNullOrEmpty(result.StdOut) ? result.StdErr : result.StdOut;
+            // Exit code on a clean exit; -1 on timeout (child killed) with partial output.
+            return (result.Exited ? result.ExitCode : -1, output);
         }
         catch (Exception ex)
         {

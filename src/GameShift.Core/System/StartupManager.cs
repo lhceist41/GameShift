@@ -301,33 +301,14 @@ public static class StartupManager
     {
         try
         {
-            using var p = global::System.Diagnostics.Process.Start(
-                new global::System.Diagnostics.ProcessStartInfo
-                {
-                    FileName = NativeInterop.SystemExePath("schtasks.exe"),
-                    Arguments = arguments,
-                    UseShellExecute = false,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    CreateNoWindow = true,
-                });
-
-            if (p == null) return (false, "Failed to start schtasks.exe");
-
-            // Read stderr concurrently to avoid pipe deadlock
-            string stderr = "";
-            var stderrTask = Task.Run(() => { stderr = p.StandardError.ReadToEnd(); });
-            var stdout = p.StandardOutput.ReadToEnd();
-            stderrTask.Wait(30_000);
-
-            if (!p.WaitForExit(30_000))
-            {
-                try { p.Kill(); } catch { }
+            var result = ProcessRunner.Run(NativeInterop.SystemExePath("schtasks.exe"), arguments, 30_000);
+            if (result.TimedOut)
                 return (false, "schtasks timed out");
-            }
+            if (!result.Exited)
+                return (false, "Failed to start schtasks.exe");
 
-            var combined = string.IsNullOrWhiteSpace(stderr) ? stdout : $"{stdout}\n{stderr}";
-            return (p.ExitCode == 0, combined);
+            var combined = string.IsNullOrWhiteSpace(result.StdErr) ? result.StdOut : $"{result.StdOut}\n{result.StdErr}";
+            return (result.ExitCode == 0, combined);
         }
         catch (Exception ex)
         {

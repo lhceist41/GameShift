@@ -143,28 +143,18 @@ public class DefenderExclusionAction : GameAction
     {
         try
         {
-            var psi = new ProcessStartInfo(
+            var result = ProcessRunner.Run(
                 NativeInterop.SystemExePath("WindowsPowerShell\\v1.0\\powershell.exe"),
-                "-Command \"(Get-MpPreference).ExclusionPath\"")
-            {
-                CreateNoWindow = true,
-                UseShellExecute = false,
-                RedirectStandardOutput = true
-            };
+                "-Command \"(Get-MpPreference).ExclusionPath\"",
+                15_000);
 
-            using var process = Process.Start(psi);
-            if (process == null) return null;
-
-            var output = process.StandardOutput.ReadToEnd();
-            if (!process.WaitForExit(15_000))
-            {
-                try { process.Kill(); } catch { }
+            // Fail closed: trust only a clean exit-0. Failed-to-start, timed-out, or non-zero exit
+            // returns null so the caller never claims ownership of exclusions it could not read.
+            if (!result.Exited || result.ExitCode != 0)
                 return null;
-            }
-            if (process.ExitCode != 0) return null;
 
             var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var line in output.Split('\n'))
+            foreach (var line in result.StdOut.Split('\n'))
             {
                 var trimmed = line.Trim();
                 if (trimmed.Length > 0) set.Add(trimmed);

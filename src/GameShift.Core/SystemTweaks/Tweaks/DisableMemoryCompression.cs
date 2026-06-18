@@ -154,32 +154,14 @@ public class DisableMemoryCompression : ISystemTweak
     {
         try
         {
-            var psi = new ProcessStartInfo
-            {
-                FileName = NativeInterop.SystemExePath("WindowsPowerShell\\v1.0\\powershell.exe"),
-                Arguments = arguments,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true
-            };
-
-            using var process = Process.Start(psi);
-            if (process == null) return (-1, "Failed to start PowerShell");
-
-            var error = "";
-            var stderrTask = Task.Run(() => { error = process.StandardError.ReadToEnd(); });
-            var output = process.StandardOutput.ReadToEnd();
-            stderrTask.Wait(10000);
-            if (!process.WaitForExit(10000))
-            {
-                // Don't leave a hung PowerShell child running, and don't read ExitCode (it throws
-                // while the process is still alive).
-                try { process.Kill(); } catch { /* best effort */ }
+            var result = ProcessRunner.Run(
+                NativeInterop.SystemExePath("WindowsPowerShell\\v1.0\\powershell.exe"), arguments, 10000);
+            if (result.TimedOut)
                 return (-1, "PowerShell timed out");
-            }
+            if (!result.Exited)
+                return (-1, "Failed to start PowerShell");
 
-            return (process.ExitCode, string.IsNullOrEmpty(output) ? error : output);
+            return (result.ExitCode, string.IsNullOrEmpty(result.StdOut) ? result.StdErr : result.StdOut);
         }
         catch (Exception ex)
         {

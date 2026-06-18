@@ -431,30 +431,14 @@ public class ScheduledTaskSuppressor : IOptimization, IJournaledOptimization
     {
         try
         {
-            var psi = new ProcessStartInfo
-            {
-                FileName = NativeInterop.SystemExePath("schtasks.exe"),
-                Arguments = arguments,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true
-            };
-
-            using var process = Process.Start(psi);
-            if (process == null) return null;
-
-            var error = "";
-            var stderrTask = Task.Run(() => { error = process.StandardError.ReadToEnd(); });
-            var output = process.StandardOutput.ReadToEnd();
-            stderrTask.Wait(10000);
-            if (!process.WaitForExit(10000))
-            {
-                try { process.Kill(true); } catch { /* best effort */ }
+            var result = ProcessRunner.Run(NativeInterop.SystemExePath("schtasks.exe"), arguments, 10000);
+            if (result.TimedOut)
                 return "ERROR: schtasks timed out";
-            }
+            if (!result.Exited)
+                return null; // failed to start
 
-            return string.IsNullOrEmpty(error) ? output : $"ERROR: {error}";
+            // stderr text turns the whole result into an ERROR sentinel (callers grep for "ERROR").
+            return string.IsNullOrEmpty(result.StdErr) ? result.StdOut : $"ERROR: {result.StdErr}";
         }
         catch (Exception ex)
         {

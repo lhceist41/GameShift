@@ -170,24 +170,14 @@ public class FirewallRuleAction : GameAction
     {
         try
         {
-            var psi = new ProcessStartInfo(
+            var result = ProcessRunner.Run(
                 NativeInterop.SystemExePath("WindowsPowerShell\\v1.0\\powershell.exe"),
-                $"-Command \"Get-NetFirewallRule -DisplayName '{_ruleName.Replace("'", "''")}' -ErrorAction SilentlyContinue\"")
-            {
-                CreateNoWindow = true,
-                UseShellExecute = false,
-                RedirectStandardOutput = true
-            };
+                $"-Command \"Get-NetFirewallRule -DisplayName '{_ruleName.Replace("'", "''")}' -ErrorAction SilentlyContinue\"",
+                15_000);
 
-            using var process = Process.Start(psi);
-            var output = process?.StandardOutput.ReadToEnd() ?? "";
-            if (process != null && !process.WaitForExit(15_000))
-            {
-                Log.Warning("FirewallRuleAction: PowerShell timed out checking rule '{RuleName}', killing process", _ruleName);
-                try { process.Kill(); } catch { }
-            }
-
-            return !string.IsNullOrWhiteSpace(output);
+            // Rule exists iff the query produced output. A failed-to-start / timed-out / empty run
+            // yields no output -> false, matching the prior behaviour.
+            return !string.IsNullOrWhiteSpace(result.StdOut);
         }
         catch
         {

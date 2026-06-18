@@ -484,25 +484,10 @@ public class SessionSystemTweaksOptimizer : IOptimization, IJournaledOptimizatio
 
     private static string RunPowercfg(string arguments)
     {
-        using var process = global::System.Diagnostics.Process.Start(
-            new global::System.Diagnostics.ProcessStartInfo
-            {
-                FileName = NativeInterop.SystemExePath("powercfg.exe"),
-                Arguments = arguments,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-            });
-
-        if (process == null) return "";
-
-        var stderr = "";
-        var stderrTask = Task.Run(() => { stderr = process.StandardError.ReadToEnd(); });
-        var stdout = process.StandardOutput.ReadToEnd();
-        stderrTask.Wait(10_000);
-        process.WaitForExit(10_000);
-        return stdout;
+        // Returns stdout regardless of exit code (callers regex-parse it); empty string when the
+        // process can't start. The shared runner additionally reaps a wedged child instead of
+        // leaving it running, with no change to the returned output.
+        return ProcessRunner.Run(NativeInterop.SystemExePath("powercfg.exe"), arguments, 10_000).StdOut;
     }
 
     // ── Backup record ─────────────────────────────────────────────────────────

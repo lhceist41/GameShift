@@ -270,30 +270,15 @@ public sealed class SystemStateProber
     {
         try
         {
-            var psi = new ProcessStartInfo
+            var result = ProcessRunner.Run(NativeInterop.SystemExePath(exe), arguments, ToolTimeoutMs);
+            if (result.TimedOut)
             {
-                FileName = NativeInterop.SystemExePath(exe),
-                Arguments = arguments,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-            };
-
-            using var process = Process.Start(psi);
-            if (process == null) return null;
-
-            var stderr = "";
-            var stderrTask = Task.Run(() => { stderr = process.StandardError.ReadToEnd(); });
-            var output = process.StandardOutput.ReadToEnd();
-            stderrTask.Wait(ToolTimeoutMs);
-            if (!process.WaitForExit(ToolTimeoutMs))
-            {
-                try { process.Kill(); } catch { /* best effort */ }
                 probe.Warnings.Add($"{exe} {arguments}: timed out");
                 return null;
             }
-            return output;
+            if (!result.Exited)
+                return null; // failed to start
+            return result.StdOut;
         }
         catch (Exception ex)
         {

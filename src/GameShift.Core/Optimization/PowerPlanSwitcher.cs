@@ -605,35 +605,11 @@ public class PowerPlanSwitcher : IOptimization, IJournaledOptimization
     {
         try
         {
-            var psi = new ProcessStartInfo
-            {
-                FileName = NativeInterop.SystemExePath("powercfg.exe"),
-                Arguments = arguments,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true
-            };
+            var result = ProcessRunner.Run(NativeInterop.SystemExePath("powercfg.exe"), arguments, 10_000);
+            if (!result.Exited)
+                return (false, result.TimedOut ? "powercfg timed out" : "Failed to start powercfg");
 
-            using var process = Process.Start(psi);
-            if (process == null)
-                return (false, "Failed to start powercfg");
-
-            string stderr = "";
-            var stderrTask = Task.Run(() => { stderr = process.StandardError.ReadToEnd(); });
-            string stdout = process.StandardOutput.ReadToEnd();
-            stderrTask.Wait(10_000);
-
-            // Check WaitForExit's result before reading ExitCode: if the process is still running
-            // (wedged child), reading ExitCode throws InvalidOperationException. Kill it and report
-            // failure instead so the apply/revert thread can't hang or crash.
-            if (!process.WaitForExit(10_000))
-            {
-                try { process.Kill(entireProcessTree: true); } catch { /* best effort */ }
-                return (false, "powercfg timed out");
-            }
-
-            return (process.ExitCode == 0, stdout.Trim());
+            return (result.ExitCode == 0, result.StdOut.Trim());
         }
         catch (Exception ex)
         {

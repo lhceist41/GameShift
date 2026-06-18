@@ -102,26 +102,13 @@ public class TaskDeferralService
     {
         try
         {
-            var psi = new ProcessStartInfo
-            {
-                FileName = NativeInterop.SystemExePath("schtasks.exe"),
-                Arguments = arguments,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true
-            };
+            var result = ProcessRunner.Run(NativeInterop.SystemExePath("schtasks.exe"), arguments, 10_000);
+            if (result.TimedOut)
+                return "ERROR: schtasks timed out"; // treated as a skip by callers (they grep "ERROR")
+            if (!result.Exited)
+                return null; // failed to start
 
-            using var process = Process.Start(psi);
-            if (process == null) return null;
-
-            string error = "";
-            var stderrTask = Task.Run(() => { error = process.StandardError.ReadToEnd(); });
-            var output = process.StandardOutput.ReadToEnd();
-            stderrTask.Wait(10_000);
-            process.WaitForExit(10_000);
-
-            return string.IsNullOrEmpty(error) ? output : $"ERROR: {error}";
+            return string.IsNullOrEmpty(result.StdErr) ? result.StdOut : $"ERROR: {result.StdErr}";
         }
         catch (Exception ex)
         {

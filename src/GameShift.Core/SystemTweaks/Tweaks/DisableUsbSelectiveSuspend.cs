@@ -99,29 +99,12 @@ public class DisableUsbSelectiveSuspend : ISystemTweak
     {
         try
         {
-            var psi = new ProcessStartInfo
-            {
-                FileName = NativeInterop.SystemExePath("powercfg.exe"),
-                Arguments = arguments,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true
-            };
-
-            using var process = Process.Start(psi);
-            if (process == null) return (-1, "");
-
-            var stderr = "";
-            var stderrTask = Task.Run(() => { stderr = process.StandardError.ReadToEnd(); });
-            var output = process.StandardOutput.ReadToEnd();
-            stderrTask.Wait(5000);
-            if (!process.WaitForExit(5000))
-            {
-                try { process.Kill(); } catch { /* best effort */ }
-                return (-1, output);
-            }
-            return (process.ExitCode, output);
+            var result = ProcessRunner.Run(NativeInterop.SystemExePath("powercfg.exe"), arguments, 5000);
+            if (result.TimedOut)
+                return (-1, result.StdOut);
+            if (!result.Exited)
+                return (-1, ""); // failed to start
+            return (result.ExitCode, result.StdOut);
         }
         catch
         {

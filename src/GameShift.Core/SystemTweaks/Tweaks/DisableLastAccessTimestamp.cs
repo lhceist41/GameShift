@@ -98,29 +98,12 @@ public class DisableLastAccessTimestamp : ISystemTweak
     {
         try
         {
-            var psi = new ProcessStartInfo
-            {
-                FileName = NativeInterop.SystemExePath("fsutil.exe"),
-                Arguments = arguments,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true
-            };
-
-            using var process = Process.Start(psi);
-            if (process == null) return (-1, null);
-
-            var stderr = "";
-            var stderrTask = Task.Run(() => { stderr = process.StandardError.ReadToEnd(); });
-            var output = process.StandardOutput.ReadToEnd();
-            stderrTask.Wait(5000);
-            if (!process.WaitForExit(5000))
-            {
-                try { process.Kill(true); } catch { /* best effort */ }
-                return (-1, output);
-            }
-            return (process.ExitCode, output);
+            var result = ProcessRunner.Run(NativeInterop.SystemExePath("fsutil.exe"), arguments, 5000);
+            if (result.TimedOut)
+                return (-1, result.StdOut);
+            if (!result.Exited)
+                return (-1, null); // failed to start
+            return (result.ExitCode, result.StdOut);
         }
         catch
         {

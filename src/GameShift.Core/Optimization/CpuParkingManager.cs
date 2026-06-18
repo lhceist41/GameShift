@@ -686,25 +686,10 @@ public class CpuParkingManager : IOptimization, IJournaledOptimization
     {
         try
         {
-            var psi = new ProcessStartInfo
-            {
-                FileName = NativeInterop.SystemExePath("powercfg.exe"),
-                Arguments = arguments,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true
-            };
-
-            using var process = Process.Start(psi);
-            if (process == null) return null;
-
-            var stderr = "";
-            var stderrTask = Task.Run(() => { stderr = process.StandardError.ReadToEnd(); });
-            var output = process.StandardOutput.ReadToEnd();
-            stderrTask.Wait(5000);
-            process.WaitForExit(5000);
-            return output;
+            var result = ProcessRunner.Run(NativeInterop.SystemExePath("powercfg.exe"), arguments, 5000);
+            // null only when the process could not start (callers null-check); otherwise return the
+            // captured stdout (callers regex-parse it). The runner also reaps a wedged child.
+            return result.Exited || result.TimedOut ? result.StdOut : null;
         }
         catch
         {

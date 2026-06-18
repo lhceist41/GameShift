@@ -609,29 +609,16 @@ public class DpcFixEngine
     {
         try
         {
-            var psi = new ProcessStartInfo
-            {
-                FileName = fileName,
-                Arguments = arguments,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            };
-
-            using var process = Process.Start(psi);
-            if (process == null)
+            var result = ProcessRunner.Run(fileName, arguments, 10_000);
+            if (!result.Exited && !result.TimedOut)
                 return (false, "Failed to start process.");
 
-            // Read stdout and stderr concurrently to avoid pipe buffer deadlock
-            string stderr = "";
-            var stderrTask = Task.Run(() => { stderr = process.StandardError.ReadToEnd(); });
-            var stdout = process.StandardOutput.ReadToEnd();
-            stderrTask.Wait(10_000);
-            process.WaitForExit(10_000);
-
-            var output = string.IsNullOrWhiteSpace(stderr) ? stdout.Trim() : $"{stdout.Trim()}\n{stderr.Trim()}";
-            return (process.ExitCode == 0, output);
+            var output = string.IsNullOrWhiteSpace(result.StdErr)
+                ? result.StdOut.Trim()
+                : $"{result.StdOut.Trim()}\n{result.StdErr.Trim()}";
+            // success only on a clean exit with code 0; a timeout (child killed) reports failure
+            // with whatever partial output was captured.
+            return (result.Exited && result.ExitCode == 0, output);
         }
         catch (Exception ex)
         {

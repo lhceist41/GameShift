@@ -994,33 +994,9 @@ public class NetworkOptimizer : IOptimization, IJournaledOptimization
     /// </summary>
     private static (int exitCode, string output) RunProcess(string fileName, string arguments)
     {
-        var psi = new ProcessStartInfo
-        {
-            FileName = fileName,
-            Arguments = arguments,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true
-        };
-
-        using var process = Process.Start(psi);
-        if (process == null)
-            return (-1, "");
-
-        // Read stdout and stderr concurrently to avoid pipe buffer deadlock
-        string stderr = "";
-        var stderrTask = Task.Run(() => { stderr = process.StandardError.ReadToEnd(); });
-        string output = process.StandardOutput.ReadToEnd();
-        stderrTask.Wait(5000);
-
-        if (!process.WaitForExit(5000))
-        {
-            // Don't leave a hung netsh child running - kill it and report failure.
-            try { process.Kill(); } catch { /* best effort */ }
-            return (-1, output);
-        }
-
-        return (process.ExitCode, output);
+        var result = ProcessRunner.Run(fileName, arguments, 5000);
+        // Preserve the prior contract: exit code on a clean exit, otherwise -1 (failed-to-start or
+        // timed-out) with whatever partial stdout was captured.
+        return result.Exited ? (result.ExitCode, result.StdOut) : (-1, result.StdOut);
     }
 }
