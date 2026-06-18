@@ -175,8 +175,6 @@ public class DpcDoctorViewModel : INotifyPropertyChanged
     private readonly DpcFixEngine? _fixEngine;
     private readonly KnownDriverDatabase? _driverDb;
     private readonly DpcLatencyMonitor? _dpcMon;
-    private readonly AppSettings _settings;
-    private readonly Action _saveSettings;
     private readonly Dispatcher _dispatcher;
 
     private DispatcherTimer? _countdownTimer;
@@ -229,8 +227,7 @@ public class DpcDoctorViewModel : INotifyPropertyChanged
         set
         {
             _isSimpleMode = value;
-            _settings.DpcDoctorSimpleMode = value;
-            _saveSettings();
+            SettingsManager.Update(s => s.DpcDoctorSimpleMode = value);
             OnPropertyChanged();
         }
     }
@@ -291,20 +288,19 @@ public class DpcDoctorViewModel : INotifyPropertyChanged
         DpcTraceEngine? traceEngine,
         DpcFixEngine? fixEngine,
         KnownDriverDatabase? driverDb,
-        DpcLatencyMonitor? dpcMon,
-        AppSettings settings,
-        Action saveSettings)
+        DpcLatencyMonitor? dpcMon)
     {
         _traceEngine = traceEngine;
         _fixEngine = fixEngine;
         _driverDb = driverDb;
         _dpcMon = dpcMon;
-        _settings = settings;
-        _saveSettings = saveSettings;
         _dispatcher = Application.Current.Dispatcher;
 
+        // One settings read feeds all ctor-time initialization (avoids a Load() per quick fix).
+        var snapshot = SettingsManager.Load();
+
         IsAdmin = AdminHelper.IsRunningAsAdmin();
-        _isSimpleMode = settings.DpcDoctorSimpleMode;
+        _isSimpleMode = snapshot.DpcDoctorSimpleMode;
 
         if (_traceEngine != null)
             _traceEngine.DriversUpdated += OnDriversUpdated;
@@ -313,10 +309,10 @@ public class DpcDoctorViewModel : INotifyPropertyChanged
         if (_dpcMon != null)
             _dpcMon.LatencySampled += OnFallbackLatencySampled;
 
-        InitializeQuickFixes();
+        InitializeQuickFixes(snapshot);
         InitializeKernelTuning();
         InitializeCoreIsolation();
-        CheckPendingRebootComparison();
+        CheckPendingRebootComparison(snapshot);
         RefreshInterruptAffinityStatus();
     }
 
@@ -347,8 +343,8 @@ public class DpcDoctorViewModel : INotifyPropertyChanged
         if (_traceEngine == null) return;
 
         // Save peaks before stopping
-        _settings.DpcDoctorLastRunPeaks = _traceEngine.GetDriverPeaks();
-        _saveSettings();
+        var peaks = _traceEngine.GetDriverPeaks();
+        SettingsManager.Update(s => s.DpcDoctorLastRunPeaks = peaks);
 
         _traceEngine.StopCapture();
         IsCapturing = false;
@@ -356,7 +352,7 @@ public class DpcDoctorViewModel : INotifyPropertyChanged
         UpdateHealthBanner();
         AnalyzeDiagnosedIssues();
 
-        if (_settings.PendingRebootFixes.Count > 0)
+        if (SettingsManager.Load().PendingRebootFixes.Count > 0)
             GenerateRebootComparison();
     }
 
@@ -576,7 +572,7 @@ public class DpcDoctorViewModel : INotifyPropertyChanged
         ShowDiagnosedIssues = DiagnosedIssues.Count > 0;
     }
 
-    private void InitializeQuickFixes()
+    private void InitializeQuickFixes(AppSettings snapshot)
     {
         if (_driverDb == null || _fixEngine == null) return;
 
@@ -594,7 +590,7 @@ public class DpcDoctorViewModel : INotifyPropertyChanged
                     TechnicalTooltip = fix.TechnicalExplanation,
                     RequiresReboot = true,
                     Fix = fix,
-                    IsActive = _fixEngine.IsFixActive(fix.Id)
+                    IsActive = _fixEngine.IsFixActive(fix.Id, snapshot)
                 });
             }
         }
@@ -619,7 +615,7 @@ public class DpcDoctorViewModel : INotifyPropertyChanged
                         TechnicalTooltip = fix.TechnicalExplanation,
                         RequiresReboot = true,
                         Fix = fix,
-                        IsActive = gpuInfo.MsiEnabled || _fixEngine.IsFixActive(fix.Id)
+                        IsActive = gpuInfo.MsiEnabled || _fixEngine.IsFixActive(fix.Id, snapshot)
                     });
                 }
             }
@@ -643,29 +639,30 @@ public class DpcDoctorViewModel : INotifyPropertyChanged
                 RequiresReboot = true,
                 Impact = "Medium"
             },
-            IsActive = _fixEngine.IsFixActive("disable_hpet")
+            IsActive = _fixEngine.IsFixActive("disable_hpet", snapshot)
         });
     }
 
     private void RefreshQuickFixStates()
     {
         if (_fixEngine == null) return;
+        var snapshot = SettingsManager.Load();
         foreach (var qf in QuickFixes)
-            qf.IsActive = _fixEngine.IsFixActive(qf.FixId);
+            qf.IsActive = _fixEngine.IsFixActive(qf.FixId, snapshot);
     }
 
-    private void CheckPendingRebootComparison()
+    private void CheckPendingRebootComparison(AppSettings s)
     {
-        if (_settings.PendingRebootFixes.Count == 0 || _settings.DpcDoctorLastRunPeaks.Count == 0)
+        if (s.PendingRebootFixes.Count == 0 || s.DpcDoctorLastRunPeaks.Count == 0)
             return;
 
         HasPendingRebootComparison = true;
 
         var bootTime = DateTime.Now - TimeSpan.FromMilliseconds(Environment.TickCount64);
 
-        foreach (var fixId in _settings.PendingRebootFixes)
+        foreach (var fixId in s.PendingRebootFixes)
         {
-            var applied = _settings.AppliedDpcFixes.FirstOrDefault(f => f.FixId == fixId);
+            var applied = s.AppliedDpcFixes.FirstOrDefault(f => f.FixId == fixId);
             if (applied == null) continue;
 
             if (bootTime > applied.AppliedAt)
@@ -683,7 +680,7 @@ public class DpcDoctorViewModel : INotifyPropertyChanged
         if (_traceEngine == null) return;
 
         var currentPeaks = _traceEngine.GetDriverPeaks();
-        var previousPeaks = _settings.DpcDoctorLastRunPeaks;
+        var previousPeaks = SettingsManager.Load().DpcDoctorLastRunPeaks;
 
         RebootComparisonLines.Clear();
 
@@ -697,8 +694,7 @@ public class DpcDoctorViewModel : INotifyPropertyChanged
         }
 
         // Clear pending reboot fixes
-        _settings.PendingRebootFixes.Clear();
-        _saveSettings();
+        SettingsManager.Update(s => s.PendingRebootFixes.Clear());
         HasPendingRebootComparison = RebootComparisonLines.Count > 0;
     }
 
@@ -811,19 +807,25 @@ public class DpcDoctorViewModel : INotifyPropertyChanged
                 ShowRebootPrompt = true;
                 RebootFixName = item.Setting.DisplayName;
 
-                // Persist in AppSettings for reboot tracking
-                _settings.PendingRebootFixes.Add($"bcd_{item.Setting.Id}");
-                _settings.AppliedDpcFixes.Add(new AppliedDpcFix
+                // Persist in AppSettings for reboot tracking - transactional (no clobber) and
+                // idempotent (guards mirror the engine's ApplyFix dedup).
+                var fixId = $"bcd_{item.Setting.Id}";
+                SettingsManager.Update(s =>
                 {
-                    FixId = $"bcd_{item.Setting.Id}",
-                    Description = item.Setting.DisplayName,
-                    ActionType = "BcdEdit",
-                    PreviousValue = item.Setting.RevertArgs,
-                    Target = item.Setting.ApplyArgs,
-                    AppliedAt = DateTime.Now,
-                    RequiresReboot = true
+                    if (!s.PendingRebootFixes.Contains(fixId))
+                        s.PendingRebootFixes.Add(fixId);
+                    if (!s.AppliedDpcFixes.Any(f => f.FixId == fixId))
+                        s.AppliedDpcFixes.Add(new AppliedDpcFix
+                        {
+                            FixId = fixId,
+                            Description = item.Setting.DisplayName,
+                            ActionType = "BcdEdit",
+                            PreviousValue = item.Setting.RevertArgs,
+                            Target = item.Setting.ApplyArgs,
+                            AppliedAt = DateTime.Now,
+                            RequiresReboot = true
+                        });
                 });
-                _saveSettings();
             }
         }
     }

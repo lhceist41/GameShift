@@ -23,14 +23,9 @@ public class DpcFixResult
 /// </summary>
 public class DpcFixEngine
 {
-    private readonly AppSettings _settings;
-    private readonly Action _saveSettings;
-
-    public DpcFixEngine(AppSettings settings, Action saveSettings)
-    {
-        _settings = settings;
-        _saveSettings = saveSettings;
-    }
+    // No held AppSettings instance: every read goes through SettingsManager.Load() and every write
+    // through the transactional SettingsManager.Update, so this engine and the DPC Doctor view model
+    // can no longer diverge from each other or clobber other components' settings.
 
     /// <summary>
     /// Applies a fix from the known driver database.
@@ -41,28 +36,34 @@ public class DpcFixEngine
         if (!AdminHelper.IsRunningAsAdmin())
             return new DpcFixResult { Success = false, Message = "Administrator privileges required." };
 
-        // Check if already applied
-        if (_settings.AppliedDpcFixes.Any(f => f.FixId == fix.Id))
+        // Cheap pre-check to avoid running system commands for an already-applied fix. The
+        // authoritative dedup is re-done inside the Update below, under the settings lock.
+        if (SettingsManager.Load().AppliedDpcFixes.Any(f => f.FixId == fix.Id))
             return new DpcFixResult { Success = false, Message = "This fix has already been applied." };
 
         try
         {
-            var result = fix.ActionType switch
+            var (result, applied) = fix.ActionType switch
             {
                 "RegistrySet" => ApplyRegistryFix(fix),
                 "BcdEdit" => ApplyBcdEditFix(fix),
                 "NetshCommand" => ApplyNetshFix(fix),
                 "PowerPlanSetting" => ApplyPowerPlanFix(fix),
                 "SetNetAdapterProperty" => ApplyNetAdapterFix(fix),
-                _ => new DpcFixResult { Success = false, Message = $"Unknown action type: {fix.ActionType}" }
+                _ => (new DpcFixResult { Success = false, Message = $"Unknown action type: {fix.ActionType}" }, (AppliedDpcFix?)null)
             };
 
             if (result.Success)
             {
-                if (fix.RequiresReboot && !_settings.PendingRebootFixes.Contains(fix.Id))
-                    _settings.PendingRebootFixes.Add(fix.Id);
-
-                _saveSettings();
+                // Persist the rollback ledger entry AND the pending-reboot marker in one atomic,
+                // lock-guarded transaction; the in-lambda dedup makes a Load-then-write race a no-op.
+                SettingsManager.Update(s =>
+                {
+                    if (applied != null && !s.AppliedDpcFixes.Any(f => f.FixId == applied.FixId))
+                        s.AppliedDpcFixes.Add(applied);
+                    if (fix.RequiresReboot && !s.PendingRebootFixes.Contains(fix.Id))
+                        s.PendingRebootFixes.Add(fix.Id);
+                });
                 Log.Information("DpcFixEngine: applied fix {FixId} ({Name})", fix.Id, fix.Name);
             }
 
@@ -78,10 +79,14 @@ public class DpcFixEngine
     /// <summary>
     /// Checks whether a quick fix is currently active (for toggle state display).
     /// </summary>
-    public bool IsFixActive(string fixId)
-    {
-        return _settings.AppliedDpcFixes.Any(f => f.FixId == fixId);
-    }
+    public bool IsFixActive(string fixId) => IsFixActive(fixId, SettingsManager.Load());
+
+    /// <summary>
+    /// Checks whether a quick fix is active against an already-loaded settings snapshot, so a caller
+    /// rendering many fixes does not Load() (and log) once per fix.
+    /// </summary>
+    public bool IsFixActive(string fixId, AppSettings settings) =>
+        settings.AppliedDpcFixes.Any(f => f.FixId == fixId);
 
     /// <summary>
     /// Reverts a previously applied fix using stored rollback data.
@@ -91,7 +96,7 @@ public class DpcFixEngine
         if (!AdminHelper.IsRunningAsAdmin())
             return new DpcFixResult { Success = false, Message = "Administrator privileges required." };
 
-        var applied = _settings.AppliedDpcFixes.FirstOrDefault(f => f.FixId == fixId);
+        var applied = SettingsManager.Load().AppliedDpcFixes.FirstOrDefault(f => f.FixId == fixId);
         if (applied == null)
             return new DpcFixResult { Success = false, Message = "Fix not found in applied fixes." };
 
@@ -109,9 +114,11 @@ public class DpcFixEngine
 
             if (result.Success)
             {
-                _settings.AppliedDpcFixes.RemoveAll(f => f.FixId == fixId);
-                _settings.PendingRebootFixes.Remove(fixId);
-                _saveSettings();
+                SettingsManager.Update(s =>
+                {
+                    s.AppliedDpcFixes.RemoveAll(f => f.FixId == fixId);
+                    s.PendingRebootFixes.Remove(fixId);
+                });
                 Log.Information("DpcFixEngine: reverted fix {FixId}", fixId);
             }
 
@@ -126,7 +133,7 @@ public class DpcFixEngine
 
     // -- Registry fixes ────────────────────────────────────────────
 
-    private DpcFixResult ApplyRegistryFix(DriverAutoFix fix)
+    private (DpcFixResult result, AppliedDpcFix? applied) ApplyRegistryFix(DriverAutoFix fix)
     {
         var regPath = fix.RegistryPath!;
 
@@ -135,7 +142,7 @@ public class DpcFixEngine
         {
             var gpuInfo = GpuPciDetector.DetectGpuMsiState();
             if (gpuInfo == null)
-                return new DpcFixResult { Success = false, Message = "No NVIDIA or AMD GPU detected." };
+                return (new DpcFixResult { Success = false, Message = "No NVIDIA or AMD GPU detected." }, null);
 
             regPath = gpuInfo.RegistryPath;
         }
@@ -155,7 +162,7 @@ public class DpcFixEngine
         using (var key = Registry.LocalMachine.CreateSubKey(path))
         {
             if (key == null)
-                return new DpcFixResult { Success = false, Message = $"Failed to create registry key: {path}" };
+                return (new DpcFixResult { Success = false, Message = $"Failed to create registry key: {path}" }, null);
 
             var regKind = fix.RegistryType?.ToUpperInvariant() switch
             {
@@ -172,8 +179,8 @@ public class DpcFixEngine
             key.SetValue(fix.RegistryKey!, regValue, regKind);
         }
 
-        // Store rollback info
-        _settings.AppliedDpcFixes.Add(new AppliedDpcFix
+        // Build the rollback ledger entry; ApplyFix persists it transactionally.
+        var applied = new AppliedDpcFix
         {
             FixId = fix.Id,
             Description = fix.Name,
@@ -182,14 +189,14 @@ public class DpcFixEngine
             Target = $@"HKLM\{path}\{fix.RegistryKey}",
             AppliedAt = DateTime.Now,
             RequiresReboot = fix.RequiresReboot
-        });
+        };
 
-        return new DpcFixResult
+        return (new DpcFixResult
         {
             Success = true,
             Message = fix.RequiresReboot ? "Fix applied. Reboot required." : "Fix applied successfully.",
             RebootRequired = fix.RequiresReboot
-        };
+        }, applied);
     }
 
     private DpcFixResult RevertRegistryFix(AppliedDpcFix applied)
@@ -241,18 +248,18 @@ public class DpcFixEngine
             || command.Contains("disabledynamictick", StringComparison.OrdinalIgnoreCase);
     }
 
-    private DpcFixResult ApplyBcdEditFix(DriverAutoFix fix)
+    private (DpcFixResult result, AppliedDpcFix? applied) ApplyBcdEditFix(DriverAutoFix fix)
     {
         // Forcing the platform timer degrades performance on AMD (HAL event 17, Kernel-Power 508).
         // Refuse to apply it there; RevertBcdEditFix is never gated so a prior value can be removed.
         if (ShouldSkipBcdApply(fix.Command, CpuCapabilities.PlatformTimerTweaksHarmful))
-            return new DpcFixResult { Success = false, Message = "Skipped on AMD: forcing the platform timer degrades performance (Windows logs HAL event 17 and Kernel-Power 508)." };
+            return (new DpcFixResult { Success = false, Message = "Skipped on AMD: forcing the platform timer degrades performance (Windows logs HAL event 17 and Kernel-Power 508)." }, null);
 
         var (success, output) = RunProcess(NativeInterop.SystemExePath("bcdedit.exe"), fix.Command!.Replace("bcdedit ", ""));
         if (!success)
-            return new DpcFixResult { Success = false, Message = $"bcdedit failed: {output}" };
+            return (new DpcFixResult { Success = false, Message = $"bcdedit failed: {output}" }, null);
 
-        _settings.AppliedDpcFixes.Add(new AppliedDpcFix
+        var applied = new AppliedDpcFix
         {
             FixId = fix.Id,
             Description = fix.Name,
@@ -261,9 +268,9 @@ public class DpcFixEngine
             Target = fix.Command,
             AppliedAt = DateTime.Now,
             RequiresReboot = true
-        });
+        };
 
-        return new DpcFixResult { Success = true, Message = "Fix applied. Reboot required.", RebootRequired = true };
+        return (new DpcFixResult { Success = true, Message = "Fix applied. Reboot required.", RebootRequired = true }, applied);
     }
 
     private DpcFixResult RevertBcdEditFix(AppliedDpcFix applied)
@@ -282,13 +289,13 @@ public class DpcFixEngine
 
     // -- Netsh fixes ───────────────────────────────────────────────
 
-    private DpcFixResult ApplyNetshFix(DriverAutoFix fix)
+    private (DpcFixResult result, AppliedDpcFix? applied) ApplyNetshFix(DriverAutoFix fix)
     {
         var (success, output) = RunProcess(NativeInterop.SystemExePath("netsh.exe"), fix.Command!.Replace("netsh ", ""));
         if (!success)
-            return new DpcFixResult { Success = false, Message = $"netsh failed: {output}" };
+            return (new DpcFixResult { Success = false, Message = $"netsh failed: {output}" }, null);
 
-        _settings.AppliedDpcFixes.Add(new AppliedDpcFix
+        var applied = new AppliedDpcFix
         {
             FixId = fix.Id,
             Description = fix.Name,
@@ -297,9 +304,9 @@ public class DpcFixEngine
             Target = fix.Command,
             AppliedAt = DateTime.Now,
             RequiresReboot = fix.RequiresReboot
-        });
+        };
 
-        return new DpcFixResult { Success = true, Message = "Fix applied.", RebootRequired = fix.RequiresReboot };
+        return (new DpcFixResult { Success = true, Message = "Fix applied.", RebootRequired = fix.RequiresReboot }, applied);
     }
 
     private DpcFixResult RevertNetshFix(AppliedDpcFix applied)
@@ -317,7 +324,7 @@ public class DpcFixEngine
     private const string HighPerformanceGuid = "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c";
     private const string UltimatePerformanceGuid = "e9a42b02-d5df-448d-aa00-03f14749eb61";
 
-    private DpcFixResult ApplyPowerPlanFix(DriverAutoFix fix)
+    private (DpcFixResult result, AppliedDpcFix? applied) ApplyPowerPlanFix(DriverAutoFix fix)
     {
         if (fix.Value == "high_performance")
         {
@@ -342,13 +349,13 @@ public class DpcFixEngine
             // if neither exists, duplicate from the hidden Ultimate Performance template.
             var targetGuid = FindOrCreatePerformancePlan();
             if (targetGuid == null)
-                return new DpcFixResult { Success = false, Message = "Could not find or create a High Performance power plan." };
+                return (new DpcFixResult { Success = false, Message = "Could not find or create a High Performance power plan." }, null);
 
             var (success, output) = RunProcess(NativeInterop.SystemExePath("powercfg.exe"), $"/setactive {targetGuid}");
             if (!success)
-                return new DpcFixResult { Success = false, Message = $"powercfg failed: {output}" };
+                return (new DpcFixResult { Success = false, Message = $"powercfg failed: {output}" }, null);
 
-            _settings.AppliedDpcFixes.Add(new AppliedDpcFix
+            var planApplied = new AppliedDpcFix
             {
                 FixId = fix.Id,
                 Description = fix.Name,
@@ -357,9 +364,9 @@ public class DpcFixEngine
                 Target = targetGuid,
                 AppliedAt = DateTime.Now,
                 RequiresReboot = false
-            });
+            };
 
-            return new DpcFixResult { Success = true, Message = "High Performance power plan activated." };
+            return (new DpcFixResult { Success = true, Message = "High Performance power plan activated." }, planApplied);
         }
 
         // USB selective suspend or other power plan sub-setting
@@ -387,12 +394,12 @@ public class DpcFixEngine
 
         var (sSuccess, sOutput) = RunProcess(NativeInterop.SystemExePath("powercfg.exe"), $"/setacvalueindex SCHEME_CURRENT {subgroup} {setting} {value}");
         if (!sSuccess)
-            return new DpcFixResult { Success = false, Message = $"powercfg failed: {sOutput}" };
+            return (new DpcFixResult { Success = false, Message = $"powercfg failed: {sOutput}" }, null);
 
         // Apply the change
         RunProcess(NativeInterop.SystemExePath("powercfg.exe"), "/setactive SCHEME_CURRENT");
 
-        _settings.AppliedDpcFixes.Add(new AppliedDpcFix
+        var subApplied = new AppliedDpcFix
         {
             FixId = fix.Id,
             Description = fix.Name,
@@ -401,9 +408,9 @@ public class DpcFixEngine
             Target = $"{subgroup}|{setting}",
             AppliedAt = DateTime.Now,
             RequiresReboot = false
-        });
+        };
 
-        return new DpcFixResult { Success = true, Message = "Power plan setting applied." };
+        return (new DpcFixResult { Success = true, Message = "Power plan setting applied." }, subApplied);
     }
 
     private DpcFixResult RevertPowerPlanFix(AppliedDpcFix applied)
@@ -522,7 +529,7 @@ public class DpcFixEngine
 
     // -- Network adapter fixes ─────────────────────────────────────
 
-    private DpcFixResult ApplyNetAdapterFix(DriverAutoFix fix)
+    private (DpcFixResult result, AppliedDpcFix? applied) ApplyNetAdapterFix(DriverAutoFix fix)
     {
         var property = fix.Property ?? "";
         var value = fix.Value ?? "0";
@@ -531,7 +538,7 @@ public class DpcFixEngine
         if (!int.TryParse(value, out _))
         {
             Log.Warning("[DpcFix] Rejecting non-numeric adapter value: {Value}", value);
-            return new DpcFixResult { Success = false, Message = $"Invalid non-numeric adapter value: {value}" };
+            return (new DpcFixResult { Success = false, Message = $"Invalid non-numeric adapter value: {value}" }, null);
         }
 
         // Query current value from the first physical adapter that has this property
@@ -542,7 +549,7 @@ public class DpcFixEngine
         var (success, output) = RunProcess(NativeInterop.SystemExePath("WindowsPowerShell\\v1.0\\powershell.exe"), $"-NoProfile -Command \"{script}\"");
 
         // Store rollback with the actual previous value
-        _settings.AppliedDpcFixes.Add(new AppliedDpcFix
+        var applied = new AppliedDpcFix
         {
             FixId = fix.Id,
             Description = fix.Name,
@@ -551,13 +558,13 @@ public class DpcFixEngine
             Target = property,
             AppliedAt = DateTime.Now,
             RequiresReboot = false
-        });
+        };
 
-        return new DpcFixResult
+        return (new DpcFixResult
         {
             Success = true,  // PowerShell with SilentlyContinue doesn't fail on adapters that lack the property
             Message = "Network adapter property updated on all physical adapters."
-        };
+        }, applied);
     }
 
     private DpcFixResult RevertNetAdapterFix(AppliedDpcFix applied)

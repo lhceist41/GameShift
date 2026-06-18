@@ -19,14 +19,11 @@ public partial class DpcDoctorPage : Page
     {
         if (DataContext != null) return;
 
-        var settings = GameShift.Core.Config.SettingsManager.Load();
         var vm = new DpcDoctorViewModel(
             App.Services.DpcTrace,
             App.Services.DpcFix,
             App.Services.DriverDb,
-            App.Services.DpcMon,
-            settings,
-            () => GameShift.Core.Config.SettingsManager.Save(settings));
+            App.Services.DpcMon);
 
         vm.FixApplied += OnFixApplied;
         vm.RebootRequested += OnRebootRequested;

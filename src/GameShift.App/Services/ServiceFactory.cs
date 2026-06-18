@@ -61,7 +61,7 @@ public static class ServiceFactory
         // Load known driver database and create DPC Doctor services
         services.DriverDb = KnownDriverDatabase.Load();
         services.DpcTrace = new DpcTraceEngine(services.DriverDb);
-        services.DpcFix = new DpcFixEngine(settings, () => SettingsManager.Save(settings));
+        services.DpcFix = new DpcFixEngine();
 
         // Quick hardware detection for conditional game optimizations
         writeDiag("Step c5: Quick hardware detection...");
