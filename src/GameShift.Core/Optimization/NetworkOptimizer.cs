@@ -12,8 +12,8 @@ namespace GameShift.Core.Optimization;
 
 /// <summary>
 /// Reduces network latency by disabling Nagle's algorithm, stopping Delivery Optimization service,
-/// disabling network throttling, optimizing NIC adapter settings (Interrupt Moderation, LSO, RSC),
-/// and disabling Receive Segment Coalescing system-wide.
+/// optimizing NIC adapter settings (Interrupt Moderation, LSO, RSC), and disabling Receive
+/// Segment Coalescing system-wide.
 ///
 /// Implements IJournaledOptimization so the watchdog can restore the full TCP/NIC/service state
 /// from the journal after a crash. The originalState dictionary uses typed key prefixes so a
@@ -26,11 +26,6 @@ public class NetworkOptimizer : IOptimization, IJournaledOptimization
 
     private const string TcpipInterfacesPath = @"SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces";
     private const string DoSvcServiceName = "DoSvc";
-
-    // Task 1: Multimedia throttling registry path
-    private const string MultimediaSystemProfilePath = @"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile";
-    private const string NetworkThrottlingIndexName = "NetworkThrottlingIndex";
-    private const string SystemResponsivenessName = "SystemResponsiveness";
 
     // Tasks 2-4: Network adapter class registry path
     private const string NetworkClassBasePath = @"SYSTEM\CurrentControlSet\Control\Class\{4d36e972-e325-11ce-bfc1-08002be10318}";
@@ -135,9 +130,6 @@ public class NetworkOptimizer : IOptimization, IJournaledOptimization
             // Stop Delivery Optimization service
             StopDeliveryOptimization(snapshot);
 
-            // Task 1: Disable multimedia network throttling + set system responsiveness
-            ApplyMultimediaThrottling(snapshot);
-
             // Tasks 2-4: Optimize NIC adapters (interrupt moderation, LSO, RSC registry)
             OptimizeNetworkAdapters(snapshot);
 
@@ -195,9 +187,6 @@ public class NetworkOptimizer : IOptimization, IJournaledOptimization
             // Restart Delivery Optimization if it was running
             RestartDeliveryOptimization();
 
-            // Task 1: Restore multimedia throttling
-            RevertMultimediaThrottling();
-
             // Tasks 2-4: Restore NIC adapter settings
             RevertNetworkAdapters();
 
@@ -221,8 +210,10 @@ public class NetworkOptimizer : IOptimization, IJournaledOptimization
     }
 
     /// <summary>
-    /// Confirms the applied network changes are still in effect by spot-checking
-    /// the multimedia throttling values (a fast, single-key sample).
+    /// Confirms the applied network changes are still in effect by spot-checking the first
+    /// modified Nagle interface. The MMCSS SystemProfile values (NetworkThrottlingIndex /
+    /// SystemResponsiveness) are owned solely by SessionSystemTweaksOptimizer and are
+    /// intentionally not checked here.
     /// Returns true if applied values are still present on the system.
     /// </summary>
     public bool Verify()
@@ -232,15 +223,6 @@ public class NetworkOptimizer : IOptimization, IJournaledOptimization
 
         try
         {
-            using var key = Registry.LocalMachine.OpenSubKey(MultimediaSystemProfilePath);
-            if (key?.GetValue(NetworkThrottlingIndexName) is not int throttling)
-                return false;
-            if (throttling != unchecked((int)0xFFFFFFFF))
-                return false;
-
-            if (key.GetValue(SystemResponsivenessName) is not int responsiveness || responsiveness != 10)
-                return false;
-
             // Spot-check the first modified Nagle interface (if any were recorded)
             if (_modifiedInterfaceIds.Count > 0)
             {
@@ -413,75 +395,6 @@ public class NetworkOptimizer : IOptimization, IJournaledOptimization
         {
             // Service may not exist or be accessible - not critical
             _logger.Debug(ex, "[NetworkOptimizer] Failed to stop Delivery Optimization service");
-        }
-    }
-
-    // ── Task 1: Multimedia Throttling + SystemResponsiveness ──────────────────
-
-    /// <summary>
-    /// Disables multimedia network throttling by setting NetworkThrottlingIndex to 0xFFFFFFFF
-    /// and reduces CPU reservation for background tasks via SystemResponsiveness = 10.
-    /// </summary>
-    private void ApplyMultimediaThrottling(SystemStateSnapshot? snapshot)
-    {
-        try
-        {
-            using var key = Registry.LocalMachine.OpenSubKey(MultimediaSystemProfilePath, writable: true);
-            if (key == null)
-            {
-                _logger.Warning("[NetworkOptimizer] Multimedia SystemProfile registry key not found");
-                return;
-            }
-
-            string regPath = $@"HKLM\{MultimediaSystemProfilePath}";
-
-            // NetworkThrottlingIndex: store original, set to 0xFFFFFFFF (disabled)
-            object? currentThrottling = key.GetValue(NetworkThrottlingIndexName);
-            RecordRegistry(regPath, NetworkThrottlingIndexName, currentThrottling);
-            snapshot?.RecordRegistryValue(regPath, NetworkThrottlingIndexName,
-                currentThrottling ?? "__NOT_SET__");
-            key.SetValue(NetworkThrottlingIndexName, unchecked((int)0xFFFFFFFF), RegistryValueKind.DWord);
-            _logger.Information(
-                "[NetworkOptimizer] Set NetworkThrottlingIndex to 0xFFFFFFFF (was {Original})",
-                currentThrottling ?? "not set");
-
-            // SystemResponsiveness: store original, set to 10 (minimum background reservation)
-            object? currentResponsiveness = key.GetValue(SystemResponsivenessName);
-            RecordRegistry(regPath, SystemResponsivenessName, currentResponsiveness);
-            snapshot?.RecordRegistryValue(regPath, SystemResponsivenessName,
-                currentResponsiveness ?? "__NOT_SET__");
-            key.SetValue(SystemResponsivenessName, 10, RegistryValueKind.DWord);
-            _logger.Information(
-                "[NetworkOptimizer] Set SystemResponsiveness to 10 (was {Original})",
-                currentResponsiveness ?? "not set");
-        }
-        catch (Exception ex)
-        {
-            _logger.Warning(ex, "[NetworkOptimizer] Failed to apply multimedia throttling settings");
-        }
-    }
-
-    /// <summary>
-    /// Restores original NetworkThrottlingIndex and SystemResponsiveness values from the in-memory
-    /// original state.
-    /// </summary>
-    private void RevertMultimediaThrottling()
-    {
-        try
-        {
-            string regPath = $@"HKLM\{MultimediaSystemProfilePath}";
-
-            using var key = Registry.LocalMachine.OpenSubKey(MultimediaSystemProfilePath, writable: true);
-            if (key == null) return;
-
-            RestoreRegistryDwordFromState(key, regPath, NetworkThrottlingIndexName);
-            RestoreRegistryDwordFromState(key, regPath, SystemResponsivenessName);
-
-            _logger.Information("[NetworkOptimizer] Restored multimedia throttling settings");
-        }
-        catch (Exception ex)
-        {
-            _logger.Warning(ex, "[NetworkOptimizer] Failed to revert multimedia throttling settings");
         }
     }
 

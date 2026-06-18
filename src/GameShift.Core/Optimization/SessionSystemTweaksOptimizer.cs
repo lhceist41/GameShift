@@ -284,7 +284,12 @@ public class SessionSystemTweaksOptimizer : IOptimization, IJournaledOptimizatio
 
     private void Apply9A_MmcssProfile()
     {
-        // Parent profile: network throttling + system responsiveness
+        // Parent profile: network throttling + system responsiveness. This module is the SOLE
+        // session-scoped owner of these two SystemProfile values; NetworkOptimizer deliberately
+        // does NOT write them. Because this module is always-on (no per-profile toggle) it sets
+        // them in every session regardless of whether NetworkOptimizer is enabled, so a single
+        // clean capture/restore replaces the old order-dependent double-capture that two session
+        // writers of the same key caused.
         SetHklmDword(MmcssProfilePath, "NetworkThrottlingIndex", unchecked((int)0xFFFFFFFF));
         SetHklmDword(MmcssProfilePath, "SystemResponsiveness", 10);
 
