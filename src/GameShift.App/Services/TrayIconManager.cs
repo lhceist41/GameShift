@@ -524,8 +524,10 @@ public class TrayIconManager : IDisposable
     {
         try
         {
+            // Persist only this field transactionally. Saving the whole held _settings snapshot
+            // (taken at startup) would clobber any other settings changed elsewhere since then.
             _settings.QuickSwitchProfileId = profile.Id;
-            SettingsManager.Save(_settings);
+            SettingsManager.Update(s => s.QuickSwitchProfileId = profile.Id);
 
             if (_orchestrator.IsOptimizing)
             {
