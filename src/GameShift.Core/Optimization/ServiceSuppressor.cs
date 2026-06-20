@@ -476,6 +476,16 @@ public class ServiceSuppressor : IOptimization, IJournaledOptimization
         return result;
     }
 
+    // Slow services - SysMain (SuperFetch) in particular - can take well over 10 seconds to
+    // reach Running after a stop, and the Service Control Manager may abort a START_PENDING that
+    // exceeds its wait hint under revert-time load, dropping the service back to Stopped. A single
+    // Start() + 10s wait therefore left SysMain stopped after a session (caught by the
+    // revert-symmetry harness). Retry the start with a generous per-attempt wait so a slow or
+    // SCM-aborted start is recovered before revert returns.
+    private const int RestartMaxAttempts = 3;
+    private static readonly TimeSpan RestartWaitPerAttempt = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan RestartRetryDelay = TimeSpan.FromSeconds(2);
+
     private static void RestartServices(IReadOnlyList<string> serviceNames)
     {
         int restartedCount = 0;
@@ -483,53 +493,84 @@ public class ServiceSuppressor : IOptimization, IJournaledOptimization
 
         foreach (var name in serviceNames)
         {
-            try
-            {
-                using var sc = new ServiceController(name);
-
-                // Only restart if currently stopped
-                if (sc.Status == ServiceControllerStatus.Stopped)
-                {
-                    SettingsManager.Logger.Debug(
-                        "[ServiceSuppressor] Restarting service {ServiceName}", name);
-
-                    sc.Start();
-                    sc.WaitForStatus(ServiceControllerStatus.Running, TimeSpan.FromSeconds(10));
-
-                    SettingsManager.Logger.Information(
-                        "[ServiceSuppressor] Successfully restarted service {ServiceName}", name);
-
-                    restartedCount++;
-                }
-                else
-                {
-                    SettingsManager.Logger.Debug(
-                        "[ServiceSuppressor] Service {ServiceName} already running (status: {Status})", name, sc.Status);
-                }
-            }
-            catch (InvalidOperationException ex)
-            {
-                SettingsManager.Logger.Warning(
-                    "[ServiceSuppressor] Service {ServiceName} not found during revert: {Message}", name, ex.Message);
+            if (TryRestartService(name))
+                restartedCount++;
+            else
                 errorCount++;
-            }
-            catch (global::System.ServiceProcess.TimeoutException ex)
-            {
-                SettingsManager.Logger.Warning(
-                    "[ServiceSuppressor] Service {ServiceName} failed to start within timeout: {Message}", name, ex.Message);
-                errorCount++;
-            }
-            catch (Exception ex)
-            {
-                SettingsManager.Logger.Warning(
-                    ex, "[ServiceSuppressor] Failed to restart service {ServiceName}", name);
-                errorCount++;
-            }
         }
 
         SettingsManager.Logger.Information(
             "[ServiceSuppressor] Revert completed - {RestartedCount} restarted, {ErrorCount} errors",
             restartedCount, errorCount);
+    }
+
+    /// <summary>
+    /// Restarts a single stopped service, retrying so a slow or SCM-aborted start (SysMain in
+    /// particular) still reaches Running before revert returns. Returns true once the service is
+    /// confirmed Running (or was already Running); false only if every attempt failed. A service
+    /// that no longer exists is a non-restartable error and is not retried, matching prior behavior.
+    /// </summary>
+    private static bool TryRestartService(string name)
+    {
+        for (int attempt = 1; attempt <= RestartMaxAttempts; attempt++)
+        {
+            try
+            {
+                using var sc = new ServiceController(name);
+
+                if (sc.Status == ServiceControllerStatus.Running)
+                {
+                    if (attempt > 1)
+                        SettingsManager.Logger.Information(
+                            "[ServiceSuppressor] Service {ServiceName} reached Running on attempt {Attempt}", name, attempt);
+                    else
+                        SettingsManager.Logger.Debug(
+                            "[ServiceSuppressor] Service {ServiceName} already running", name);
+                    return true;
+                }
+
+                // Only issue Start() when fully stopped; a StartPending service is already coming
+                // up, so just wait for it (a second Start() on a pending service throws).
+                if (sc.Status == ServiceControllerStatus.Stopped)
+                {
+                    SettingsManager.Logger.Debug(
+                        "[ServiceSuppressor] Restarting service {ServiceName} (attempt {Attempt})", name, attempt);
+                    sc.Start();
+                }
+
+                sc.WaitForStatus(ServiceControllerStatus.Running, RestartWaitPerAttempt);
+
+                SettingsManager.Logger.Information(
+                    "[ServiceSuppressor] Successfully restarted service {ServiceName}", name);
+                return true;
+            }
+            catch (InvalidOperationException ex)
+            {
+                // Service doesn't exist on this system - not restartable, do not retry.
+                SettingsManager.Logger.Warning(
+                    "[ServiceSuppressor] Service {ServiceName} not found during revert: {Message}", name, ex.Message);
+                return false;
+            }
+            catch (global::System.ServiceProcess.TimeoutException ex)
+            {
+                SettingsManager.Logger.Warning(
+                    "[ServiceSuppressor] Service {ServiceName} did not reach Running within timeout (attempt {Attempt}/{Max}): {Message}",
+                    name, attempt, RestartMaxAttempts, ex.Message);
+            }
+            catch (Exception ex)
+            {
+                SettingsManager.Logger.Warning(
+                    ex, "[ServiceSuppressor] Failed to restart service {ServiceName} (attempt {Attempt}/{Max})",
+                    name, attempt, RestartMaxAttempts);
+            }
+
+            if (attempt < RestartMaxAttempts)
+                global::System.Threading.Thread.Sleep(RestartRetryDelay);
+        }
+
+        SettingsManager.Logger.Warning(
+            "[ServiceSuppressor] Service {ServiceName} could not be restarted after {Max} attempts", name, RestartMaxAttempts);
+        return false;
     }
 
     private sealed class ServiceRevertPayload
