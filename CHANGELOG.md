@@ -2,7 +2,7 @@
 
 All notable changes to GameShift are documented here.
 
-## [Unreleased]
+## [3.8.7] - 2026-06-20
 
 ### Fixed
 
@@ -15,6 +15,7 @@ All notable changes to GameShift are documented here.
 - **Settings changes no longer overwrite one another** - the tray Quick Switch, the DPC Doctor page, and the DPC fix engine each held a copy of all settings taken at startup and wrote the whole copy back when changing a single value, which could silently discard unrelated settings changed elsewhere since launch. The DPC Doctor and the DPC fix engine additionally held two separate copies that could drift apart and overwrite each other's applied-fix and pending-reboot tracking. They now read settings fresh and persist each change transactionally - one field at a time, under a shared lock - so concurrent settings changes are preserved and the two DPC components can no longer disagree about which fixes are applied.
 - **Suppressed services are reliably restarted after a game** - when GameShift stopped non-essential services for a session, the revert issued a single start with a 10-second wait. A slow service, notably SysMain (SuperFetch), can take longer than that to reach Running, and Windows can abort a start that exceeds its wait hint under the load of many services restarting at once, leaving the service stopped until the next reboot. The revert now retries the start with a longer per-service wait, so a slow or briefly-aborted service is brought back up before the session revert completes.
 - **Two session optimizers no longer fight over the PCIe ASPM power setting** - both the power-plan switcher and Session System Tweaks wrote PCIe Active State Power Management to the active power plan, each capturing its own pre-session value. Because the power-plan switcher runs first, the always-on tweak captured the already-disabled value as its baseline, so (exactly like the MMCSS values) a clean revert depended on module order and a partial revert could leave PCIe ASPM disabled after a game closed. Session System Tweaks (which always runs) is now the single session owner of PCIe ASPM and the power-plan switcher no longer writes it; the value set during a session is unchanged, but the revert is now correct regardless of module order.
+- **Quick Optimize no longer shows a phantom "1 failed"** - on AMD X3D and hybrid Intel CPUs, the Hybrid CPU Optimizer counted a Quick Optimize run (which has no running game to pin to specific cores) as a failed optimization, so the dashboard reported a failure that never actually occurred. A run with no live game process is now correctly treated as a successful no-op, leaving nothing applied and nothing to revert.
 
 ### Changed
 
