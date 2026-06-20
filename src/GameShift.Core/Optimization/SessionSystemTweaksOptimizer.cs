@@ -45,7 +45,11 @@ public class SessionSystemTweaksOptimizer : IOptimization, IJournaledOptimizatio
     private const string HidClassPath =
         @"SYSTEM\CurrentControlSet\Control\Class\{745A17A0-74D3-11D0-B6FE-00A0C90F57DA}";
 
-    // PCIe ASPM powercfg GUIDs
+    // PCIe ASPM powercfg GUIDs. This always-on optimizer is the SOLE session owner of the PCIe
+    // ASPM powercfg setting: PowerPlanSwitcher (toggleable via SwitchPowerPlan, runs first)
+    // deliberately omits ASPM from its SessionOverrides so only one module captures/restores it,
+    // avoiding the dual-writer revert asymmetry fixed for MMCSS in 2e17176. Do not also write this
+    // setting from PowerPlanSwitcher.
     private const string PcieSubgroupGuid = "501a4d13-42af-4429-9fd1-a8218c268e20";
     private const string AspmSettingGuid = "ee12f906-d277-404b-b6da-e5fa1a576df5";
 

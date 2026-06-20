@@ -48,13 +48,19 @@ public class PowerPlanSwitcher : IOptimization, IJournaledOptimization
 
     private const string SubProcessor = "54533251-82be-4824-96c1-47b60b740d00";
     private const string SubUsb = "2a737441-1930-4402-8d77-b2bebba308a3";
-    private const string SubPciExpress = "501a4d13-42af-4429-9fd1-a8218c268e20";
     private const string SubDisk = "0012ee47-9041-4b5d-9b77-535fba8b1442";
     private const string SubWireless = "19cbb8fa-5279-450e-9fac-8a3d5fedd0c1";
 
     /// <summary>
-    /// The eight session power sub-settings GameShift overrides during a gaming session.
+    /// The seven session power sub-settings GameShift overrides during a gaming session.
     /// Each entry is applied to SCHEME_CURRENT via powercfg after switching plans.
+    ///
+    /// PCIe ASPM is deliberately NOT in this list: it is owned solely by the always-on
+    /// SessionSystemTweaksOptimizer. This module is toggleable (SwitchPowerPlan) and runs first, so
+    /// if both wrote PCIe ASPM the always-on tweak (which runs last) would capture this module's
+    /// already-applied value as its "original" baseline - the same dual-writer revert asymmetry
+    /// that was fixed for the MMCSS SystemProfile values in commit 2e17176. Keeping a single owner
+    /// makes ASPM revert order- and partial-revert-independent.
     /// </summary>
     private static readonly (string SubGroup, string Setting, int Value, string Description)[] SessionOverrides =
     {
@@ -67,8 +73,6 @@ public class PowerPlanSwitcher : IOptimization, IJournaledOptimization
         (SubUsb, "48e6b7a6-50f5-4782-a5d4-53bb8f07e226", 0, "USB selective suspend"),
         // USB 3 link power = off
         (SubUsb, "d4e98f31-5ffe-4ce1-be31-1b38b384c009", 0, "USB 3 link power"),
-        // PCI Express ASPM = off
-        (SubPciExpress, "ee12f906-d277-404b-b6da-e5fa1a576df5", 0, "PCIe ASPM"),
         // NVMe primary idle timeout = 0
         (SubDisk, "d639518a-e56d-4345-8af2-b9f32fb26109", 0, "NVMe idle timeout"),
         // Wireless power saving = max performance
