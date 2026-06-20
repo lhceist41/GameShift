@@ -150,6 +150,21 @@ public class HybridCpuDetector : IOptimization, IJournaledOptimization
                 return AppliedWithIfeoState(originalJson: EmptyIfeoStateJson(), appliedJson: EmptyIfeoStateJson());
             }
 
+            // No live game process (e.g. Quick Optimize, profile.ProcessId == 0): for a
+            // non-anti-cheat profile the only mechanism is a live per-process CPU-set pin, which has
+            // nothing to act on without a PID. Treat that as a no-op success rather than a failure -
+            // mirrors the no-game guard added to ProcessPriorityBooster in 43a3cbf, so Quick Optimize
+            // does not report a false "1 failed" on X3D / hybrid CPUs. Anti-cheat profiles
+            // (RequiresIfeoFallback) still run: their IFEO fallback pins by executable name and needs
+            // no running process.
+            if (profile.ProcessId <= 0 && !profile.RequiresIfeoFallback)
+            {
+                SettingsManager.Logger.Information(
+                    "[HybridCpuDetector] No live game process to pin (e.g. Quick Optimize); skipping per-process CPU-set pinning");
+                IsApplied = true;
+                return AppliedWithIfeoState(originalJson: EmptyIfeoStateJson(), appliedJson: EmptyIfeoStateJson());
+            }
+
             bool success;
             if (profile.RequiresIfeoFallback)
             {
