@@ -708,8 +708,10 @@ public class DpcFixEngine
 
         return (new DpcFixResult
         {
-            Success = true,  // PowerShell with SilentlyContinue doesn't fail on adapters that lack the property
-            Message = "Network adapter property updated on all physical adapters."
+            // -ErrorAction SilentlyContinue means a property missing on some adapters is not a failure
+            // (exit code stays 0); only a genuine failure (non-zero exit / process did not run) is reported.
+            Success = success,
+            Message = success ? "Network adapter property updated on all physical adapters." : $"Update failed: {output}"
         }, applied);
     }
 
@@ -734,7 +736,14 @@ public class DpcFixEngine
 
         var script = $"Get-NetAdapter -Physical | Set-NetAdapterAdvancedProperty -RegistryKeyword '{applied.Target}' -RegistryValue {revertValue} -ErrorAction SilentlyContinue";
         var (success, output) = RunProcess(NativeInterop.SystemExePath("WindowsPowerShell\\v1.0\\powershell.exe"), $"-NoProfile -Command \"{script}\"");
-        return new DpcFixResult { Success = true, Message = "Network adapter property reverted." };
+        // Report the real result. -ErrorAction SilentlyContinue means a property missing on some
+        // adapters is not a failure (exit code stays 0); but a genuine failure must be surfaced so the
+        // rollback entry is kept for a retry instead of being silently dropped from the ledger.
+        return new DpcFixResult
+        {
+            Success = success,
+            Message = success ? "Network adapter property reverted." : $"Revert failed: {output}"
+        };
     }
 
     /// <summary>
