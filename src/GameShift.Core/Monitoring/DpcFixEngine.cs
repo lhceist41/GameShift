@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.RegularExpressions;
 using Microsoft.Win32;
 using GameShift.Core.Config;
 using GameShift.Core.System;
@@ -131,6 +132,118 @@ public class DpcFixEngine
         }
     }
 
+    // ── Ledger input validation (security) ─────────────────────────────────────
+    // The rollback ledger (AppSettings.AppliedDpcFixes) is persisted to the per-user, user-writable
+    // %AppData%\GameShift\settings.json. Revert runs elevated and feeds ledger fields (Target /
+    // PreviousValue) into PowerShell, bcdedit, netsh, powercfg, and registry writes. Without
+    // validation a tampered entry is a local privilege escalation - e.g. a single-quote breakout in
+    // the -RegistryKeyword value yields arbitrary elevated PowerShell. Every ledger value used in an
+    // elevated action is validated here against the exact shapes GameShift itself produces (see
+    // Resources/known-drivers.json); anything else is refused and the action does not run. Pure, so
+    // unit-tested independently of the admin-gated execution paths.
+
+    // Net adapter advanced-property registry keywords are alphanumeric and may start with '*'
+    // (e.g. *InterruptModeration, *EEE). With no quotes/spaces/metacharacters they are safe to
+    // interpolate into a PowerShell -Command.
+    private static readonly Regex NetAdapterKeywordPattern =
+        new(@"^\*?[A-Za-z0-9]{1,64}$", RegexOptions.Compiled);
+
+    // A plain integer literal - the only thing ever passed as a -RegistryValue / powercfg value.
+    private static readonly Regex IntegerLiteralPattern =
+        new(@"^-?[0-9]{1,19}$", RegexOptions.Compiled);
+
+    // bcdedit reverts GameShift generates only ever target the two platform-timer elements it can set
+    // (disabledynamictick = Disable Dynamic Tick, useplatformtick = Disable HPET). The element name is
+    // ALLOWLISTED, not merely shape-checked, so a tampered ledger cannot revert into e.g.
+    // "/set nointegritychecks on" (disabling driver-signature enforcement) or "/set safeboot minimal".
+    private static readonly Regex BcdRevertArgsPattern =
+        new(@"^/(set|deletevalue)\s+(disabledynamictick|useplatformtick)(\s+[A-Za-z0-9]{1,16})?$",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    // A single netsh argument token (int, ip, set, global, taskoffload=enabled, ...). Excludes path
+    // separators and quotes; the leading context is additionally allowlisted in IsSafeNetshRevertArgs.
+    private static readonly Regex NetshTokenPattern =
+        new(@"^[A-Za-z0-9=._-]{1,64}$", RegexOptions.Compiled);
+
+    // Registry value path: a well-formed HKLM path (PCI instance keys contain '&' and spaces).
+    private static readonly Regex RegistryTargetCharsPattern =
+        new(@"^[A-Za-z0-9 _\\{}().&-]{1,256}$", RegexOptions.Compiled);
+
+    // The exact registry targets GameShift's RegistrySet fixes write. The two static keys are matched
+    // exactly; the per-device MSI-mode key has a machine-specific PCI instance path in the middle but a
+    // fixed Enum\ root and a fixed value-name suffix. Restricting reverts to these prevents a tampered
+    // ledger from redirecting the elevated write to a Run key, a service ImagePath, IFEO, ConfigFlags,
+    // or a device's Service binding under Enum\.
+    private const string GraphicsDriversHwSchModeTarget =
+        @"HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers\HwSchMode";
+    private const string DwmOverlayTestModeTarget =
+        @"HKLM\SOFTWARE\Microsoft\Windows\Dwm\OverlayTestMode";
+    private const string MsiModeEnumPrefix =
+        @"HKLM\SYSTEM\CurrentControlSet\Enum\";
+    private const string MsiModeValueSuffix =
+        @"\Device Parameters\Interrupt Management\MessageSignaledInterruptProperties\MSISupported";
+
+    internal static bool IsValidNetAdapterKeyword(string? keyword) =>
+        keyword != null && NetAdapterKeywordPattern.IsMatch(keyword);
+
+    internal static bool IsIntegerValue(string? value) =>
+        value != null && IntegerLiteralPattern.IsMatch(value);
+
+    /// <summary>Validates the bcdedit argument string (after the leading "bcdedit " is stripped).</summary>
+    internal static bool IsSafeBcdRevertArgs(string? args) =>
+        args != null && BcdRevertArgsPattern.IsMatch(args);
+
+    /// <summary>
+    /// Validates the netsh argument string (after the leading "netsh " is stripped). GameShift only
+    /// ever applies TCP/IP global settings (e.g. "int ip set global taskoffload=enabled"), so the
+    /// leading context is allowlisted - not just the character set - to keep a tampered ledger from
+    /// reverting into "advfirewall set ...", "firewall set opmode disable", "int portproxy add ...",
+    /// "add helper x.dll", etc.
+    /// </summary>
+    internal static bool IsSafeNetshRevertArgs(string? args)
+    {
+        if (string.IsNullOrWhiteSpace(args) || args.Length > 256) return false;
+        var tokens = args.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (tokens.Length < 5) return false;
+        if (!tokens[0].Equals("int", StringComparison.OrdinalIgnoreCase)) return false;
+        if (!tokens[1].Equals("ip", StringComparison.OrdinalIgnoreCase) &&
+            !tokens[1].Equals("tcp", StringComparison.OrdinalIgnoreCase)) return false;
+        if (!tokens[2].Equals("set", StringComparison.OrdinalIgnoreCase)) return false;
+        if (!tokens[3].Equals("global", StringComparison.OrdinalIgnoreCase)) return false;
+        return tokens.All(NetshTokenPattern.IsMatch);
+    }
+
+    /// <summary>
+    /// True only for one of the exact registry targets GameShift's RegistrySet fixes write: the
+    /// GraphicsDrivers\HwSchMode and Dwm\OverlayTestMode keys, or a per-device MSI-mode key under the
+    /// Enum\ root ending exactly at ...\MessageSignaledInterruptProperties\MSISupported. Anything else
+    /// (including other keys under Enum\) is refused.
+    /// </summary>
+    internal static bool IsAllowedRegistryRevertTarget(string? target)
+    {
+        if (string.IsNullOrEmpty(target) || target.Length > 256) return false;
+        if (!RegistryTargetCharsPattern.IsMatch(target)) return false;
+        if (target.Contains("..")) return false;
+        if (target.Equals(GraphicsDriversHwSchModeTarget, StringComparison.OrdinalIgnoreCase)) return true;
+        if (target.Equals(DwmOverlayTestModeTarget, StringComparison.OrdinalIgnoreCase)) return true;
+        return target.StartsWith(MsiModeEnumPrefix, StringComparison.OrdinalIgnoreCase)
+            && target.EndsWith(MsiModeValueSuffix, StringComparison.OrdinalIgnoreCase)
+            && target.Length > MsiModeEnumPrefix.Length + MsiModeValueSuffix.Length;
+    }
+
+    /// <summary>
+    /// Strips a single leading "bcdedit "/"netsh " prefix to recover the bare argument string. Unlike
+    /// String.Replace (which removes every occurrence and so could be steered by an attacker), this
+    /// only removes one leading, trimmed occurrence and leaves the remainder untouched for validation.
+    /// </summary>
+    internal static string StripLeadingTool(string command, string toolPrefix)
+    {
+        var trimmed = command.TrimStart();
+        return trimmed.StartsWith(toolPrefix, StringComparison.OrdinalIgnoreCase)
+            ? trimmed[toolPrefix.Length..]
+            : trimmed;
+    }
+
     // -- Registry fixes ────────────────────────────────────────────
 
     private (DpcFixResult result, AppliedDpcFix? applied) ApplyRegistryFix(DriverAutoFix fix)
@@ -201,6 +314,13 @@ public class DpcFixEngine
 
     private DpcFixResult RevertRegistryFix(AppliedDpcFix applied)
     {
+        // Refuse a tampered ledger from redirecting this elevated write to an arbitrary HKLM key.
+        if (!IsAllowedRegistryRevertTarget(applied.Target))
+        {
+            Log.Warning("[DpcFix] Rejecting registry revert to disallowed target for {FixId}", applied.FixId);
+            return new DpcFixResult { Success = false, Message = "Registry revert target not allowed." };
+        }
+
         // Parse "HKLM\path\to\key\ValueName" -> path + valueName
         var target = applied.Target.Replace(@"HKLM\", "");
         var lastSlash = target.LastIndexOf('\\');
@@ -255,7 +375,7 @@ public class DpcFixEngine
         if (ShouldSkipBcdApply(fix.Command, CpuCapabilities.PlatformTimerTweaksHarmful))
             return (new DpcFixResult { Success = false, Message = "Skipped on AMD: forcing the platform timer degrades performance (Windows logs HAL event 17 and Kernel-Power 508)." }, null);
 
-        var (success, output) = RunProcess(NativeInterop.SystemExePath("bcdedit.exe"), fix.Command!.Replace("bcdedit ", ""));
+        var (success, output) = RunProcess(NativeInterop.SystemExePath("bcdedit.exe"), StripLeadingTool(fix.Command!, "bcdedit "));
         if (!success)
             return (new DpcFixResult { Success = false, Message = $"bcdedit failed: {output}" }, null);
 
@@ -265,7 +385,7 @@ public class DpcFixEngine
             Description = fix.Name,
             ActionType = "BcdEdit",
             PreviousValue = fix.RevertCommand,
-            Target = fix.Command,
+            Target = fix.Command!,
             AppliedAt = DateTime.Now,
             RequiresReboot = true
         };
@@ -278,7 +398,14 @@ public class DpcFixEngine
         if (string.IsNullOrEmpty(applied.PreviousValue))
             return new DpcFixResult { Success = false, Message = "No revert command stored." };
 
-        var (success, output) = RunProcess(NativeInterop.SystemExePath("bcdedit.exe"), applied.PreviousValue.Replace("bcdedit ", ""));
+        var args = StripLeadingTool(applied.PreviousValue, "bcdedit ");
+        if (!IsSafeBcdRevertArgs(args))
+        {
+            Log.Warning("[DpcFix] Rejecting unsafe bcdedit revert command for {FixId}", applied.FixId);
+            return new DpcFixResult { Success = false, Message = "Unsafe bcdedit revert command rejected." };
+        }
+
+        var (success, output) = RunProcess(NativeInterop.SystemExePath("bcdedit.exe"), args);
         return new DpcFixResult
         {
             Success = success,
@@ -291,7 +418,7 @@ public class DpcFixEngine
 
     private (DpcFixResult result, AppliedDpcFix? applied) ApplyNetshFix(DriverAutoFix fix)
     {
-        var (success, output) = RunProcess(NativeInterop.SystemExePath("netsh.exe"), fix.Command!.Replace("netsh ", ""));
+        var (success, output) = RunProcess(NativeInterop.SystemExePath("netsh.exe"), StripLeadingTool(fix.Command!, "netsh "));
         if (!success)
             return (new DpcFixResult { Success = false, Message = $"netsh failed: {output}" }, null);
 
@@ -301,7 +428,7 @@ public class DpcFixEngine
             Description = fix.Name,
             ActionType = "NetshCommand",
             PreviousValue = fix.RevertCommand,
-            Target = fix.Command,
+            Target = fix.Command!,
             AppliedAt = DateTime.Now,
             RequiresReboot = fix.RequiresReboot
         };
@@ -314,7 +441,14 @@ public class DpcFixEngine
         if (string.IsNullOrEmpty(applied.PreviousValue))
             return new DpcFixResult { Success = false, Message = "No revert command stored." };
 
-        var (success, output) = RunProcess(NativeInterop.SystemExePath("netsh.exe"), applied.PreviousValue.Replace("netsh ", ""));
+        var args = StripLeadingTool(applied.PreviousValue, "netsh ");
+        if (!IsSafeNetshRevertArgs(args))
+        {
+            Log.Warning("[DpcFix] Rejecting unsafe netsh revert command for {FixId}", applied.FixId);
+            return new DpcFixResult { Success = false, Message = "Unsafe netsh revert command rejected." };
+        }
+
+        var (success, output) = RunProcess(NativeInterop.SystemExePath("netsh.exe"), args);
         return new DpcFixResult { Success = success, Message = success ? "Fix reverted." : $"Revert failed: {output}" };
     }
 
@@ -417,18 +551,22 @@ public class DpcFixEngine
     {
         if (Guid.TryParse(applied.Target, out _))
         {
-            // Power plan GUID - revert to previous plan
-            if (string.IsNullOrEmpty(applied.PreviousValue))
-                return new DpcFixResult { Success = false, Message = "No previous power plan GUID stored." };
+            // Power plan GUID - revert to previous plan. The previous value must itself be a GUID so a
+            // tampered ledger cannot inject extra powercfg arguments.
+            if (string.IsNullOrEmpty(applied.PreviousValue) || !Guid.TryParse(applied.PreviousValue, out _))
+                return new DpcFixResult { Success = false, Message = "No valid previous power plan GUID stored." };
 
             var (success, output) = RunProcess(NativeInterop.SystemExePath("powercfg.exe"), $"/setactive {applied.PreviousValue}");
             return new DpcFixResult { Success = success, Message = success ? "Power plan reverted." : output };
         }
 
-        // Sub-setting revert
+        // Sub-setting revert. Both GUID tokens and the numeric value are validated so the interpolated
+        // powercfg arguments cannot be widened by a tampered ledger.
         var parts = applied.Target.Split('|');
         if (parts.Length != 2 || string.IsNullOrEmpty(applied.PreviousValue))
             return new DpcFixResult { Success = false, Message = "Invalid revert target." };
+        if (!Guid.TryParse(parts[0], out _) || !Guid.TryParse(parts[1], out _) || !IsIntegerValue(applied.PreviousValue))
+            return new DpcFixResult { Success = false, Message = "Invalid power plan revert target." };
 
         var (s, o) = RunProcess(NativeInterop.SystemExePath("powercfg.exe"),
             $"/setacvalueindex SCHEME_CURRENT {parts[0]} {parts[1]} {applied.PreviousValue}");
@@ -541,6 +679,14 @@ public class DpcFixEngine
             return (new DpcFixResult { Success = false, Message = $"Invalid non-numeric adapter value: {value}" }, null);
         }
 
+        // The property name is interpolated into PowerShell -Command strings here and stored as the
+        // revert Target, so validate it even though it originates from the built-in fix database.
+        if (!IsValidNetAdapterKeyword(property))
+        {
+            Log.Warning("[DpcFix] Rejecting unsafe net adapter keyword on apply: {Property}", property);
+            return (new DpcFixResult { Success = false, Message = $"Invalid network adapter keyword: {property}" }, null);
+        }
+
         // Query current value from the first physical adapter that has this property
         string previousValue = QueryNetAdapterPropertyValue(property) ?? "1";
 
@@ -575,6 +721,15 @@ public class DpcFixEngine
         {
             Log.Warning("[DpcFix] Rejecting non-numeric adapter revert value: {Value}", revertValue);
             return new DpcFixResult { Success = false, Message = $"Invalid non-numeric adapter revert value: {revertValue}" };
+        }
+
+        // The keyword is interpolated into a PowerShell -Command; the numeric guard above never covered
+        // it. A tampered ledger Target (e.g. "x'; <payload>; ('") would otherwise break out of the
+        // quoted -RegistryKeyword and run arbitrary elevated PowerShell. Allow only real keyword shapes.
+        if (!IsValidNetAdapterKeyword(applied.Target))
+        {
+            Log.Warning("[DpcFix] Rejecting unsafe net adapter keyword on revert for {FixId}", applied.FixId);
+            return new DpcFixResult { Success = false, Message = "Invalid network adapter keyword." };
         }
 
         var script = $"Get-NetAdapter -Physical | Set-NetAdapterAdvancedProperty -RegistryKeyword '{applied.Target}' -RegistryValue {revertValue} -ErrorAction SilentlyContinue";

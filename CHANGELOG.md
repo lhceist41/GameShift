@@ -2,6 +2,12 @@
 
 All notable changes to GameShift are documented here.
 
+## [Unreleased]
+
+### Security
+
+- **Hardened the DPC fix rollback ledger against tampering** - the DPC Doctor stores rollback information for each applied fix in your per-user settings file, and reverting a fix replayed its stored target and value into elevated PowerShell, bcdedit, netsh, powercfg, and registry operations. A standard user who hand-edited that file could have made the elevated app run arbitrary commands, or write an arbitrary system registry value, on the next revert (a local privilege escalation). Every value taken from the ledger is now validated against the exact shape GameShift itself produces before any elevated action runs, and registry reverts are restricted to the specific keys GameShift writes; anything unexpected is refused instead of executed.
+
 ## [3.8.7] - 2026-06-20
 
 ### Fixed
