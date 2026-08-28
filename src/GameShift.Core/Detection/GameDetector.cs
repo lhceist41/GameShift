@@ -248,16 +248,24 @@ public class GameDetector : IDisposable
                     if (process.Id == currentPid || process.Id <= 4 || _activeGames.ContainsKey(process.Id))
                         continue;
 
-                    var path = process.MainModule?.FileName;
-                    if (string.IsNullOrEmpty(path))
-                        continue;
+                    string? path = null;
+                    try
+                    {
+                        path = process.MainModule?.FileName;
+                    }
+                    catch
+                    {
+                    }
 
-                    if (MatchProcess(process.Id, path) != null)
+                    var game = string.IsNullOrEmpty(path)
+                        ? MatchProcessByName(process.Id, process.ProcessName)
+                        : MatchProcess(process.Id, path);
+
+                    if (game != null)
                         matched++;
                 }
                 catch
                 {
-                    // MainModule throws for system/protected/exited processes - skip them.
                 }
                 finally
                 {
@@ -301,12 +309,16 @@ public class GameDetector : IDisposable
                 catch
                 {
                     // Process may have already exited, or access denied for system processes
+                    MatchProcessByName(data.ProcessId, processName);
                     return;
                 }
             }
 
             if (string.IsNullOrEmpty(executablePath))
+            {
+                MatchProcessByName(data.ProcessId, processName);
                 return;
+            }
 
             // Try to match against known games
             MatchProcess(data.ProcessId, executablePath);
@@ -434,6 +446,43 @@ public class GameDetector : IDisposable
         || exeName.Contains("crashpad", StringComparison.OrdinalIgnoreCase)
         || exeName.Contains("crashhandler", StringComparison.OrdinalIgnoreCase)
         || exeName.Contains("crashreport", StringComparison.OrdinalIgnoreCase);
+
+    private GameInfo? MatchProcessByName(int processId, string processName)
+    {
+        var exeName = Path.GetFileName(processName);
+        if (string.IsNullOrEmpty(exeName))
+            return null;
+
+        var exeNameWithExtension = exeName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+            ? exeName
+            : exeName + ".exe";
+
+        if (IsNonGameHelper(exeName) || IsNonGameHelper(exeNameWithExtension))
+            return null;
+
+        List<GameInfo> snapshot;
+        lock (_lock)
+        {
+            snapshot = _knownGames.ToList();
+        }
+
+        foreach (var game in snapshot)
+        {
+            var knownExecutablePath = game.ExecutablePath;
+            if (string.IsNullOrEmpty(knownExecutablePath))
+                continue;
+
+            if (string.Equals(
+                exeNameWithExtension,
+                Path.GetFileName(knownExecutablePath),
+                StringComparison.OrdinalIgnoreCase))
+            {
+                return OnGameMatched(processId, knownExecutablePath, game);
+            }
+        }
+
+        return null;
+    }
 
     /// <summary>
     /// Attempts to match a process against known game install directories.
