@@ -127,7 +127,9 @@ public class GameProfileManager : IDisposable
             return;
         }
 
-        var exeName = Path.GetFileName(e.ExecutablePath);
+        // Observed process name, not a name derived from the path: a protected game can be
+        // detected with no readable path, and the profile lookup is name-based.
+        var exeName = e.ProcessName;
         var profile = GetProfileForProcess(exeName);
         if (profile == null)
         {

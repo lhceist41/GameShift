@@ -163,8 +163,10 @@ public class DetectionOrchestrator
             {
                 if (!_isOptimizing)
                 {
-                    // Extract executable name for preset lookup
-                    var executableName = Path.GetFileName(e.ExecutablePath);
+                    // Executable name for preset lookup. Read from the event's observed process
+                    // name, not from the path: a protected game can be detected with no readable
+                    // path, and deriving the name from an empty path would silently match nothing.
+                    var executableName = e.ProcessName;
 
                     GameProfile profile;
 

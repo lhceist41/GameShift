@@ -529,13 +529,14 @@ public class GameDetectorMatchingTests
             LauncherSource = "Steam",
             LauncherId = "7"
         };
+        var active = new ActiveGame(game, "protected.exe", @"C:\Games\Protected\protected.exe");
 
-        Assert.False(GameDetector.IsTrackedGameGone(1234, game, _ => throw new Win32Exception(5)));
-        Assert.True(GameDetector.IsTrackedGameGone(1234, game, _ => throw new ArgumentException("no such process")));
+        Assert.False(GameDetector.IsTrackedGameGone(1234, active, _ => throw new Win32Exception(5)));
+        Assert.True(GameDetector.IsTrackedGameGone(1234, active, _ => throw new ArgumentException("no such process")));
 
         // The probe result is what drives the PID-reuse comparison.
-        Assert.False(GameDetector.IsTrackedGameGone(1234, game, _ => "protected"));
-        Assert.True(GameDetector.IsTrackedGameGone(1234, game, _ => "somethingelse"));
+        Assert.False(GameDetector.IsTrackedGameGone(1234, active, _ => "protected"));
+        Assert.True(GameDetector.IsTrackedGameGone(1234, active, _ => "somethingelse"));
     }
 
     /// <summary>
@@ -667,25 +668,18 @@ public class GameDetectorMatchingTests
         Assert.Equal("epic_shared", started.GameId);
     }
 
-    // ---------------------------------------------------------------------------------------
-    // Temporary current-behavior characterizations
-    //
-    // The tests below pin down what current master DOES, not what it SHOULD do. They are here so a
-    // later repair gate changes them deliberately and visibly. Each states the intended flip.
-    // ---------------------------------------------------------------------------------------
-
     /// <summary>
-    /// A13 - TEMPORARY CHARACTERIZATION of current behavior; this is not correct behavior.
+    /// A13: Launcher entries (Steam/Xbox) carry an install directory but no executable path. The
+    /// PID-reuse comparison therefore cannot use the persistent record - it uses the executable
+    /// actually observed for that PID. When the PID now belongs to a different image, the stale
+    /// entry must be dropped and the revert signal must fire, exactly as it does for entries that
+    /// happen to carry a path.
     ///
-    /// Launcher entries (Steam/Xbox) carry an install directory but no executable path, so the
-    /// PID-reuse comparison has no expected image name to compare against and the sweep keeps the
-    /// game forever. Combined with a missed stop event, the optimization never reverts.
-    ///
-    /// FUTURE FLIP: once the tracked record carries the observed running executable, this test must
-    /// assert the mismatch IS detected and the game is removed with stop/all-stopped events.
+    /// Before the runtime-evidence repair there was no expected name for these entries at all, so a
+    /// missed stop event kept them tracked forever and their optimizations never reverted.
     /// </summary>
     [Fact]
-    public void ReconcileActiveGamesOnce_LauncherGameWithEmptyExecutablePath_CannotDetectPidReuse()
+    public void ReconcileActiveGamesOnce_LauncherGameWithEmptyExecutablePath_DetectsPidReuse()
     {
         var game = new GameInfo
         {
@@ -700,73 +694,92 @@ public class GameDetectorMatchingTests
         using var detector = CreateDetector(game);
         var events = new EventRecorder(detector);
 
+        // The observed image name (launcheronly.exe) is not this test host's process name, so the
+        // live PID below is a PID-reuse observation.
         detector.OnProcessStarted(
             Started(Environment.ProcessId, @"C:\SteamLibrary\steamapps\common\Launcher Only\launcheronly.exe"));
         Assert.Single(detector.GetActiveGames());
 
         detector.ReconcileActiveGamesOnce();
 
-        // Current behavior: kept, because there is no expected executable name to compare.
-        Assert.Empty(events.Stopped);
-        Assert.Equal(0, events.AllStoppedCount);
-        Assert.Single(detector.GetActiveGames());
+        var stopped = Assert.Single(events.Stopped);
+        Assert.Equal("steam_8", stopped.GameId);
+        Assert.Equal(Environment.ProcessId, stopped.ProcessId);
+        Assert.Equal(1, events.AllStoppedCount);
+        Assert.Empty(detector.GetActiveGames());
+
+        // The persistent record is untouched by the runtime observation.
+        Assert.Equal("", Assert.Single(detector.GetKnownGames()).ExecutablePath);
     }
 
     /// <summary>
-    /// A15 - TEMPORARY CHARACTERIZATION of current behavior; this is not correct behavior.
+    /// A15: The built-in fallback record is identified by its stable generated built-in ID, so
+    /// launching the same title from a second location reuses the one record instead of appending a
+    /// duplicate. Without this the known-games list grew without bound across sessions.
     ///
-    /// The built-in fallback appends a runtime known-game record keyed to the observed directory, so
-    /// launching the same built-in title from a second location appends a second record sharing the
-    /// same ID. The known-games list grows without bound across sessions.
-    ///
-    /// FUTURE FLIP: the repair should deduplicate by ID (update the existing record instead of
-    /// appending), and this test must then assert exactly one record for that built-in ID.
+    /// The first non-empty observed path is kept; a later observation does not rewrite it, so the
+    /// record does not thrash between install locations.
     /// </summary>
     [Fact]
-    public void OnProcessStarted_BuiltInFallbackFromDifferentDirectories_AccumulatesDuplicateIdEntries()
+    public void OnProcessStarted_BuiltInFallbackFromDifferentDirectories_KeepsOneRecordByStableId()
     {
         var builtIn = BuiltInProfiles.ApexLegends();
         var exeName = builtIn.ProcessNames.First();
         var expectedId = GameInfo.GenerateId("builtin", builtIn.Id);
+        var firstPath = Path.Combine(@"C:\Install A", exeName);
+        var secondPath = Path.Combine(@"C:\Install B", exeName);
 
         using var detector = CreateDetector();
         var events = new EventRecorder(detector);
 
-        detector.OnProcessStarted(Started(5300, Path.Combine(@"C:\Install A", exeName)));
-        detector.OnProcessStarted(Started(5301, Path.Combine(@"C:\Install B", exeName)));
+        detector.OnProcessStarted(Started(5300, firstPath));
+        detector.OnProcessStarted(Started(5301, secondPath));
 
         Assert.Equal(2, events.Started.Count);
         Assert.All(events.Started, e => Assert.Equal(expectedId, e.GameId));
 
-        // Current behavior: two known-game records share one ID.
-        Assert.Equal(2, detector.GetKnownGames().Count(g => g.Id == expectedId));
+        // Each event still reports the path actually observed for its own PID.
+        Assert.Equal(firstPath, events.Started[0].ExecutablePath);
+        Assert.Equal(secondPath, events.Started[1].ExecutablePath);
+
+        // ...while exactly one known-game record exists for that built-in ID.
+        var record = Assert.Single(detector.GetKnownGames(), g => g.Id == expectedId);
+        Assert.Equal(firstPath, record.ExecutablePath);
     }
 
     /// <summary>
-    /// A16 - TEMPORARY CHARACTERIZATION of current behavior; this is not correct behavior.
+    /// A16: javaw.exe is the Minecraft Java process name and simultaneously the process name of
+    /// every other Java desktop application, so the name alone is not evidence of Minecraft. An
+    /// unrelated JVM must not be claimed as a game - matching one optimizes the wrong process and
+    /// triggers a premature revert when it exits.
     ///
-    /// javaw.exe is the Minecraft Java process name but is shared by every Java application, so the
-    /// name-only built-in fallback claims unrelated Java processes as a game and optimizes for them.
-    ///
-    /// FUTURE FLIP: any name-only fallback must require stronger corroboration (command line, install
-    /// location) before matching; this test must then assert the unrelated process is NOT matched.
+    /// ACCEPTED LOSS: this removes standalone Minecraft Java auto-detection. Minecraft is still
+    /// matched when a launcher scanner knows its install directory, when its exact executable path
+    /// is known, or when it is added manually; an uncorrelated javaw.exe is not.
     /// </summary>
     [Fact]
-    public void OnProcessStarted_GenericBuiltInProcessName_MatchesUnrelatedProcess()
+    public void OnProcessStarted_AmbiguousBuiltInProcessName_DoesNotMatchUnrelatedProcess()
     {
-        var builtIn = BuiltInProfiles.MinecraftJava();
-
         using var detector = CreateDetector();
         var events = new EventRecorder(detector);
 
         detector.OnProcessStarted(Started(5400, @"C:\Program Files\Eclipse Adoptium\jdk-21\bin\javaw.exe"));
 
-        // Current behavior: an unrelated JVM is detected as Minecraft.
-        var started = Assert.Single(events.Started);
-        Assert.Equal(GameInfo.GenerateId("builtin", builtIn.Id), started.GameId);
-        Assert.Equal(builtIn.DisplayName, started.GameName);
-        Assert.Equal("BuiltIn", started.LauncherSource);
+        Assert.Empty(events.Started);
+        Assert.Empty(detector.GetActiveGames());
+        Assert.Empty(detector.GetKnownGames()); // no runtime built-in record appended either
+
+        // The spawn feed is unaffected - it fires before game matching.
+        var spawned = Assert.Single(events.Spawned);
+        Assert.Equal("javaw.exe", spawned.ProcessName);
     }
+
+    // ---------------------------------------------------------------------------------------
+    // Temporary current-behavior characterizations
+    //
+    // The tests below pin down what current master DOES, not what it SHOULD do. They are here so a
+    // later repair gate changes them deliberately and visibly. Each states the intended flip.
+    // ---------------------------------------------------------------------------------------
 
     /// <summary>
     /// A21 - TEMPORARY CHARACTERIZATION of current behavior; this is not correct behavior.

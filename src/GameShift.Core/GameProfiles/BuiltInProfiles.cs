@@ -358,6 +358,10 @@ public static class BuiltInProfiles
         DisplayName = "Apex Legends",
         ProcessNames = new[] { "r5apex_dx12.exe", "r5apex.exe" },
         LauncherProcessNames = new[] { "EABackgroundService.exe" },
+        // EAC keeps the image path unreadable on the game process, so a live Apex start can arrive
+        // with liveness proven but no path. Both process names are Apex-exclusive, which is what
+        // makes the name-only fallback safe here and nowhere else so far.
+        AllowNameOnlyFallback = true,
         GamePriority = ProcessPriorityClass.High,
         LauncherPriority = ProcessPriorityClass.BelowNormal,
         IntelHybridPCoreOnly = true,

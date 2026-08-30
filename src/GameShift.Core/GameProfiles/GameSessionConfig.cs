@@ -25,6 +25,17 @@ public class GameSessionConfig
     /// <summary>Whether this profile is enabled.</summary>
     public bool Enabled { get; set; } = true;
 
+    /// <summary>
+    /// Opt-in for the fail-closed name-only detection fallback: when a process is proven alive but
+    /// its image path cannot be read, this profile may be matched on process name alone.
+    /// Default false, and deliberately narrow - a shared or generic process name here would let an
+    /// unrelated program be optimized as a game.
+    ///
+    /// Because this class is persisted (AppSettings.CustomProfiles), user-editable profiles must
+    /// never drive the decision; GameDetector reads BuiltInProfiles directly.
+    /// </summary>
+    public bool AllowNameOnlyFallback { get; set; }
+
     // -- Session optimizations (applied on game start, reverted on exit) --
 
     /// <summary>Priority to set on the game process.</summary>
