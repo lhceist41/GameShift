@@ -108,7 +108,7 @@ public class KnownGamesStore
                 // If existing.LauncherSource == "Manual", preserve it (don't overwrite with scanner data)
             }
 
-            Save();
+            TrySaveGames(_games);
             _logger.Debug("Merged {NewCount} new games from scanners, total: {TotalCount}", newCount, _games.Count);
         }
     }
@@ -157,7 +157,7 @@ public class KnownGamesStore
             };
 
             _games.Add(gameInfo);
-            Save();
+            TrySaveGames(_games);
 
             _logger.Information("Manually added game: {GameName} from {ExePath}", gameName, exePath);
             return gameInfo;
@@ -174,20 +174,51 @@ public class KnownGamesStore
         lock (_lock)
         {
             var game = _games.FirstOrDefault(g => g.Id == gameId);
-            if (game != null)
+            if (game == null)
             {
-                if (!string.Equals(game.LauncherSource, "Manual", StringComparison.OrdinalIgnoreCase) &&
-                    _ignoredGameIds.Add(game.Id))
+                return false;
+            }
+
+            var updatedGames = _games.ToList();
+            updatedGames.Remove(game);
+
+            HashSet<string>? updatedIgnoredGameIds = null;
+            if (!string.Equals(game.LauncherSource, "Manual", StringComparison.OrdinalIgnoreCase))
+            {
+                updatedIgnoredGameIds = new HashSet<string>(_ignoredGameIds, StringComparer.Ordinal)
                 {
-                    SaveIgnoredGames();
+                    game.Id
+                };
+            }
+
+            if (!TrySaveGames(updatedGames))
+            {
+                return false;
+            }
+
+            if (updatedIgnoredGameIds != null && !TrySaveIgnoredGames(updatedIgnoredGameIds))
+            {
+                if (!TrySaveGames(_games))
+                {
+                    _logger.Error(
+                        "Failed to roll back known games after ignore persistence failed for {GameId}",
+                        gameId);
                 }
 
-                _games.Remove(game);
-                Save();
-                _logger.Information("Removed game: {GameId}", gameId);
-                return true;
+                return false;
             }
-            return false;
+
+            _games.Clear();
+            _games.AddRange(updatedGames);
+
+            if (updatedIgnoredGameIds != null)
+            {
+                _ignoredGameIds.Clear();
+                _ignoredGameIds.UnionWith(updatedIgnoredGameIds);
+            }
+
+            _logger.Information("Removed game: {GameId}", gameId);
+            return true;
         }
     }
 
@@ -208,7 +239,7 @@ public class KnownGamesStore
     /// Creates directory if it doesn't exist.
     /// Wrapped in try/catch to prevent exceptions from escaping.
     /// </summary>
-    private void Save()
+    private bool TrySaveGames(List<GameInfo> games)
     {
         try
         {
@@ -220,74 +251,128 @@ public class KnownGamesStore
             }
 
             // Serialize with indentation for readability
-            var json = JsonSerializer.Serialize(_games, new JsonSerializerOptions
+            var json = JsonSerializer.Serialize(games, new JsonSerializerOptions
             {
                 WriteIndented = true
             });
 
             File.WriteAllText(_filePath, json);
+            return true;
         }
         catch (Exception ex)
         {
             _logger.Error(ex, "Failed to save known games to {Path}", _filePath);
-            // Don't throw - persistence failure shouldn't crash the app
+            return false;
         }
     }
 
     private void LoadIgnoredGames()
     {
-        _ignoredGameIds.Clear();
-
         try
         {
             if (!File.Exists(_ignoredGamesFilePath))
             {
-                _logger.Debug("Ignored games file not found, starting with empty list");
+                _logger.Debug("Ignored games file not found, keeping current ignore state");
                 return;
             }
 
             var json = File.ReadAllText(_ignoredGamesFilePath);
             var ignoredGameIds = JsonSerializer.Deserialize<List<string>>(json);
 
-            if (ignoredGameIds != null)
+            if (ignoredGameIds == null)
             {
-                foreach (var gameId in ignoredGameIds)
+                _logger.Warning(
+                    "Ignored games file was null after deserialization; keeping current ignore state");
+                return;
+            }
+
+            var loadedGameIds = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var gameId in ignoredGameIds)
+            {
+                if (!string.IsNullOrWhiteSpace(gameId))
                 {
-                    if (!string.IsNullOrWhiteSpace(gameId))
-                    {
-                        _ignoredGameIds.Add(gameId);
-                    }
+                    loadedGameIds.Add(gameId);
                 }
             }
 
+            _ignoredGameIds.Clear();
+            _ignoredGameIds.UnionWith(loadedGameIds);
             _logger.Information("Loaded {Count} ignored game IDs from store", _ignoredGameIds.Count);
         }
         catch (Exception ex)
         {
-            _ignoredGameIds.Clear();
-            _logger.Warning(ex, "Failed to load ignored games from {Path}, starting with empty list", _ignoredGamesFilePath);
+            _logger.Warning(
+                ex,
+                "Failed to load ignored games from {Path}; keeping current ignore state",
+                _ignoredGamesFilePath);
         }
     }
 
-    private void SaveIgnoredGames()
+    private bool TrySaveIgnoredGames(HashSet<string> ignoredGameIds)
     {
         try
         {
-            var directory = Path.GetDirectoryName(_ignoredGamesFilePath);
+            var json = JsonSerializer.Serialize(
+                ignoredGameIds.OrderBy(gameId => gameId).ToList(),
+                new JsonSerializerOptions { WriteIndented = true });
+
+            return TryWriteFileAtomically(_ignoredGamesFilePath, json);
+        }
+        catch (Exception ex)
+        {
+            _logger.Error(ex, "Failed to save ignored games to {Path}", _ignoredGamesFilePath);
+            return false;
+        }
+    }
+
+    private bool TryWriteFileAtomically(string destinationPath, string contents)
+    {
+        string? temporaryFilePath = null;
+
+        try
+        {
+            var directory = Path.GetDirectoryName(destinationPath);
             if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
             {
                 Directory.CreateDirectory(directory);
             }
 
-            var json = JsonSerializer.Serialize(
-                _ignoredGameIds.OrderBy(gameId => gameId).ToList(),
-                new JsonSerializerOptions { WriteIndented = true });
+            temporaryFilePath = Path.Combine(
+                directory ?? string.Empty,
+                $"{Path.GetFileName(destinationPath)}.{Guid.NewGuid():N}.tmp");
 
-            File.WriteAllText(_ignoredGamesFilePath, json);
+            File.WriteAllText(temporaryFilePath, contents);
+
+            if (File.Exists(destinationPath))
+            {
+                File.Replace(temporaryFilePath, destinationPath, null);
+            }
+            else
+            {
+                File.Move(temporaryFilePath, destinationPath);
+            }
+
+            temporaryFilePath = null;
+            return true;
         }
         catch (Exception ex)
         {
-            _logger.Error(ex, "Failed to save ignored games to {Path}", _ignoredGamesFilePath);
+            _logger.Error(ex, "Failed to atomically write file to {Path}", destinationPath);
+            return false;
+        }
+        finally
+        {
+            if (temporaryFilePath != null && File.Exists(temporaryFilePath))
+            {
+                try
+                {
+                    File.Delete(temporaryFilePath);
+                }
+                catch (Exception ex)
+                {
+                    _logger.Warning(ex, "Failed to clean up temporary file {Path}", temporaryFilePath);
+                }
+            }
         }
     }
 }

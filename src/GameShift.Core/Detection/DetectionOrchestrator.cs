@@ -477,8 +477,14 @@ public class DetectionOrchestrator
     /// <returns>True if game was found and removed</returns>
     public bool RemoveGame(string gameId)
     {
+        var removed = _store.RemoveGame(gameId);
+        if (!removed)
+        {
+            return false;
+        }
+
         _detector.RemoveKnownGame(gameId);
-        return _store.RemoveGame(gameId);
+        return true;
     }
 
     /// <summary>

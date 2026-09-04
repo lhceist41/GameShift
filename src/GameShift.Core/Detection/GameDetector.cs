@@ -248,24 +248,16 @@ public class GameDetector : IDisposable
                     if (process.Id == currentPid || process.Id <= 4 || _activeGames.ContainsKey(process.Id))
                         continue;
 
-                    string? path = null;
-                    try
-                    {
-                        path = process.MainModule?.FileName;
-                    }
-                    catch
-                    {
-                    }
+                    var path = process.MainModule?.FileName;
+                    if (string.IsNullOrEmpty(path))
+                        continue;
 
-                    var game = string.IsNullOrEmpty(path)
-                        ? MatchProcessByName(process.Id, process.ProcessName)
-                        : MatchProcess(process.Id, path);
-
-                    if (game != null)
+                    if (MatchProcess(process.Id, path) != null)
                         matched++;
                 }
                 catch
                 {
+                    // MainModule throws for system/protected/exited processes - skip them.
                 }
                 finally
                 {
@@ -309,16 +301,12 @@ public class GameDetector : IDisposable
                 catch
                 {
                     // Process may have already exited, or access denied for system processes
-                    MatchProcessByName(data.ProcessId, processName);
                     return;
                 }
             }
 
             if (string.IsNullOrEmpty(executablePath))
-            {
-                MatchProcessByName(data.ProcessId, processName);
                 return;
-            }
 
             // Try to match against known games
             MatchProcess(data.ProcessId, executablePath);
@@ -447,100 +435,6 @@ public class GameDetector : IDisposable
         || exeName.Contains("crashhandler", StringComparison.OrdinalIgnoreCase)
         || exeName.Contains("crashreport", StringComparison.OrdinalIgnoreCase);
 
-    private static GameSessionConfig? FindBuiltInProfileByProcessName(string processName)
-    {
-        var exeName = Path.GetFileName(processName);
-        if (string.IsNullOrEmpty(exeName))
-            return null;
-
-        return BuiltInProfiles.GetAll().FirstOrDefault(profile =>
-            profile.ProcessNames.Any(profileProcessName =>
-                string.Equals(
-                    exeName,
-                    Path.GetFileName(profileProcessName),
-                    StringComparison.OrdinalIgnoreCase)));
-    }
-
-    private GameInfo GetOrCreateGameInfoForBuiltInProfile(
-        GameSessionConfig builtIn,
-        string executablePath)
-    {
-        lock (_lock)
-        {
-            var existingGame = _knownGames.FirstOrDefault(game =>
-                string.Equals(
-                    game.GameName.Trim(),
-                    builtIn.DisplayName.Trim(),
-                    StringComparison.OrdinalIgnoreCase));
-
-            if (existingGame != null)
-                return existingGame;
-
-            var autoGame = new GameInfo
-            {
-                Id = GameInfo.GenerateId("builtin", builtIn.Id),
-                GameName = builtIn.DisplayName,
-                ExecutablePath = executablePath,
-                InstallDirectory = string.IsNullOrEmpty(executablePath)
-                    ? string.Empty
-                    : Path.GetDirectoryName(executablePath) ?? string.Empty,
-                LauncherSource = "BuiltIn"
-            };
-
-            _knownGames.Add(autoGame);
-            return autoGame;
-        }
-    }
-
-    private GameInfo? MatchProcessByName(int processId, string processName)
-    {
-        var exeName = Path.GetFileName(processName);
-        if (string.IsNullOrEmpty(exeName))
-            return null;
-
-        var exeNameWithExtension = exeName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
-            ? exeName
-            : exeName + ".exe";
-
-        if (IsNonGameHelper(exeName) || IsNonGameHelper(exeNameWithExtension))
-            return null;
-
-        List<GameInfo> snapshot;
-        lock (_lock)
-        {
-            snapshot = _knownGames.ToList();
-        }
-
-        foreach (var game in snapshot)
-        {
-            var knownExecutablePath = game.ExecutablePath;
-            if (string.IsNullOrEmpty(knownExecutablePath))
-                continue;
-
-            if (string.Equals(
-                exeNameWithExtension,
-                Path.GetFileName(knownExecutablePath),
-                StringComparison.OrdinalIgnoreCase))
-            {
-                return OnGameMatched(processId, knownExecutablePath, game);
-            }
-        }
-
-        var builtIn = FindBuiltInProfileByProcessName(exeNameWithExtension);
-        if (builtIn != null)
-        {
-            var game = GetOrCreateGameInfoForBuiltInProfile(builtIn, string.Empty);
-
-            _logger.Information(
-                "Detected built-in profile game via process name fallback: {GameName} ({ExeName})",
-                builtIn.DisplayName, exeNameWithExtension);
-
-            return OnGameMatched(processId, exeNameWithExtension, game);
-        }
-
-        return null;
-    }
-
     /// <summary>
     /// Attempts to match a process against known game install directories.
     /// Returns the matched GameInfo if found, otherwise null.
@@ -593,16 +487,35 @@ public class GameDetector : IDisposable
 
         // Tertiary matching strategy: check exe name against BuiltInProfiles ProcessNames.
         // Catches games installed outside of scanned launcher directories (standalone launchers, etc.)
-        var builtIn = FindBuiltInProfileByProcessName(exeName);
-        if (builtIn != null)
+        foreach (var builtIn in BuiltInProfiles.GetAll())
         {
-            var game = GetOrCreateGameInfoForBuiltInProfile(builtIn, normalizedPath);
+            foreach (var pn in builtIn.ProcessNames)
+            {
+                if (string.Equals(exeName, pn, StringComparison.OrdinalIgnoreCase))
+                {
+                    var autoGame = new GameInfo
+                    {
+                        Id = GameInfo.GenerateId("builtin", builtIn.Id),
+                        GameName = builtIn.DisplayName,
+                        ExecutablePath = normalizedPath,
+                        InstallDirectory = Path.GetDirectoryName(normalizedPath) ?? "",
+                        LauncherSource = "BuiltIn"
+                    };
 
-            _logger.Information(
-                "Auto-detected built-in profile game via process name: {GameName} ({ExeName})",
-                builtIn.DisplayName, exeName);
+                    // Add to known games so future launches are matched immediately.
+                    // Safe: we iterate 'snapshot', not '_knownGames'.
+                    lock (_lock)
+                    {
+                        _knownGames.Add(autoGame);
+                    }
 
-            return OnGameMatched(processId, normalizedPath, game);
+                    _logger.Information(
+                        "Auto-detected built-in profile game via process name: {GameName} ({ExeName})",
+                        builtIn.DisplayName, exeName);
+
+                    return OnGameMatched(processId, normalizedPath, autoGame);
+                }
+            }
         }
 
         // No match found - this is normal for most processes, so don't log
