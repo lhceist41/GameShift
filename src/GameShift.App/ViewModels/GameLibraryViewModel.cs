@@ -111,13 +111,27 @@ public class GameLibraryViewModel : INotifyPropertyChanged
     {
         if (SelectedGame == null) return;
 
+        var confirmationMessage = $"Remove '{SelectedGame.GameName}' from the game library?";
+        if (!string.Equals(SelectedGame.LauncherSource, "Manual", StringComparison.OrdinalIgnoreCase))
+        {
+            confirmationMessage +=
+                "\n\nThis launcher-detected game will remain hidden on future library scans.";
+        }
+
         var result = MessageBox.Show(
-            $"Remove '{SelectedGame.GameName}' from the game library?",
+            confirmationMessage,
             "Remove Game", MessageBoxButton.YesNo, MessageBoxImage.Question);
 
         if (result == MessageBoxResult.Yes)
         {
-            _orchestrator.RemoveGame(SelectedGame.Id);
+            if (!_orchestrator.RemoveGame(SelectedGame.Id))
+            {
+                MessageBox.Show(
+                    "Failed to remove the game because the required library changes could not be saved.",
+                    "Remove Game", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+
             RefreshGames();
         }
     }

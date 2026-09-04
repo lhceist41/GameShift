@@ -113,7 +113,20 @@ public class DetectionOrchestrator
         _store.MergeScannedGames(_detector.GetKnownGames());
 
         // 4. Sync store games back to detector (includes manual additions from disk)
-        foreach (var game in _store.GetAllGames())
+        var storeGames = _store.GetAllGames();
+        var storeGameIds = storeGames
+            .Select(game => game.Id)
+            .ToHashSet(StringComparer.Ordinal);
+
+        foreach (var game in _detector.GetKnownGames())
+        {
+            if (!storeGameIds.Contains(game.Id))
+            {
+                _detector.RemoveKnownGame(game.Id);
+            }
+        }
+
+        foreach (var game in storeGames)
         {
             _detector.AddKnownGame(game);
         }
@@ -464,8 +477,14 @@ public class DetectionOrchestrator
     /// <returns>True if game was found and removed</returns>
     public bool RemoveGame(string gameId)
     {
+        var removed = _store.RemoveGame(gameId);
+        if (!removed)
+        {
+            return false;
+        }
+
         _detector.RemoveKnownGame(gameId);
-        return _store.RemoveGame(gameId);
+        return true;
     }
 
     /// <summary>
