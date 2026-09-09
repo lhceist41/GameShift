@@ -243,21 +243,13 @@ public class KnownGamesStore
     {
         try
         {
-            // Ensure directory exists
-            var directory = Path.GetDirectoryName(_filePath);
-            if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
-            {
-                Directory.CreateDirectory(directory);
-            }
-
             // Serialize with indentation for readability
             var json = JsonSerializer.Serialize(games, new JsonSerializerOptions
             {
                 WriteIndented = true
             });
 
-            File.WriteAllText(_filePath, json);
-            return true;
+            return TryWriteFileAtomically(_filePath, json);
         }
         catch (Exception ex)
         {
