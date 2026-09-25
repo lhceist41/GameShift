@@ -6,7 +6,6 @@ using System.Windows;
 using GameShift.Core.Config;
 using GameShift.Core.Monitoring;
 using GameShift.Core.Profiles.GameActions;
-using GameShift.Core.Journal;
 using GameShift.Core.System;
 using GameShift.Core.Watchdog;
 using GameShift.App.Services;
@@ -279,11 +278,10 @@ public partial class App : Application
             _watchdogHeartbeat.Start();
             WriteDiag("Watchdog heartbeat client started");
 
-            // Register boot-recovery scheduled task - idempotent, skipped silently if
-            // GameShift.Watchdog.exe is not present alongside the app (e.g. dev builds).
-            var watchdogExe = Path.Combine(AppContext.BaseDirectory, "GameShift.Watchdog.exe");
-            BootRecoveryTaskManager.EnsureRegistered(watchdogExe);
-            WriteDiag($"Boot recovery task registration attempted (watchdog={watchdogExe})");
+            // The boot-recovery task is not registered from here. It runs its target as SYSTEM, and
+            // the only target this code could name is a GameShift.Watchdog.exe next to the app, in a
+            // folder standard users can often write to. Releases do not ship the watchdog, so this
+            // could only ever register a planted file. It belongs with an admin-only watchdog install.
 
             // Shutdown mode depends on tray availability.
             // With tray: OnExplicitShutdown keeps app alive when window hides.
