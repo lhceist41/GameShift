@@ -32,6 +32,8 @@ public class GameDetector : IDisposable
 {
     private readonly IEnumerable<ILibraryScanner> _scanners;
     private readonly List<GameInfo> _knownGames;
+    // Install folders of launcher games the user removed, normalized with a trailing '\'. Guarded by _lock.
+    private readonly List<string> _suppressedInstallDirectories = new();
     private readonly ConcurrentDictionary<int, ActiveGame> _activeGames;
     private readonly ProcessProbe _probe;
     private readonly Func<int, string> _liveProcessNameProbe;
@@ -169,6 +171,43 @@ public class GameDetector : IDisposable
             {
                 _knownGames.Remove(game);
                 _logger.Information("Removed game: {GameName}", game.GameName);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Stops matching processes started from a removed launcher game's install folder, under any
+    /// identity they would otherwise match: another known game, a built-in profile by name, or the
+    /// runtime built-in record. A manually added game with that exact executable path still matches,
+    /// since that is the user explicitly bringing the game back.
+    ///
+    /// Relative paths and drive roots are ignored, so a bad scanner entry cannot switch off
+    /// detection for a whole drive.
+    /// </summary>
+    public void SuppressInstallDirectory(string installDirectory)
+    {
+        if (string.IsNullOrWhiteSpace(installDirectory) || !Path.IsPathFullyQualified(installDirectory))
+            return;
+
+        string normalized;
+        try
+        {
+            normalized = Path.GetFullPath(installDirectory).TrimEnd('\\') + '\\';
+        }
+        catch (ArgumentException)
+        {
+            return;
+        }
+
+        if (string.Equals(normalized, Path.GetPathRoot(normalized), StringComparison.OrdinalIgnoreCase))
+            return;
+
+        lock (_lock)
+        {
+            if (!_suppressedInstallDirectories.Contains(normalized, StringComparer.OrdinalIgnoreCase))
+            {
+                _suppressedInstallDirectories.Add(normalized);
+                _logger.Information("Detection suppressed for removed game folder: {Directory}", normalized);
             }
         }
     }
@@ -603,9 +642,22 @@ public class GameDetector : IDisposable
         // Take a snapshot under the lock so we can iterate safely without
         // holding the lock for the entire matching duration.
         List<GameInfo> snapshot;
+        bool suppressed;
         lock (_lock)
         {
             snapshot = _knownGames.ToList();
+            suppressed = _suppressedInstallDirectories.Any(
+                dir => normalizedPath.StartsWith(dir, StringComparison.OrdinalIgnoreCase));
+        }
+
+        // A removed launcher game's folder: only the user's own manual entry for this exact
+        // executable may match, which is how a removed game is brought back.
+        if (suppressed)
+        {
+            var manual = snapshot.FirstOrDefault(g =>
+                string.Equals(g.LauncherSource, "Manual", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(normalizedPath, g.ExecutablePath, StringComparison.OrdinalIgnoreCase));
+            return manual == null ? null : OnGameMatched(processId, normalizedPath, exeName, manual);
         }
 
         foreach (var game in snapshot)
@@ -769,6 +821,22 @@ public class GameDetector : IDisposable
 
         if (eligible == null)
             return null;
+
+        // There is no path to test against a removed game's folder, so use the evidence there is:
+        // a removed launcher game's folder holds an executable of this name.
+        List<string> suppressedDirectories;
+        lock (_lock)
+        {
+            suppressedDirectories = _suppressedInstallDirectories.ToList();
+        }
+
+        if (suppressedDirectories.Any(dir => File.Exists(Path.Combine(dir, processName))))
+        {
+            _logger.Debug(
+                "Name-only fallback rejected for {ProcessName}: a removed game's folder holds that executable",
+                processName);
+            return null;
+        }
 
         var game = ResolveBuiltInRecord(eligible, null);
 

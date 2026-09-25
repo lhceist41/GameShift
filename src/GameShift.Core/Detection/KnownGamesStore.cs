@@ -165,6 +165,17 @@ public class KnownGamesStore
     }
 
     /// <summary>
+    /// True when the user removed this launcher game, so scans keep it out of the library.
+    /// </summary>
+    public bool IsIgnored(string gameId)
+    {
+        lock (_lock)
+        {
+            return _ignoredGameIds.Contains(gameId);
+        }
+    }
+
+    /// <summary>
     /// Removes a game from the known games list by ID.
     /// </summary>
     /// <param name="gameId">Unique game ID</param>

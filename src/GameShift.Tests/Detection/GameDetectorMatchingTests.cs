@@ -797,24 +797,12 @@ public class GameDetectorMatchingTests
         Assert.Equal("javaw.exe", spawned.ProcessName);
     }
 
-    // ---------------------------------------------------------------------------------------
-    // Temporary current-behavior characterizations
-    //
-    // The tests below pin down what current master DOES, not what it SHOULD do. They are here so a
-    // later repair gate changes them deliberately and visibly. Each states the intended flip.
-    // ---------------------------------------------------------------------------------------
-
     /// <summary>
-    /// A21 - TEMPORARY CHARACTERIZATION of current behavior; this is not correct behavior.
-    ///
-    /// Removing a game only drops the launcher record. If the title also matches a built-in profile,
-    /// the next launch is re-detected under the built-in identity, so removal does not hold.
-    ///
-    /// FUTURE FLIP: once removal records persistent suppression, this test must assert the title is
-    /// NOT re-detected after removal.
+    /// A21: Removing a launcher game suppresses its install folder, so a title that also matches a
+    /// built-in profile is not re-detected under the built-in identity.
     /// </summary>
     [Fact]
-    public void RemoveKnownGame_ThenBuiltInTitleLaunches_IsRedetectedUnderBuiltInIdentity()
+    public void RemoveKnownGame_WithSuppressedFolder_BuiltInTitleIsNotRedetected()
     {
         var builtIn = BuiltInProfiles.ApexLegends();
         var exeName = builtIn.ProcessNames.First();
@@ -834,13 +822,93 @@ public class GameDetectorMatchingTests
         var events = new EventRecorder(detector);
 
         detector.RemoveKnownGame("steam_1172470");
+        detector.SuppressInstallDirectory(installDir);
         Assert.Empty(detector.GetKnownGames());
 
         detector.OnProcessStarted(Started(5500, Path.Combine(installDir, exeName)));
 
-        // Current behavior: removal is not suppression - the title comes back as a built-in.
+        Assert.Empty(events.Started);
+        Assert.Empty(detector.GetKnownGames()); // no runtime built-in record either
+    }
+
+    /// <summary>
+    /// A22: Suppression is a folder boundary, not a prefix: a sibling folder whose name merely starts
+    /// the same way is unaffected, and the check runs before known-game matching, so a runtime
+    /// built-in record created by an earlier launch cannot bring the title back.
+    /// </summary>
+    [Fact]
+    public void SuppressInstallDirectory_BlocksOnlyThatFolder_EvenForAnExistingBuiltInRecord()
+    {
+        var builtIn = BuiltInProfiles.ApexLegends();
+        var exeName = builtIn.ProcessNames.First();
+        const string removedDir = @"D:\Games\Apex";
+        const string siblingDir = @"D:\Games\Apex2";
+
+        using var detector = CreateDetector();
+        var events = new EventRecorder(detector);
+
+        detector.OnProcessStarted(Started(5600, Path.Combine(removedDir, exeName)));
+        Assert.Single(events.Started); // creates the runtime built-in record for removedDir
+
+        detector.SuppressInstallDirectory(removedDir);
+
+        detector.OnProcessStarted(Started(5601, Path.Combine(removedDir, exeName)));
+        Assert.Single(events.Started);
+
+        detector.OnProcessStarted(Started(5602, Path.Combine(siblingDir, exeName)));
+        Assert.Equal(2, events.Started.Count);
+        Assert.Equal(5602, events.Started[1].ProcessId);
+    }
+
+    /// <summary>
+    /// A23: Adding the executable manually is how a removed game comes back, so a manual entry for
+    /// that exact path still matches inside a suppressed folder. Other executables there do not.
+    /// </summary>
+    [Fact]
+    public void SuppressInstallDirectory_ManualExactPathStillMatches()
+    {
+        const string removedDir = @"D:\Games\Apex";
+        var manualExe = Path.Combine(removedDir, "r5apex.exe");
+        var manual = new GameInfo
+        {
+            Id = GameInfo.GenerateId("Manual", "r5apex"),
+            GameName = "r5apex",
+            ExecutablePath = manualExe,
+            InstallDirectory = removedDir,
+            LauncherSource = "Manual"
+        };
+
+        using var detector = CreateDetector(manual);
+        detector.SuppressInstallDirectory(removedDir);
+        var events = new EventRecorder(detector);
+
+        detector.OnProcessStarted(Started(5700, manualExe));
+        detector.OnProcessStarted(Started(5701, Path.Combine(removedDir, "r5apex_dx12.exe")));
+
         var started = Assert.Single(events.Started);
-        Assert.Equal(GameInfo.GenerateId("builtin", builtIn.Id), started.GameId);
-        Assert.Equal("BuiltIn", started.LauncherSource);
+        Assert.Equal(manual.Id, started.GameId);
+        Assert.Equal(5700, started.ProcessId);
+    }
+
+    /// <summary>
+    /// A24: A bad scanner entry must not switch off detection wholesale: empty, relative, and
+    /// drive-root folders are ignored.
+    /// </summary>
+    [Theory]
+    [InlineData("")]
+    [InlineData(@"Games\Apex")]
+    [InlineData(@"D:\")]
+    [InlineData(@"D:")]
+    public void SuppressInstallDirectory_IgnoresUnusableFolders(string installDirectory)
+    {
+        var exeName = BuiltInProfiles.ApexLegends().ProcessNames.First();
+
+        using var detector = CreateDetector();
+        detector.SuppressInstallDirectory(installDirectory);
+        var events = new EventRecorder(detector);
+
+        detector.OnProcessStarted(Started(5800, Path.Combine(@"D:\Games\Apex", exeName)));
+
+        Assert.Single(events.Started);
     }
 }

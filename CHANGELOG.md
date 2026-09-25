@@ -2,6 +2,12 @@
 
 All notable changes to GameShift are documented here.
 
+## [Unreleased]
+
+### Fixed
+
+- **Removing a launcher game also stops its built-in profile from detecting it** - since 3.8.8 a removed launcher game stays out of the library, but a title that also has a built-in GameShift profile (such as Apex Legends or Fortnite) was still detected and optimized through that profile when you launched it. GameShift now stops detecting games started from a removed game's install folder, including after a restart. To have GameShift optimize the game again, add its executable manually in the Game Library.
+
 ## [3.8.8] - 2026-09-25
 
 ### Security

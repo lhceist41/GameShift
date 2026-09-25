@@ -5,6 +5,7 @@ using System.Linq;
 using GameShift.Core.Detection;
 using GameShift.Core.GameProfiles;
 using GameShift.Core.System;
+using GameShift.Tests.TestHelpers;
 using Xunit;
 
 namespace GameShift.Tests.Detection;
@@ -245,6 +246,31 @@ public class ProtectedProcessDetectionTests
         var record = Assert.Single(detector.GetKnownGames());
         var active = new ActiveGame(record, started.ProcessName, null);
         Assert.False(GameDetector.IsTrackedGameGone(6202, active, LiveNameIs("r5apex_dx12")));
+    }
+
+    /// <summary>
+    /// Contract 9c: the name-only route has no path to test against a removed game's folder, so it
+    /// uses the evidence there is: a removed launcher game's folder that holds an executable of that
+    /// name suppresses the match. A removed folder without one does not.
+    /// </summary>
+    [Fact]
+    public void OnProcessStarted_NameOnly_SuppressedOnlyWhenARemovedFolderHoldsTheExecutable()
+    {
+        using var removedApex = new TempPath();
+        File.WriteAllText(removedApex.GetFile(ApexProcessName), "placeholder - not an executable");
+        using var removedOther = new TempPath();
+
+        using var suppressed = CreateDetector(AliveNoPathBackend(), LiveNameIs(ApexLiveName));
+        suppressed.SuppressInstallDirectory(removedApex.Path);
+        var suppressedEvents = new EventRecorder(suppressed);
+        suppressed.OnProcessStarted(PathlessStart(6300, ApexProcessName));
+        Assert.Empty(suppressedEvents.Started);
+
+        using var unaffected = CreateDetector(AliveNoPathBackend(), LiveNameIs(ApexLiveName));
+        unaffected.SuppressInstallDirectory(removedOther.Path);
+        var events = new EventRecorder(unaffected);
+        unaffected.OnProcessStarted(PathlessStart(6301, ApexProcessName));
+        Assert.Equal(ApexBuiltInId, Assert.Single(events.Started).GameId);
     }
 
     /// <summary>

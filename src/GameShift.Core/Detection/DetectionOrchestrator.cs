@@ -103,14 +103,45 @@ public class DetectionOrchestrator
     {
         _logger.Information("Initializing detection orchestrator");
 
+        LoadAndSyncLibrary();
+
+        // 5. Subscribe to game detection events
+        _detector.GameStarted += OnGameStarted;
+        _detector.GameStopped += OnGameStopped;
+        _detector.AllGamesStopped += OnAllGamesStopped;
+
+        // 6. Start WMI process monitoring
+        _detector.StartMonitoring();
+
+        _logger.Information("Detection system initialized. Monitoring {Count} known games.",
+            _store.GetAllGames().Count);
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Startup steps 1-4, without starting monitoring: load the store, scan launchers, merge, and
+    /// make the store the detector's authoritative list.
+    /// </summary>
+    internal void LoadAndSyncLibrary()
+    {
         // 1. Load known games from persistent store
         _store.Load();
 
         // 2. Scan all launcher libraries for installed games
         _detector.ScanLibraries();
+        var scannedGames = _detector.GetKnownGames();
 
         // 3. Merge scanned games into store (combines with manual additions)
-        _store.MergeScannedGames(_detector.GetKnownGames());
+        _store.MergeScannedGames(scannedGames);
+
+        // Launchers keep reporting games the user removed. This scan has their current install
+        // folders, which is where the game would start from under a built-in identity.
+        foreach (var game in scannedGames)
+        {
+            if (_store.IsIgnored(game.Id))
+                _detector.SuppressInstallDirectory(game.InstallDirectory);
+        }
 
         // 4. Sync store games back to detector (includes manual additions from disk)
         var storeGames = _store.GetAllGames();
@@ -130,19 +161,6 @@ public class DetectionOrchestrator
         {
             _detector.AddKnownGame(game);
         }
-
-        // 5. Subscribe to game detection events
-        _detector.GameStarted += OnGameStarted;
-        _detector.GameStopped += OnGameStopped;
-        _detector.AllGamesStopped += OnAllGamesStopped;
-
-        // 6. Start WMI process monitoring
-        _detector.StartMonitoring();
-
-        _logger.Information("Detection system initialized. Monitoring {Count} known games.",
-            _store.GetAllGames().Count);
-
-        return Task.CompletedTask;
     }
 
     /// <summary>
@@ -479,6 +497,7 @@ public class DetectionOrchestrator
     /// <returns>True if game was found and removed</returns>
     public bool RemoveGame(string gameId)
     {
+        var game = _store.GetAllGames().FirstOrDefault(g => g.Id == gameId);
         var removed = _store.RemoveGame(gameId);
         if (!removed)
         {
@@ -486,6 +505,11 @@ public class DetectionOrchestrator
         }
 
         _detector.RemoveKnownGame(gameId);
+
+        // A removed launcher game must not come back through a built-in profile this session either.
+        if (game != null && _store.IsIgnored(gameId))
+            _detector.SuppressInstallDirectory(game.InstallDirectory);
+
         return true;
     }
 

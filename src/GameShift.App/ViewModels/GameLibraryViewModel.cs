@@ -115,7 +115,9 @@ public class GameLibraryViewModel : INotifyPropertyChanged
         if (!string.Equals(SelectedGame.LauncherSource, "Manual", StringComparison.OrdinalIgnoreCase))
         {
             confirmationMessage +=
-                "\n\nThis launcher-detected game will remain hidden on future library scans.";
+                "\n\nGameShift will keep this launcher game hidden on future library scans and stop " +
+                "detecting it from its install folder. To optimize it again later, add its " +
+                "executable manually.";
         }
 
         var result = MessageBox.Show(
