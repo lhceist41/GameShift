@@ -33,6 +33,9 @@ public static class ServiceFactory
         writeDiag("Step c: Loading settings...");
         var settings = SettingsManager.Load();
         Log.Information("GameShift started (Admin: true)");
+        var install = GameShift.Core.Updates.InstallationDetector.Current;
+        Log.Information("Install mode: {Mode} (registered install folder: {InstallFolder})",
+            install.Mode, install.RegisteredInstallDirectory ?? "none");
         writeDiag("Settings loaded OK");
 
         // Reconcile startup registration without spawning schtasks.exe on every launch.
