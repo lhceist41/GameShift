@@ -256,7 +256,12 @@ public partial class App : Application
 
             // Step f3: Check for updates and show popup if available
             WriteDiag("Step f3: Checking for updates...");
-            await CheckAndShowUpdatePopupAsync(settings);
+            var updatePopupShown = await CheckAndShowUpdatePopupAsync(settings);
+
+            // Step f4: One-time recommendation for portable copies to switch to the installer. Skipped
+            // while an update popup was shown this start, which may already be shutting the app down.
+            if (!updatePopupShown)
+                ShowInstallRecommendationOnce();
 
             // Wire DPC spike toast notifications
             if (Services.DpcMon != null)
@@ -398,13 +403,14 @@ public partial class App : Application
     /// Checks for available updates and shows the UpdateWindow popup if one exists.
     /// Called during startup after MainWindow is shown. Never blocks or throws.
     /// Respects the user's "Skip This Version" preference.
+    /// Returns true if the popup was shown.
     /// </summary>
-    private async Task CheckAndShowUpdatePopupAsync(AppSettings settings)
+    private async Task<bool> CheckAndShowUpdatePopupAsync(AppSettings settings)
     {
         try
         {
             // Check if an update was already downloaded (e.g., from a previous session)
-            bool alreadyStaged = File.Exists(GameShift.Core.Updates.UpdateApplier.GetUpdateStagingPath());
+            bool alreadyStaged = GameShift.Core.Updates.UpdateCoordinator.FindStagedUpdateFromPreviousSession() != null;
 
             if (alreadyStaged)
             {
@@ -416,7 +422,7 @@ public partial class App : Application
                     var updateWindow = new UpdateWindow(updateInfo, alreadyStaged: true);
                     if (_mainWindow != null) updateWindow.Owner = _mainWindow;
                     updateWindow.ShowDialog();
-                    return;
+                    return true;
                 }
             }
 
@@ -425,7 +431,7 @@ public partial class App : Application
             if (update == null)
             {
                 WriteDiag("Step f3: No update available");
-                return;
+                return false;
             }
 
             // Respect "Skip This Version" preference
@@ -433,19 +439,65 @@ public partial class App : Application
                 update.LatestVersion == settings.SkippedUpdateVersion)
             {
                 WriteDiag($"Step f3: Update v{update.LatestVersion} skipped by user");
-                return;
+                return false;
             }
 
             WriteDiag($"Step f3: Update available v{update.LatestVersion}, showing popup");
             var popup = new UpdateWindow(update);
             if (_mainWindow != null) popup.Owner = _mainWindow;
             popup.ShowDialog();
+            return true;
         }
         catch (Exception ex)
         {
             // Update check failure never blocks startup
             Log.Debug(ex, "Update popup check failed (non-fatal)");
             WriteDiag($"Step f3: Update check failed: {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Recommends the installer, once, to a portable copy. The installed copy lives in an admin-only
+    /// folder and updates through the installer, which a loose exe in a user-writable folder cannot do
+    /// safely. Not shown while an installed copy is registered elsewhere. Never throws.
+    /// </summary>
+    private void ShowInstallRecommendationOnce()
+    {
+        try
+        {
+            var install = GameShift.Core.Updates.InstallationDetector.Current;
+            if (install.Mode != GameShift.Core.Updates.InstallMode.Portable ||
+                install.RegisteredInstallDirectory != null)
+                return;
+
+            if (SettingsManager.Load().InstallRecommendationShown) return;
+            SettingsManager.Update(s => s.InstallRecommendationShown = true);
+
+            WriteDiag("Step f4: Portable copy - showing the one-time install recommendation");
+            var result = MessageBox.Show(
+                _mainWindow!,
+                "GameShift now comes with an installer, and it is the recommended way to run it.\n\n" +
+                "The installer puts GameShift in C:\\Program Files\\GameShift, where only administrators can " +
+                "change its files, and installs future updates for you. Your settings and game library are kept.\n\n" +
+                "Exit this copy (tray icon > Exit) before you run the installer.\n\n" +
+                "Download GameShift-Setup.exe now? This message is shown only once.",
+                "Install GameShift",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Information);
+
+            if (result == MessageBoxResult.Yes)
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = GameShift.Core.Updates.UpdateAssetSelector.LatestInstallerUrl,
+                    UseShellExecute = true
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "Install recommendation failed (non-fatal)");
         }
     }
 
@@ -605,7 +657,8 @@ public partial class App : Application
 
     /// <summary>
     /// Writes a diagnostic line to stderr and gameshift-diag.log.
-    /// Uses the same format as Program.WriteDiag for consistent tracing.
+    /// Uses the same format and file as Program.WriteDiag for consistent tracing: %AppData%\GameShift,
+    /// never the working directory, which is the install folder (Program Files) for the installed copy.
     /// This traces OnStartup step-by-step - critical for diagnosing invisible-app issues
     /// where the app runs but produces no visible UI (e.g., tray icon fails on Win10).
     /// </summary>
@@ -615,7 +668,10 @@ public partial class App : Application
         Console.Error.WriteLine(line);
         try
         {
-            File.AppendAllText("gameshift-diag.log", line + Environment.NewLine);
+            var dir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "GameShift");
+            Directory.CreateDirectory(dir);
+            File.AppendAllText(Path.Combine(dir, "gameshift-diag.log"), line + Environment.NewLine);
         }
         catch { }
     }

@@ -58,6 +58,9 @@ docs/
 # Published binaries
 publish/
 
+# Installer build output (installer publish and GameShift-Setup.exe)
+artifacts/
+
 # Claude Code project instructions
 CLAUDE.md
 

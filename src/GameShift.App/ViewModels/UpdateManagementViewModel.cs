@@ -23,6 +23,7 @@ public class UpdateManagementViewModel : INotifyPropertyChanged
     private bool _isUpdateReady;
     private CancellationTokenSource? _downloadCts;
     private UpdateInfo? _pendingUpdate;
+    private StagedUpdate? _staged;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -82,12 +83,14 @@ public class UpdateManagementViewModel : INotifyPropertyChanged
         try
         {
             // If update was already downloaded via startup popup, show "ready" state
-            if (System.IO.File.Exists(UpdateApplier.GetUpdateStagingPath()))
+            var staged = UpdateCoordinator.FindStagedUpdateFromPreviousSession();
+            if (staged != null)
             {
                 var stagedUpdate = await UpdateChecker.CheckForUpdateAsync();
                 if (stagedUpdate != null)
                 {
                     _pendingUpdate = stagedUpdate;
+                    _staged = staged;
                     _ = Application.Current.Dispatcher.BeginInvoke(() =>
                     {
                         IsUpdateReady = true;
@@ -159,7 +162,6 @@ public class UpdateManagementViewModel : INotifyPropertyChanged
 
         try
         {
-            var targetPath = UpdateApplier.GetUpdateStagingPath();
             var progress = new Progress<double>(p =>
             {
                 Application.Current.Dispatcher.BeginInvoke(() =>
@@ -169,18 +171,14 @@ public class UpdateManagementViewModel : INotifyPropertyChanged
                 });
             });
 
-            var success = await Task.Run(() =>
-                UpdateDownloader.DownloadAsync(
-                    _pendingUpdate.DownloadUrl!,
-                    targetPath,
-                    _pendingUpdate.DownloadSize,
-                    _pendingUpdate.ExpectedSha256,
-                    progress,
-                    _downloadCts.Token));
+            var update = _pendingUpdate;
+            var staged = await Task.Run(() =>
+                UpdateCoordinator.DownloadAsync(update, progress, _downloadCts.Token));
 
             Application.Current.Dispatcher.Invoke(() =>
             {
-                if (success)
+                _staged = staged;
+                if (staged != null)
                 {
                     IsDownloading = false;
                     IsUpdateReady = true;
@@ -225,9 +223,9 @@ public class UpdateManagementViewModel : INotifyPropertyChanged
     /// </summary>
     public void ApplyUpdateAndRestart()
     {
-        if (!IsUpdateReady) return;
+        if (!IsUpdateReady || _staged == null) return;
 
-        if (UpdateApplier.ApplyUpdate())
+        if (UpdateCoordinator.Apply(_staged))
         {
             Application.Current.Shutdown();
         }
@@ -235,6 +233,7 @@ public class UpdateManagementViewModel : INotifyPropertyChanged
         {
             DownloadStatusText = "Failed to apply update. Try downloading again.";
             IsUpdateReady = false;
+            _staged = null;
         }
     }
 

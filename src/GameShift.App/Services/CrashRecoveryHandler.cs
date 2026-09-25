@@ -49,6 +49,6 @@ public static class CrashRecoveryHandler
         catch { /* Best-effort cleanup -- session may not exist */ }
 
         // Clean up leftover update artifacts from a previous auto-update.
-        GameShift.Core.Updates.UpdateApplier.CleanupPreviousUpdate();
+        GameShift.Core.Updates.UpdateCoordinator.CleanupPreviousUpdate();
     }
 }

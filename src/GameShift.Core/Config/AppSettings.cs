@@ -250,6 +250,11 @@ public class AppSettings
     /// Reset to empty when a newer version is released.
     /// </summary>
     public string SkippedUpdateVersion { get; set; } = string.Empty;
+
+    /// <summary>
+    /// True once a portable copy has shown the one-time recommendation to switch to the installer.
+    /// </summary>
+    public bool InstallRecommendationShown { get; set; }
 }
 
 /// <summary>

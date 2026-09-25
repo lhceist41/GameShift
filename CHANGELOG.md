@@ -4,8 +4,21 @@ All notable changes to GameShift are documented here.
 
 ## [Unreleased]
 
+### Security
+
+- **Installed copies update through the installer** - an installed GameShift downloads the new `GameShift-Setup.exe` into a new folder inside its install folder, which only administrators can change, checks its size and SHA-256 against what GitHub reports for the release, checks the hash again right before running it, and runs it silently; the installer replaces the files and starts GameShift again. It no longer writes an update script or a separate hash file. A portable `GameShift.App.exe` still updates by replacing its own file.
+
+### Added
+
+- **Installer** - GameShift now comes as `GameShift-Setup.exe`, a per-machine installer that puts GameShift in `C:\Program Files\GameShift`, where only administrators can change its files, adds a Start Menu shortcut, and registers a standard uninstaller. The installed copy keeps its native libraries next to its executable instead of unpacking them into your temp folder. Before uninstalling, undo GameShift's lasting changes (Settings > Restore All GameShift Tweaks, shown when Easy Mode is off, and any fixes applied in DPC Doctor); the uninstaller reminds you. The installer is now the recommended download; the portable `GameShift.App.exe` is still published with every release.
+
+### Changed
+
+- **The portable exe recommends the installer once** - when you run the portable `GameShift.App.exe`, GameShift suggests switching to the installer one time and can open its download. Your settings and game library are shared between both, so nothing is lost when you switch.
+
 ### Fixed
 
+- **The startup diagnostic log always goes to your GameShift data folder** - part of the startup trace was written to `gameshift-diag.log` in whatever folder GameShift was started from, which for an installed copy is its Program Files folder. The whole trace now goes to `%AppData%\GameShift\gameshift-diag.log`, where the rest of it already was.
 - **Removing a launcher game also stops its built-in profile from detecting it** - since 3.8.8 a removed launcher game stays out of the library, but a title that also has a built-in GameShift profile (such as Apex Legends or Fortnite) was still detected and optimized through that profile when you launched it. GameShift now stops detecting games started from a removed game's install folder, including after a restart. To have GameShift optimize the game again, add its executable manually in the Game Library.
 
 ## [3.8.8] - 2026-09-25

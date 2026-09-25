@@ -75,8 +75,6 @@ jobs:
     name: Publish win-x64 single file
     if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/tags/v')
     runs-on: windows-latest
-    permissions:
-      contents: write
     steps:
       - name: Check out
         uses: actions/checkout@v4
@@ -105,21 +103,98 @@ jobs:
           path: src/GameShift.App/bin/Release/net9.0-windows10.0.19041.0/win-x64/publish/GameShift.App.exe
           retention-days: 14
 
-      # Drafts the release so a human (or the release flow) only has to paste the
-      # CHANGELOG section and press publish. The asset name must stay exactly
-      # GameShift.App.exe: the in-app updater matches it by name.
-      - name: Draft GitHub release (tags only)
+  # The installer build: a publish that keeps its native libraries next to the exe instead of
+  # extracting them to %TEMP% at startup, packaged by installer/GameShift.iss. Compiled on every
+  # run so a broken installer script fails CI, not the release.
+  installer:
+    name: Installer
+    runs-on: windows-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 9
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      # The installed app finds its install folder under the installer's AppId. If the two drift
+      # apart, installed copies silently fall back to the portable update path.
+      - name: Check installer AppId matches the app
+        shell: pwsh
+        run: |
+          $iss = Get-Content installer/GameShift.iss -Raw
+          $cs = Get-Content src/GameShift.Core/Updates/InstallationDetector.cs -Raw
+          if ($iss -notmatch '#define AppGuid "([0-9A-Fa-f-]{36})"') { throw "AppGuid not found in installer/GameShift.iss" }
+          $issGuid = $Matches[1]
+          if ($cs -notmatch 'InstallerAppId\s*=\s*"\{([0-9A-Fa-f-]{36})\}"') { throw "InstallerAppId not found in InstallationDetector.cs" }
+          $csGuid = $Matches[1]
+          if ($issGuid -ne $csGuid) { throw "installer AppId $issGuid does not match InstallationDetector.InstallerAppId $csGuid" }
+          Write-Host "Installer AppId {$issGuid} matches the app"
+
+      - name: Publish (no self-extraction)
+        run: dotnet publish src/GameShift.App/GameShift.App.csproj -c Release -r win-x64 --nologo -p:IncludeNativeLibrariesForSelfExtract=false -o artifacts/installer-publish
+
+      # Inno Setup is preinstalled on the Windows runner images (iscc on PATH), but was missing
+      # from one image in 2025, so fall back to Chocolatey.
+      - name: Compile installer
+        shell: pwsh
+        run: |
+          $iscc = (Get-Command iscc -ErrorAction SilentlyContinue).Source
+          if (-not $iscc) {
+            Write-Host "iscc not on PATH, installing Inno Setup"
+            choco install innosetup -y --no-progress
+            $iscc = (Get-Command iscc -ErrorAction SilentlyContinue).Source
+            if (-not $iscc) { $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" }
+          }
+          if (-not (Test-Path $iscc)) { throw "Inno Setup compiler not found" }
+          & $iscc /Qp installer\GameShift.iss
+          if ($LASTEXITCODE -ne 0) { throw "Installer compile failed (exit $LASTEXITCODE)" }
+          $setup = Get-Item artifacts/installer/GameShift-Setup.exe
+          Write-Host "Built GameShift-Setup.exe $($setup.VersionInfo.FileVersion) ($([math]::Round($setup.Length / 1MB)) MB)"
+
+      - name: Upload installer (tags only)
         if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@v4
+        with:
+          name: GameShift-Setup.exe
+          path: artifacts/installer/GameShift-Setup.exe
+          retention-days: 14
+
+  # Drafts the release so a human (or the release flow) only has to paste the CHANGELOG section
+  # and press publish. Both assets are required. GameShift.App.exe must keep exactly that name:
+  # updaters in 3.8.x and earlier take it by name, and otherwise fall back to any .exe asset,
+  # which would be the installer.
+  draft-release:
+    name: Draft GitHub release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [publish, installer]
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download assets
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+
+      - name: Draft GitHub release
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
         run: |
           $tag = $env:GITHUB_REF_NAME
-          $exe = "src/GameShift.App/bin/Release/net9.0-windows10.0.19041.0/win-x64/publish/GameShift.App.exe"
+          $assets = @(
+            "release-assets/GameShift.App.exe/GameShift.App.exe",
+            "release-assets/GameShift-Setup.exe/GameShift-Setup.exe"
+          )
+          foreach ($asset in $assets) { if (-not (Test-Path $asset)) { throw "Missing release asset $asset" } }
           gh release view $tag *> $null
           if ($LASTEXITCODE -eq 0) {
-            Write-Host "Release $tag already exists, uploading asset only"
-            gh release upload $tag $exe --clobber
+            Write-Host "Release $tag already exists, uploading assets only"
+            gh release upload $tag @assets --clobber
           } else {
-            gh release create $tag $exe --draft --title "GameShift $($tag.TrimStart('v'))" --notes "Draft created by CI. Replace this text with the CHANGELOG section for $tag, then publish."
+            gh release create $tag @assets --draft --title "GameShift $($tag.TrimStart('v'))" --notes "Draft created by CI. Replace this text with the CHANGELOG section for $tag, then publish."
           }
+          if ($LASTEXITCODE -ne 0) { throw "gh release failed (exit $LASTEXITCODE)" }

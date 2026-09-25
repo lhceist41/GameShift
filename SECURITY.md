@@ -29,7 +29,8 @@ GameShift operates with administrator privileges and modifies system-level setti
 ### Application components
 
 - **GameShift.App**  - Main WPF application (runs as administrator)
-- **Updater**  - Checks GitHub Releases, downloads a new `GameShift.App.exe` when you accept an update, verifies its SHA-256, and replaces the running exe
+- **Installer**  - `GameShift-Setup.exe`, a per-machine Inno Setup installer that installs to `C:\Program Files\GameShift`
+- **Updater**  - Checks GitHub Releases for a newer version at startup. When you accept an update, an installed copy downloads `GameShift-Setup.exe` into `<install folder>\updates`, verifies its SHA-256 against GitHub's digest, verifies it again right before running it, and runs it silently. A portable copy downloads a new `GameShift.App.exe`, verifies its SHA-256, and replaces the running exe
 - **State Journal**  - Optimization state persisted to `%ProgramData%\GameShift\state.json`
 
 The source also contains **GameShift.Watchdog** (a Windows service that would run as SYSTEM) and a **boot-recovery scheduled task** (would also run as SYSTEM). Neither ships in releases or is installed by the app yet. Reports about them are still welcome, since they're meant to ship later.
@@ -49,7 +50,7 @@ The source also contains **GameShift.Watchdog** (a Windows service that would ru
 
 - GameShift's only network activity is checking GitHub Releases for updates (and downloading one when you accept it) and the dashboard's latency monitor, which pings a configurable host (`8.8.8.8` by default)
 - No telemetry is collected or transmitted
-- Keep `GameShift.App.exe` in a folder only administrators can change, such as `C:\Program Files\GameShift`. GameShift runs elevated, so a folder standard users can write to (Downloads, the Desktop, or a folder created directly under `C:\`) lets them influence what runs with admin rights
+- Use the installer, which puts GameShift in `C:\Program Files\GameShift`. If you run the portable `GameShift.App.exe`, keep it in a folder only administrators can change. GameShift runs elevated, so a folder standard users can write to (Downloads, the Desktop, or a folder created directly under `C:\`) lets them influence what runs with admin rights
 - Application data is stored locally in `%AppData%\GameShift\` (user settings and profiles)
 - System recovery data is stored in `%ProgramData%\GameShift\` (state journal), and GameShift sets that folder's permissions so standard users can only read it
 - All system modifications are recorded in an atomic state journal with original values for deterministic rollback

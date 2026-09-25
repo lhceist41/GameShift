@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Net.Http;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -36,150 +37,125 @@ public static class UpdateChecker
         try
         {
             var response = await _httpClient.GetStringAsync(GitHubApiUrl);
-            using var doc = JsonDocument.Parse(response);
-            var root = doc.RootElement;
-
-            var tagName = root.GetProperty("tag_name").GetString();
-            var htmlUrl = root.GetProperty("html_url").GetString();
-            var body = root.TryGetProperty("body", out var bodyProp)
-                ? bodyProp.GetString()
-                : null;
-
-            if (string.IsNullOrEmpty(tagName)) return null;
-
-            // Strip leading 'v' from tag (e.g., "v1.1.0" → "1.1.0")
-            var versionStr = tagName.StartsWith('v') ? tagName[1..] : tagName;
-
-            if (!Version.TryParse(versionStr, out var latestVersion))
-            {
-                Log.Debug("UpdateChecker: Could not parse version from tag '{Tag}'", tagName);
-                return null;
-            }
-
-            var currentVersion = GetCurrentVersion();
-
-            if (latestVersion > currentVersion)
-            {
-                Log.Information(
-                    "UpdateChecker: Update available - current {Current}, latest {Latest}",
-                    currentVersion, latestVersion);
-
-                // Parse download URL from release assets.
-                // Priority: exact exe match > any .exe asset > any .zip asset > source zipball.
-                string? downloadUrl = null;
-                long downloadSize = 0;
-                string? downloadDigest = null;
-
-                if (root.TryGetProperty("assets", out var assetsArray))
-                {
-                    string? fallbackExeUrl = null;
-                    long fallbackExeSize = 0;
-                    string? fallbackExeDigest = null;
-                    string? fallbackZipUrl = null;
-                    long fallbackZipSize = 0;
-                    string? fallbackZipDigest = null;
-
-                    foreach (var asset in assetsArray.EnumerateArray())
-                    {
-                        var assetName = asset.GetProperty("name").GetString();
-                        if (string.IsNullOrEmpty(assetName)) continue;
-
-                        var url = asset.GetProperty("browser_download_url").GetString();
-                        var size = asset.GetProperty("size").GetInt64();
-                        // GitHub reports a per-asset content digest ("sha256:<hex>"). The downloader
-                        // verifies the downloaded bytes against it before the binary is ever applied.
-                        var digest = asset.TryGetProperty("digest", out var digestProp)
-                            ? digestProp.GetString()
-                            : null;
-
-                        // Priority 1: exact name match
-                        if (assetName.Equals("GameShift.App.exe", StringComparison.OrdinalIgnoreCase) ||
-                            assetName.Equals("GameShift.exe", StringComparison.OrdinalIgnoreCase))
-                        {
-                            downloadUrl = url;
-                            downloadSize = size;
-                            downloadDigest = digest;
-                            break;
-                        }
-
-                        // Priority 2: any .exe asset
-                        if (fallbackExeUrl == null &&
-                            assetName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
-                        {
-                            fallbackExeUrl = url;
-                            fallbackExeSize = size;
-                            fallbackExeDigest = digest;
-                        }
-
-                        // Priority 3: any .zip asset
-                        if (fallbackZipUrl == null &&
-                            assetName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
-                        {
-                            fallbackZipUrl = url;
-                            fallbackZipSize = size;
-                            fallbackZipDigest = digest;
-                        }
-                    }
-
-                    // Use fallbacks if no exact match found
-                    if (downloadUrl == null && fallbackExeUrl != null)
-                    {
-                        downloadUrl = fallbackExeUrl;
-                        downloadSize = fallbackExeSize;
-                        downloadDigest = fallbackExeDigest;
-                    }
-                    else if (downloadUrl == null && fallbackZipUrl != null)
-                    {
-                        downloadUrl = fallbackZipUrl;
-                        downloadSize = fallbackZipSize;
-                        downloadDigest = fallbackZipDigest;
-                    }
-                }
-
-                // Last resort: use GitHub's auto-generated source zipball
-                if (downloadUrl == null)
-                {
-                    downloadUrl = root.TryGetProperty("zipball_url", out var zipballProp)
-                        ? zipballProp.GetString()
-                        : null;
-                }
-
-                // Validate URLs before returning - reject any that point outside GitHub
-                var releaseUrl = htmlUrl ?? $"https://github.com/lhceist41/GameShift/releases/tag/{tagName}";
-                if (!GitHubUrlValidator.IsValid(releaseUrl))
-                {
-                    Log.Warning("UpdateChecker: Rejected release URL outside allowed domains: {Url}", releaseUrl);
-                    return null;
-                }
-                if (downloadUrl != null && !GitHubUrlValidator.IsValid(downloadUrl))
-                {
-                    Log.Warning("UpdateChecker: Rejected download URL outside allowed domains: {Url}", downloadUrl);
-                    downloadUrl = null;
-                    downloadSize = 0;
-                }
-
-                return new UpdateInfo
-                {
-                    CurrentVersion = currentVersion.ToString(),
-                    LatestVersion = latestVersion.ToString(),
-                    TagName = tagName,
-                    ReleaseUrl = releaseUrl,
-                    ReleaseNotes = body,
-                    DownloadUrl = downloadUrl,
-                    DownloadSize = downloadSize,
-                    ExpectedSha256 = downloadDigest
-                };
-            }
-
-            Log.Debug("UpdateChecker: Up to date (current {Current}, latest {Latest})",
-                currentVersion, latestVersion);
-            return null;
+            return ParseRelease(response, GetCurrentVersion(), InstallationDetector.Current.Mode);
         }
         catch (Exception ex)
         {
             Log.Debug(ex, "UpdateChecker: Check failed (non-fatal)");
             return null;
         }
+    }
+
+    /// <summary>
+    /// Parses a GitHub "latest release" response. Returns update details when the release is newer
+    /// than <paramref name="currentVersion"/>, with the download asset chosen for <paramref name="mode"/>;
+    /// returns null when current. Throws on a malformed response.
+    /// </summary>
+    internal static UpdateInfo? ParseRelease(string json, Version currentVersion, InstallMode mode)
+    {
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+
+        var tagName = root.GetProperty("tag_name").GetString();
+        var htmlUrl = root.GetProperty("html_url").GetString();
+        var body = root.TryGetProperty("body", out var bodyProp)
+            ? bodyProp.GetString()
+            : null;
+
+        if (string.IsNullOrEmpty(tagName)) return null;
+
+        // Strip leading 'v' from tag (e.g., "v1.1.0" → "1.1.0")
+        var versionStr = tagName.StartsWith('v') ? tagName[1..] : tagName;
+
+        if (!Version.TryParse(versionStr, out var latestVersion))
+        {
+            Log.Debug("UpdateChecker: Could not parse version from tag '{Tag}'", tagName);
+            return null;
+        }
+
+        if (latestVersion <= currentVersion)
+        {
+            Log.Debug("UpdateChecker: Up to date (current {Current}, latest {Latest})",
+                currentVersion, latestVersion);
+            return null;
+        }
+
+        Log.Information(
+            "UpdateChecker: Update available - current {Current}, latest {Latest}",
+            currentVersion, latestVersion);
+
+        var assets = new List<ReleaseAsset>();
+        if (root.TryGetProperty("assets", out var assetsArray))
+        {
+            foreach (var asset in assetsArray.EnumerateArray())
+            {
+                var assetName = asset.GetProperty("name").GetString();
+                if (string.IsNullOrEmpty(assetName)) continue;
+
+                // GitHub reports a per-asset content digest ("sha256:<hex>"). The downloader
+                // verifies the downloaded bytes against it before the binary is ever applied.
+                var digest = asset.TryGetProperty("digest", out var digestProp)
+                    ? digestProp.GetString()
+                    : null;
+
+                assets.Add(new ReleaseAsset(
+                    assetName,
+                    asset.GetProperty("browser_download_url").GetString(),
+                    asset.GetProperty("size").GetInt64(),
+                    digest));
+            }
+        }
+
+        var selected = UpdateAssetSelector.Select(assets, mode);
+        string? downloadUrl = selected?.DownloadUrl;
+        long downloadSize = 0;
+        string? downloadDigest = null;
+        string? downloadAssetName = null;
+
+        if (selected != null && downloadUrl != null)
+        {
+            downloadSize = selected.Size;
+            downloadDigest = selected.Digest;
+            downloadAssetName = selected.Name;
+        }
+        else if (mode == InstallMode.Portable)
+        {
+            // Last resort for a portable copy: GitHub's auto-generated source zipball. An installed copy
+            // can only install through the installer; without one the UI opens the release page instead.
+            downloadUrl = root.TryGetProperty("zipball_url", out var zipballProp)
+                ? zipballProp.GetString()
+                : null;
+        }
+
+        // Validate URLs before returning - reject any that point outside GitHub
+        var releaseUrl = htmlUrl ?? $"https://github.com/lhceist41/GameShift/releases/tag/{tagName}";
+        if (!GitHubUrlValidator.IsValid(releaseUrl))
+        {
+            Log.Warning("UpdateChecker: Rejected release URL outside allowed domains: {Url}", releaseUrl);
+            return null;
+        }
+        if (downloadUrl != null && !GitHubUrlValidator.IsValid(downloadUrl))
+        {
+            Log.Warning("UpdateChecker: Rejected download URL outside allowed domains: {Url}", downloadUrl);
+            downloadUrl = null;
+            downloadSize = 0;
+            downloadDigest = null;
+            downloadAssetName = null;
+        }
+
+        return new UpdateInfo
+        {
+            CurrentVersion = currentVersion.ToString(),
+            LatestVersion = latestVersion.ToString(),
+            TagName = tagName,
+            ReleaseUrl = releaseUrl,
+            ReleaseNotes = body,
+            DownloadUrl = downloadUrl,
+            DownloadSize = downloadSize,
+            ExpectedSha256 = downloadDigest,
+            AssetName = downloadAssetName,
+            Mode = mode
+        };
     }
 
     private static Version GetCurrentVersion()
@@ -204,8 +180,17 @@ public class UpdateInfo
     public string ReleaseUrl { get; set; } = "";
     public string? ReleaseNotes { get; set; }
 
-    /// <summary>Direct download URL for GameShift.exe from GitHub release assets.</summary>
+    /// <summary>
+    /// Direct download URL of the selected release asset (see <see cref="AssetName"/>). Null when the
+    /// release has nothing this copy can install; the UI then opens <see cref="ReleaseUrl"/> instead.
+    /// </summary>
     public string? DownloadUrl { get; set; }
+
+    /// <summary>Name of the release asset behind <see cref="DownloadUrl"/>, or null (e.g. source zipball).</summary>
+    public string? AssetName { get; set; }
+
+    /// <summary>Install mode the asset was selected for; decides how the download is applied.</summary>
+    public InstallMode Mode { get; set; }
 
     /// <summary>File size in bytes (from GitHub asset metadata). Used for progress display.</summary>
     public long DownloadSize { get; set; }
@@ -214,7 +199,8 @@ public class UpdateInfo
     /// Expected content digest of the download asset, as reported by the GitHub releases API
     /// (format "sha256:&lt;hex&gt;"). The downloader verifies the downloaded bytes against this
     /// before the binary is staged/applied. Null when no digest is available (then the download
-    /// is refused, since the update is applied over the running elevated executable).
+    /// is refused, since the update either replaces the running elevated executable or runs elevated
+    /// as the installer).
     /// </summary>
     public string? ExpectedSha256 { get; set; }
 }

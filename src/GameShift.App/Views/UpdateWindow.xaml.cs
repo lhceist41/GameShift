@@ -23,6 +23,7 @@ public partial class UpdateWindow : Window
     private readonly UpdateInfo _updateInfo;
     private CancellationTokenSource? _downloadCts;
     private bool _isUpdateReady;
+    private StagedUpdate? _staged;
 
     /// <summary>
     /// Creates a new UpdateWindow for the given update info.
@@ -62,7 +63,9 @@ public partial class UpdateWindow : Window
         // If update is already staged, go straight to Ready state
         if (alreadyStaged)
         {
-            ShowReadyState();
+            _staged = UpdateCoordinator.FindStagedUpdateFromPreviousSession();
+            if (_staged != null)
+                ShowReadyState();
         }
     }
 
@@ -156,7 +159,6 @@ public partial class UpdateWindow : Window
 
         try
         {
-            var targetPath = UpdateApplier.GetUpdateStagingPath();
             var progress = new Progress<double>(p =>
             {
                 var percent = (int)(p * 100);
@@ -164,15 +166,9 @@ public partial class UpdateWindow : Window
                 ProgressPercentText.Text = $"{percent}%";
             });
 
-            bool success = await UpdateDownloader.DownloadAsync(
-                _updateInfo.DownloadUrl!,
-                targetPath,
-                _updateInfo.DownloadSize,
-                _updateInfo.ExpectedSha256,
-                progress,
-                _downloadCts.Token);
+            _staged = await UpdateCoordinator.DownloadAsync(_updateInfo, progress, _downloadCts.Token);
 
-            if (success)
+            if (_staged != null)
             {
                 ShowReadyState();
             }
@@ -200,9 +196,9 @@ public partial class UpdateWindow : Window
 
     private void OnInstallClicked(object sender, RoutedEventArgs e)
     {
-        if (!_isUpdateReady) return;
+        if (!_isUpdateReady || _staged == null) return;
 
-        if (UpdateApplier.ApplyUpdate())
+        if (UpdateCoordinator.Apply(_staged))
         {
             Application.Current.Shutdown();
         }
@@ -210,6 +206,7 @@ public partial class UpdateWindow : Window
         {
             ShowErrorState("Failed to apply update. Try downloading again.");
             _isUpdateReady = false;
+            _staged = null;
         }
     }
 

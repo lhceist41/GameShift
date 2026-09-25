@@ -35,6 +35,8 @@ public static class UpdateDownloader
     /// The download is verified against this before being promoted; a null/blank or non-sha256 value is rejected.</param>
     /// <param name="progress">Progress reporter: 0.0 to 1.0</param>
     /// <param name="ct">Cancellation token</param>
+    /// <param name="writeHashSidecar">Write "&lt;target&gt;.sha256" for the portable apply step to re-check.
+    /// The installed-mode updater keeps the expected hash in memory and passes false.</param>
     /// <returns>True if the download completed AND was verified successfully</returns>
     public static async Task<bool> DownloadAsync(
         string downloadUrl,
@@ -42,7 +44,8 @@ public static class UpdateDownloader
         long expectedSize,
         string? expectedSha256,
         IProgress<double> progress,
-        CancellationToken ct)
+        CancellationToken ct,
+        bool writeHashSidecar = true)
     {
         if (!GitHubUrlValidator.IsValid(downloadUrl))
         {
@@ -94,8 +97,9 @@ public static class UpdateDownloader
             await fileStream.FlushAsync(ct);
             fileStream.Close();
 
-            // Integrity gate: this binary is moved over the running ELEVATED executable by
-            // UpdateApplier, so an unverified download is a path to SYSTEM-level code execution.
+            // Integrity gate: this binary is either moved over the running ELEVATED executable by
+            // UpdateApplier or run elevated as the installer by InstallerUpdate, so an unverified
+            // download is a path to SYSTEM-level code execution.
             // Refuse to promote the file unless its size and SHA-256 match what the release
             // metadata advertised - fail closed, never apply an update we cannot verify.
             if (totalBytes > 0 && totalRead != totalBytes)
@@ -133,8 +137,11 @@ public static class UpdateDownloader
             // Write a sidecar with the verified hash so the apply step can RE-verify the staged file
             // before moving it over the running elevated exe. The staging directory may be
             // user-writable, so the in-session check alone does not protect a later apply.
-            try { File.WriteAllText(targetPath + ".sha256", actualHex); }
-            catch (Exception ex) { Log.Warning(ex, "UpdateDownloader: Could not write hash sidecar"); }
+            if (writeHashSidecar)
+            {
+                try { File.WriteAllText(targetPath + ".sha256", actualHex); }
+                catch (Exception ex) { Log.Warning(ex, "UpdateDownloader: Could not write hash sidecar"); }
+            }
 
             Log.Information("UpdateDownloader: Complete and verified, {Bytes:N0} bytes (sha256 {Hash})",
                 totalRead, actualHex);

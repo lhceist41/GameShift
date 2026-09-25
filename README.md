@@ -159,12 +159,20 @@ For games with kernel-level anti-cheat (EAC, BattlEye, RICOCHET, TencentACE), Ga
 
 ## 🚀 Quick Start
 
-### Download (recommended)
+### Install (recommended)
 
-1. Grab the latest `GameShift.App.exe` from the [Releases page](https://github.com/lhceist41/GameShift/releases/latest)
-2. Put it in a folder only administrators can change, such as `C:\Program Files\GameShift` (not Downloads, the Desktop, or a folder you created directly under `C:\`). GameShift runs with administrator rights, so anyone who can change files in its folder could run code with those rights.
-3. Run as **Administrator** (required for service control, registry access, timer resolution, and power plan management)
+1. Download `GameShift-Setup.exe` from the [Releases page](https://github.com/lhceist41/GameShift/releases/latest)
+2. Run it and approve the administrator prompt. GameShift installs to `C:\Program Files\GameShift`, where only administrators can change its files, and adds a Start Menu shortcut.
+3. Start GameShift from the Start Menu. It runs as **Administrator** (required for service control, registry access, timer resolution, and power plan management)
 4. Complete the first-run wizard - GameShift auto-detects your installed games and scans your hardware
+
+When you accept an update, the installed GameShift downloads the new installer into its own folder, checks it against the SHA-256 digest GitHub reports for the release, and runs it; the installer replaces the files and starts GameShift again.
+
+To uninstall, first undo GameShift's lasting changes: open GameShift, uncheck **Easy Mode** in Settings, click **Restore All GameShift Tweaks**, and revert any fixes you applied in **DPC Doctor**. Then remove GameShift in Windows Settings > Apps.
+
+### Portable exe
+
+The Releases page also has `GameShift.App.exe`, which runs without installing. Put it in a folder only administrators can change, such as `C:\Program Files\GameShift` (not Downloads, the Desktop, or a folder you created directly under `C:\`). GameShift runs with administrator rights, so anyone who can change files in its folder could run code with those rights. A portable copy updates by replacing its own file, and suggests switching to the installer once.
 
 ### Build from Source
 
