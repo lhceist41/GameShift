@@ -63,3 +63,10 @@ CLAUDE.md
 
 # Local planning / continuation docs
 AI_Continuation_Document*
+
+# Local agent guidance and handoff notes
+AGENTS.md
+.agent-handoff/
+
+# Local code-graph analysis output
+graphify-out/
