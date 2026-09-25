@@ -19,6 +19,7 @@ All notable changes to GameShift are documented here.
 ### Fixed
 
 - **The startup diagnostic log always goes to your GameShift data folder** - part of the startup trace was written to `gameshift-diag.log` in whatever folder GameShift was started from, which for an installed copy is its Program Files folder. The whole trace now goes to `%AppData%\GameShift\gameshift-diag.log`, where the rest of it already was.
+- **The dashboard's "(N failed)" count no longer carries over between Quick Optimize runs** - failures were counted from one game session to the next, but a Quick Optimize run never reset the count, so repeated Quick Optimize and revert cycles could show failures from earlier runs. Each Quick Optimize run now counts only its own failures.
 - **Removing a launcher game also stops its built-in profile from detecting it** - since 3.8.8 a removed launcher game stays out of the library, but a title that also has a built-in GameShift profile (such as Apex Legends or Fortnite) was still detected and optimized through that profile when you launched it. GameShift now stops detecting games started from a removed game's install folder, including after a restart. To have GameShift optimize the game again, add its executable manually in the Game Library.
 
 ## [3.8.8] - 2026-09-25

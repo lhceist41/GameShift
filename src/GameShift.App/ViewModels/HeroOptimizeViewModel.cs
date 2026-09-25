@@ -32,6 +32,9 @@ public class HeroOptimizeViewModel : INotifyPropertyChanged
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
+    /// <summary>Raised on the UI thread right before a Quick Optimize session is activated.</summary>
+    public event EventHandler? QuickOptimizeStarting;
+
     public string HeroStatusText
     {
         get => _heroStatusText;
@@ -155,6 +158,7 @@ public class HeroOptimizeViewModel : INotifyPropertyChanged
                 ShowHeroPreview = false;
                 var profile = GameProfile.CreateDefault();
                 profile.GameName = "Quick Optimize";
+                QuickOptimizeStarting?.Invoke(this, EventArgs.Empty);
                 await _engine.ActivateProfileAsync(profile);
             }
         }

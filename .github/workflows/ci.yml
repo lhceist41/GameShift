@@ -45,12 +45,11 @@ jobs:
   # Trust-contract verification: runs a REAL probe -> apply-all -> revert-all -> probe cycle on
   # the ephemeral runner (elevated, throwaway VM) and requires zero persistent residue. This is
   # the only check that exercises the actual Windows registry/powercfg/service behavior end to
-  # end. Informational (continue-on-error) while it accumulates baseline runs; promote it to a
-  # required check once it has proven stable across environments.
+  # end. It is a hard gate: its two failures to date were both real revert bugs, and a published
+  # release is immutable, so a draft must never be created on top of a failing run.
   revert-symmetry:
-    name: Revert symmetry (informational)
+    name: Revert symmetry
     runs-on: windows-latest
-    continue-on-error: true
     steps:
       - name: Check out
         uses: actions/checkout@v4
@@ -164,11 +163,12 @@ jobs:
   # Drafts the release so a human (or the release flow) only has to paste the CHANGELOG section
   # and press publish. Both assets are required. GameShift.App.exe must keep exactly that name:
   # updaters in 3.8.x and earlier take it by name, and otherwise fall back to any .exe asset,
-  # which would be the installer.
+  # which would be the installer. Tests and the revert check must pass too: nothing is drafted on
+  # top of a failing run.
   draft-release:
     name: Draft GitHub release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [publish, installer]
+    needs: [checks, revert-symmetry, publish, installer]
     runs-on: windows-latest
     permissions:
       contents: write
