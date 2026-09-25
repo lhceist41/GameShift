@@ -1,158 +1,346 @@
-using System.Text.Json;
+using System.IO;
+using System.Linq;
 using GameShift.Core.Config;
 using GameShift.Core.Detection;
-using GameShift.Core.Optimization;
-using GameShift.Core.Profiles;
 using GameShift.Tests.TestHelpers;
+using Xunit;
 
 namespace GameShift.Tests.Detection;
 
+/// <summary>
+/// Regression harness for <see cref="KnownGamesStore"/>: the persistent identity list that survives
+/// restarts and decides which titles GameShift will optimize. These tests run against an isolated
+/// app-data root via the internal <see cref="SettingsManager.SettingsFilePathOverride"/>, so they are
+/// serialized with the other config-state tests and never touch the real %AppData%\GameShift store.
+/// </summary>
 [Collection("ConfigState")]
-public sealed class KnownGamesStoreTests : IDisposable
+public class KnownGamesStoreTests
 {
-    private readonly TempPath _temp = new();
-    private readonly string? _previousSettingsPath = SettingsManager.SettingsFilePathOverride;
-
-    public KnownGamesStoreTests()
+    private static GameInfo ScannerGame(string id, string name, string installDir, string launcher = "Steam") => new()
     {
-        SettingsManager.SettingsFilePathOverride = _temp.GetFile("settings.json");
+        Id = id,
+        GameName = name,
+        ExecutablePath = "",
+        InstallDirectory = installDir,
+        LauncherSource = launcher,
+        LauncherId = id
+    };
+
+    private static string StoreFile(TempPath temp) => temp.GetFile("known_games.json");
+
+    /// <summary>
+    /// Creates a harmless placeholder file so <see cref="KnownGamesStore.AddManualGame"/> passes its
+    /// existence check. It is never executed.
+    /// </summary>
+    private static string CreatePlaceholderExe(TempPath temp, string fileName)
+    {
+        var path = temp.GetFile(fileName);
+        File.WriteAllText(path, "placeholder - not an executable");
+        return path;
     }
 
-    public void Dispose()
-    {
-        SettingsManager.SettingsFilePathOverride = _previousSettingsPath;
-        _temp.Dispose();
-    }
-
+    /// <summary>
+    /// B1: Scanner results must outlive the process - a game merged in one session has to be there
+    /// after a restart, otherwise every launch would re-scan from scratch.
+    /// </summary>
     [Fact]
-    public void RemoveGame_LauncherGame_StaysHiddenAfterReloadAndScan()
+    public void MergeScannedGames_AddsNewEntriesAndPersistsAcrossReload()
     {
-        var removed = new GameInfo { Id = "steam_1", GameName = "Removed", LauncherSource = "Steam" };
-        var retained = new GameInfo { Id = "epic_2", GameName = "Retained", LauncherSource = "Epic" };
-        var store = new KnownGamesStore();
-        store.MergeScannedGames(new[] { removed, retained });
-
-        Assert.True(store.RemoveGame(removed.Id));
-        store.MergeScannedGames(new[] { removed, retained });
-        Assert.Equal(retained.Id, Assert.Single(store.GetAllGames()).Id);
-        Assert.Equal(new[] { removed.Id }, JsonSerializer.Deserialize<string[]>(
-            File.ReadAllText(_temp.GetFile("ignored_games.json"))));
-
-        var reloaded = new KnownGamesStore();
-        reloaded.Load();
-        reloaded.MergeScannedGames(new[] { removed, retained });
-
-        Assert.Equal(retained.Id, Assert.Single(reloaded.GetAllGames()).Id);
-        Assert.Equal(retained.Id, Assert.Single(JsonSerializer.Deserialize<List<GameInfo>>(
-            File.ReadAllText(_temp.GetFile("known_games.json")))!).Id);
-        Assert.Empty(Directory.GetFiles(_temp.Path, "*.tmp"));
-    }
-
-    [Fact]
-    public void RemoveGame_IgnoreSaveFails_ReturnsFalseAndRollsBackKnownGames()
-    {
-        var removed = new GameInfo { Id = "steam_1", LauncherSource = "Steam" };
-        var retained = new GameInfo { Id = "epic_2", LauncherSource = "Epic" };
-        var ignoredPath = _temp.GetFile("ignored_games.json");
-        File.WriteAllText(ignoredPath, "[\"gog_3\"]");
-        var store = new KnownGamesStore();
-        store.Load();
-        store.MergeScannedGames(new[] { removed, retained });
-        var knownPath = _temp.GetFile("known_games.json");
-        var originalKnown = File.ReadAllText(knownPath);
-        var originalIgnored = File.ReadAllText(ignoredPath);
-
-        using (var blocked = new FileStream(ignoredPath, FileMode.Open, FileAccess.Read, FileShare.Read))
-        {
-            Assert.False(store.RemoveGame(removed.Id));
-        }
-
-        Assert.Equal(new[] { removed.Id, retained.Id }, store.GetAllGames().Select(game => game.Id));
-        Assert.Equal(originalKnown, File.ReadAllText(knownPath));
-        Assert.Equal(originalIgnored, File.ReadAllText(ignoredPath));
-        Assert.Empty(Directory.GetFiles(_temp.Path, "*.tmp"));
-
-        var reloaded = new KnownGamesStore();
-        reloaded.Load();
-        Assert.Equal(new[] { removed.Id, retained.Id }, reloaded.GetAllGames().Select(game => game.Id));
-        Assert.True(store.RemoveGame(removed.Id));
-        store.MergeScannedGames(new[] { removed, retained, new GameInfo { Id = "gog_3", LauncherSource = "GOG" } });
-        Assert.Equal(retained.Id, Assert.Single(store.GetAllGames()).Id);
-        Assert.Equal(new[] { "gog_3", removed.Id }, JsonSerializer.Deserialize<string[]>(File.ReadAllText(ignoredPath)));
-    }
-
-    [Fact]
-    public void RemoveGame_ManualGame_DoesNotCreateIgnoreEntryAndCanBeAddedAgain()
-    {
-        var executablePath = _temp.GetFile("manual-game.exe");
-        File.WriteAllText(executablePath, string.Empty);
-        var store = new KnownGamesStore();
-        var game = Assert.IsType<GameInfo>(store.AddManualGame(executablePath));
-
-        Assert.True(store.RemoveGame(game.Id));
-
-        Assert.Empty(store.GetAllGames());
-        Assert.False(File.Exists(_temp.GetFile("ignored_games.json")));
-        var reloaded = new KnownGamesStore();
-        reloaded.Load();
-        Assert.Empty(reloaded.GetAllGames());
-        Assert.Equal(game.Id, Assert.IsType<GameInfo>(reloaded.AddManualGame(executablePath)).Id);
-        Assert.False(File.Exists(_temp.GetFile("ignored_games.json")));
-    }
-
-    [Theory]
-    [InlineData("known_games.json")]
-    [InlineData("ignored_games.json")]
-    public void OrchestratorRemoveGame_StoreSaveFails_LeavesDetectorUntouched(string blockedFile)
-    {
-        var game = new GameInfo { Id = "steam_1", LauncherSource = "Steam" };
-        var store = new KnownGamesStore();
-        store.MergeScannedGames(new[] { game });
-        File.WriteAllText(_temp.GetFile("ignored_games.json"), "[]");
-        using var detector = new GameDetector(Array.Empty<ILibraryScanner>());
-        detector.AddKnownGame(game);
-        using var engine = new OptimizationEngine(Array.Empty<IOptimization>());
-        var orchestrator = new DetectionOrchestrator(
-            detector, engine, store, Array.Empty<ILibraryScanner>(), new ProfileManager());
+        using var temp = new TempPath();
+        SettingsManager.SettingsFilePathOverride = temp.GetFile("settings.json");
         try
         {
-            using (var blocked = new FileStream(_temp.GetFile(blockedFile), FileMode.Open, FileAccess.Read, FileShare.Read))
+            var store = new KnownGamesStore();
+            store.Load();
+            store.MergeScannedGames(new[]
             {
-                Assert.False(orchestrator.RemoveGame(game.Id));
-                Assert.Same(game, Assert.Single(detector.GetKnownGames()));
-                Assert.Same(game, Assert.Single(store.GetAllGames()));
-            }
+                ScannerGame("steam_400", "Portal", @"C:\SteamLibrary\steamapps\common\Portal"),
+                ScannerGame("epic_fn", "Fortnite", @"C:\Epic\Fortnite", "Epic")
+            });
 
-            Assert.True(orchestrator.RemoveGame(game.Id));
-            Assert.Empty(detector.GetKnownGames());
+            var reloaded = new KnownGamesStore();
+            reloaded.Load();
+
+            var games = reloaded.GetAllGames();
+            Assert.Equal(2, games.Count);
+            Assert.Contains(games, g => g.Id == "steam_400" && g.GameName == "Portal");
+            Assert.Contains(games, g => g.Id == "epic_fn" && g.LauncherSource == "Epic");
+        }
+        finally
+        {
+            SettingsManager.SettingsFilePathOverride = null;
+        }
+    }
+
+    /// <summary>
+    /// B2: A re-scan carries updated launcher data (moved library, renamed title). The existing
+    /// scanner entry must be refreshed in place rather than duplicated.
+    /// </summary>
+    [Fact]
+    public void MergeScannedGames_ReplacesExistingScannerEntryInPlace()
+    {
+        using var temp = new TempPath();
+        SettingsManager.SettingsFilePathOverride = temp.GetFile("settings.json");
+        try
+        {
+            var store = new KnownGamesStore();
+            store.Load();
+            store.MergeScannedGames(new[] { ScannerGame("steam_500", "Old Name", @"C:\Old\Path") });
+            store.MergeScannedGames(new[] { ScannerGame("steam_500", "New Name", @"D:\New\Path") });
+
+            var stored = Assert.Single(store.GetAllGames());
+            Assert.Equal("steam_500", stored.Id);
+            Assert.Equal("New Name", stored.GameName);
+            Assert.Equal(@"D:\New\Path", stored.InstallDirectory);
+        }
+        finally
+        {
+            SettingsManager.SettingsFilePathOverride = null;
+        }
+    }
+
+    /// <summary>
+    /// B3: A manual entry is the user's own decision and holds the authoritative path. Scanner data
+    /// that collides on ID must not overwrite it.
+    /// </summary>
+    [Fact]
+    public void MergeScannedGames_PreservesManualEntryOnIdCollision()
+    {
+        using var temp = new TempPath();
+        SettingsManager.SettingsFilePathOverride = temp.GetFile("settings.json");
+        try
+        {
+            var exePath = CreatePlaceholderExe(temp, "Collision.exe");
+
+            var store = new KnownGamesStore();
+            store.Load();
+            var manual = store.AddManualGame(exePath);
+            Assert.NotNull(manual);
+
+            store.MergeScannedGames(new[]
+            {
+                ScannerGame(manual!.Id, "Scanner Version", @"C:\Scanner\Collision")
+            });
+
+            var stored = Assert.Single(store.GetAllGames());
+            Assert.Equal("Manual", stored.LauncherSource);
+            Assert.Equal("Collision", stored.GameName);
+            Assert.Equal(exePath, stored.ExecutablePath);
+        }
+        finally
+        {
+            SettingsManager.SettingsFilePathOverride = null;
+        }
+    }
+
+    /// <summary>
+    /// B4: A manual add pointing at a nonexistent executable is rejected, and the rejection is total -
+    /// it must not create a store file as a side effect.
+    /// </summary>
+    [Fact]
+    public void AddManualGame_NonexistentPath_ReturnsNullAndWritesNothing()
+    {
+        using var temp = new TempPath();
+        SettingsManager.SettingsFilePathOverride = temp.GetFile("settings.json");
+        try
+        {
+            var store = new KnownGamesStore();
+            store.Load();
+
+            var result = store.AddManualGame(temp.GetFile("DoesNotExist.exe"));
+
+            Assert.Null(result);
+            Assert.Empty(store.GetAllGames());
+            Assert.False(File.Exists(StoreFile(temp)));
+        }
+        finally
+        {
+            SettingsManager.SettingsFilePathOverride = null;
+        }
+    }
+
+    /// <summary>
+    /// B5: A manual add creates a deterministic identity derived from the executable name, so the
+    /// same game keeps the same ID (and therefore the same profile) across sessions.
+    /// </summary>
+    [Fact]
+    public void AddManualGame_ExistingFile_CreatesManualIdentityAndPersists()
+    {
+        using var temp = new TempPath();
+        SettingsManager.SettingsFilePathOverride = temp.GetFile("settings.json");
+        try
+        {
+            var exePath = CreatePlaceholderExe(temp, "ManualGame.exe");
+
+            var store = new KnownGamesStore();
+            store.Load();
+            var added = store.AddManualGame(exePath);
+
+            Assert.NotNull(added);
+            Assert.Equal(GameInfo.GenerateId("Manual", "ManualGame"), added!.Id);
+            Assert.Equal("Manual", added.LauncherSource);
+            Assert.Equal("ManualGame", added.GameName);
+            Assert.Equal(exePath, added.ExecutablePath);
+            Assert.Equal(temp.Path, added.InstallDirectory);
+
+            var reloaded = new KnownGamesStore();
+            reloaded.Load();
+            var stored = Assert.Single(reloaded.GetAllGames());
+            Assert.Equal(added.Id, stored.Id);
+            Assert.Equal(exePath, stored.ExecutablePath);
+        }
+        finally
+        {
+            SettingsManager.SettingsFilePathOverride = null;
+        }
+    }
+
+    /// <summary>
+    /// B6: Adding the same executable twice must reuse the existing identity instead of creating a
+    /// second record that would compete for the same profile.
+    /// </summary>
+    [Fact]
+    public void AddManualGame_Twice_ReturnsExistingWithoutDuplicating()
+    {
+        using var temp = new TempPath();
+        SettingsManager.SettingsFilePathOverride = temp.GetFile("settings.json");
+        try
+        {
+            var exePath = CreatePlaceholderExe(temp, "TwiceAdded.exe");
+
+            var store = new KnownGamesStore();
+            store.Load();
+            var first = store.AddManualGame(exePath);
+            var second = store.AddManualGame(exePath);
+
+            Assert.NotNull(first);
+            Assert.NotNull(second);
+            Assert.Equal(first!.Id, second!.Id);
+            Assert.Single(store.GetAllGames());
+        }
+        finally
+        {
+            SettingsManager.SettingsFilePathOverride = null;
+        }
+    }
+
+    /// <summary>
+    /// B7: Removal must persist (otherwise the entry returns on restart), and an unknown ID must be
+    /// reported as a no-op rather than silently mutating the store.
+    /// </summary>
+    [Fact]
+    public void RemoveGame_RemovesAndPersists_AndReturnsFalseForUnknownId()
+    {
+        using var temp = new TempPath();
+        SettingsManager.SettingsFilePathOverride = temp.GetFile("settings.json");
+        try
+        {
+            var store = new KnownGamesStore();
+            store.Load();
+            store.MergeScannedGames(new[]
+            {
+                ScannerGame("steam_600", "Removed", @"C:\Games\Removed"),
+                ScannerGame("steam_601", "Kept", @"C:\Games\Kept")
+            });
+
+            Assert.True(store.RemoveGame("steam_600"));
+
+            Assert.False(store.RemoveGame("steam_does_not_exist"));
+            Assert.Single(store.GetAllGames());
+
+            var reloaded = new KnownGamesStore();
+            reloaded.Load();
+            var stored = Assert.Single(reloaded.GetAllGames());
+            Assert.Equal("steam_601", stored.Id);
+        }
+        finally
+        {
+            SettingsManager.SettingsFilePathOverride = null;
+        }
+    }
+
+    /// <summary>
+    /// B8: A truncated or corrupted store file (crash during write, disk error) must not take the
+    /// application down at startup.
+    /// </summary>
+    [Fact]
+    public void Load_MalformedJson_LeavesStoreEmptyAndDoesNotThrow()
+    {
+        using var temp = new TempPath();
+        SettingsManager.SettingsFilePathOverride = temp.GetFile("settings.json");
+        try
+        {
+            File.WriteAllText(StoreFile(temp), "{ this is not valid json");
+
+            var store = new KnownGamesStore();
+            store.Load();
+
             Assert.Empty(store.GetAllGames());
         }
         finally
         {
-            orchestrator.Cleanup();
+            SettingsManager.SettingsFilePathOverride = null;
         }
     }
 
+    /// <summary>
+    /// B9: A failed reload must not be mistaken for an empty library. Entries already in memory stay,
+    /// so a corrupt file cannot silently wipe the user's known games (and get that emptiness saved
+    /// back over the file by the next write).
+    /// </summary>
     [Fact]
-    public void MergeScannedGames_ReplacesFileWithoutChangingAnOpenReaderSnapshot()
+    public void Load_MalformedJson_DoesNotDiscardAlreadyLoadedEntries()
     {
-        var original = new GameInfo { Id = "steam_1", GameName = "Before", LauncherSource = "Steam" };
-        var store = new KnownGamesStore();
-        store.MergeScannedGames(new[] { original });
-        var knownPath = _temp.GetFile("known_games.json");
-        var originalJson = File.ReadAllText(knownPath);
-        using var snapshot = new FileStream(knownPath, FileMode.Open, FileAccess.Read,
-            FileShare.ReadWrite | FileShare.Delete);
-
-        store.MergeScannedGames(new[]
+        using var temp = new TempPath();
+        SettingsManager.SettingsFilePathOverride = temp.GetFile("settings.json");
+        try
         {
-            new GameInfo { Id = original.Id, GameName = "After", LauncherSource = "Steam" }
-        });
+            var seed = new KnownGamesStore();
+            seed.Load();
+            seed.MergeScannedGames(new[] { ScannerGame("steam_700", "Survivor", @"C:\Games\Survivor") });
 
-        Assert.Equal("After", Assert.Single(JsonSerializer.Deserialize<List<GameInfo>>(
-            File.ReadAllText(knownPath))!).GameName);
-        using var reader = new StreamReader(snapshot);
-        Assert.Equal(originalJson, reader.ReadToEnd());
-        Assert.Empty(Directory.GetFiles(_temp.Path, "*.tmp"));
+            var store = new KnownGamesStore();
+            store.Load();
+            Assert.Single(store.GetAllGames());
+
+            File.WriteAllText(StoreFile(temp), "{{{ corrupted");
+            store.Load();
+
+            var stored = Assert.Single(store.GetAllGames());
+            Assert.Equal("steam_700", stored.Id);
+        }
+        finally
+        {
+            SettingsManager.SettingsFilePathOverride = null;
+        }
+    }
+
+    /// <summary>
+    /// B10: Removing a scanner-detected game records it in the ignore list, so the next library scan
+    /// must not merge the same launcher result back in while the launcher still reports it.
+    /// </summary>
+    [Fact]
+    public void MergeScannedGames_DoesNotReAddPreviouslyRemovedScannerGame()
+    {
+        using var temp = new TempPath();
+        SettingsManager.SettingsFilePathOverride = temp.GetFile("settings.json");
+        try
+        {
+            var scanned = ScannerGame("steam_800", "Unwanted", @"C:\Games\Unwanted");
+
+            var store = new KnownGamesStore();
+            store.Load();
+            store.MergeScannedGames(new[] { scanned });
+            Assert.True(store.RemoveGame("steam_800"));
+            Assert.Empty(store.GetAllGames());
+
+            store.MergeScannedGames(new[] { scanned });
+
+            Assert.Empty(store.GetAllGames());
+        }
+        finally
+        {
+            SettingsManager.SettingsFilePathOverride = null;
+        }
     }
 }

@@ -278,7 +278,7 @@ public class GameDetector : IDisposable
     /// ETW provides the full image path; WMI provides only the filename so we fall back
     /// to <see cref="Process.GetProcessById"/> to resolve the full path.
     /// </summary>
-    private void OnProcessStarted(ProcessStartEventData data)
+    internal void OnProcessStarted(ProcessStartEventData data)
     {
         try
         {
@@ -321,7 +321,7 @@ public class GameDetector : IDisposable
     /// Handles process stop events from the active <see cref="IProcessMonitor"/>.
     /// Checks if the stopped process was a tracked game and fires appropriate events.
     /// </summary>
-    private void OnProcessStopped(ProcessStopEventData data)
+    internal void OnProcessStopped(ProcessStopEventData data)
     {
         try
         {
@@ -372,6 +372,15 @@ public class GameDetector : IDisposable
     /// </summary>
     private void ReconcileActiveGames(object? sender, global::System.Timers.ElapsedEventArgs e)
     {
+        ReconcileActiveGamesOnce();
+    }
+
+    /// <summary>
+    /// Runs a single liveness reconciliation pass. This is the whole body of the periodic sweep;
+    /// the timer callback is only the scheduling wrapper around it.
+    /// </summary>
+    internal void ReconcileActiveGamesOnce()
+    {
         try
         {
             foreach (var (pid, gameInfo) in _activeGames.ToArray())
@@ -391,17 +400,47 @@ public class GameDetector : IDisposable
         }
     }
 
+    /// <summary>
+    /// Resolves the running process name for a PID. Throws the same exceptions
+    /// <see cref="Process.GetProcessById(int)"/> does, which is how liveness is decided.
+    /// Held in a static readonly field so the sweep allocates no delegate per call.
+    /// </summary>
+    private static readonly Func<int, string> DefaultProcessNameProbe = ResolveProcessName;
+
+    private static string ResolveProcessName(int processId)
+    {
+        using var process = Process.GetProcessById(processId);
+        return process.ProcessName;
+    }
+
     private static bool IsTrackedGameGone(int processId, GameInfo gameInfo)
+        => IsTrackedGameGone(processId, gameInfo, DefaultProcessNameProbe);
+
+    /// <summary>
+    /// Liveness decision for one tracked game, with the process-name lookup injected so the
+    /// access-denied / transient / missing-PID branches are testable without the real process table.
+    /// The production path passes <see cref="DefaultProcessNameProbe"/>.
+    ///
+    /// The probe is invoked BEFORE the expected-name check on purpose. The probe is also what
+    /// reports a missing PID (ArgumentException -> gone), so skipping it when the tracked
+    /// ExecutablePath is empty would leave launcher entries - Steam/Xbox carry an install directory
+    /// and no executable path - tracked forever after a missed stop event, which is exactly what the
+    /// sweep exists to heal. The pre-seam code called GetProcessById eagerly for the same reason and
+    /// deferred only the ProcessName read; the two cannot be split behind a single name probe, so
+    /// that read is now eager as well. It is redundant when expected is empty but never changes the
+    /// result: the outcome is false either way.
+    /// </summary>
+    internal static bool IsTrackedGameGone(int processId, GameInfo gameInfo, Func<int, string> processNameProbe)
     {
         try
         {
-            using var process = Process.GetProcessById(processId);
+            var actualName = processNameProbe(processId);
 
             // PID exists but now belongs to a different image -> the original game exited and the
             // PID was reused. Treat as gone (compare against the tracked exe name).
             var expected = Path.GetFileNameWithoutExtension(gameInfo.ExecutablePath);
             return !string.IsNullOrEmpty(expected)
-                && !string.Equals(process.ProcessName, expected, StringComparison.OrdinalIgnoreCase);
+                && !string.Equals(actualName, expected, StringComparison.OrdinalIgnoreCase);
         }
         catch (ArgumentException)
         {
