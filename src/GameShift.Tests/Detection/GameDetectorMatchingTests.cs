@@ -540,6 +540,29 @@ public class GameDetectorMatchingTests
     }
 
     /// <summary>
+    /// A14b: The sweep compares against Process.ProcessName, which drops only a trailing ".exe". A
+    /// live image with another extension must still count as the same process, or the sweep would
+    /// release a running game and revert its optimizations underneath it.
+    /// </summary>
+    [Fact]
+    public void IsTrackedGameGone_NonExeImage_IsAliveUnderItsFullName()
+    {
+        var game = new GameInfo
+        {
+            Id = "steam_42",
+            GameName = "Foo",
+            ExecutablePath = "",
+            InstallDirectory = @"C:\SteamLibrary\steamapps\common\Foo",
+            LauncherSource = "Steam",
+            LauncherId = "42"
+        };
+        var active = new ActiveGame(game, "Foo.bin", @"C:\SteamLibrary\steamapps\common\Foo\Foo.bin");
+
+        Assert.False(GameDetector.IsTrackedGameGone(7000, active, _ => "Foo.bin"));
+        Assert.True(GameDetector.IsTrackedGameGone(7000, active, _ => "Foo"));
+    }
+
+    /// <summary>
     /// A17: ProcessSpawned is the shared spawn feed for ProcessPriorityPersistence and
     /// ProcessSnapshotService. It fires for every start, before game matching, and carries the
     /// filename only - not the full path.

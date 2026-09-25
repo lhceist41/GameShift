@@ -226,6 +226,28 @@ public class ProtectedProcessDetectionTests
     }
 
     /// <summary>
+    /// Contract 9b: a kernel short name can arrive truncated (r5apex_dx12.exe as r5apex_dx12.ex).
+    /// The match and the recorded evidence come from the live process-table name, so the DX12
+    /// client is still recognised and the liveness sweep later compares like with like.
+    /// </summary>
+    [Fact]
+    public void OnProcessStarted_TruncatedEventName_MatchesApexOnLiveName()
+    {
+        using var detector = CreateDetector(AliveNoPathBackend(), LiveNameIs("r5apex_dx12"));
+        var events = new EventRecorder(detector);
+
+        detector.OnProcessStarted(PathlessStart(6202, "r5apex_dx12.ex"));
+
+        var started = Assert.Single(events.Started);
+        Assert.Equal(ApexBuiltInId, started.GameId);
+        Assert.Equal("r5apex_dx12.exe", started.ProcessName);
+
+        var record = Assert.Single(detector.GetKnownGames());
+        var active = new ActiveGame(record, started.ProcessName, null);
+        Assert.False(GameDetector.IsTrackedGameGone(6202, active, LiveNameIs("r5apex_dx12")));
+    }
+
+    /// <summary>
     /// Contract 10: a name-only match still gets full liveness reconciliation, because the observed
     /// process name is recorded as runtime evidence. When the PID later belongs to a different
     /// image, the sweep detects the reuse and releases the game so optimizations revert.

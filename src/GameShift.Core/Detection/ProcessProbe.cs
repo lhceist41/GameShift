@@ -8,7 +8,10 @@ namespace GameShift.Core.Detection;
 /// </summary>
 internal enum ProcessLiveness
 {
-    /// <summary>The process was alive and its rooted image path was read.</summary>
+    /// <summary>
+    /// The rooted image path was read. Tier 1 also proves liveness; Tier 2 only saw the PID exist
+    /// moments earlier, so the process may have exited since (the detector's liveness sweep heals that).
+    /// </summary>
     Resolved,
 
     /// <summary>

@@ -331,15 +331,16 @@ public class GameDetector : IDisposable
     /// <summary>
     /// Handles process start events from the active <see cref="IProcessMonitor"/>.
     ///
-    /// ETW carries the full image path, so that route keeps the existing readable-path matching
-    /// unchanged. WMI carries only the filename; that pathless case is classified by
+    /// A rooted image path in the event keeps the existing readable-path matching unchanged. WMI
+    /// carries only the filename, and the kernel's ETW name may be a short one; that pathless case
+    /// is classified by
     /// <see cref="ProcessProbe"/> instead of <c>Process.MainModule</c>, which needs rights a
     /// protected game refuses and cannot tell "already dead" apart from "alive but unreadable".
     ///
-    /// On that pathless route only a proven-alive observation may register a game. The guarantee is
-    /// deliberately scoped to that route: the rooted route is left unprobed and keeps its existing
-    /// behaviour, so it can still register a process that exited between the event and the match.
-    /// The liveness sweep reconciles that case, as it did before this repair.
+    /// On that pathless route a bare name never registers a game without proven liveness. A resolved
+    /// path can still register a process that exited just before the probe (a Tier-2 result does
+    /// not prove liveness), and the rooted route is left unprobed with the same race. The liveness
+    /// sweep reconciles both, as it did before this repair.
     /// </summary>
     internal void OnProcessStarted(ProcessStartEventData data)
     {
@@ -350,7 +351,7 @@ public class GameDetector : IDisposable
             // Notify all subscribers of process spawn (before game matching filter)
             ProcessSpawned?.Invoke(this, new ProcessSpawnedEventArgs(data.ProcessId, processName));
 
-            // ETW path: the event already carries the real image location.
+            // Rooted path: the event already carries the real image location.
             if (!string.IsNullOrEmpty(data.ImageFileName) && Path.IsPathRooted(data.ImageFileName))
             {
                 MatchProcess(data.ProcessId, data.ImageFileName);
@@ -375,8 +376,11 @@ public class GameDetector : IDisposable
                     // exited and the PID been reused before the probe ran. Corroborate the event's
                     // name against the PID's current occupant before admitting that name as the
                     // sole matching evidence, then apply the narrow gate in MatchProcessByNameOnly.
-                    if (LiveNameCorroborates(data.ProcessId, processName))
-                        MatchProcessByNameOnly(data.ProcessId, processName);
+                    // The live name is matched rather than the event's: a kernel short name can be
+                    // truncated (r5apex_dx12.exe arriving as r5apex_dx12.ex), the process table's
+                    // name is not.
+                    if (LiveNameCorroborates(data.ProcessId, processName, out var liveName))
+                        MatchProcessByNameOnly(data.ProcessId, liveName + ".exe");
                     break;
 
                 default:
@@ -518,7 +522,13 @@ public class GameDetector : IDisposable
 
             // PID exists but now belongs to a different image -> the original game exited and the
             // PID was reused. Treat as gone (compare against the observed running exe name).
-            var expected = Path.GetFileNameWithoutExtension(active.ObservedProcessName);
+            // Process.ProcessName drops a trailing ".exe" and nothing else, so strip exactly that:
+            // stripping any extension would call a live "Foo.bin" a different process and revert
+            // under it.
+            var observed = active.ObservedProcessName;
+            var expected = observed.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+                ? observed[..^4]
+                : observed;
             return !string.IsNullOrEmpty(expected)
                 && !string.Equals(actualName, expected, StringComparison.OrdinalIgnoreCase);
         }
@@ -665,8 +675,10 @@ public class GameDetector : IDisposable
     /// reused by a process with the same name. Those remain the ordinary races the stop event and
     /// the liveness sweep exist to heal.
     /// </summary>
-    private bool LiveNameCorroborates(int processId, string eventProcessName)
+    /// <param name="liveName">The PID's current process-table name (no ".exe"), set on success.</param>
+    private bool LiveNameCorroborates(int processId, string eventProcessName, out string liveName)
     {
+        liveName = string.Empty;
         var expected = Path.GetFileNameWithoutExtension(eventProcessName);
         if (string.IsNullOrEmpty(expected))
             return false;
@@ -686,7 +698,10 @@ public class GameDetector : IDisposable
         }
 
         if (string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase))
+        {
+            liveName = actual;
             return true;
+        }
 
         _logger.Debug(
             "Name-only fallback rejected for PID {ProcessId}: start event reported {EventName} but the PID now runs {ActualName}",
