@@ -162,8 +162,9 @@ For games with kernel-level anti-cheat (EAC, BattlEye, RICOCHET, TencentACE), Ga
 ### Download (recommended)
 
 1. Grab the latest `GameShift.App.exe` from the [Releases page](https://github.com/lhceist41/GameShift/releases/latest)
-2. Run as **Administrator** (required for service control, registry access, timer resolution, and power plan management)
-3. Complete the first-run wizard - GameShift auto-detects your installed games and scans your hardware
+2. Put it in a folder only administrators can change, such as `C:\Program Files\GameShift` (not Downloads, the Desktop, or a folder you created directly under `C:\`). GameShift runs with administrator rights, so anyone who can change files in its folder could run code with those rights.
+3. Run as **Administrator** (required for service control, registry access, timer resolution, and power plan management)
+4. Complete the first-run wizard - GameShift auto-detects your installed games and scans your hardware
 
 ### Build from Source
 

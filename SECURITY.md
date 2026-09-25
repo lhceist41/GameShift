@@ -17,7 +17,7 @@ Helpful things to include:
 - What the vulnerability is
 - How to reproduce it
 - What an attacker could actually do with it
-- Which part it affects (main app, watchdog, boot recovery, etc.)
+- Which part it affects (main app, updater, state journal, DPC Doctor, etc.)
 - A suggested fix, if you have one
 
 It's just me here, so I can't promise a corporate-style response time. But I read every report, and I'll get back to you as soon as I reasonably can. Security stuff jumps the queue.
@@ -29,14 +29,16 @@ GameShift operates with administrator privileges and modifies system-level setti
 ### Application components
 
 - **GameShift.App**  - Main WPF application (runs as administrator)
-- **GameShift.Watchdog**  - Windows Service monitoring the main app via named pipe heartbeat (runs as SYSTEM)
-- **Boot Recovery Task**  - Scheduled task running at startup under SYSTEM to restore state after crashes
+- **Updater**  - Checks GitHub Releases, downloads a new `GameShift.App.exe` when you accept an update, verifies its SHA-256, and replaces the running exe
 - **State Journal**  - Optimization state persisted to `%ProgramData%\GameShift\state.json`
+
+The source also contains **GameShift.Watchdog** (a Windows service that would run as SYSTEM) and a **boot-recovery scheduled task** (would also run as SYSTEM). Neither ships in releases or is installed by the app yet. Reports about them are still welcome, since they're meant to ship later.
 
 ### In-scope vulnerabilities
 
 - Privilege escalation beyond intended functionality
-- Abuse of the watchdog service or named pipe (`\\.\pipe\GameShiftWatchdog`) for unauthorized system modifications
+- Files GameShift reads from places a standard user can write (settings, profiles, its own folder, downloads) being used to steer an elevated action
+- Abuse of the watchdog code or its named pipe (`\\.\pipe\GameShiftWatchdog`) for unauthorized system modifications
 - Unauthorized or unintended registry, BCD, or filesystem modifications
 - State journal tampering leading to incorrect system state restoration
 - ETW session abuse or information disclosure
@@ -45,12 +47,13 @@ GameShift operates with administrator privileges and modifies system-level setti
 
 ## Security Design
 
-- GameShift makes **no network calls** except to check for updates on GitHub Releases
+- GameShift's only network activity is checking GitHub Releases for updates (and downloading one when you accept it) and the dashboard's latency monitor, which pings a configurable host (`8.8.8.8` by default)
 - No telemetry is collected or transmitted
+- Keep `GameShift.App.exe` in a folder only administrators can change, such as `C:\Program Files\GameShift`. GameShift runs elevated, so a folder standard users can write to (Downloads, the Desktop, or a folder created directly under `C:\`) lets them influence what runs with admin rights
 - Application data is stored locally in `%AppData%\GameShift\` (user settings and profiles)
-- System recovery data is stored in `%ProgramData%\GameShift\` (state journal, watchdog logs)
+- System recovery data is stored in `%ProgramData%\GameShift\` (state journal), and GameShift sets that folder's permissions so standard users can only read it
 - All system modifications are recorded in an atomic state journal with original values for deterministic rollback
-- A three-layer crash recovery system (state journal, watchdog service, boot recovery task) ensures modifications are never left orphaned
+- Every change is reverted, with verification, when your game exits. Automatic recovery after an app crash or blue screen (the watchdog service and boot-recovery task) is still in development and not enabled in releases
 - Registry changes are monitored via `RegNotifyChangeKeyValue` to detect external tampering during sessions
 - The watchdog named pipe accepts only heartbeat signals - it does not accept or execute commands
 - BCDEdit modifications are gated behind user confirmation and tracked in pending reboot fixes
