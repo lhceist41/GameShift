@@ -103,7 +103,7 @@
                     <TextBlock Text="What is DPC?" FontSize="15" FontWeight="Bold"
                                Foreground="{DynamicResource GS.Text.Primary}" Margin="0,0,0,8"/>
                     <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource GS.Text.Secondary}" FontSize="13" LineHeight="20">
-                        DPC stands for Deferred Procedure Call. In simple terms: every piece of hardware in your PC (GPU, network card, audio, USB devices) needs the CPU's attention regularly. If one device hogs the CPU for too long, everything else has to wait &#x2014; including your game. That wait is what causes stuttering, audio crackling, and input lag. DPC Doctor finds which device is hogging the CPU and fixes it.
+                        DPC stands for Deferred Procedure Call. In simple terms: every piece of hardware in your PC (GPU, network card, audio, USB devices) needs the CPU's attention regularly. If one device hogs the CPU for too long, everything else has to wait, including your game. That wait is what causes stuttering, audio crackling, and input lag. DPC Doctor finds which device is hogging the CPU and fixes it.
                     </TextBlock>
                 </StackPanel>
             </Border>
@@ -262,10 +262,10 @@
                                         <TextBlock MaxWidth="320" TextWrapping="Wrap">
 This is how long this driver locked up your CPU, in microseconds (&#x00B5;s).
 
-&#x2022; Under 500 &#x00B5;s &#x2014; Healthy, no impact on games
-&#x2022; 500&#x2013;2,000 &#x00B5;s &#x2014; Elevated, might cause minor audio glitches
-&#x2022; 2,000&#x2013;4,000 &#x00B5;s &#x2014; Problematic, will cause stuttering
-&#x2022; Over 4,000 &#x00B5;s &#x2014; Severe, your game freezes every time this runs
+&#x2022; Under 500 &#x00B5;s: Healthy, no impact on games
+&#x2022; 500-2,000 &#x00B5;s: Elevated, might cause minor audio glitches
+&#x2022; 2,000-4,000 &#x00B5;s: Problematic, will cause stuttering
+&#x2022; Over 4,000 &#x00B5;s: Severe, your game freezes every time this runs
                                         </TextBlock>
                                     </TextBlock.ToolTip>
                                 </TextBlock>

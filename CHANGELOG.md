@@ -4,6 +4,14 @@ All notable changes to GameShift are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- **Restore All also undoes DPC Doctor fixes, kernel boot settings and Memory Integrity** - Settings > Restore All GameShift Tweaks used to undo only the system tweaks. It now also undoes the DPC Doctor fixes GameShift recorded, including the fixes for a single driver such as the network adapter fixes, which DPC Doctor had no undo button for, the kernel boot settings set in DPC Doctor, and Memory Integrity if GameShift turned it off. It also offers to remove a CPU core reservation and to turn back on startup apps that were turned off with a "~" in front of their name, each after its own confirmation, because GameShift cannot tell whether it or another tool made those. Before it starts, it lists what it will undo and which items need a restart; afterwards it reports each result, and a change it could not undo stays recorded, so Restore All lists it again. Before uninstalling, you no longer need to revert DPC Doctor fixes by hand. Reverting a kernel boot setting in DPC Doctor no longer leaves it recorded as applied.
+
+### Fixed
+
+- **The dashboard's DPC number is shown as DPC load** - the number GameShift showed as a DPC latency in microseconds is the share of CPU time spent in deferred procedure calls. It is now shown as that, DPC load in percent of CPU time, on the dashboard card, in spike alerts, the session history, per-game stats, the session summary and the hardware scan. The alert thresholds in Settings and in each profile are now entered as a percent of CPU time; your saved thresholds keep the same meaning and alerts fire exactly as before.
+
 ## [3.9.0] - 2026-10-30
 
 ### Security

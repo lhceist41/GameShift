@@ -168,7 +168,7 @@ For games with kernel-level anti-cheat (EAC, BattlEye, RICOCHET, TencentACE), Ga
 
 When you accept an update, the installed GameShift downloads the new installer into its own folder, checks it against the SHA-256 digest GitHub reports for the release, and runs it; the installer replaces the files and starts GameShift again.
 
-To uninstall, first undo GameShift's lasting changes: open GameShift, uncheck **Easy Mode** in Settings, click **Restore All GameShift Tweaks**, and revert any fixes you applied in **DPC Doctor**. Then remove GameShift in Windows Settings > Apps.
+To uninstall, first undo GameShift's lasting changes: open GameShift, uncheck **Easy Mode** in Settings and click **Restore All GameShift Tweaks**. It undoes the changes GameShift recorded (system tweaks, DPC Doctor fixes, kernel boot settings and Memory Integrity) and asks separately about a CPU core reservation and startup apps turned off with a "~" in front of their name. Then remove GameShift in Windows Settings > Apps.
 
 ### Portable exe
 
@@ -277,7 +277,7 @@ Yes. GameShift is particularly effective on laptops where Windows aggressively t
 <details>
 <summary><strong>What happens if my PC crashes during optimization?</strong></summary>
 <br/>
-GameShift reverts every change when your game exits, and records all original values in <code>%ProgramData%\GameShift\state.json</code> using atomic writes, so the journal is never corrupted even during a hard shutdown. Automatic recovery after an app crash or blue screen (a watchdog service plus a boot-recovery task) is in active development and is not enabled in the current build. As an extra safety net, create a System Restore point before first use, and persistent system tweaks can be undone any time from Settings via "Restore All GameShift Tweaks".
+GameShift reverts every change when your game exits, and records all original values in <code>%ProgramData%\GameShift\state.json</code> using atomic writes, so the journal is never corrupted even during a hard shutdown. Automatic recovery after an app crash or blue screen (a watchdog service plus a boot-recovery task) is in active development and is not enabled in the current build. As an extra safety net, create a System Restore point before first use, and the lasting changes GameShift recorded (system tweaks, DPC Doctor fixes, kernel boot settings and Memory Integrity) can be undone any time from Settings via "Restore All GameShift Tweaks".
 </details>
 
 <details>
