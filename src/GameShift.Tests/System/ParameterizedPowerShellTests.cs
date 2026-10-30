@@ -24,7 +24,8 @@ public class ParameterizedPowerShellTests
 
     private static string Expected(string script) =>
         "-NoProfile -NonInteractive -EncodedCommand " +
-        Convert.ToBase64String(Encoding.Unicode.GetBytes("Import-Module -Name $env:GS_MODULE -ErrorAction Stop\n" + script));
+        Convert.ToBase64String(Encoding.Unicode.GetBytes(
+            "$ProgressPreference = 'SilentlyContinue'\nImport-Module -Name $env:GS_MODULE -ErrorAction Stop\n" + script));
 
     [Theory]
     [InlineData("C:\\Games\\it's\\")]

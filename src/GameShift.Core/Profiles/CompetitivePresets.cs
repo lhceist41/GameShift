@@ -6,8 +6,8 @@ using GameShift.Core.Profiles.GameActions;
 namespace GameShift.Core.Profiles;
 
 // NOTE: Hardcoded game install paths assume default installation directories.
-// Users with non-default install locations will not benefit from Defender exclusions,
-// firewall rules, or fullscreen optimization flags. These paths should ideally be
+// Users with non-default install locations will not benefit from firewall rules or
+// fullscreen optimization flags. These paths should ideally be
 // resolved dynamically from library scanner data.
 
 /// <summary>
@@ -193,12 +193,6 @@ public static class CompetitivePresets
 
     private static List<GameAction> BuildOverwatch2Actions() => new()
     {
-        new DefenderExclusionAction(
-            "OW2 Defender Exclusions",
-            new[]
-            {
-                @"C:\Program Files (x86)\Overwatch\"
-            }),
         new FullscreenOptimizationAction(
             "OW2 Fullscreen + DPI Override",
             @"C:\Program Files (x86)\Overwatch\_retail_\Overwatch.exe",
@@ -285,13 +279,6 @@ public static class CompetitivePresets
 
     private static List<GameAction> BuildValorantActions() => new()
     {
-        new DefenderExclusionAction(
-            "Valorant Defender Exclusions",
-            new[]
-            {
-                @"C:\Riot Games\VALORANT\",
-                @"C:\Program Files\Riot Vanguard\"
-            }),
         new FullscreenOptimizationAction(
             "Valorant Fullscreen + DPI Override",
             @"C:\Riot Games\VALORANT\live\ShooterGame\Binaries\Win64\VALORANT-Win64-Shipping.exe",
@@ -362,14 +349,6 @@ public static class CompetitivePresets
 
     private static List<GameAction> BuildLeagueActions() => new()
     {
-        new DefenderExclusionAction(
-            "LoL Defender Exclusions",
-            new[]
-            {
-                @"C:\Riot Games\League of Legends\",
-                @"C:\Riot Games\Riot Client\",
-                @"C:\Program Files\Riot Vanguard\"
-            }),
         new FullscreenOptimizationAction(
             "LoL Fullscreen + DPI Override",
             @"C:\Riot Games\League of Legends\Game\League of Legends.exe",
@@ -437,12 +416,6 @@ public static class CompetitivePresets
 
     private static List<GameAction> BuildDeadlockActions() => new()
     {
-        new DefenderExclusionAction(
-            "Deadlock Defender Exclusions",
-            new[]
-            {
-                @"C:\Program Files (x86)\Steam\steamapps\common\Deadlock\"
-            }),
         new FullscreenOptimizationAction(
             "Deadlock Fullscreen + DPI Override",
             @"C:\Program Files (x86)\Steam\steamapps\common\Deadlock\game\bin\win64\project8.exe",
@@ -525,9 +498,6 @@ public static class CompetitivePresets
 
         return new List<GameAction>
         {
-            new DefenderExclusionAction(
-                "osu! Defender Exclusions",
-                new[] { osuDir + @"\" }),
             new FullscreenOptimizationAction(
                 "osu! Fullscreen + DPI Override",
                 Path.Combine(osuDir, "osu!.exe"),

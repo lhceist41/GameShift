@@ -12,9 +12,9 @@ namespace GameShift.Tests.Profiles;
 
 /// <summary>
 /// Tests for <see cref="DefenderExclusionAction"/> through its process-start seam, so no PowerShell
-/// or Defender call runs. They pin three contracts: a path value never reaches the script text, only
-/// the configured preset paths are excluded whatever folder the game was started from, and Revert
-/// removes exactly what Apply created.
+/// or Defender call runs. They pin four contracts: a path value never reaches the script text, only
+/// the configured paths are excluded whatever folder the game was started from, Revert removes exactly
+/// what Apply created, and no competitive preset adds a Defender exclusion.
 /// </summary>
 public class DefenderExclusionActionTests
 {
@@ -74,33 +74,32 @@ public class DefenderExclusionActionTests
         Assert.Equal(3, runner.Calls.Count);
     }
 
-    public static IEnumerable<object[]> PresetDefaults()
+    [Theory]
+    [InlineData(CompetitivePresets.Overwatch2Exe)]
+    [InlineData(CompetitivePresets.ValorantExe)]
+    [InlineData(CompetitivePresets.LeagueExe)]
+    [InlineData(CompetitivePresets.DeadlockExe)]
+    [InlineData(CompetitivePresets.OsuExe)]
+    public void GetGameActions_Preset_AddsNoDefenderExclusion(string exeName)
     {
-        var osuDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "osu!") + @"\";
-        return new[]
-        {
-            new object[] { CompetitivePresets.Overwatch2Exe, new[] { @"C:\Program Files (x86)\Overwatch\" } },
-            new object[] { CompetitivePresets.ValorantExe, new[] { @"C:\Riot Games\VALORANT\", @"C:\Program Files\Riot Vanguard\" } },
-            new object[] { CompetitivePresets.LeagueExe, new[] { @"C:\Riot Games\League of Legends\", @"C:\Riot Games\Riot Client\", @"C:\Program Files\Riot Vanguard\" } },
-            new object[] { CompetitivePresets.DeadlockExe, new[] { @"C:\Program Files (x86)\Steam\steamapps\common\Deadlock\" } },
-            new object[] { CompetitivePresets.OsuExe, new[] { osuDir } },
-        };
+        var actions = CompetitivePresets.GetGameActions(exeName);
+
+        Assert.NotEmpty(actions);
+        Assert.Empty(actions.OfType<DefenderExclusionAction>());
     }
 
-    [Theory]
-    [MemberData(nameof(PresetDefaults))]
-    public void Apply_PresetForExecutableAtArbitraryPath_ExcludesOnlyPresetDefaults(string exeName, string[] expected)
+    [Fact]
+    public void Apply_ExecutableAtArbitraryPath_ExcludesOnlyConfiguredPaths()
     {
-        var action = Assert.Single(CompetitivePresets.GetGameActions(exeName).OfType<DefenderExclusionAction>());
-        var runner = new FakePowerShellRunner();
-        action.RunProcess = runner.Run;
+        var configured = new[] { @"C:\Games\Configured\", @"C:\Games\Other\" };
+        var (action, runner) = Create(configured);
         var arbitraryDir = Path.Combine(Path.GetTempPath(), "anywhere", Guid.NewGuid().ToString("N"));
-        action.ExecutablePath = Path.Combine(arbitraryDir, exeName);
+        action.ExecutablePath = Path.Combine(arbitraryDir, "game.exe");
 
         action.Apply(new SystemStateSnapshot());
 
         var added = runner.CallsFor(AddScript).Select(c => Assert.Single(c.Values)).ToList();
-        Assert.Equal(expected, added);
+        Assert.Equal(configured, added);
         Assert.DoesNotContain(runner.Calls.SelectMany(c => c.Values),
             v => v.StartsWith(arbitraryDir, StringComparison.OrdinalIgnoreCase));
     }

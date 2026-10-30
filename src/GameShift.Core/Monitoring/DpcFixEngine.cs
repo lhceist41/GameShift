@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Text.RegularExpressions;
 using Microsoft.Win32;
 using GameShift.Core.Config;
@@ -136,15 +137,13 @@ public class DpcFixEngine
     // The rollback ledger (AppSettings.AppliedDpcFixes) is persisted to the per-user, user-writable
     // %AppData%\GameShift\settings.json. Revert runs elevated and feeds ledger fields (Target /
     // PreviousValue) into PowerShell, bcdedit, netsh, powercfg, and registry writes. Without
-    // validation a tampered entry is a local privilege escalation - e.g. a single-quote breakout in
-    // the -RegistryKeyword value yields arbitrary elevated PowerShell. Every ledger value used in an
+    // validation a tampered entry is a local privilege escalation. Every ledger value used in an
     // elevated action is validated here against the exact shapes GameShift itself produces (see
     // Resources/known-drivers.json); anything else is refused and the action does not run. Pure, so
     // unit-tested independently of the admin-gated execution paths.
 
     // Net adapter advanced-property registry keywords are alphanumeric and may start with '*'
-    // (e.g. *InterruptModeration, *EEE). With no quotes/spaces/metacharacters they are safe to
-    // interpolate into a PowerShell -Command.
+    // (e.g. *InterruptModeration, *EEE). They reach PowerShell only as environment values.
     private static readonly Regex NetAdapterKeywordPattern =
         new(@"^\*?[A-Za-z0-9]{1,64}$", RegexOptions.Compiled);
 
@@ -667,7 +666,7 @@ public class DpcFixEngine
 
     // -- Network adapter fixes ─────────────────────────────────────
 
-    private (DpcFixResult result, AppliedDpcFix? applied) ApplyNetAdapterFix(DriverAutoFix fix)
+    internal (DpcFixResult result, AppliedDpcFix? applied) ApplyNetAdapterFix(DriverAutoFix fix)
     {
         var property = fix.Property ?? "";
         var value = fix.Value ?? "0";
@@ -679,8 +678,8 @@ public class DpcFixEngine
             return (new DpcFixResult { Success = false, Message = $"Invalid non-numeric adapter value: {value}" }, null);
         }
 
-        // The property name is interpolated into PowerShell -Command strings here and stored as the
-        // revert Target, so validate it even though it originates from the built-in fix database.
+        // The property name is stored as the revert Target, so validate it even though it originates
+        // from the built-in fix database.
         if (!IsValidNetAdapterKeyword(property))
         {
             Log.Warning("[DpcFix] Rejecting unsafe net adapter keyword on apply: {Property}", property);
@@ -690,9 +689,9 @@ public class DpcFixEngine
         // Query current value from the first physical adapter that has this property
         string previousValue = QueryNetAdapterPropertyValue(property) ?? "1";
 
-        // Use PowerShell to set the property on all physical adapters
-        var script = $"Get-NetAdapter -Physical | Set-NetAdapterAdvancedProperty -RegistryKeyword '{property}' -RegistryValue {value} -ErrorAction SilentlyContinue";
-        var (success, output) = RunProcess(NativeInterop.SystemExePath("WindowsPowerShell\\v1.0\\powershell.exe"), $"-NoProfile -Command \"{script}\"");
+        // Use PowerShell to set the property on all physical adapters. The value goes as validated,
+        // minus surrounding whitespace, so a revert writes back exactly the string it captured.
+        var (success, output) = RunNetAdapterScript(SetNetAdapterPropertyScript, property, value.Trim());
 
         // Store rollback with the actual previous value
         var applied = new AppliedDpcFix
@@ -715,7 +714,7 @@ public class DpcFixEngine
         }, applied);
     }
 
-    private DpcFixResult RevertNetAdapterFix(AppliedDpcFix applied)
+    internal DpcFixResult RevertNetAdapterFix(AppliedDpcFix applied)
     {
         // Reject non-numeric values to prevent PowerShell injection
         var revertValue = applied.PreviousValue ?? "1";
@@ -725,17 +724,15 @@ public class DpcFixEngine
             return new DpcFixResult { Success = false, Message = $"Invalid non-numeric adapter revert value: {revertValue}" };
         }
 
-        // The keyword is interpolated into a PowerShell -Command; the numeric guard above never covered
-        // it. A tampered ledger Target (e.g. "x'; <payload>; ('") would otherwise break out of the
-        // quoted -RegistryKeyword and run arbitrary elevated PowerShell. Allow only real keyword shapes.
+        // The keyword comes from the user-writable ledger and the numeric guard above does not cover
+        // it. Allow only real keyword shapes.
         if (!IsValidNetAdapterKeyword(applied.Target))
         {
             Log.Warning("[DpcFix] Rejecting unsafe net adapter keyword on revert for {FixId}", applied.FixId);
             return new DpcFixResult { Success = false, Message = "Invalid network adapter keyword." };
         }
 
-        var script = $"Get-NetAdapter -Physical | Set-NetAdapterAdvancedProperty -RegistryKeyword '{applied.Target}' -RegistryValue {revertValue} -ErrorAction SilentlyContinue";
-        var (success, output) = RunProcess(NativeInterop.SystemExePath("WindowsPowerShell\\v1.0\\powershell.exe"), $"-NoProfile -Command \"{script}\"");
+        var (success, output) = RunNetAdapterScript(SetNetAdapterPropertyScript, applied.Target, revertValue.Trim());
         // Report the real result. -ErrorAction SilentlyContinue means a property missing on some
         // adapters is not a failure (exit code stays 0); but a genuine failure must be surfaced so the
         // rollback entry is kept for a retry instead of being silently dropped from the ledger.
@@ -750,15 +747,11 @@ public class DpcFixEngine
     /// Queries the current registry value of a net adapter advanced property.
     /// Returns the first adapter's value, or null if the query fails.
     /// </summary>
-    private static string? QueryNetAdapterPropertyValue(string registryKeyword)
+    private string? QueryNetAdapterPropertyValue(string registryKeyword)
     {
         try
         {
-            var queryScript =
-                $"Get-NetAdapter -Physical | " +
-                $"Get-NetAdapterAdvancedProperty -RegistryKeyword '{registryKeyword}' -ErrorAction SilentlyContinue | " +
-                $"Select-Object -First 1 -ExpandProperty RegistryValue";
-            var (ok, output) = RunProcess(NativeInterop.SystemExePath("WindowsPowerShell\\v1.0\\powershell.exe"), $"-NoProfile -Command \"{queryScript}\"");
+            var (ok, output) = RunNetAdapterScript(QueryNetAdapterPropertyScript, registryKeyword);
             if (ok && !string.IsNullOrWhiteSpace(output))
             {
                 var val = output.Trim().Split('\n')[0].Trim();
@@ -776,24 +769,52 @@ public class DpcFixEngine
 
     // -- Process runner ────────────────────────────────────────────
 
+    private const string NetAdapterModule = "NetAdapter";
+    private const string SetNetAdapterPropertyScript =
+        "Get-NetAdapter -Physical | Set-NetAdapterAdvancedProperty -RegistryKeyword $env:GS_ARG0 " +
+        "-RegistryValue $env:GS_ARG1 -ErrorAction SilentlyContinue";
+    private const string QueryNetAdapterPropertyScript =
+        "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8\n" +
+        "Get-NetAdapter -Physical | Get-NetAdapterAdvancedProperty -RegistryKeyword $env:GS_ARG0 " +
+        "-ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty RegistryValue";
+
+    /// <summary>Process-start seam for the net adapter scripts; tests replace it so no PowerShell runs.</summary>
+    internal Func<ProcessStartInfo, int, ProcessRunResult> RunPowerShell { get; set; } = ParameterizedPowerShell.Run;
+
     private static (bool success, string output) RunProcess(string fileName, string arguments)
     {
         try
         {
-            var result = ProcessRunner.Run(fileName, arguments, 10_000);
-            if (!result.Exited && !result.TimedOut)
-                return (false, "Failed to start process.");
-
-            var output = string.IsNullOrWhiteSpace(result.StdErr)
-                ? result.StdOut.Trim()
-                : $"{result.StdOut.Trim()}\n{result.StdErr.Trim()}";
-            // success only on a clean exit with code 0; a timeout (child killed) reports failure
-            // with whatever partial output was captured.
-            return (result.Exited && result.ExitCode == 0, output);
+            return ToOutcome(ProcessRunner.Run(fileName, arguments, 10_000));
         }
         catch (Exception ex)
         {
             return (false, ex.Message);
         }
+    }
+
+    private (bool success, string output) RunNetAdapterScript([ConstantExpected] string script, params string[] values)
+    {
+        try
+        {
+            return ToOutcome(RunPowerShell(ParameterizedPowerShell.CreateStartInfo(NetAdapterModule, script, values), 10_000));
+        }
+        catch (Exception ex)
+        {
+            return (false, ex.Message);
+        }
+    }
+
+    private static (bool success, string output) ToOutcome(ProcessRunResult result)
+    {
+        if (!result.Exited && !result.TimedOut)
+            return (false, "Failed to start process.");
+
+        var output = string.IsNullOrWhiteSpace(result.StdErr)
+            ? result.StdOut.Trim()
+            : $"{result.StdOut.Trim()}\n{result.StdErr.Trim()}";
+        // success only on a clean exit with code 0; a timeout (child killed) reports failure
+        // with whatever partial output was captured.
+        return (result.Exited && result.ExitCode == 0, output);
     }
 }

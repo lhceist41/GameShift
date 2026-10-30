@@ -19,6 +19,12 @@ public static class ParameterizedPowerShell
     /// <summary>Environment variable that carries the absolute manifest path of the imported module.</summary>
     public const string ModuleVariable = "GS_MODULE";
 
+    /// <summary>
+    /// First line of every script. Under <c>-EncodedCommand</c> with redirected streams, progress records
+    /// (such as module loading) reach stderr, where a caller would read them as a failure.
+    /// </summary>
+    public const string SilenceProgressStatement = "$ProgressPreference = 'SilentlyContinue'\n";
+
     /// <summary>Prepended to every script so its cmdlets come from the System32 module, not an autoloaded one.</summary>
     public const string ImportModuleStatement = "Import-Module -Name $env:GS_MODULE -ErrorAction Stop\n";
 
@@ -47,7 +53,7 @@ public static class ParameterizedPowerShell
         var psi = new ProcessStartInfo
         {
             FileName = NativeInterop.SystemExePath("WindowsPowerShell\\v1.0\\powershell.exe"),
-            Arguments = "-NoProfile -NonInteractive -EncodedCommand " + EncodeCommand(ImportModuleStatement + script),
+            Arguments = "-NoProfile -NonInteractive -EncodedCommand " + EncodeCommand(SilenceProgressStatement + ImportModuleStatement + script),
             UseShellExecute = false,
             CreateNoWindow = true,
             RedirectStandardOutput = true,

@@ -20,7 +20,8 @@ public sealed class FakePowerShellRunner
     public sealed record Call(string FileName, string Arguments, string Script, string ModuleManifest, IReadOnlyList<string> Values);
 
     private const string EncodedPrefix = "-NoProfile -NonInteractive -EncodedCommand ";
-    private const string ImportStatement = "Import-Module -Name $env:GS_MODULE -ErrorAction Stop\n";
+    private const string ImportStatement =
+        "$ProgressPreference = 'SilentlyContinue'\nImport-Module -Name $env:GS_MODULE -ErrorAction Stop\n";
 
     public static string SystemModulesDirectory =>
         Path.Combine(Environment.SystemDirectory, @"WindowsPowerShell\v1.0\Modules");

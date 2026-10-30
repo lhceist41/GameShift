@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Text;
 using System.Text.Json;
 using GameShift.Core.System;
 using Serilog;
@@ -18,6 +17,29 @@ public class FirewallRuleAction : GameAction
     private readonly string _executablePath;
     private readonly string _direction;
     private bool _ruleCreated;
+
+    private const string FirewallModule = "NetSecurity";
+    private const string RuleExistsScript = "Get-NetFirewallRule -DisplayName $env:GS_ARG0 -ErrorAction SilentlyContinue";
+    private const string CreateRuleScript =
+        "New-NetFirewallRule -DisplayName $env:GS_ARG0 -Direction $env:GS_ARG1 -Action Allow " +
+        "-Program $env:GS_ARG2 -Profile Any -Enabled True";
+    private const string RemoveRuleScript = "Remove-NetFirewallRule -DisplayName $env:GS_ARG0";
+
+    // One rule per three values (display name, direction, program), read until the next name is absent.
+    private const string RemoveLeftoversScript =
+        "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8\n" +
+        "for ($i = 0; $null -ne [Environment]::GetEnvironmentVariable(\"GS_ARG$i\"); $i += 3) {\n" +
+        "    $name = [Environment]::GetEnvironmentVariable(\"GS_ARG$i\")\n" +
+        "    $direction = [Environment]::GetEnvironmentVariable(\"GS_ARG$($i + 1)\")\n" +
+        "    $program = [Environment]::GetEnvironmentVariable(\"GS_ARG$($i + 2)\")\n" +
+        "    Get-NetFirewallRule -DisplayName $name -ErrorAction SilentlyContinue | Where-Object { $_.Direction -eq $direction" +
+        " -and $_.Action -eq 'Allow' -and (($_ | Get-NetFirewallApplicationFilter).Program -eq $program) }" +
+        " | ForEach-Object { $r = $_; try { $r | Remove-NetFirewallRule -ErrorAction Stop; $r.DisplayName }" +
+        " catch { [Console]::Error.WriteLine('Could not remove ' + $r.DisplayName + ': ' + $_) } }\n" +
+        "}";
+
+    /// <summary>Process-start seam; tests replace it so no PowerShell or firewall call runs.</summary>
+    internal Func<ProcessStartInfo, int, ProcessRunResult> RunProcess { get; set; } = ParameterizedPowerShell.Run;
 
     /// <param name="name">Display name, e.g. "Valorant Firewall Allow".</param>
     /// <param name="ruleName">Firewall rule display name, e.g. "GameShift_Valorant_In".</param>
@@ -56,27 +78,13 @@ public class FirewallRuleAction : GameAction
             }
 
             // Create the firewall rule
-            var psi = new ProcessStartInfo(
-                NativeInterop.SystemExePath("WindowsPowerShell\\v1.0\\powershell.exe"),
-                $"-Command \"New-NetFirewallRule -DisplayName '{_ruleName.Replace("'", "''")}' " +
-                $"-Direction '{_direction}' -Action Allow " +
-                $"-Program '{_executablePath.Replace("'", "''")}' -Profile Any -Enabled True\"")
-            {
-                CreateNoWindow = true,
-                UseShellExecute = false
-            };
+            var result = RunProcess(
+                ParameterizedPowerShell.CreateStartInfo(FirewallModule, CreateRuleScript, _ruleName, _direction, _executablePath),
+                15_000);
 
-            using var process = Process.Start(psi);
-            if (process == null)
-            {
-                Log.Warning("FirewallRuleAction: failed to start PowerShell for rule '{RuleName}'", _ruleName);
-                return;
-            }
-
-            if (!process.WaitForExit(15_000))
+            if (result.TimedOut)
             {
                 Log.Warning("FirewallRuleAction: PowerShell timed out creating rule '{RuleName}', killing process", _ruleName);
-                try { process.Kill(); } catch { }
 
                 // The cmdlet may have created the rule before powershell.exe was slow to exit. Mark it
                 // created so Revert's idempotent removal cleans it up rather than orphaning the rule.
@@ -84,7 +92,13 @@ public class FirewallRuleAction : GameAction
                 return;
             }
 
-            if (process.ExitCode == 0)
+            if (!result.Exited)
+            {
+                Log.Warning("FirewallRuleAction: failed to start PowerShell for rule '{RuleName}'", _ruleName);
+                return;
+            }
+
+            if (result.ExitCode == 0)
             {
                 _ruleCreated = true;
                 Log.Information(
@@ -95,7 +109,7 @@ public class FirewallRuleAction : GameAction
             {
                 Log.Warning(
                     "FirewallRuleAction: PowerShell exited with code {ExitCode} for rule '{RuleName}'",
-                    process.ExitCode, _ruleName);
+                    result.ExitCode, _ruleName);
             }
         }
         catch (Exception ex)
@@ -113,30 +127,13 @@ public class FirewallRuleAction : GameAction
 
         try
         {
-            var psi = new ProcessStartInfo(
-                NativeInterop.SystemExePath("WindowsPowerShell\\v1.0\\powershell.exe"),
-                $"-Command \"Remove-NetFirewallRule -DisplayName '{_ruleName.Replace("'", "''")}'\"")
-            {
-                CreateNoWindow = true,
-                UseShellExecute = false
-            };
+            var result = RunProcess(
+                ParameterizedPowerShell.CreateStartInfo(FirewallModule, RemoveRuleScript, _ruleName), 15_000);
 
-            using var process = Process.Start(psi);
-            bool removed = false;
-            if (process != null)
-            {
-                if (!process.WaitForExit(15_000))
-                {
-                    Log.Warning("FirewallRuleAction: PowerShell timed out removing rule '{RuleName}', killing process", _ruleName);
-                    try { process.Kill(); } catch { }
-                }
-                else
-                {
-                    removed = process.ExitCode == 0;
-                }
-            }
+            if (result.TimedOut)
+                Log.Warning("FirewallRuleAction: PowerShell timed out removing rule '{RuleName}', killing process", _ruleName);
 
-            if (removed)
+            if (result.Exited && result.ExitCode == 0)
             {
                 Log.Information("FirewallRuleAction: Removed firewall rule '{RuleName}'", _ruleName);
                 _ruleCreated = false;
@@ -146,7 +143,7 @@ public class FirewallRuleAction : GameAction
                 // Keep _ruleCreated = true so the failure stays visible instead of logging a false success.
                 Log.Warning(
                     "FirewallRuleAction: Failed to remove rule '{RuleName}' (exit {ExitCode}); rule may persist",
-                    _ruleName, process?.ExitCode);
+                    _ruleName, result.Exited ? result.ExitCode : null);
             }
         }
         catch (Exception ex)
@@ -176,34 +173,16 @@ public class FirewallRuleAction : GameAction
     /// exactly how <see cref="Apply"/> creates them. A later session would otherwise take such a rule
     /// for the user's own and never remove it. Returns the display names of the rules removed.
     /// </summary>
-    internal static IReadOnlyList<string> RemoveLeftovers(IEnumerable<FirewallRuleAction> rules)
+    internal static IReadOnlyList<string> RemoveLeftovers(IEnumerable<FirewallRuleAction> rules) =>
+        RemoveLeftovers(rules, ParameterizedPowerShell.Run);
+
+    /// <param name="rules">The preset rules whose leftovers to remove.</param>
+    /// <param name="runProcess">Process-start seam; tests pass a fake so no PowerShell or firewall call runs.</param>
+    internal static IReadOnlyList<string> RemoveLeftovers(
+        IEnumerable<FirewallRuleAction> rules, Func<ProcessStartInfo, int, ProcessRunResult> runProcess)
     {
-        // This runs elevated at every start. The default module path searches the user's Documents
-        // folder first, where anything running as the user could plant a module, so the firewall
-        // cmdlets come only from the System32 module, loaded by its full path.
-        var modulesPath = Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "Modules");
-
-        // Progress records would otherwise reach the redirected stderr and read as a failure.
-        var script = new StringBuilder("$ProgressPreference = 'SilentlyContinue'\n")
-            .Append("try { Import-Module ").Append(Quote(Path.Combine(modulesPath, "NetSecurity", "NetSecurity.psd1")))
-            .Append(" -ErrorAction Stop } catch { [Console]::Error.WriteLine('Could not load NetSecurity: ' + $_); exit 1 }\n");
-        foreach (var rule in rules)
-        {
-            script.Append("Get-NetFirewallRule -DisplayName ").Append(Quote(rule._ruleName))
-                .Append(" -ErrorAction SilentlyContinue | Where-Object { $_.Direction -eq ").Append(Quote(rule._direction))
-                .Append(" -and $_.Action -eq 'Allow' -and (($_ | Get-NetFirewallApplicationFilter).Program -eq ")
-                .Append(Quote(rule._executablePath))
-                .Append(") } | ForEach-Object { $r = $_; try { $r | Remove-NetFirewallRule -ErrorAction Stop; $r.DisplayName }")
-                .Append(" catch { [Console]::Error.WriteLine('Could not remove ' + $r.DisplayName + ': ' + $_) } }")
-                .Append('\n');
-        }
-
-        // Encoded, so the rule names and paths need no command-line quoting.
-        var result = ProcessRunner.Run(
-            NativeInterop.SystemExePath("WindowsPowerShell\\v1.0\\powershell.exe"),
-            "-NoProfile -NonInteractive -EncodedCommand " + Convert.ToBase64String(Encoding.Unicode.GetBytes(script.ToString())),
-            30_000,
-            new Dictionary<string, string> { ["PSModulePath"] = modulesPath });
+        var values = rules.SelectMany(rule => new[] { rule._ruleName, rule._direction, rule._executablePath }).ToArray();
+        var result = runProcess(ParameterizedPowerShell.CreateStartInfo(FirewallModule, RemoveLeftoversScript, values), 30_000);
 
         // The exit code is not checked: a lookup that finds no rule sets it too, which is the normal case.
         if (!result.Exited || !string.IsNullOrWhiteSpace(result.StdErr))
@@ -218,8 +197,6 @@ public class FirewallRuleAction : GameAction
             .ToList();
     }
 
-    private static string Quote(string value) => "'" + value.Replace("'", "''") + "'";
-
     /// <summary>
     /// Checks if a firewall rule with the given display name already exists.
     /// </summary>
@@ -227,10 +204,8 @@ public class FirewallRuleAction : GameAction
     {
         try
         {
-            var result = ProcessRunner.Run(
-                NativeInterop.SystemExePath("WindowsPowerShell\\v1.0\\powershell.exe"),
-                $"-Command \"Get-NetFirewallRule -DisplayName '{_ruleName.Replace("'", "''")}' -ErrorAction SilentlyContinue\"",
-                15_000);
+            var result = RunProcess(
+                ParameterizedPowerShell.CreateStartInfo(FirewallModule, RuleExistsScript, _ruleName), 15_000);
 
             // Rule exists iff the query produced output. A failed-to-start / timed-out / empty run
             // yields no output -> false, matching the prior behaviour.

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Management;
 using System.Text.Json;
 using GameShift.Core.System;
@@ -21,18 +22,34 @@ public class DisableMemoryCompression : ISystemTweak
     public string Category => "Memory";
     public bool RequiresReboot => true;
 
-    /// <summary>
-    /// Whether this tweak is applicable to the current system (32GB+ RAM).
-    /// When false, the UI should gray out the toggle.
-    /// </summary>
     // Physical RAM doesn't change at runtime - detect once. WMI is expensive and these are read
     // from the Settings UI on every render pass.
     private static readonly double _totalRamGb = DetectTotalRamGb();
 
-    public bool IsApplicable => _totalRamGb >= 32;
+    private readonly double _ramGb;
+
+    private const string MMAgentModule = "MMAgent";
+    private const string QueryScript =
+        "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8\n(Get-MMAgent).MemoryCompression";
+    private const string DisableScript = "Disable-MMAgent -MemoryCompression";
+    private const string EnableScript = "Enable-MMAgent -MemoryCompression";
+
+    /// <summary>Process-start seam; tests replace it so no PowerShell runs.</summary>
+    internal Func<ProcessStartInfo, int, ProcessRunResult> RunProcess { get; set; } = ParameterizedPowerShell.Run;
+
+    public DisableMemoryCompression() : this(_totalRamGb) { }
+
+    /// <param name="totalRamGb">Installed RAM in GB; decides <see cref="IsApplicable"/>.</param>
+    internal DisableMemoryCompression(double totalRamGb) => _ramGb = totalRamGb;
+
+    /// <summary>
+    /// Whether this tweak is applicable to the current system (32GB+ RAM).
+    /// When false, the UI should gray out the toggle.
+    /// </summary>
+    public bool IsApplicable => _ramGb >= 32;
 
     /// <summary>Total RAM in GB for UI display.</summary>
-    public double TotalRamGb => _totalRamGb;
+    public double TotalRamGb => _ramGb;
 
     public bool DetectIsApplied()
     {
@@ -58,8 +75,7 @@ public class DisableMemoryCompression : ISystemTweak
 
         bool wasEnabled = IsMemoryCompressionEnabled();
 
-        var (exitCode, output) = RunPowerShell(
-            "-NoProfile -Command \"Disable-MMAgent -MemoryCompression\"");
+        var (exitCode, output) = RunPowerShell(DisableScript);
 
         if (exitCode != 0)
         {
@@ -86,8 +102,7 @@ public class DisableMemoryCompression : ISystemTweak
                 return true;
             }
 
-            var (exitCode, output) = RunPowerShell(
-                "-NoProfile -Command \"Enable-MMAgent -MemoryCompression\"");
+            var (exitCode, output) = RunPowerShell(EnableScript);
 
             if (exitCode != 0)
             {
@@ -108,10 +123,9 @@ public class DisableMemoryCompression : ISystemTweak
     /// <summary>
     /// Checks if memory compression is currently enabled via PowerShell Get-MMAgent.
     /// </summary>
-    private static bool IsMemoryCompressionEnabled()
+    private bool IsMemoryCompressionEnabled()
     {
-        var (exitCode, output) = RunPowerShell(
-            "-NoProfile -Command \"(Get-MMAgent).MemoryCompression\"");
+        var (exitCode, output) = RunPowerShell(QueryScript);
 
         if (exitCode != 0)
             return true; // Assume enabled if query fails
@@ -150,12 +164,11 @@ public class DisableMemoryCompression : ISystemTweak
         return 0;
     }
 
-    private static (int exitCode, string output) RunPowerShell(string arguments)
+    private (int exitCode, string output) RunPowerShell([ConstantExpected] string script)
     {
         try
         {
-            var result = ProcessRunner.Run(
-                NativeInterop.SystemExePath("WindowsPowerShell\\v1.0\\powershell.exe"), arguments, 10000);
+            var result = RunProcess(ParameterizedPowerShell.CreateStartInfo(MMAgentModule, script), 10000);
             if (result.TimedOut)
                 return (-1, "PowerShell timed out");
             if (!result.Exited)
