@@ -17,16 +17,7 @@ public class GameProfileTests
     [InlineData(nameof(PowerPlanSwitcher))]
     [InlineData(nameof(TimerResolutionManager))]
     [InlineData(nameof(ProcessPriorityBooster))]
-    [InlineData(nameof(MemoryOptimizer))]
-    [InlineData(nameof(VisualEffectReducer))]
-    [InlineData(nameof(NetworkOptimizer))]
     [InlineData(nameof(HybridCpuDetector))]
-    [InlineData(nameof(MpoToggle))]
-    [InlineData(nameof(CompetitiveMode))]
-    [InlineData(nameof(GpuDriverOptimizer))]
-    [InlineData(nameof(ScheduledTaskSuppressor))]
-    [InlineData(nameof(CpuParkingManager))]
-    [InlineData(nameof(IoPriorityManager))]
     [InlineData(nameof(EfficiencyModeController))]
     public void IsOptimizationEnabled_AllKnownOptimizations_HaveExplicitMapping(string className)
     {
@@ -58,24 +49,16 @@ public class GameProfileTests
     {
         var profile = GameProfile.CreateDefault();
 
-        // Main optimizations are all enabled by default (except hybrid CPU and competitive)
         Assert.True(profile.IsOptimizationEnabled(ServiceSuppressor.OptimizationId));
         Assert.True(profile.IsOptimizationEnabled(PowerPlanSwitcher.OptimizationId));
         Assert.True(profile.IsOptimizationEnabled(TimerResolutionManager.OptimizationId));
         Assert.True(profile.IsOptimizationEnabled(ProcessPriorityBooster.OptimizationId));
-        Assert.True(profile.IsOptimizationEnabled(MemoryOptimizer.OptimizationId));
-        Assert.True(profile.IsOptimizationEnabled(VisualEffectReducer.OptimizationId));
-        Assert.True(profile.IsOptimizationEnabled(NetworkOptimizer.OptimizationId));
     }
 
     [Fact]
-    public void IsOptimizationEnabled_DefaultProfile_OptInTogglesDisabled()
+    public void IsOptimizationEnabled_DefaultProfile_EnablesHybridCpuDetector()
     {
         var profile = GameProfile.CreateDefault();
-
-        // Opt-in toggles default to false
-        Assert.False(profile.IsOptimizationEnabled(MpoToggle.OptimizationId));
-        Assert.False(profile.IsOptimizationEnabled(CompetitiveMode.OptimizationId));
 
         // HybridCpuDetector is enabled by default because V-Cache CCD pinning (PinToVCacheCcd)
         // defaults on; the module no-ops on non-X3D / non-hybrid topologies.
@@ -91,7 +74,6 @@ public class GameProfileTests
         Assert.False(string.IsNullOrWhiteSpace(PowerPlanSwitcher.OptimizationId));
         Assert.False(string.IsNullOrWhiteSpace(TimerResolutionManager.OptimizationId));
         Assert.False(string.IsNullOrWhiteSpace(ProcessPriorityBooster.OptimizationId));
-        Assert.False(string.IsNullOrWhiteSpace(MemoryOptimizer.OptimizationId));
         Assert.False(string.IsNullOrWhiteSpace(VisualEffectReducer.OptimizationId));
         Assert.False(string.IsNullOrWhiteSpace(NetworkOptimizer.OptimizationId));
         Assert.False(string.IsNullOrWhiteSpace(HybridCpuDetector.OptimizationId));
@@ -100,7 +82,6 @@ public class GameProfileTests
         Assert.False(string.IsNullOrWhiteSpace(GpuDriverOptimizer.OptimizationId));
         Assert.False(string.IsNullOrWhiteSpace(ScheduledTaskSuppressor.OptimizationId));
         Assert.False(string.IsNullOrWhiteSpace(CpuParkingManager.OptimizationId));
-        Assert.False(string.IsNullOrWhiteSpace(IoPriorityManager.OptimizationId));
         Assert.False(string.IsNullOrWhiteSpace(EfficiencyModeController.OptimizationId));
     }
 
@@ -113,7 +94,6 @@ public class GameProfileTests
             PowerPlanSwitcher.OptimizationId,
             TimerResolutionManager.OptimizationId,
             ProcessPriorityBooster.OptimizationId,
-            MemoryOptimizer.OptimizationId,
             VisualEffectReducer.OptimizationId,
             NetworkOptimizer.OptimizationId,
             HybridCpuDetector.OptimizationId,
@@ -122,7 +102,6 @@ public class GameProfileTests
             GpuDriverOptimizer.OptimizationId,
             ScheduledTaskSuppressor.OptimizationId,
             CpuParkingManager.OptimizationId,
-            IoPriorityManager.OptimizationId,
             EfficiencyModeController.OptimizationId,
         };
 
@@ -202,7 +181,7 @@ public class GameProfileTests
             Id = "roundtrip",
             SuppressServices = false,
             UsePerformanceCoresOnly = true,
-            DisableMpo = true,
+            SetTimerResolution = false,
         };
 
         var json = JsonSerializer.Serialize(original);
@@ -216,18 +195,11 @@ public class GameProfileTests
             original.IsOptimizationEnabled(HybridCpuDetector.OptimizationId),
             deserialized.IsOptimizationEnabled(HybridCpuDetector.OptimizationId));
         Assert.Equal(
-            original.IsOptimizationEnabled(MpoToggle.OptimizationId),
-            deserialized.IsOptimizationEnabled(MpoToggle.OptimizationId));
+            original.IsOptimizationEnabled(TimerResolutionManager.OptimizationId),
+            deserialized.IsOptimizationEnabled(TimerResolutionManager.OptimizationId));
     }
 
     // ── Intensity ─────────────────────────────────────────────────────
-
-    [Fact]
-    public void CreateDefault_Intensity_IsCasual()
-    {
-        var profile = GameProfile.CreateDefault();
-        Assert.Equal(OptimizationIntensity.Casual, profile.Intensity);
-    }
 
     [Fact]
     public void Intensity_SerializationRoundTrip_PreservesValue()
@@ -244,21 +216,6 @@ public class GameProfileTests
         Assert.Equal(OptimizationIntensity.Competitive, deserialized.Intensity);
     }
 
-    [Fact]
-    public void Intensity_DoesNotAffect_IsOptimizationEnabled()
-    {
-        var casual = new GameProfile { Intensity = OptimizationIntensity.Casual };
-        var competitive = new GameProfile { Intensity = OptimizationIntensity.Competitive };
-
-        // IsOptimizationEnabled should be the same regardless of intensity
-        Assert.Equal(
-            casual.IsOptimizationEnabled(ServiceSuppressor.OptimizationId),
-            competitive.IsOptimizationEnabled(ServiceSuppressor.OptimizationId));
-        Assert.Equal(
-            casual.IsOptimizationEnabled(MpoToggle.OptimizationId),
-            competitive.IsOptimizationEnabled(MpoToggle.OptimizationId));
-    }
-
     // ── Helpers ───────────────────────────────────────────────────────
 
     private static GameProfile CreateAllDisabledProfile() => new()
@@ -267,17 +224,8 @@ public class GameProfileTests
         SwitchPowerPlan = false,
         SetTimerResolution = false,
         BoostProcessPriority = false,
-        OptimizeMemory = false,
-        ReduceVisualEffects = false,
-        OptimizeNetwork = false,
         UsePerformanceCoresOnly = false,
         PinToVCacheCcd = false,
-        DisableMpo = false,
-        EnableCompetitiveMode = false,
-        EnableGpuOptimization = false,
-        SuppressScheduledTasks = false,
-        UnparkCpuCores = false,
-        ManageIoPriority = false,
         EnableEfficiencyMode = false,
     };
 
@@ -287,16 +235,7 @@ public class GameProfileTests
         nameof(PowerPlanSwitcher) => PowerPlanSwitcher.OptimizationId,
         nameof(TimerResolutionManager) => TimerResolutionManager.OptimizationId,
         nameof(ProcessPriorityBooster) => ProcessPriorityBooster.OptimizationId,
-        nameof(MemoryOptimizer) => MemoryOptimizer.OptimizationId,
-        nameof(VisualEffectReducer) => VisualEffectReducer.OptimizationId,
-        nameof(NetworkOptimizer) => NetworkOptimizer.OptimizationId,
         nameof(HybridCpuDetector) => HybridCpuDetector.OptimizationId,
-        nameof(MpoToggle) => MpoToggle.OptimizationId,
-        nameof(CompetitiveMode) => CompetitiveMode.OptimizationId,
-        nameof(GpuDriverOptimizer) => GpuDriverOptimizer.OptimizationId,
-        nameof(ScheduledTaskSuppressor) => ScheduledTaskSuppressor.OptimizationId,
-        nameof(CpuParkingManager) => CpuParkingManager.OptimizationId,
-        nameof(IoPriorityManager) => IoPriorityManager.OptimizationId,
         nameof(EfficiencyModeController) => EfficiencyModeController.OptimizationId,
         _ => throw new ArgumentException($"Unknown optimization class: {className}")
     };

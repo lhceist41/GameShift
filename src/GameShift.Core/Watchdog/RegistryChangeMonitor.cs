@@ -51,24 +51,6 @@ public sealed class RegistryChangeMonitor : IDisposable
     private static readonly WatchedKey[] KnownKeys =
     [
         new(
-            KeyPath:          @"SYSTEM\CurrentControlSet\Control\Session Manager\kernel",
-            ValueName:        "GlobalTimerResolutionRequests",
-            OptimizationName: TimerResolutionManager.OptimizationId,
-            JsonKey:          null   // TimerResolutionManager not yet journal-migrated → warn only
-        ),
-        new(
-            KeyPath:          @"SYSTEM\CurrentControlSet\Control\GraphicsDrivers",
-            ValueName:        "DisableOverlays",
-            OptimizationName: MpoToggle.OptimizationId,
-            JsonKey:          "DisableOverlays"
-        ),
-        new(
-            KeyPath:          @"SOFTWARE\Microsoft\Windows\Dwm",
-            ValueName:        "OverlayTestMode",
-            OptimizationName: MpoToggle.OptimizationId,
-            JsonKey:          "OverlayTestMode"
-        ),
-        new(
             KeyPath:          @"SYSTEM\CurrentControlSet\Control\PriorityControl",
             ValueName:        "Win32PrioritySeparation",
             OptimizationName: ProcessPriorityBooster.OptimizationId,

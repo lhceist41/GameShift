@@ -1,10 +1,11 @@
+using GameShift.Core.Journal;
 using GameShift.Core.Optimization;
 
 namespace GameShift.Tests.Optimization;
 
 /// <summary>
-/// RSC is restored from the state captured before disabling it, so it may only be disabled when
-/// that state was read. Runs against an in-memory netsh.
+/// A session journal written by an earlier version replays the recorded RSC state through netsh,
+/// and only a state netsh accepts. Runs against an in-memory netsh.
 /// </summary>
 public class NetworkOptimizerRscTests
 {
@@ -12,36 +13,34 @@ public class NetworkOptimizerRscTests
 
     private readonly List<string> _calls = new();
 
-    private NetworkOptimizer NewOptimizer(int queryExitCode, string queryOutput) => new()
+    private NetworkOptimizer NewOptimizer() => new()
     {
         Netsh = arguments =>
         {
             _calls.Add(arguments);
-            return arguments == "int tcp show global" ? (queryExitCode, queryOutput) : (0, string.Empty);
+            return (0, string.Empty);
         },
     };
 
-    [Fact]
-    public void StateReadable_DisablesAndRestoresIt()
+    [Theory]
+    [InlineData("enabled")]
+    [InlineData("disabled")]
+    public void RevertFromRecord_ReplaysTheRecordedState(string state)
     {
-        var optimizer = NewOptimizer(0, "TCP Global Parameters\n----\nReceive Segment Coalescing State    : enabled\n");
+        var result = NewOptimizer().RevertFromRecord("{\"Netsh:rsc\":\"" + state + "\"}");
 
-        optimizer.DisableRscGlobal();
-        optimizer.RestoreRscGlobal();
-
-        Assert.Equal(new[] { SetRsc + "disabled", SetRsc + "enabled" }, _calls.Where(c => c.StartsWith(SetRsc)));
+        Assert.Equal(OptimizationState.Reverted, result.State);
+        Assert.Equal(new[] { SetRsc + state }, _calls);
     }
 
     [Theory]
-    [InlineData(0, "Globale TCP-Parameter\n----\nStatus der Empfangssegmentzusammenfuegung : aktiviert\n")]
-    [InlineData(1, "")]
-    public void StateNotReadable_LeavesRscUnchanged(int queryExitCode, string queryOutput)
+    [InlineData("\"aktiviert\"")]
+    [InlineData("null")]
+    [InlineData("1")]
+    public void RevertFromRecord_NeverPassesAnUnknownStateToNetsh(string recorded)
     {
-        var optimizer = NewOptimizer(queryExitCode, queryOutput);
+        NewOptimizer().RevertFromRecord("{\"Netsh:rsc\":" + recorded + "}");
 
-        optimizer.DisableRscGlobal();
-        optimizer.RestoreRscGlobal();
-
-        Assert.DoesNotContain(_calls, c => c.StartsWith(SetRsc));
+        Assert.Empty(_calls);
     }
 }

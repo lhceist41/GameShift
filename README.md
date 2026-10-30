@@ -55,22 +55,11 @@ These activate when a game launches and revert when the game closes.
 |:-------------|:-------------|
 | **Process Priority Booster** | Elevates the game to High priority with optimal `Win32PrioritySeparation` (0x2A). Detects anti-cheat systems and automatically falls back to IFEO registry when runtime API calls are blocked. |
 | **Service Suppression** | Pauses 20+ non-essential Windows services across three configurable tiers - telemetry, indexing, Windows Update, Delivery Optimization, and more. Safety list protects critical services. |
-| **Scheduled Task Suppression** | Disables resource-heavy tasks (defrag, telemetry, update scans) across three tiers during gameplay. Optional Defender scan suppression. |
-| **Intelligent Memory Management** | Threshold-based standby list purging - only clears memory when both the standby list is large AND free memory is critically low, auto-scaled to your total RAM. Targeted `EmptyWorkingSet` on background processes protects game assets while freeing RAM. Hard minimum working set on the game process prevents Windows from trimming game pages. |
-| **Timer Resolution** | Sets system timer to 0.5ms (Competitive) or 1.0ms (Casual). Includes Windows 11 `GlobalTimerResolutionRequests` fix so the resolution applies system-wide, not just to GameShift. Runs on a dedicated windowless thread immune to minimize/occlusion resets. |
+| **Timer Resolution** | Requests a 1 ms system timer resolution during gameplay. Runs on a dedicated windowless thread immune to minimize/occlusion resets. |
 | **Power Plan Switching** | Activates Ultimate Performance scheme during gaming. Creates the plan if missing. |
-| **CPU Core Unparking** | Unparks all cores, disables processor idle in Competitive mode (forces C0 state). Vendor-aware parking values for AMD X3D dual-CCD. |
 | **Hybrid CPU Scheduling** | Detects P-cores vs E-cores on Intel 12th-15th gen and AMD hybrid CPUs via CPU Sets API. Assigns the game to P-cores and background processes to E-cores using soft affinity that cooperates with Intel Thread Director. Disables power throttling on the game (HighQoS) and enables EcoQoS on background processes. Falls back gracefully on non-hybrid CPUs. |
 | **Core Isolation** | Advanced opt-in feature: reserves specific P-cores exclusively for gaming via `ReservedCpuSets`. No other process can schedule onto reserved cores - OS-enforced. Visual core map in the UI for selecting which cores to reserve. Requires reboot. |
-| **MPO Disable** | Disables Multiplane Overlay to fix micro-stutter on multi-monitor setups. Includes Windows 11 24H2/25H2 fix using `DisableOverlays`  - the legacy `OverlayTestMode` key is no longer honored on recent builds. Competitive mode only. |
-| **Visual Effect Reducer** | Disables transparency and animations during gameplay. |
 | **Efficiency Mode Control** | Applies Windows 11 EcoQoS to background processes, constraining them to E-cores. Rescans every 30 seconds to catch newly spawned processes. |
-| **I/O Priority Manager** | Lowers I/O priority of background processes to reduce disk contention. PID reuse safety prevents accidental priority changes. |
-| **Network Optimizer** | Disables Nagle's algorithm, stops Delivery Optimization, disables multimedia network throttling (`NetworkThrottlingIndex`), tunes NIC settings (interrupt moderation, LSO, RSC). |
-| **GPU Driver Optimizer** | Auto-detects NVIDIA, AMD, or Intel GPU. NVIDIA: programs driver profiles directly via NvAPI DRS - max pre-rendered frames, unlimited shader cache, Ultra low latency mode, max performance power. AMD: disables ULPS and deep sleep, sets flip queue to 1 frame, attempts ADLX Anti-Lag. All vendors: extends TDR timeout to prevent false GPU resets during shader compilation. NVIDIA-specific: forces P-State 0 and CUDA spin mode for lowest latency. |
-| **ProBalance** | Monitors background process CPU usage in real time during gaming. Automatically demotes processes that spike above 15% CPU for sustained periods to BelowNormal priority. Restores them when they calm down. Safety list protects games, anti-cheat, audio, and system processes. |
-| **Competitive Mode** | Suspends overlay processes (Discord, Steam, NVIDIA), kills GPU-hungry background apps (Widgets, Edge WebView). Respects anti-cheat blocklists. |
-| **System Tweaks** | Configures the Multimedia SystemProfile for gaming priority (`GPU Priority=8`, `Scheduling Category=High`, `SFIO Priority=High`). Disables USB selective suspend for HID peripherals, disables PCIe ASPM link state power management. Applied during sessions, reverted on exit. |
 
 ### Background Mode (Always-On)
 
@@ -127,8 +116,7 @@ Available through the DPC Doctor page with per-setting control and full rollback
 
 - **Auto-detection** from Steam, Epic Games, GOG Galaxy, and Xbox/Game Pass install directories, plus a built-in database of 80+ popular game executables as fallback
 - **19 built-in game profiles** with hardware-specific tuning and anti-cheat metadata for titles including Overwatch 2, Valorant, CS2, Fortnite, Apex Legends, Deadlock, osu!, Elden Ring, Arknights: Endfield, Wuthering Waves, and more
-- **Per-game toggle control** for every optimization with sub-toggles for advanced options
-- **Optimization Intensity** per profile - Competitive (0.5ms timer, processor idle disabled, MPO off) or Casual (1.0ms timer, gentler settings for single-player titles)
+- **Per-game toggle control** for every optimization
 - **Game-specific tips** shown as toast notifications on first launch (38 built-in tips covering performance settings, anti-cheat quirks, and common pitfalls)
 - **Manual game adding** for any executable not in a scanned library
 
@@ -199,7 +187,7 @@ dotnet run --project src/GameShift.App
 | **Privileges** | Administrator |
 
 > [!NOTE]
-> Some features require specific Windows versions. CPU Sets scheduling requires Windows 11 22H2+. Timer resolution system-wide fix and `GlobalTimerResolutionRequests` require Windows 11. All features degrade gracefully on older builds.
+> Some features require specific Windows versions. CPU Sets scheduling requires Windows 11 22H2+. All features degrade gracefully on older builds.
 
 ---
 
@@ -216,9 +204,9 @@ dotnet run --project src/GameShift.App
 ### What GameShift changes (and how it reverts)
 
 - **Services**  - Temporarily pauses non-essential services. Original start types recorded in journal, restored on session end.
-- **Registry keys**  - Writes timer resolution, GPU driver settings, network tuning, power settings, and IFEO entries. All original values captured before any write and verified after revert.
+- **Registry keys**  - Writes the `Win32PrioritySeparation` scheduling value, IFEO entries, and a few per-game values for built-in games. All original values captured before any write and verified after revert.
 - **Power plans**  - Creates or switches to Ultimate Performance (or the custom "GameShift Performance" plan). Your original plan GUID is saved and restored.
-- **Process priority & scheduling**  - Elevates game priority, assigns CPU sets, manages memory priority and working sets. All released on game exit.
+- **Process priority & scheduling**  - Elevates game priority and assigns CPU sets. All released on game exit.
 - **BCD settings**  - Optional kernel tuning (timer, APIC, TSC) via BCDEdit with one-click revert. Tracked in pending reboot fixes.
 - **Interrupt affinity**  - Optional GPU and USB interrupt routing changes with rollback to default Windows assignment.
 
@@ -287,15 +275,9 @@ When Background Mode is enabled, GameShift creates a custom power plan cloned fr
 </details>
 
 <details>
-<summary><strong>What is the difference between Competitive and Casual?</strong></summary>
-<br/>
-Competitive enables aggressive optimizations: processor idle disable (forces C0 state), 0.5ms timer resolution, MPO disable, and the BCDEdit kernel tunings (the platform-timer tweaks are skipped on AMD, where they degrade performance). Casual uses gentler settings (1.0ms timer, no idle disable, no MPO change) suitable for single-player and story-driven games. Built-in profiles assign the appropriate tier automatically - Valorant and osu! default to Competitive, single-player titles default to Casual. You can change the intensity per game in the profile editor.
-</details>
-
-<details>
 <summary><strong>Do I need an Intel hybrid CPU to benefit?</strong></summary>
 <br/>
-No. CPU Sets scheduling and Core Isolation are hybrid-only features, but everything else - memory management, timer resolution, GPU optimization, service suppression, ProBalance, interrupt affinity, kernel tuning - works on any modern CPU from Intel or AMD.
+No. CPU Sets scheduling and Core Isolation are hybrid-only features, but everything else - timer resolution, service suppression, power plan switching, interrupt affinity, kernel tuning - works on any modern CPU from Intel or AMD.
 </details>
 
 <details>

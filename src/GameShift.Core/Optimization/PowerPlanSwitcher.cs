@@ -63,12 +63,7 @@ public class PowerPlanSwitcher : IOptimization, IJournaledOptimization
     /// The seven session power sub-settings GameShift overrides during a gaming session.
     /// Each entry is applied to the performance plan via powercfg after switching plans.
     ///
-    /// PCIe ASPM is deliberately NOT in this list: it is owned solely by the always-on
-    /// SessionSystemTweaksOptimizer. This module is toggleable (SwitchPowerPlan) and runs first, so
-    /// if both wrote PCIe ASPM the always-on tweak (which runs last) would capture this module's
-    /// already-applied value as its "original" baseline - the same dual-writer revert asymmetry
-    /// that was fixed for the MMCSS SystemProfile values in commit 2e17176. Keeping a single owner
-    /// makes ASPM revert order- and partial-revert-independent.
+    /// PCIe ASPM is deliberately NOT in this list: GameShift no longer changes it during a session.
     /// </summary>
     private static readonly (string SubGroup, string Setting, int Value, string Description)[] SessionOverrides =
     {

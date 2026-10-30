@@ -96,26 +96,14 @@ public static class RevertVerificationRunner
         new PowerPlanSwitcher(),
         new TimerResolutionManager(),
         new ProcessPriorityBooster(),
-        new MemoryOptimizer(),
-        new VisualEffectReducer(),
-        new NetworkOptimizer(),
         new HybridCpuDetector(),
-        new MpoToggle(),
-        new CompetitiveMode(),
-        new GpuDriverOptimizer(),
-        new ScheduledTaskSuppressor(),
-        new CpuParkingManager(),
-        new IoPriorityManager(),
         new EfficiencyModeController(),
         new CpuSchedulingOptimizer(),
-        new SessionSystemTweaksOptimizer(),
     };
 
     /// <summary>
-    /// The synthetic maximum-coverage profile. Competitive intensity so intensity-gated modules
-    /// (MPO, C-state limiting) participate. Pinning toggles stay off because they target a live
-    /// game process that does not exist here, and widget/Defender toggles stay off out of
-    /// politeness on developer machines; neither leaves persistent state, which is what this
+    /// The synthetic maximum-coverage profile. Pinning toggles stay off because they target a live
+    /// game process that does not exist here and leave no persistent state, which is what this
     /// harness verifies.
     /// </summary>
     public static GameProfile CreateVerificationProfile() => new()
@@ -124,14 +112,8 @@ public static class RevertVerificationRunner
         GameName = "State Verification Probe",
         ExecutableName = SystemStateProber.ProbeExecutableName,
         ProcessId = global::System.Environment.ProcessId,
-        Intensity = OptimizationIntensity.Competitive,
-        DisableProcessorIdle = true,
-        DisableMpo = true,
-        EnableCompetitiveMode = true,
         UsePerformanceCoresOnly = false,
         PinToVCacheCcd = false,
-        KillWidgets = false,
-        SuppressDefenderScheduledScan = false,
     };
 
     /// <summary>

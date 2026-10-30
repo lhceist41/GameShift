@@ -80,23 +80,6 @@
                               helpers:ScrollHelper.FixScrolling="True">
                     <StackPanel IsEnabled="{Binding HasSelectedProfile, Mode=OneWay}">
 
-                        <!-- Optimization Intensity -->
-                        <Border Background="{DynamicResource GS.Surface.Base}" CornerRadius="6"
-                                Padding="12,10" Margin="0,0,0,12">
-                            <StackPanel>
-                                <TextBlock Text="Optimization Intensity" FontWeight="SemiBold"
-                                           Foreground="{DynamicResource GS.Text.Primary}"/>
-                                <TextBlock Text="Competitive: aggressive (idle disable, 0.5ms timer, MPO off). Casual: gentler."
-                                           FontSize="11" Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,2,0,6"/>
-                                <ComboBox ItemsSource="{Binding IntensityOptions}"
-                                          SelectedItem="{Binding Intensity, Mode=TwoWay}"
-                                          Width="150" HorizontalAlignment="Left"
-                                          Background="{DynamicResource GS.Surface.Card}"
-                                          Foreground="{DynamicResource GS.Text.Primary}"
-                                          BorderBrush="{DynamicResource GS.Surface.Border}"/>
-                            </StackPanel>
-                        </Border>
-
                         <Border Background="{DynamicResource GS.Surface.Base}" CornerRadius="6"
                                 Padding="12,10" Margin="0,0,0,6">
                             <DockPanel>
@@ -136,7 +119,7 @@
                                 <StackPanel Margin="10,0,0,0">
                                     <TextBlock Text="System Timer Resolution" FontWeight="SemiBold"
                                                Foreground="{DynamicResource GS.Text.Primary}"/>
-                                    <TextBlock Text="Sets 0.5ms timer for lower input latency"
+                                    <TextBlock Text="Requests a 1 ms timer for lower input latency"
                                                FontSize="11" Foreground="{DynamicResource GS.Text.Secondary}"/>
                                 </StackPanel>
                             </DockPanel>
@@ -161,51 +144,6 @@
                                 Padding="12,10" Margin="0,0,0,6">
                             <DockPanel>
                                 <CheckBox DockPanel.Dock="Left"
-                                          IsChecked="{Binding OptimizeMemory, Mode=TwoWay}"
-                                          VerticalAlignment="Center"/>
-                                <StackPanel Margin="10,0,0,0">
-                                    <TextBlock Text="Memory Optimizer" FontWeight="SemiBold"
-                                               Foreground="{DynamicResource GS.Text.Primary}"/>
-                                    <TextBlock Text="Purges standby list when memory is low"
-                                               FontSize="11" Foreground="{DynamicResource GS.Text.Secondary}"/>
-                                </StackPanel>
-                            </DockPanel>
-                        </Border>
-
-                        <Border Background="{DynamicResource GS.Surface.Base}" CornerRadius="6"
-                                Padding="12,10" Margin="0,0,0,6">
-                            <DockPanel>
-                                <CheckBox DockPanel.Dock="Left"
-                                          IsChecked="{Binding ReduceVisualEffects, Mode=TwoWay}"
-                                          VerticalAlignment="Center"/>
-                                <StackPanel Margin="10,0,0,0">
-                                    <TextBlock Text="Visual Effect Reducer" FontWeight="SemiBold"
-                                               Foreground="{DynamicResource GS.Text.Primary}"/>
-                                    <TextBlock Text="Disables transparency and animations"
-                                               FontSize="11" Foreground="{DynamicResource GS.Text.Secondary}"/>
-                                </StackPanel>
-                            </DockPanel>
-                        </Border>
-
-                        <Border Background="{DynamicResource GS.Surface.Base}" CornerRadius="6"
-                                Padding="12,10" Margin="0,0,0,6">
-                            <DockPanel>
-                                <CheckBox DockPanel.Dock="Left"
-                                          IsChecked="{Binding OptimizeNetwork, Mode=TwoWay}"
-                                          VerticalAlignment="Center"/>
-                                <StackPanel Margin="10,0,0,0">
-                                    <TextBlock Text="Network Optimizer" FontWeight="SemiBold"
-                                               Foreground="{DynamicResource GS.Text.Primary}"/>
-                                    <TextBlock Text="Disables Nagle's algorithm and Delivery Optimization"
-                                               FontSize="11" Foreground="{DynamicResource GS.Text.Secondary}"/>
-                                </StackPanel>
-                            </DockPanel>
-                        </Border>
-
-                        <Border Background="{DynamicResource GS.Surface.Base}" CornerRadius="6"
-                                Padding="12,10" Margin="0,0,0,6">
-                            <DockPanel>
-                                <CheckBox DockPanel.Dock="Left"
                                           IsChecked="{Binding UsePerformanceCoresOnly, Mode=TwoWay}"
                                           VerticalAlignment="Center"/>
                                 <StackPanel Margin="10,0,0,0">
@@ -216,164 +154,6 @@
                                 </StackPanel>
                             </DockPanel>
                         </Border>
-
-                        <!-- Memory Threshold Override -->
-                        <Border Background="{DynamicResource GS.Surface.Base}" CornerRadius="6"
-                                Padding="12,10" Margin="0,15,0,0">
-                            <StackPanel>
-                                <TextBlock Text="Memory Threshold (MB)" FontWeight="SemiBold"
-                                           Foreground="{DynamicResource GS.Text.Primary}"/>
-                                <TextBlock Text="Per-game override. 0 = use global setting."
-                                           FontSize="11" Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,2,0,6"/>
-                                <TextBox Text="{Binding MemoryThresholdMB, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                         Width="100" HorizontalAlignment="Left"
-                                         Background="{DynamicResource GS.Surface.Base}"
-                                         Foreground="{DynamicResource GS.Text.Primary}"
-                                         BorderBrush="{DynamicResource GS.Surface.Border}"
-                                         Padding="6,4"/>
-                            </StackPanel>
-                        </Border>
-
-                        <!-- v2 COMPETITIVE GAMING -->
-                        <TextBlock Text="COMPETITIVE GAMING" FontSize="11" FontWeight="Bold"
-                                   Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,20,0,8"/>
-
-                        <!-- MPO Toggle -->
-                        <Border Background="{DynamicResource GS.Surface.Base}" CornerRadius="6"
-                                Padding="12,10" Margin="0,0,0,6">
-                            <DockPanel>
-                                <CheckBox DockPanel.Dock="Left"
-                                          IsChecked="{Binding DisableMpo, Mode=TwoWay}"
-                                          VerticalAlignment="Center"/>
-                                <StackPanel Margin="10,0,0,0">
-                                    <TextBlock Text="Disable Multiplane Overlay (MPO)" FontWeight="SemiBold"
-                                               Foreground="{DynamicResource GS.Text.Primary}"/>
-                                    <TextBlock Text="Fix frame pacing on multi-monitor setups"
-                                               FontSize="11" Foreground="{DynamicResource GS.Text.Secondary}"/>
-                                </StackPanel>
-                            </DockPanel>
-                        </Border>
-
-                        <!-- Competitive Mode master toggle -->
-                        <Border Background="{DynamicResource GS.Surface.Base}" CornerRadius="6"
-                                Padding="12,10" Margin="0,0,0,2">
-                            <DockPanel>
-                                <CheckBox DockPanel.Dock="Left"
-                                          IsChecked="{Binding EnableCompetitiveMode, Mode=TwoWay}"
-                                          VerticalAlignment="Center"/>
-                                <StackPanel Margin="10,0,0,0">
-                                    <TextBlock Text="Competitive Mode" FontWeight="SemiBold"
-                                               Foreground="{DynamicResource GS.Text.Primary}"/>
-                                    <TextBlock Text="Suspend overlays and GPU consumers during gameplay"
-                                               FontSize="11" Foreground="{DynamicResource GS.Text.Secondary}"/>
-                                </StackPanel>
-                            </DockPanel>
-                        </Border>
-
-                        <!-- Competitive Mode sub-toggles (indented, enabled only when master is on) -->
-                        <StackPanel Margin="30,0,0,0" IsEnabled="{Binding EnableCompetitiveMode}">
-                            <Border Background="{DynamicResource GS.Surface.Base}" CornerRadius="6"
-                                    Padding="12,8" Margin="0,0,0,2">
-                                <DockPanel>
-                                    <CheckBox DockPanel.Dock="Left"
-                                              IsChecked="{Binding SuspendDiscordOverlay, Mode=TwoWay}"
-                                              VerticalAlignment="Center"/>
-                                    <TextBlock Text="Suspend Discord Overlay" Margin="10,0,0,0"
-                                               Foreground="{DynamicResource GS.Text.Primary}"
-                                               VerticalAlignment="Center"/>
-                                </DockPanel>
-                            </Border>
-                            <Border Background="{DynamicResource GS.Surface.Base}" CornerRadius="6"
-                                    Padding="12,8" Margin="0,0,0,2">
-                                <DockPanel>
-                                    <CheckBox DockPanel.Dock="Left"
-                                              IsChecked="{Binding SuspendSteamOverlay, Mode=TwoWay}"
-                                              VerticalAlignment="Center"/>
-                                    <TextBlock Text="Suspend Steam Overlay" Margin="10,0,0,0"
-                                               Foreground="{DynamicResource GS.Text.Primary}"
-                                               VerticalAlignment="Center"/>
-                                </DockPanel>
-                            </Border>
-                            <Border Background="{DynamicResource GS.Surface.Base}" CornerRadius="6"
-                                    Padding="12,8" Margin="0,0,0,2">
-                                <DockPanel>
-                                    <CheckBox DockPanel.Dock="Left"
-                                              IsChecked="{Binding SuspendNvidiaOverlay, Mode=TwoWay}"
-                                              VerticalAlignment="Center"/>
-                                    <TextBlock Text="Suspend NVIDIA Overlay" Margin="10,0,0,0"
-                                               Foreground="{DynamicResource GS.Text.Primary}"
-                                               VerticalAlignment="Center"/>
-                                </DockPanel>
-                            </Border>
-                            <Border Background="{DynamicResource GS.Surface.Base}" CornerRadius="6"
-                                    Padding="12,8" Margin="0,0,0,6">
-                                <DockPanel>
-                                    <CheckBox DockPanel.Dock="Left"
-                                              IsChecked="{Binding KillWidgets, Mode=TwoWay}"
-                                              VerticalAlignment="Center"/>
-                                    <TextBlock Text="Kill Windows Widgets" Margin="10,0,0,0"
-                                               Foreground="{DynamicResource GS.Text.Primary}"
-                                               VerticalAlignment="Center"/>
-                                </DockPanel>
-                            </Border>
-                        </StackPanel>
-
-                        <!-- v2 GPU OPTIMIZATION -->
-                        <TextBlock Text="GPU OPTIMIZATION" FontSize="11" FontWeight="Bold"
-                                   Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,15,0,8"/>
-
-                        <!-- GPU master toggle -->
-                        <Border Background="{DynamicResource GS.Surface.Base}" CornerRadius="6"
-                                Padding="12,10" Margin="0,0,0,2">
-                            <DockPanel>
-                                <CheckBox DockPanel.Dock="Left"
-                                          IsChecked="{Binding EnableGpuOptimization, Mode=TwoWay}"
-                                          VerticalAlignment="Center"/>
-                                <StackPanel Margin="10,0,0,0">
-                                    <TextBlock Text="GPU Driver Optimization" FontWeight="SemiBold"
-                                               Foreground="{DynamicResource GS.Text.Primary}"/>
-                                    <TextBlock Text="Apply vendor-specific GPU registry optimizations"
-                                               FontSize="11" Foreground="{DynamicResource GS.Text.Secondary}"/>
-                                </StackPanel>
-                            </DockPanel>
-                        </Border>
-
-                        <!-- GPU sub-toggles (indented) -->
-                        <StackPanel Margin="30,0,0,0" IsEnabled="{Binding EnableGpuOptimization}">
-                            <Border Background="{DynamicResource GS.Surface.Base}" CornerRadius="6"
-                                    Padding="12,8" Margin="0,0,0,2">
-                                <DockPanel>
-                                    <CheckBox DockPanel.Dock="Left"
-                                              IsChecked="{Binding ForceMaxPerformancePowerMode, Mode=TwoWay}"
-                                              VerticalAlignment="Center"/>
-                                    <TextBlock Text="Force Max Performance Power Mode" Margin="10,0,0,0"
-                                               Foreground="{DynamicResource GS.Text.Primary}"
-                                               VerticalAlignment="Center"/>
-                                </DockPanel>
-                            </Border>
-                            <Border Background="{DynamicResource GS.Surface.Base}" CornerRadius="6"
-                                    Padding="12,8" Margin="0,0,0,2">
-                                <DockPanel>
-                                    <CheckBox DockPanel.Dock="Left"
-                                              IsChecked="{Binding OptimizeShaderCache, Mode=TwoWay}"
-                                              VerticalAlignment="Center"/>
-                                    <TextBlock Text="Optimize Shader Cache" Margin="10,0,0,0"
-                                               Foreground="{DynamicResource GS.Text.Primary}"
-                                               VerticalAlignment="Center"/>
-                                </DockPanel>
-                            </Border>
-                            <Border Background="{DynamicResource GS.Surface.Base}" CornerRadius="6"
-                                    Padding="12,8" Margin="0,0,0,6">
-                                <DockPanel>
-                                    <CheckBox DockPanel.Dock="Left"
-                                              IsChecked="{Binding EnableLowLatencyMode, Mode=TwoWay}"
-                                              VerticalAlignment="Center"/>
-                                    <TextBlock Text="Enable Low Latency Mode" Margin="10,0,0,0"
-                                               Foreground="{DynamicResource GS.Text.Primary}"
-                                               VerticalAlignment="Center"/>
-                                </DockPanel>
-                            </Border>
-                        </StackPanel>
 
                         <!-- v2 MONITORING -->
                         <TextBlock Text="MONITORING" FontSize="11" FontWeight="Bold"

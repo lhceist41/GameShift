@@ -144,7 +144,6 @@ public class DetectionOrchestrator
         _logger = SettingsManager.Logger;
         _semaphore = new SemaphoreSlim(1, 1);
         _isOptimizing = false;
-        _engine.ProtectSessionGames(() => _detector.GetActiveGames().Keys);
 
         // Subscribe to DPC spike events for CSV logging
         if (_dpcMonitor != null)
@@ -363,20 +362,7 @@ public class DetectionOrchestrator
             }
         }
 
-        // If profile has no custom memory threshold, use global setting
-        if (profile.MemoryThresholdMB == 0)
-        {
-            var settings = SettingsManager.Load();
-            profile.MemoryThresholdMB = settings.MemoryThresholdMB;
-        }
-
-        // Auto-set intensity only for the default catch-all profile;
-        // game-specific profiles use their saved Intensity value
-        if (profile.Id == "default")
-            profile.Intensity = GetIntensityForExecutable(executableName);
-
-        _logger.Information("Using profile '{ProfileId}' for {GameName} (intensity: {Intensity})",
-            profile.Id, e.GameName, profile.Intensity);
+        _logger.Information("Using profile '{ProfileId}' for {GameName}", profile.Id, e.GameName);
 
         // Counted as active before anything is applied, so a failure part-way through is still torn
         // down when the session ends.
@@ -837,27 +823,5 @@ public class DetectionOrchestrator
         _detector.AllGamesStopped -= OnAllGamesStopped;
         if (_dpcMonitor != null) _dpcMonitor.DpcSpikeDetected -= OnDpcSpikeDetected;
         _semaphore.Dispose();
-    }
-
-    /// <summary>
-    /// Maps executable names to optimization intensity tiers.
-    /// Competitive: FPS, arena shooters, rhythm games (latency-critical).
-    /// Casual: RPGs, MOBAs, open-world (default for all unknown games).
-    /// </summary>
-    private static OptimizationIntensity GetIntensityForExecutable(string executableName)
-    {
-        return executableName.ToLowerInvariant() switch
-        {
-            "overwatch.exe" => OptimizationIntensity.Competitive,
-            "valorant-win64-shipping.exe" => OptimizationIntensity.Competitive,
-            "cs2.exe" => OptimizationIntensity.Competitive,
-            "project8.exe" => OptimizationIntensity.Competitive,
-            "fortnite" or "fortniteclient-win64-shipping.exe" => OptimizationIntensity.Competitive,
-            "cod.exe" => OptimizationIntensity.Competitive,
-            "rustclient.exe" => OptimizationIntensity.Competitive,
-            "r5apex.exe" or "r5apex_dx12.exe" => OptimizationIntensity.Competitive,
-            "osu!.exe" => OptimizationIntensity.Competitive,
-            _ => OptimizationIntensity.Casual
-        };
     }
 }

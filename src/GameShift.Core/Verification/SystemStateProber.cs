@@ -29,8 +29,8 @@ public sealed class SystemStateProber
     private const int ToolTimeoutMs = 20_000;
 
     // Power setting GUIDs probed on the ACTIVE scheme (AC and DC indexes).
-    // Sources of truth audited this session: PowerPlanSwitcher.SessionOverrides,
-    // CpuParkingManager parking + C-state sets, SessionSystemTweaksOptimizer ASPM/USB.
+    // PowerPlanSwitcher.SessionOverrides, plus the parking, C-state, ASPM and USB settings that
+    // earlier versions changed during a session.
     private const string SubProcessor = "54533251-82be-4824-96c1-47b60b740d00";
     private const string SubUsb = "2a737441-1930-4402-8d77-b2bebba308a3";
     private const string SubPciExpress = "501a4d13-42af-4429-9fd1-a8218c268e20";

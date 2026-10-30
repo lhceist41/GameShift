@@ -57,41 +57,10 @@ public class SystemStateSnapshot
     public Dictionary<string, object> RegistryValues { get; set; } = new();
 
     /// <summary>
-    /// Scheduled task paths disabled by ScheduledTaskSuppressor.
-    /// Used for crash recovery to re-enable orphaned disabled tasks.
-    /// </summary>
-    public List<string> DisabledScheduledTasks { get; set; } = new();
-
-    /// <summary>
-    /// CPU parking: active scheme GUID when CpuParkingManager applied.
-    /// Used for crash recovery to restore orphaned parking settings.
-    /// </summary>
-    public string? CpuParkingSchemeGuid { get; set; }
-
-    /// <summary>
-    /// CPU parking: original AC/DC values for each setting.
-    /// Used for crash recovery to restore orphaned parking settings.
-    /// </summary>
-    public List<Optimization.CpuParkingSnapshotEntry> CpuParkingEntries { get; set; } = new();
-
-    /// <summary>
     /// Original Win32PrioritySeparation registry value before session-scoped override.
     /// Null if not modified. Used for crash recovery to restore original scheduling quantum.
     /// </summary>
     public int? OriginalPrioritySeparation { get; set; }
-
-    /// <summary>
-    /// Power scheme GUID where processor idle was disabled during a gaming session.
-    /// Null if idle was not disabled. Used for crash recovery to re-enable processor idle
-    /// and restore time check interval if GameShift crashes mid-game with IDLEDISABLE=1.
-    /// </summary>
-    public string? IdleDisableSchemeGuid { get; set; }
-
-    /// <summary>
-    /// Processor idle (C-state) original AC/DC values captured when CpuParkingManager limited
-    /// C-states. Used by crash recovery to restore them, not just re-hide the settings.
-    /// </summary>
-    public List<Optimization.CpuParkingSnapshotEntry> IdleDisableEntries { get; set; } = new();
 
     /// <summary>
     /// IFEO (Image File Execution Options) PerfOptions entries created by GameShift.
@@ -219,28 +188,6 @@ public class SystemStateSnapshot
     }
 
     /// <summary>
-    /// Records disabled scheduled task paths for crash recovery.
-    /// Use case: ScheduledTaskSuppressor records tasks it disabled.
-    /// </summary>
-    /// <param name="taskPaths">List of task paths that were disabled</param>
-    public void RecordDisabledScheduledTasks(List<string> taskPaths)
-    {
-        DisabledScheduledTasks = taskPaths;
-    }
-
-    /// <summary>
-    /// Records CPU parking original state for crash recovery.
-    /// Use case: CpuParkingManager records the active scheme GUID and original values.
-    /// </summary>
-    /// <param name="schemeGuid">Active power scheme GUID when parking was modified</param>
-    /// <param name="entries">Original AC/DC values for each parking setting</param>
-    public void RecordCpuParkingState(string schemeGuid, List<Optimization.CpuParkingSnapshotEntry> entries)
-    {
-        CpuParkingSchemeGuid = schemeGuid;
-        CpuParkingEntries = entries;
-    }
-
-    /// <summary>
     /// Records the original Win32PrioritySeparation value before session-scoped override.
     /// Only records if not already set (preserves first/original state).
     /// Use case: ProcessPriorityBooster records original value before setting gaming-optimal 0x2A.
@@ -267,23 +214,9 @@ public class SystemStateSnapshot
     }
 
     /// <summary>
-    /// Records that processor idle was disabled on a specific power scheme.
-    /// Used for crash recovery to re-enable idle if GameShift crashes during gaming.
-    /// </summary>
-    /// <param name="schemeGuid">Active power scheme GUID where idle was disabled</param>
-    /// <param name="entries">Captured original AC/DC values for each C-state setting, so crash
-    /// recovery can restore them rather than only re-hiding the settings</param>
-    public void RecordIdleDisableState(string schemeGuid, List<Optimization.CpuParkingSnapshotEntry> entries)
-    {
-        IdleDisableSchemeGuid ??= schemeGuid;
-        if (entries.Count > 0)
-            IdleDisableEntries = entries;
-    }
-
-    /// <summary>
     /// Records an original registry value before modification.
     /// Only records if not already present (preserves first/original state).
-    /// Use case: VisualEffectReducer and NetworkOptimizer record registry changes.
+    /// Use case: game actions record registry values they change.
     /// </summary>
     /// <param name="keyPath">Full registry key path (e.g., "HKEY_LOCAL_MACHINE\SOFTWARE\...")</param>
     /// <param name="valueName">Registry value name</param>

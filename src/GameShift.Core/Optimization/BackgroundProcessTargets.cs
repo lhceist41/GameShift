@@ -7,7 +7,7 @@ namespace GameShift.Core.Optimization;
 
 /// <summary>
 /// Shared configuration for which background processes GameShift manages during gaming sessions.
-/// Used by IoPriorityManager, EfficiencyModeController, MemoryOptimizer and CpuSchedulingOptimizer.
+/// Used by EfficiencyModeController and CpuSchedulingOptimizer.
 /// Centralizes process targeting to ensure all modules agree on what to demote.
 ///
 /// The demotions these modules apply (memory priority, I/O priority, EcoQoS, CPU-set affinity) are

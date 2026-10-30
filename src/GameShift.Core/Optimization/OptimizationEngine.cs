@@ -53,7 +53,6 @@ public class OptimizationEngine : IDisposable
     /// </summary>
     internal JournalManager Journal => _journal;
     private readonly RegistryChangeMonitor _registryMonitor;
-    private readonly ProBalanceService _proBalance;
 
     /// <summary>
     /// Number of optimizations currently applied (used by SessionTracker for session stats).
@@ -102,7 +101,6 @@ public class OptimizationEngine : IDisposable
         _logger = SettingsManager.Logger; // Use centralized logger from Phase 1
         _journal = journal;
         _registryMonitor = new RegistryChangeMonitor(_journal, _logger);
-        _proBalance = new ProBalanceService();
     }
 
     /// <summary>
@@ -224,13 +222,6 @@ public class OptimizationEngine : IDisposable
             // during the gaming session (e.g. Windows Update agent, other apps).
             if (_appliedCount > 0)
                 _registryMonitor.StartSession();
-
-            // Start ProBalance dynamic CPU restraint if enabled in settings
-            var appSettings = SettingsManager.Load();
-            if (appSettings.BackgroundMode?.ProBalanceEnabled != false)
-            {
-                _proBalance.Start(profile.ProcessId, profile.ExecutableName);
-            }
         }
         finally
         {
@@ -259,9 +250,6 @@ public class OptimizationEngine : IDisposable
             return exclusions;
 
         var bg = settings.BackgroundMode;
-
-        if (bg.StandbyListCleanerEnabled)
-            exclusions.Add(MemoryOptimizer.OptimizationId);
 
         // Always exclude session power plan switching when Background Mode is active -
         // Background Mode owns power plan management via PowerPlanManager
@@ -298,9 +286,8 @@ public class OptimizationEngine : IDisposable
                 _logger.Information(
                     "[OptimizationEngine] Watchdog already recovered optimizations - skipping LIFO revert");
 
-                // Still stop ProBalance and registry monitor - those run in-process and
-                // the watchdog has no visibility into them.
-                _proBalance.Stop();
+                // Still stop the registry monitor - it runs in-process and the watchdog has no
+                // visibility into it.
                 _registryMonitor.StopSession();
 
                 _appliedOptimizations.Clear(); // Clear in-memory tracking
@@ -311,9 +298,6 @@ public class OptimizationEngine : IDisposable
 
             _logger.Information("Deactivating profile. Reverting {Count} optimizations in LIFO order.",
                 _appliedCount);
-
-            // Stop ProBalance - restore all restrained processes before reverting optimizations
-            _proBalance.Stop();
 
             // Stop registry watchers before reverting so they don't fire on our own writes
             _registryMonitor.StopSession();
@@ -386,16 +370,8 @@ public class OptimizationEngine : IDisposable
         }
     }
 
-    /// <summary>
-    /// Supplies the PIDs of every game the detector tracks, so ProBalance never restrains a game
-    /// that runs alongside the one the session started for.
-    /// </summary>
-    internal void ProtectSessionGames(Func<IEnumerable<int>> sessionGamePids) =>
-        _proBalance.ProtectSessionGames(sessionGamePids);
-
     public void Dispose()
     {
-        _proBalance.Dispose();
         _registryMonitor.Dispose();
         _semaphore.Dispose();
     }

@@ -10,8 +10,8 @@ namespace GameShift.App.ViewModels;
 
 /// <summary>
 /// ViewModel for OptimizationsPage.
-/// Displays all 11 optimizations grouped by category with live status updates.
-/// Groups: Core v1.0 (indices 0-7), Competitive v2.0 (indices 8-9), System Advisory (index 10).
+/// Displays the session optimizations grouped by category with live status updates.
+/// Groups: Core v1.0 (indices 0-4), then every later module under Competitive v2.0.
 /// </summary>
 public class OptimizationsViewModel : INotifyPropertyChanged
 {
@@ -21,7 +21,7 @@ public class OptimizationsViewModel : INotifyPropertyChanged
     public event PropertyChangedEventHandler? PropertyChanged;
 
     /// <summary>
-    /// The three optimization categories displayed on the page.
+    /// The optimization categories displayed on the page.
     /// </summary>
     public ObservableCollection<OptimizationGroup> Groups { get; } = new();
 
@@ -50,40 +50,22 @@ public class OptimizationsViewModel : INotifyPropertyChanged
             CategoryColor = new SolidColorBrush(Color.FromRgb(0xA7, 0x8B, 0xFA)) // Purple
         };
 
-        var advisoryGroup = new OptimizationGroup
-        {
-            CategoryName = "System Advisory",
-            CategoryDescription = "System-level advisories and driver optimizations",
-            CategoryColor = new SolidColorBrush(Color.FromRgb(0xFB, 0xBF, 0x24)) // Yellow
-        };
-
-        // Core v1.0: indices 0-7
-        for (int i = 0; i <= 7 && i < _optimizations.Count; i++)
+        // Core v1.0: indices 0-4
+        for (int i = 0; i <= 4 && i < _optimizations.Count; i++)
         {
             coreGroup.Items.Add(CreateItem(_optimizations[i]));
         }
 
-        // System Advisory: GpuDriverOptimizer (index 10)
-        const int advisoryIndex = 10;
-        if (_optimizations.Count > advisoryIndex)
+        // Every later module, derived from the full list so newly-registered modules can't go
+        // hidden. RefreshStatuses maps items back to modules by flat position, so the groups must
+        // stay contiguous and in array order.
+        for (int i = 5; i < _optimizations.Count; i++)
         {
-            advisoryGroup.Items.Add(CreateItem(_optimizations[advisoryIndex]));
-        }
-
-        // Competitive & Advanced (v2.0+): index 8, 9, and every module from 11 onward.
-        // This loop previously stopped at index 9, so the six v3/v4 modules (indices 11-16:
-        // ScheduledTaskSuppressor, CpuParkingManager, IoPriorityManager, EfficiencyModeController,
-        // CpuSchedulingOptimizer, SessionSystemTweaksOptimizer) were applied at runtime but never
-        // shown on the page. Derive from the full list so newly-registered modules can't go hidden.
-        for (int i = 8; i < _optimizations.Count; i++)
-        {
-            if (i == advisoryIndex) continue; // GpuDriverOptimizer is shown under System Advisory
             competitiveGroup.Items.Add(CreateItem(_optimizations[i]));
         }
 
         Groups.Add(coreGroup);
         Groups.Add(competitiveGroup);
-        Groups.Add(advisoryGroup);
 
         // Set initial statuses
         RefreshStatuses();
@@ -213,7 +195,7 @@ public class OptimizationGroup : INotifyPropertyChanged
 
     /// <summary>
     /// Category color brush for the left border strip.
-    /// Core = #4ADE80 green, Competitive = #A78BFA purple, Advisory = #FBBF24 yellow.
+    /// Core = #4ADE80 green, Competitive = #A78BFA purple.
     /// </summary>
     public Brush CategoryColor
     {

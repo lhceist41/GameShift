@@ -164,28 +164,13 @@ public static class CompetitivePresets
         GameName = "Overwatch 2",
         ExecutableName = Overwatch2Exe,
         AntiCheat = AntiCheatType.None,
-        Intensity = OptimizationIntensity.Competitive,
-        // v1 optimizations - all on
         SuppressServices = true,
         SwitchPowerPlan = true,
         SetTimerResolution = true,
         BoostProcessPriority = true,
-        OptimizeMemory = true,
-        ReduceVisualEffects = true,
-        OptimizeNetwork = true,
         // CPU-bound at high framerates - E-cores hurt performance on Intel hybrid CPUs
         UsePerformanceCoresOnly = true,
-        // v2 toggles
-        EnableCompetitiveMode = true,  // Overlays can cause alt-tab freezes
-        EnableGpuOptimization = true,
-        DisableMpo = true,             // MPO documented to cause frame pacing issues
-        // v3 toggles
-        SuppressScheduledTasks = true,
-        UnparkCpuCores = true,
-        // v4 toggles
-        ManageIoPriority = true,
         EnableEfficiencyMode = true,
-        ManageMemoryPriority = true,
         // v5 toggles
         PinToVCacheCcd = true,
         SuppressTier2Services = true
@@ -240,7 +225,12 @@ public static class CompetitivePresets
             "Intel hybrid CPU detected"),
         new OneTimeTipAction(
             "ow2_alt_tab",
-            "OW2 TIP: Alt-tabbing can cause hard freezes. GameShift's Competitive Mode suspends overlays that commonly trigger this. If freezes persist, close MSI Afterburner and similar monitoring tools.")
+            "OW2 TIP: Alt-tabbing can cause hard freezes. Overlays commonly trigger this: turn off the Discord, Steam and NVIDIA overlays for Overwatch 2. If freezes persist, close MSI Afterburner and similar monitoring tools."),
+        new OneTimeTipAction(
+            "ow2_nvidia_filters",
+            "OW2 TIP: If you do not use them, turn off Game Filters and Photo Mode in the NVIDIA app; with them on, some games lose frame rate.",
+            hw => hw.GpuVendor == GpuVendor.Nvidia,
+            "NVIDIA GPU only")
     };
 
     // ── Valorant ──────────────────────────────────────────────────────
@@ -250,28 +240,13 @@ public static class CompetitivePresets
         GameName = "Valorant",
         ExecutableName = ValorantExe,
         AntiCheat = AntiCheatType.RiotVanguard,
-        Intensity = OptimizationIntensity.Competitive,
-        // v1 optimizations - all on
         SuppressServices = true,
         SwitchPowerPlan = true,
         SetTimerResolution = true,
         BoostProcessPriority = true,
-        OptimizeMemory = true,
-        ReduceVisualEffects = true,
-        OptimizeNetwork = true,
         // Hybrid CPU - not beneficial for Valorant (modern multi-threaded engine)
         UsePerformanceCoresOnly = false,
-        // v2 toggles
-        EnableCompetitiveMode = true,
-        EnableGpuOptimization = true,
-        DisableMpo = false, // Valorant doesn't require MPO disabled
-        // v3 toggles
-        SuppressScheduledTasks = true,
-        UnparkCpuCores = true,
-        // v4 toggles
-        ManageIoPriority = true,
         EnableEfficiencyMode = true,
-        ManageMemoryPriority = true,
         // v5 toggles
         PinToVCacheCcd = true,
         SuppressTier2Services = true
@@ -310,7 +285,17 @@ public static class CompetitivePresets
             "VALORANT TIP: Enable Multithreaded Rendering in Video settings for better CPU utilization and higher FPS."),
         new OneTimeTipAction(
             "valorant_vbs",
-            "VALORANT SAFETY: Never disable VBS/HVCI, Secure Boot, or TPM. Riot Vanguard requires these security features to run.")
+            "VALORANT SAFETY: Never disable VBS/HVCI, Secure Boot, or TPM. Riot Vanguard requires these security features to run."),
+        new OneTimeTipAction(
+            "valorant_nvidia_filters",
+            "VALORANT TIP: If you do not use them, turn off Game Filters and Photo Mode in the NVIDIA app; with them on, some games lose frame rate.",
+            hw => hw.GpuVendor == GpuVendor.Nvidia,
+            "NVIDIA GPU only"),
+        new OneTimeTipAction(
+            "valorant_antilag2",
+            "VALORANT TIP: If your AMD driver and the game offer Anti-Lag 2, turn it on in the game's settings for lower input latency.",
+            hw => hw.GpuVendor == GpuVendor.Amd,
+            "AMD GPU only")
     };
 
     // ── League of Legends ─────────────────────────────────────────────
@@ -320,28 +305,13 @@ public static class CompetitivePresets
         GameName = "League of Legends",
         ExecutableName = LeagueExe,
         AntiCheat = AntiCheatType.RiotVanguard,
-        Intensity = OptimizationIntensity.Casual,
-        // v1 optimizations - all on
         SuppressServices = true,
         SwitchPowerPlan = true,
         SetTimerResolution = true,
         BoostProcessPriority = true,
-        OptimizeMemory = true,
-        ReduceVisualEffects = true,
-        OptimizeNetwork = true,
         // LoL is single-thread bound - performance cores only beneficial
         UsePerformanceCoresOnly = true,
-        // v2 toggles
-        EnableCompetitiveMode = true,
-        EnableGpuOptimization = true,
-        DisableMpo = false,
-        // v3 toggles
-        SuppressScheduledTasks = true,
-        UnparkCpuCores = true,
-        // v4 toggles
-        ManageIoPriority = true,
         EnableEfficiencyMode = true,
-        ManageMemoryPriority = true,
         // v5 toggles
         PinToVCacheCcd = true,
         SuppressTier2Services = true
@@ -377,7 +347,12 @@ public static class CompetitivePresets
             "LEAGUE TIP: The League client (LeagueClientUx.exe) priority is set to Below Normal during gameplay to free CPU time for the game. It will be restored automatically when your game ends."),
         new OneTimeTipAction(
             "lol_vbs",
-            "LEAGUE SAFETY: VBS/HVCI must stay enabled for Riot Vanguard. GameShift will not disable VBS when League is installed.")
+            "LEAGUE SAFETY: VBS/HVCI must stay enabled for Riot Vanguard. GameShift will not disable VBS when League is installed."),
+        new OneTimeTipAction(
+            "lol_nvidia_filters",
+            "LEAGUE TIP: If you do not use them, turn off Game Filters and Photo Mode in the NVIDIA app; with them on, some games lose frame rate.",
+            hw => hw.GpuVendor == GpuVendor.Nvidia,
+            "NVIDIA GPU only")
     };
 
     // ── Deadlock ──────────────────────────────────────────────────────
@@ -387,28 +362,13 @@ public static class CompetitivePresets
         GameName = "Deadlock",
         ExecutableName = DeadlockExe,
         AntiCheat = AntiCheatType.ValveAntiCheat,
-        Intensity = OptimizationIntensity.Competitive,
-        // v1 optimizations - all on
         SuppressServices = true,
         SwitchPowerPlan = true,
         SetTimerResolution = true,
         BoostProcessPriority = true,
-        OptimizeMemory = true,
-        ReduceVisualEffects = true,
-        OptimizeNetwork = true,
         // Deadlock benefits from all cores (Source 2 engine, multi-threaded rendering)
         UsePerformanceCoresOnly = false,
-        // v2 toggles
-        EnableCompetitiveMode = true,
-        EnableGpuOptimization = true,
-        DisableMpo = false,
-        // v3 toggles
-        SuppressScheduledTasks = true,
-        UnparkCpuCores = true,
-        // v4 toggles
-        ManageIoPriority = true,
         EnableEfficiencyMode = true,
-        ManageMemoryPriority = true,
         // v5 toggles
         PinToVCacheCcd = true,
         SuppressTier2Services = true
@@ -452,7 +412,17 @@ public static class CompetitivePresets
             "AMD GPU only"),
         new OneTimeTipAction(
             "deadlock_autoexec",
-            "DEADLOCK TIP: Create an autoexec.cfg in the game's cfg folder with 'cl_forcepreload 1' and 'mat_queue_mode 2' for better loading and multi-threaded rendering.")
+            "DEADLOCK TIP: Create an autoexec.cfg in the game's cfg folder with 'cl_forcepreload 1' and 'mat_queue_mode 2' for better loading and multi-threaded rendering."),
+        new OneTimeTipAction(
+            "deadlock_nvidia_filters",
+            "DEADLOCK TIP: If you do not use them, turn off Game Filters and Photo Mode in the NVIDIA app; with them on, some games lose frame rate.",
+            hw => hw.GpuVendor == GpuVendor.Nvidia,
+            "NVIDIA GPU only"),
+        new OneTimeTipAction(
+            "deadlock_antilag2",
+            "DEADLOCK TIP: If your AMD driver and the game offer Anti-Lag 2, turn it on in the game's settings for lower input latency.",
+            hw => hw.GpuVendor == GpuVendor.Amd,
+            "AMD GPU only")
     };
 
     // ── osu! ──────────────────────────────────────────────────────────
@@ -462,28 +432,12 @@ public static class CompetitivePresets
         GameName = "osu!",
         ExecutableName = OsuExe,
         AntiCheat = AntiCheatType.None,
-        Intensity = OptimizationIntensity.Competitive,
         SuppressServices = true,
         SwitchPowerPlan = true,
         SetTimerResolution = true,         // Critical for osu! audio/input timing
         BoostProcessPriority = false,      // osu! sets its own High priority internally
-        OptimizeMemory = true,
-        ReduceVisualEffects = true,
-        OptimizeNetwork = true,
         UsePerformanceCoresOnly = true,    // osu! is extremely single-threaded
-        EnableCompetitiveMode = false,     // No overlays to kill for rhythm games
-        // SuspendDiscordOverlay only takes effect when EnableCompetitiveMode is true,
-        // so leave it false to be honest about what this profile actually does.
-        SuspendDiscordOverlay = false,
-        EnableGpuOptimization = true,
-        DisableMpo = false,
-        // v3 toggles
-        SuppressScheduledTasks = true,
-        UnparkCpuCores = true,
-        // v4 toggles
-        ManageIoPriority = true,
         EnableEfficiencyMode = true,
-        ManageMemoryPriority = true,
         // v5 toggles
         PinToVCacheCcd = true,
         SuppressTier2Services = true
@@ -510,7 +464,7 @@ public static class CompetitivePresets
                 "OSU! TIP: If using a drawing tablet, install OpenTabletDriver for lower latency than manufacturer drivers. See github.com/OpenTabletDriver."),
             new OneTimeTipAction(
                 "osu_timer",
-                "OSU! TIP: GameShift is setting your system timer resolution to 0.5ms, which improves osu! audio sync and input timing accuracy."),
+                "OSU! TIP: GameShift requests a 1 ms system timer resolution while osu! runs, which helps audio sync and input timing."),
             new OneTimeTipAction(
                 "osu_amd_opengl",
                 "OSU! TIP: AMD drivers 22.5.2+ may have issues with OpenGL fullscreen in osu!. If you experience problems, try Borderless or use the DirectX/Compatibility renderer.",

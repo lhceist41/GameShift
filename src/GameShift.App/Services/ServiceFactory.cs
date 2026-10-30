@@ -87,23 +87,13 @@ public static class ServiceFactory
         // Create all optimization modules
         services.Optimizations = new IOptimization[]
         {
-            new ServiceSuppressor(),         // 0 - v1
-            new PowerPlanSwitcher(),         // 1 - v1
-            new TimerResolutionManager(),    // 2 - v1
-            new ProcessPriorityBooster(),    // 3 - v1
-            new MemoryOptimizer(),           // 4 - v1
-            new VisualEffectReducer(),       // 5 - v1
-            new NetworkOptimizer(),          // 6 - v1
-            new HybridCpuDetector(),         // 7 - v1
-            new MpoToggle(),                 // 8 - v2
-            new CompetitiveMode(),           // 9 - v2
-            new GpuDriverOptimizer(),        // 10 - v2
-            new ScheduledTaskSuppressor(),   // 11 - v3 (after ServiceSuppressor)
-            new CpuParkingManager(),         // 12 - v3 (after PowerPlanSwitcher)
-            new IoPriorityManager(),         // 13 - v4 (after GpuDriverOptimizer)
-            new EfficiencyModeController(),  // 14 - v4 (process-level)
-            new CpuSchedulingOptimizer(),    // 15 - v4 (E-core routing + HighQoS)
-            new SessionSystemTweaksOptimizer() // 16 - v4 (last)
+            new ServiceSuppressor(),         // 0
+            new PowerPlanSwitcher(),         // 1
+            new TimerResolutionManager(),    // 2
+            new ProcessPriorityBooster(),    // 3
+            new HybridCpuDetector(),         // 4
+            new EfficiencyModeController(),  // 5 (process-level)
+            new CpuSchedulingOptimizer()     // 6 (E-core routing + HighQoS)
         };
 
         services.Engine = new OptimizationEngine(services.Optimizations);

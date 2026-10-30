@@ -15,9 +15,8 @@ public class ProcessSnapshot
 
 /// <summary>
 /// Shared cached process snapshot to avoid redundant Process.GetProcesses() calls.
-/// Three periodic timers (MemoryOptimizer 5s, EfficiencyModeController 30s, IoPriorityManager 30s)
-/// were each independently enumerating all processes. This service caches the result
-/// with a 2-second TTL and a dirty flag triggered by GameDetector.ProcessSpawned.
+/// Periodic background-process scans each used to enumerate all processes on their own. This
+/// service caches the result with a 2-second TTL and a dirty flag triggered by GameDetector.ProcessSpawned.
 ///
 /// Returns ProcessSnapshot[] (value objects) so callers can safely iterate without
 /// risk of disposed Process handles from a concurrent cache refresh.

@@ -64,7 +64,6 @@ public class SettingsViewModel : INotifyPropertyChanged
     private bool _bgPowerPlanEnabled;
     private int _bgIdleTimeoutMinutes;
     private bool _bgTaskDeferralEnabled;
-    private bool _bgProBalanceEnabled;
     private bool _bgProcessPriorityEnabled;
 
     private bool _isDirty;
@@ -231,12 +230,6 @@ public class SettingsViewModel : INotifyPropertyChanged
         set { if (_bgTaskDeferralEnabled != value) { _bgTaskDeferralEnabled = value; IsDirty = true; OnPropertyChanged(); } }
     }
 
-    public bool BgProBalanceEnabled
-    {
-        get => _bgProBalanceEnabled;
-        set { if (_bgProBalanceEnabled != value) { _bgProBalanceEnabled = value; IsDirty = true; OnPropertyChanged(); } }
-    }
-
     public bool BgProcessPriorityEnabled
     {
         get => _bgProcessPriorityEnabled;
@@ -386,7 +379,6 @@ public class SettingsViewModel : INotifyPropertyChanged
         _bgPowerPlanEnabled = bg.PowerPlanEnabled;
         _bgIdleTimeoutMinutes = bg.IdleTimeoutMinutes;
         _bgTaskDeferralEnabled = bg.TaskDeferralEnabled;
-        _bgProBalanceEnabled = bg.ProBalanceEnabled;
         _bgProcessPriorityEnabled = bg.ProcessPriorityEnabled;
 
         // App mode
@@ -428,7 +420,6 @@ public class SettingsViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(BgPowerPlanEnabled));
         OnPropertyChanged(nameof(BgIdleTimeoutMinutes));
         OnPropertyChanged(nameof(BgTaskDeferralEnabled));
-        OnPropertyChanged(nameof(BgProBalanceEnabled));
         OnPropertyChanged(nameof(BgProcessPriorityEnabled));
         OnPropertyChanged(nameof(AdvancedMode));
         OnPropertyChanged(nameof(IsEasyMode));
@@ -474,7 +465,6 @@ public class SettingsViewModel : INotifyPropertyChanged
         settings.BackgroundMode.PowerPlanEnabled = BgPowerPlanEnabled;
         settings.BackgroundMode.IdleTimeoutMinutes = BgIdleTimeoutMinutes;
         settings.BackgroundMode.TaskDeferralEnabled = BgTaskDeferralEnabled;
-        settings.BackgroundMode.ProBalanceEnabled = BgProBalanceEnabled;
         settings.BackgroundMode.ProcessPriorityEnabled = BgProcessPriorityEnabled;
 
         // Game Profiles

@@ -14,14 +14,14 @@ public static partial class NativeInterop
 
     /// <summary>
     /// Suspends all threads in a process.
-    /// Used by CompetitiveMode to suspend overlay processes during gaming.
+    /// Used by ProcessSuspendAction.
     /// </summary>
     [DllImport("ntdll.dll")]
     internal static extern int NtSuspendProcess(IntPtr processHandle);
 
     /// <summary>
     /// Resumes all threads in a previously suspended process.
-    /// Used by CompetitiveMode to restore overlay processes after gaming.
+    /// Used by ProcessSuspendAction and by crash recovery to resume suspended processes.
     /// </summary>
     [DllImport("ntdll.dll")]
     internal static extern int NtResumeProcess(IntPtr processHandle);

@@ -684,8 +684,6 @@
                                    Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,0,0,6"/>
                         <TextBlock Text="{Binding GpuInfo, Mode=OneWay}" FontSize="22" FontWeight="Bold"
                                    Foreground="{DynamicResource GS.Text.Primary}" Margin="0,0,0,4"/>
-                        <TextBlock Text="{Binding GpuOptimizationState, Mode=OneWay}" FontSize="13"
-                                   Foreground="{DynamicResource GS.Text.Secondary}"/>
                     </StackPanel>
                 </Border>
 

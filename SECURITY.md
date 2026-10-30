@@ -44,7 +44,7 @@ The source also contains **GameShift.Watchdog** (a Windows service that would ru
 - State journal tampering leading to incorrect system state restoration
 - ETW session abuse or information disclosure
 - Data exfiltration or unintended network activity
-- Vulnerabilities in third-party dependencies (NvAPI, ADLX, LibreHardwareMonitor, TraceEvent)
+- Vulnerabilities in third-party dependencies (LibreHardwareMonitor, TraceEvent)
 
 ## Security Design
 

@@ -5,7 +5,7 @@ namespace GameShift.Core.System;
 /// <summary>
 /// Process information P/Invoke declarations for NativeInterop.
 /// Partial class extension for I/O priority, Efficiency Mode, and memory priority management.
-/// Used by IoPriorityManager, EfficiencyModeController, and MemoryOptimizer.
+/// Used by EfficiencyModeController and BackgroundProcessTargets.
 /// </summary>
 public static partial class NativeInterop
 {

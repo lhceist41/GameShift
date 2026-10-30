@@ -46,6 +46,78 @@ public class ProfileManagerPersistenceTests
     }
 
     [Fact]
+    public void GetProfileForGame_LoadsAProfileWithTheRetiredToggles_AndKeepsThemOnSave()
+    {
+        using var temp = new TempPath();
+        var pm = new ProfileManager(temp.Path);
+
+        // Every property an earlier version wrote for a profile, with each toggle GameShift no longer
+        // reads set away from its default.
+        File.WriteAllText(Path.Combine(temp.Path, "steam_777.json"), """
+            {
+              "Id": "steam_777",
+              "GameName": "Legacy Game",
+              "ProcessId": 0,
+              "Intensity": 0,
+              "SuppressServices": false,
+              "SwitchPowerPlan": true,
+              "SetTimerResolution": true,
+              "BoostProcessPriority": true,
+              "OptimizeMemory": false,
+              "ReduceVisualEffects": false,
+              "OptimizeNetwork": false,
+              "UsePerformanceCoresOnly": false,
+              "ManageIoPriority": false,
+              "EnableEfficiencyMode": true,
+              "ManageMemoryPriority": false,
+              "EmptyWorkingSets": false,
+              "HardMinWorkingSetMB": 1024,
+              "PinToVCacheCcd": true,
+              "SuppressTier2Services": true,
+              "SuppressScheduledTasks": false,
+              "SuppressDefenderScheduledScan": true,
+              "UnparkCpuCores": false,
+              "DisableProcessorIdle": true,
+              "DisableMpo": true,
+              "EnableCompetitiveMode": true,
+              "SuspendDiscordOverlay": false,
+              "SuspendSteamOverlay": false,
+              "SuspendNvidiaOverlay": false,
+              "KillWidgets": false,
+              "EnableGpuOptimization": false,
+              "ForceMaxPerformancePowerMode": false,
+              "OptimizeShaderCache": false,
+              "EnableLowLatencyMode": false,
+              "EnableDpcMonitoring": true,
+              "DpcThresholdMicroseconds": 0,
+              "AntiCheat": 0,
+              "ExecutableName": "legacy.exe",
+              "ExecutablePath": "",
+              "LauncherSource": "Steam",
+              "CustomServicesToPause": null,
+              "MemoryThresholdMB": 3072
+            }
+            """);
+
+        var loaded = pm.GetProfileForGame("steam_777");
+
+        // A failed load would fall back to the default profile.
+        Assert.Equal("steam_777", loaded.Id);
+        Assert.False(loaded.SuppressServices);
+        Assert.Equal("legacy.exe", loaded.ExecutableName);
+
+        pm.SaveProfile(loaded);
+        var resaved = pm.GetProfileForGame("steam_777");
+
+        Assert.Equal(OptimizationIntensity.Competitive, resaved.Intensity);
+        Assert.True(resaved.DisableMpo);
+        Assert.True(resaved.EnableCompetitiveMode);
+        Assert.False(resaved.EnableGpuOptimization);
+        Assert.False(resaved.UnparkCpuCores);
+        Assert.Equal(3072, resaved.MemoryThresholdMB);
+    }
+
+    [Fact]
     public void SaveProfile_LeavesNoTempFile()
     {
         using var temp = new TempPath();

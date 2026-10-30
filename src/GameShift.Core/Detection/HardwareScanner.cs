@@ -133,7 +133,6 @@ public class HardwareScanner
 
     /// <summary>
     /// Detects GPU vendor from WMI AdapterCompatibility field.
-    /// Same pattern as GpuDriverOptimizer.DetectGpuVendor().
     /// </summary>
     private static GpuVendor DetectGpuVendor()
     {

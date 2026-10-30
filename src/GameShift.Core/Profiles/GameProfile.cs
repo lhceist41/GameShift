@@ -5,9 +5,7 @@ using GameShift.Core.Optimization;
 namespace GameShift.Core.Profiles;
 
 /// <summary>
-/// Controls the aggressiveness of system optimizations for a game.
-/// Competitive: full aggressive optimizations (ProcessorIdleDisable, 0.5ms timer, MPO disable).
-/// Casual: gentler optimizations (no idle disable, 1ms timer, no MPO disable).
+/// Type of the retired <see cref="GameProfile.Intensity"/> value, which nothing reads any more.
 /// </summary>
 public enum OptimizationIntensity
 {
@@ -41,14 +39,6 @@ public class GameProfile
     /// </summary>
     public int ProcessId { get; set; }
 
-    /// <summary>
-    /// Optimization intensity tier for this game.
-    /// Competitive: aggressive optimizations (idle disable, 0.5ms timer, MPO disable).
-    /// Casual: gentler optimizations suitable for RPGs, open-world games.
-    /// Default: Casual (safe default for unknown games).
-    /// </summary>
-    public OptimizationIntensity Intensity { get; set; } = OptimizationIntensity.Casual;
-
     // ── Per-optimization toggles ──────────────────────────────────────
 
     /// <summary>
@@ -76,24 +66,6 @@ public class GameProfile
     public bool BoostProcessPriority { get; set; } = true;
 
     /// <summary>
-    /// Whether to optimize memory by trimming working sets during gameplay.
-    /// Maps to "Memory Optimizer" optimization.
-    /// </summary>
-    public bool OptimizeMemory { get; set; } = true;
-
-    /// <summary>
-    /// Whether to reduce visual effects (transparency, animations) during gameplay.
-    /// Maps to "Visual Effect Reducer" optimization.
-    /// </summary>
-    public bool ReduceVisualEffects { get; set; } = true;
-
-    /// <summary>
-    /// Whether to optimize network settings (Nagle, throttling) during gameplay.
-    /// Maps to "Network Optimizer" optimization.
-    /// </summary>
-    public bool OptimizeNetwork { get; set; } = true;
-
-    /// <summary>
     /// Whether to pin the game process to performance cores only on hybrid CPUs.
     /// Maps to "Hybrid CPU Optimizer" optimization.
     /// Default false - most games benefit from all cores; enable only for specific titles.
@@ -103,13 +75,6 @@ public class GameProfile
     // ── v4 Process Intelligence toggles ─────────────────────────────
 
     /// <summary>
-    /// Whether to lower I/O priority of background processes during gameplay.
-    /// Maps to "I/O Priority Management" optimization.
-    /// Default true - reduces disk contention from background processes.
-    /// </summary>
-    public bool ManageIoPriority { get; set; } = true;
-
-    /// <summary>
     /// Whether to apply Windows 11 Efficiency Mode to background processes during gameplay.
     /// Maps to "Efficiency Mode Control" optimization.
     /// Constrains background processes to E-cores on hybrid CPUs.
@@ -117,29 +82,6 @@ public class GameProfile
     /// Default true - reduces background CPU competition with the game.
     /// </summary>
     public bool EnableEfficiencyMode { get; set; } = true;
-
-    /// <summary>
-    /// Whether to lower memory priority of background processes during gameplay.
-    /// Sub-toggle of OptimizeMemory - only active when memory optimization is enabled.
-    /// Causes OS to preferentially evict background process pages under memory pressure.
-    /// Default true - protects game memory pages from eviction.
-    /// </summary>
-    public bool ManageMemoryPriority { get; set; } = true;
-
-    /// <summary>
-    /// Whether to call EmptyWorkingSet on background processes at session start.
-    /// Moves background process pages to the standby list without destroying game assets.
-    /// Sub-toggle of OptimizeMemory - only active when ManageMemoryPriority is enabled.
-    /// Default true.
-    /// </summary>
-    public bool EmptyWorkingSets { get; set; } = true;
-
-    /// <summary>
-    /// Hard minimum working set size for the game process, in MB.
-    /// The memory manager will not trim game pages below this amount.
-    /// 0 = disabled. Default 2048 (2 GB) - protects game pages under system pressure.
-    /// </summary>
-    public int HardMinWorkingSetMB { get; set; } = 2048;
 
     // ── v5 Platform Coverage toggles ───────────────────────────────
 
@@ -156,118 +98,6 @@ public class GameProfile
     /// Default true - Tier 2 services (Print Spooler, Fax, etc.) are safe for gaming PCs.
     /// </summary>
     public bool SuppressTier2Services { get; set; } = true;
-
-    // ── v3 New Module toggles ────────────────────────────────────────
-
-    /// <summary>
-    /// Whether to disable resource-heavy Windows scheduled tasks during gameplay.
-    /// Maps to "Scheduled Task Suppression" optimization.
-    /// Default true - safe to disable telemetry, defrag, and update tasks during gaming.
-    /// </summary>
-    public bool SuppressScheduledTasks { get; set; } = true;
-
-    /// <summary>
-    /// Whether to also suppress Windows Defender scheduled scan during gameplay.
-    /// Sub-toggle of SuppressScheduledTasks - only active when task suppression is enabled.
-    /// Default false - user must opt in. Defender scans will resume when gaming session ends.
-    /// </summary>
-    public bool SuppressDefenderScheduledScan { get; set; } = false;
-
-    /// <summary>
-    /// Whether to unpark all CPU cores during gameplay.
-    /// Maps to "CPU Core Unparking" optimization.
-    /// Default true - prevents core unparking latency that causes micro-stutters.
-    /// </summary>
-    public bool UnparkCpuCores { get; set; } = true;
-
-    /// <summary>
-    /// Whether to disable processor idle (force C0 state) during gameplay.
-    /// Eliminates C-state transition latency but doubles idle power consumption.
-    /// Sub-toggle of UnparkCpuCores - only active when CPU core unparking is enabled.
-    /// Forces all cores to C0 state (no idle sleep). Eliminates C-state transition
-    /// latency but causes Windows to report ~100% CPU utilization on multi-core systems.
-    /// Default false - opt-in only for users who specifically want sub-microsecond
-    /// C-state wakeup elimination at the cost of higher power and misleading utilization.
-    /// </summary>
-    public bool DisableProcessorIdle { get; set; } = false;
-
-    // ── v2 Competitive Gaming toggles ────────────────────────────────
-
-    /// <summary>
-    /// Whether to disable Multiplane Overlay (MPO) during gameplay.
-    /// MPO can cause frame pacing issues, especially on multi-monitor setups with mismatched refresh rates.
-    /// Maps to "MPO Toggle" optimization.
-    /// Default false - opt-in only, as MPO is fine for most single-monitor setups.
-    /// </summary>
-    public bool DisableMpo { get; set; } = false;
-
-    /// <summary>
-    /// Master toggle for Competitive Mode optimizations.
-    /// When enabled, suspends overlay processes (Discord, Steam, NVIDIA) and kills non-essential GPU consumers.
-    /// Maps to "Competitive Mode" optimization.
-    /// Default false - opt-in only, as overlay suspension is disruptive for casual gaming.
-    /// </summary>
-    public bool EnableCompetitiveMode { get; set; } = false;
-
-    /// <summary>
-    /// Whether to suspend Discord overlay renderer during Competitive Mode.
-    /// Sub-toggle of EnableCompetitiveMode - only active when CompetitiveMode is enabled.
-    /// Default true - suspend by default when competitive mode is active.
-    /// </summary>
-    public bool SuspendDiscordOverlay { get; set; } = true;
-
-    /// <summary>
-    /// Whether to suspend Steam overlay (GameOverlayUI.exe) during Competitive Mode.
-    /// Sub-toggle of EnableCompetitiveMode - only active when CompetitiveMode is enabled.
-    /// Default true - suspend by default when competitive mode is active.
-    /// </summary>
-    public bool SuspendSteamOverlay { get; set; } = true;
-
-    /// <summary>
-    /// Whether to suspend NVIDIA overlay (NVIDIA Share/nvcontainer) during Competitive Mode.
-    /// Sub-toggle of EnableCompetitiveMode - only active when CompetitiveMode is enabled.
-    /// Default true - suspend by default when competitive mode is active.
-    /// </summary>
-    public bool SuspendNvidiaOverlay { get; set; } = true;
-
-    /// <summary>
-    /// Whether to kill Windows Widgets (Widgets.exe, WidgetService.exe) during Competitive Mode.
-    /// Sub-toggle of EnableCompetitiveMode - only active when CompetitiveMode is enabled.
-    /// Default true - kill by default when competitive mode is active.
-    /// </summary>
-    public bool KillWidgets { get; set; } = true;
-
-    // ── v2 GPU Optimization toggles ────────────────────────────────
-
-    /// <summary>
-    /// Master toggle for GPU driver optimizations during gameplay.
-    /// When enabled, applies vendor-specific registry optimizations (NVIDIA/AMD).
-    /// Maps to "GPU Driver Optimizer" optimization.
-    /// Default true - enabled by default for backwards compatibility.
-    /// </summary>
-    public bool EnableGpuOptimization { get; set; } = true;
-
-    /// <summary>
-    /// Whether to force maximum performance power mode for the GPU during gameplay.
-    /// NVIDIA: Power management mode prefer maximum performance (DRS advisory).
-    /// AMD: Applied via driver registry settings.
-    /// Default true - most competitive gamers want maximum GPU performance.
-    /// </summary>
-    public bool ForceMaxPerformancePowerMode { get; set; } = true;
-
-    /// <summary>
-    /// Whether to optimize GPU shader cache settings during gameplay.
-    /// NVIDIA: Sets shader cache to 16GB. AMD: Enables shader cache.
-    /// Default true - larger shader cache reduces stutter from shader compilation.
-    /// </summary>
-    public bool OptimizeShaderCache { get; set; } = true;
-
-    /// <summary>
-    /// Whether to enable low latency mode during gameplay.
-    /// NVIDIA: Low Latency Mode Ultra. AMD: Standard Anti-Lag (NOT Anti-Lag+).
-    /// Default true - reduced input latency is critical for competitive gaming.
-    /// </summary>
-    public bool EnableLowLatencyMode { get; set; } = true;
 
     // ── v2 DPC Monitoring toggles ────────────────────────────────────
 
@@ -347,11 +177,32 @@ public class GameProfile
     /// </summary>
     public List<string>? CustomServicesToPause { get; set; }
 
-    /// <summary>
-    /// Per-game memory threshold override in megabytes.
-    /// 0 means use the global AppSettings.MemoryThresholdMB value.
-    /// Non-zero overrides the global setting for this specific game.
-    /// </summary>
+    // ── Retired toggles ───────────────────────────────────────────────
+    // Nothing reads these any more. They stay so a profile saved by this version still carries the
+    // user's values if an earlier version reads it.
+
+    public OptimizationIntensity Intensity { get; set; } = OptimizationIntensity.Casual;
+    public bool OptimizeMemory { get; set; } = true;
+    public bool ReduceVisualEffects { get; set; } = true;
+    public bool OptimizeNetwork { get; set; } = true;
+    public bool ManageIoPriority { get; set; } = true;
+    public bool ManageMemoryPriority { get; set; } = true;
+    public bool EmptyWorkingSets { get; set; } = true;
+    public int HardMinWorkingSetMB { get; set; } = 2048;
+    public bool SuppressScheduledTasks { get; set; } = true;
+    public bool SuppressDefenderScheduledScan { get; set; } = false;
+    public bool UnparkCpuCores { get; set; } = true;
+    public bool DisableProcessorIdle { get; set; } = false;
+    public bool DisableMpo { get; set; } = false;
+    public bool EnableCompetitiveMode { get; set; } = false;
+    public bool SuspendDiscordOverlay { get; set; } = true;
+    public bool SuspendSteamOverlay { get; set; } = true;
+    public bool SuspendNvidiaOverlay { get; set; } = true;
+    public bool KillWidgets { get; set; } = true;
+    public bool EnableGpuOptimization { get; set; } = true;
+    public bool ForceMaxPerformancePowerMode { get; set; } = true;
+    public bool OptimizeShaderCache { get; set; } = true;
+    public bool EnableLowLatencyMode { get; set; } = true;
     public int MemoryThresholdMB { get; set; } = 0;
 
     // ── Factory methods ───────────────────────────────────────────────
@@ -374,7 +225,7 @@ public class GameProfile
     /// <summary>
     /// Returns a deep copy of this profile. Used so the shared cached default profile can be
     /// handed out without callers' per-session mutations (ProcessId, anti-cheat backfill,
-    /// intensity, executable info) leaking back into the cache and bleeding across games.
+    /// executable info) leaking back into the cache and bleeding across games.
     /// All persisted state round-trips through JSON; the runtime-only [JsonIgnore]
     /// GameSpecificActions list is copied by reference so the clone stays faithful.
     /// </summary>
@@ -403,19 +254,10 @@ public class GameProfile
             PowerPlanSwitcher.OptimizationId => SwitchPowerPlan,
             TimerResolutionManager.OptimizationId => SetTimerResolution,
             ProcessPriorityBooster.OptimizationId => BoostProcessPriority,
-            MemoryOptimizer.OptimizationId => OptimizeMemory,
-            VisualEffectReducer.OptimizationId => ReduceVisualEffects,
-            NetworkOptimizer.OptimizationId => OptimizeNetwork,
             // Enable when the user wants P-core-only OR V-Cache CCD pinning (default on). The module
             // itself no-ops by topology, so gating on ONLY UsePerformanceCoresOnly previously and
             // silently disabled V-Cache pinning and LP-core exclusion for everyone.
             HybridCpuDetector.OptimizationId => UsePerformanceCoresOnly || PinToVCacheCcd,
-            MpoToggle.OptimizationId => DisableMpo,
-            CompetitiveMode.OptimizationId => EnableCompetitiveMode,
-            GpuDriverOptimizer.OptimizationId => EnableGpuOptimization,
-            ScheduledTaskSuppressor.OptimizationId => SuppressScheduledTasks,
-            CpuParkingManager.OptimizationId => UnparkCpuCores,
-            IoPriorityManager.OptimizationId => ManageIoPriority,
             EfficiencyModeController.OptimizationId => EnableEfficiencyMode,
             _ => true // Unknown optimizations are enabled by default
         };

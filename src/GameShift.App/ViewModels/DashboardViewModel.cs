@@ -42,7 +42,6 @@ public class DashboardViewModel : INotifyPropertyChanged
 
     private string _optimizationSummary = "0/0 Active";
     private string _gpuInfo = "Unknown";
-    private string _gpuOptimizationState = "Standby";
 
     // Background Mode status
     private string _bgModeStatus = "Disabled";
@@ -153,15 +152,6 @@ public class DashboardViewModel : INotifyPropertyChanged
     {
         get => _gpuInfo;
         private set { _gpuInfo = value; OnPropertyChanged(); }
-    }
-
-    /// <summary>
-    /// GPU optimization state: "Applied" or "Standby".
-    /// </summary>
-    public string GpuOptimizationState
-    {
-        get => _gpuOptimizationState;
-        private set { _gpuOptimizationState = value; OnPropertyChanged(); }
     }
 
     // ── HAGS / ReBAR status (Sprint 8D/8E) ────────────────────────────────
@@ -446,7 +436,7 @@ public class DashboardViewModel : INotifyPropertyChanged
     /// <summary>
     /// Rebuilds the optimization status list from current IOptimization states.
     /// Must run on UI thread (ObservableCollection is not thread-safe).
-    /// Also updates OptimizationSummary and GpuOptimizationState.
+    /// Also updates OptimizationSummary.
     /// Populates IsEnabled from the default GameProfile.
     /// </summary>
     private void RefreshOptimizations()
@@ -457,39 +447,26 @@ public class DashboardViewModel : INotifyPropertyChanged
 
             int applied = 0;
             int total = _optimizations.Count;
-            string gpuState = "Standby";
 
             var defaultProfile = App.Services.ProfileMgr?.GetDefaultProfile();
 
-            // Before/after descriptors indexed to match Services.Optimizations array order (0-10)
+            // Before/after descriptors indexed to match Services.Optimizations array order (0-4)
             var beforeValues = new[]
             {
                 "Services running",          // 0 ServiceSuppressor
                 "Default power plan",        // 1 PowerPlanSwitcher
                 "Default timer resolution",  // 2 TimerResolutionManager
                 "Normal priority",           // 3 ProcessPriorityBooster
-                "Default memory state",      // 4 MemoryOptimizer
-                "Visual effects enabled",    // 5 VisualEffectReducer
-                "Default network settings",  // 6 NetworkOptimizer
-                "Default CPU scheduling",    // 7 HybridCpuDetector
-                "MPO enabled",               // 8 MpoToggle
-                "Standard mode",             // 9 CompetitiveMode
-                "Default GPU settings"       // 10 GpuDriverOptimizer
+                "Default CPU scheduling"     // 4 HybridCpuDetector
             };
 
             var afterValues = new[]
             {
                 "Non-essential services stopped",  // 0
                 "Ultimate Performance plan",       // 1
-                "0.5ms timer resolution",          // 2
+                "1 ms timer resolution",           // 2
                 "High priority",                   // 3
-                "Working set optimized",           // 4
-                "Visual effects reduced",          // 5
-                "Nagle disabled, TCP optimized",   // 6
-                "P-cores prioritized for game",    // 7
-                "MPO disabled",                    // 8
-                "Competitive mode active",         // 9
-                "GPU driver optimized"             // 10
+                "P-cores prioritized for game"     // 4
             };
 
             int index = 0;
@@ -515,12 +492,6 @@ public class DashboardViewModel : INotifyPropertyChanged
                     statusBrush = new SolidColorBrush(Color.FromRgb(0xE0, 0xE0, 0xE0)); // Light gray
                 }
 
-                // Track GPU optimizer state
-                if (opt.Name.Contains("GPU", StringComparison.OrdinalIgnoreCase))
-                {
-                    gpuState = opt.IsApplied ? "Applied" : "Standby";
-                }
-
                 bool isEnabled = defaultProfile?.IsOptimizationEnabled(opt.Name) ?? true;
 
                 var item = new ExpandableOptimizationItem
@@ -544,7 +515,6 @@ public class DashboardViewModel : INotifyPropertyChanged
             OptimizationSummary = _sessionFailedCount > 0
                 ? $"{applied}/{total} Active ({_sessionFailedCount} failed)"
                 : $"{applied}/{total} Active";
-            GpuOptimizationState = gpuState;
         });
     }
 
@@ -572,44 +542,14 @@ public class DashboardViewModel : INotifyPropertyChanged
             case ProcessPriorityBooster.OptimizationId:
                 profile.BoostProcessPriority = item.IsEnabled;
                 break;
-            case MemoryOptimizer.OptimizationId:
-                profile.OptimizeMemory = item.IsEnabled;
-                break;
-            case VisualEffectReducer.OptimizationId:
-                profile.ReduceVisualEffects = item.IsEnabled;
-                break;
-            case NetworkOptimizer.OptimizationId:
-                profile.OptimizeNetwork = item.IsEnabled;
-                break;
             case HybridCpuDetector.OptimizationId:
                 profile.UsePerformanceCoresOnly = item.IsEnabled;
-                break;
-            case MpoToggle.OptimizationId:
-                profile.DisableMpo = item.IsEnabled;
-                break;
-            case CompetitiveMode.OptimizationId:
-                profile.EnableCompetitiveMode = item.IsEnabled;
-                break;
-            case GpuDriverOptimizer.OptimizationId:
-                profile.EnableGpuOptimization = item.IsEnabled;
-                break;
-            case ScheduledTaskSuppressor.OptimizationId:
-                profile.SuppressScheduledTasks = item.IsEnabled;
-                break;
-            case CpuParkingManager.OptimizationId:
-                profile.UnparkCpuCores = item.IsEnabled;
-                break;
-            case IoPriorityManager.OptimizationId:
-                profile.ManageIoPriority = item.IsEnabled;
                 break;
             case EfficiencyModeController.OptimizationId:
                 profile.EnableEfficiencyMode = item.IsEnabled;
                 break;
             case CpuSchedulingOptimizer.OptimizationId:
                 // CpuSchedulingOptimizer is always-on when available, no per-profile toggle
-                break;
-            case SessionSystemTweaksOptimizer.OptimizationId:
-                // SessionSystemTweaksOptimizer is always-on when available, no per-profile toggle
                 break;
         }
 

@@ -120,7 +120,17 @@ public class RevertSymmetryVerificationTests
     {
         ["VbsHvciToggle"] = "reboot-scoped security setting, user-initiated, not part of a session",
         ["CoreIsolationManager"] = "reboot-scoped core reservation, user-initiated, not part of a session",
+        ["MpoToggle"] = RevertOnly,
+        ["VisualEffectReducer"] = RevertOnly,
+        ["ScheduledTaskSuppressor"] = RevertOnly,
+        ["NetworkOptimizer"] = RevertOnly,
+        ["CpuParkingManager"] = RevertOnly,
+        ["GpuDriverOptimizer"] = RevertOnly,
+        ["CompetitiveMode"] = RevertOnly,
+        ["SessionSystemTweaksOptimizer"] = RevertOnly,
     };
+
+    private const string RevertOnly = "revert-only: replays journals written by earlier versions";
 
     [Fact]
     public void EverySessionOptimization_IsCoveredByTheHarness_OrExplicitlyExcluded()

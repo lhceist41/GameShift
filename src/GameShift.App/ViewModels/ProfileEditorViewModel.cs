@@ -26,30 +26,7 @@ public class ProfileEditorViewModel : INotifyPropertyChanged
     private bool _switchPowerPlan;
     private bool _setTimerResolution;
     private bool _boostProcessPriority;
-    private bool _optimizeMemory;
-    private bool _reduceVisualEffects;
-    private bool _optimizeNetwork;
     private bool _usePerformanceCoresOnly;
-    private int _memoryThresholdMB;
-
-    // v2 Competitive Mode
-    private bool _enableCompetitiveMode;
-    private bool _suspendDiscordOverlay;
-    private bool _suspendSteamOverlay;
-    private bool _suspendNvidiaOverlay;
-    private bool _killWidgets;
-
-    // v2 GPU Optimization
-    private bool _enableGpuOptimization;
-    private bool _forceMaxPerformancePowerMode;
-    private bool _optimizeShaderCache;
-    private bool _enableLowLatencyMode;
-
-    // v2 MPO
-    private bool _disableMpo;
-
-    // v3 Intensity
-    private string _intensity = "Casual";
 
     // v2 DPC Monitoring
     private bool _enableDpcMonitoring;
@@ -106,110 +83,10 @@ public class ProfileEditorViewModel : INotifyPropertyChanged
         set { if (_boostProcessPriority != value) { _boostProcessPriority = value; IsDirty = true; OnPropertyChanged(); } }
     }
 
-    public bool OptimizeMemory
-    {
-        get => _optimizeMemory;
-        set { if (_optimizeMemory != value) { _optimizeMemory = value; IsDirty = true; OnPropertyChanged(); } }
-    }
-
-    public bool ReduceVisualEffects
-    {
-        get => _reduceVisualEffects;
-        set { if (_reduceVisualEffects != value) { _reduceVisualEffects = value; IsDirty = true; OnPropertyChanged(); } }
-    }
-
-    public bool OptimizeNetwork
-    {
-        get => _optimizeNetwork;
-        set { if (_optimizeNetwork != value) { _optimizeNetwork = value; IsDirty = true; OnPropertyChanged(); } }
-    }
-
     public bool UsePerformanceCoresOnly
     {
         get => _usePerformanceCoresOnly;
         set { if (_usePerformanceCoresOnly != value) { _usePerformanceCoresOnly = value; IsDirty = true; OnPropertyChanged(); } }
-    }
-
-    public int MemoryThresholdMB
-    {
-        get => _memoryThresholdMB;
-        set { if (_memoryThresholdMB != value) { _memoryThresholdMB = value; IsDirty = true; OnPropertyChanged(); } }
-    }
-
-    // ── v2 Competitive Mode toggles ──────────────────────────────────
-
-    public bool EnableCompetitiveMode
-    {
-        get => _enableCompetitiveMode;
-        set { if (_enableCompetitiveMode != value) { _enableCompetitiveMode = value; IsDirty = true; OnPropertyChanged(); } }
-    }
-
-    public bool SuspendDiscordOverlay
-    {
-        get => _suspendDiscordOverlay;
-        set { if (_suspendDiscordOverlay != value) { _suspendDiscordOverlay = value; IsDirty = true; OnPropertyChanged(); } }
-    }
-
-    public bool SuspendSteamOverlay
-    {
-        get => _suspendSteamOverlay;
-        set { if (_suspendSteamOverlay != value) { _suspendSteamOverlay = value; IsDirty = true; OnPropertyChanged(); } }
-    }
-
-    public bool SuspendNvidiaOverlay
-    {
-        get => _suspendNvidiaOverlay;
-        set { if (_suspendNvidiaOverlay != value) { _suspendNvidiaOverlay = value; IsDirty = true; OnPropertyChanged(); } }
-    }
-
-    public bool KillWidgets
-    {
-        get => _killWidgets;
-        set { if (_killWidgets != value) { _killWidgets = value; IsDirty = true; OnPropertyChanged(); } }
-    }
-
-    // ── v2 GPU Optimization toggles ──────────────────────────────────
-
-    public bool EnableGpuOptimization
-    {
-        get => _enableGpuOptimization;
-        set { if (_enableGpuOptimization != value) { _enableGpuOptimization = value; IsDirty = true; OnPropertyChanged(); } }
-    }
-
-    public bool ForceMaxPerformancePowerMode
-    {
-        get => _forceMaxPerformancePowerMode;
-        set { if (_forceMaxPerformancePowerMode != value) { _forceMaxPerformancePowerMode = value; IsDirty = true; OnPropertyChanged(); } }
-    }
-
-    public bool OptimizeShaderCache
-    {
-        get => _optimizeShaderCache;
-        set { if (_optimizeShaderCache != value) { _optimizeShaderCache = value; IsDirty = true; OnPropertyChanged(); } }
-    }
-
-    public bool EnableLowLatencyMode
-    {
-        get => _enableLowLatencyMode;
-        set { if (_enableLowLatencyMode != value) { _enableLowLatencyMode = value; IsDirty = true; OnPropertyChanged(); } }
-    }
-
-    // ── v2 MPO toggle ────────────────────────────────────────────────
-
-    public bool DisableMpo
-    {
-        get => _disableMpo;
-        set { if (_disableMpo != value) { _disableMpo = value; IsDirty = true; OnPropertyChanged(); } }
-    }
-
-    // ── v3 Intensity ──────────────────────────────────────────────────
-
-    public List<string> IntensityOptions { get; } = new() { "Competitive", "Casual" };
-
-    public string Intensity
-    {
-        get => _intensity;
-        set { if (_intensity != value) { _intensity = value; IsDirty = true; OnPropertyChanged(); } }
     }
 
     // ── v2 DPC Monitoring ────────────────────────────────────────────
@@ -379,27 +256,12 @@ public class ProfileEditorViewModel : INotifyPropertyChanged
         _switchPowerPlan = profile.SwitchPowerPlan;
         _setTimerResolution = profile.SetTimerResolution;
         _boostProcessPriority = profile.BoostProcessPriority;
-        _optimizeMemory = profile.OptimizeMemory;
-        _reduceVisualEffects = profile.ReduceVisualEffects;
-        _optimizeNetwork = profile.OptimizeNetwork;
         _usePerformanceCoresOnly = profile.UsePerformanceCoresOnly;
-        _memoryThresholdMB = profile.MemoryThresholdMB;
 
         // v2 fields
-        _enableCompetitiveMode = profile.EnableCompetitiveMode;
-        _suspendDiscordOverlay = profile.SuspendDiscordOverlay;
-        _suspendSteamOverlay = profile.SuspendSteamOverlay;
-        _suspendNvidiaOverlay = profile.SuspendNvidiaOverlay;
-        _killWidgets = profile.KillWidgets;
-        _enableGpuOptimization = profile.EnableGpuOptimization;
-        _forceMaxPerformancePowerMode = profile.ForceMaxPerformancePowerMode;
-        _optimizeShaderCache = profile.OptimizeShaderCache;
-        _enableLowLatencyMode = profile.EnableLowLatencyMode;
-        _disableMpo = profile.DisableMpo;
         _enableDpcMonitoring = profile.EnableDpcMonitoring;
         _dpcThresholdMicroseconds = profile.DpcThresholdMicroseconds;
         _dpcThresholdPercentText = DpcLoad.FormatThreshold(profile.DpcThresholdMicroseconds);
-        _intensity = profile.Intensity.ToString();
 
         IsDirty = false;
         StatusMessage = "";
@@ -415,25 +277,10 @@ public class ProfileEditorViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(SwitchPowerPlan));
         OnPropertyChanged(nameof(SetTimerResolution));
         OnPropertyChanged(nameof(BoostProcessPriority));
-        OnPropertyChanged(nameof(OptimizeMemory));
-        OnPropertyChanged(nameof(ReduceVisualEffects));
-        OnPropertyChanged(nameof(OptimizeNetwork));
         OnPropertyChanged(nameof(UsePerformanceCoresOnly));
-        OnPropertyChanged(nameof(MemoryThresholdMB));
-        OnPropertyChanged(nameof(EnableCompetitiveMode));
-        OnPropertyChanged(nameof(SuspendDiscordOverlay));
-        OnPropertyChanged(nameof(SuspendSteamOverlay));
-        OnPropertyChanged(nameof(SuspendNvidiaOverlay));
-        OnPropertyChanged(nameof(KillWidgets));
-        OnPropertyChanged(nameof(EnableGpuOptimization));
-        OnPropertyChanged(nameof(ForceMaxPerformancePowerMode));
-        OnPropertyChanged(nameof(OptimizeShaderCache));
-        OnPropertyChanged(nameof(EnableLowLatencyMode));
-        OnPropertyChanged(nameof(DisableMpo));
         OnPropertyChanged(nameof(EnableDpcMonitoring));
         OnPropertyChanged(nameof(DpcThresholdMicroseconds));
         OnPropertyChanged(nameof(DpcThresholdPercentText));
-        OnPropertyChanged(nameof(Intensity));
         OnPropertyChanged(nameof(HasSelectedProfile));
     }
 
@@ -547,26 +394,11 @@ public class ProfileEditorViewModel : INotifyPropertyChanged
         profile.SwitchPowerPlan = SwitchPowerPlan;
         profile.SetTimerResolution = SetTimerResolution;
         profile.BoostProcessPriority = BoostProcessPriority;
-        profile.OptimizeMemory = OptimizeMemory;
-        profile.ReduceVisualEffects = ReduceVisualEffects;
-        profile.OptimizeNetwork = OptimizeNetwork;
         profile.UsePerformanceCoresOnly = UsePerformanceCoresOnly;
-        profile.MemoryThresholdMB = MemoryThresholdMB;
 
         // v2 fields
-        profile.EnableCompetitiveMode = EnableCompetitiveMode;
-        profile.SuspendDiscordOverlay = SuspendDiscordOverlay;
-        profile.SuspendSteamOverlay = SuspendSteamOverlay;
-        profile.SuspendNvidiaOverlay = SuspendNvidiaOverlay;
-        profile.KillWidgets = KillWidgets;
-        profile.EnableGpuOptimization = EnableGpuOptimization;
-        profile.ForceMaxPerformancePowerMode = ForceMaxPerformancePowerMode;
-        profile.OptimizeShaderCache = OptimizeShaderCache;
-        profile.EnableLowLatencyMode = EnableLowLatencyMode;
-        profile.DisableMpo = DisableMpo;
         profile.EnableDpcMonitoring = EnableDpcMonitoring;
         profile.DpcThresholdMicroseconds = DpcThresholdMicroseconds;
-        profile.Intensity = Enum.Parse<OptimizationIntensity>(Intensity);
 
         _profileManager.SaveProfile(profile);
         IsDirty = false;

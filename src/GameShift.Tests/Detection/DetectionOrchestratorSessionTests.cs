@@ -58,10 +58,6 @@ public sealed class DetectionOrchestratorSessionTests : IAsyncLifetime
     {
         SettingsManager.SettingsFilePathOverride = _temp.GetFile("settings.json");
 
-        // Background Mode's ProBalance would otherwise start with the session, on a timer that
-        // lowers the priority of real processes.
-        SettingsManager.Update(s => s.BackgroundMode = new BackgroundModeSettings { ProBalanceEnabled = false });
-
         _optimization.OnApply = () => _calls.Add("apply engine");
         _optimization.OnRevert = () => _calls.Add("revert engine");
 

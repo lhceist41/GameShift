@@ -221,7 +221,6 @@ public class GpuRegistryOverrideAction : GameAction
     /// <summary>
     /// Finds the driver subkey under the display adapter class GUID that matches
     /// the given vendor name(s). Checks DriverDesc for a match.
-    /// Same pattern as GpuDriverOptimizer.FindDriverSubkey().
     /// </summary>
     private static string? FindDriverSubkey(string[] vendorNames)
     {

@@ -26,10 +26,6 @@ public sealed class OptimizationEngineTests : IDisposable
     public OptimizationEngineTests()
     {
         SettingsManager.SettingsFilePathOverride = _temp.GetFile("settings.json");
-
-        // Activation would otherwise start ProBalance, on a timer that lowers the priority of
-        // real processes.
-        SettingsManager.Update(s => s.BackgroundMode = new BackgroundModeSettings { ProBalanceEnabled = false });
     }
 
     // Every engine records into a temp journal so a test run never rewrites the real
@@ -213,25 +209,25 @@ public sealed class OptimizationEngineTests : IDisposable
     public async Task ActivateProfile_SkipsOptimizationsDisabledInProfile()
     {
         // Arrange - use real OptimizationId values so IsOptimizationEnabled matches
-        var memOpt = new MockOptimizationSuccess { Name = MemoryOptimizer.OptimizationId };
-        var netOpt = new MockOptimizationSuccess { Name = NetworkOptimizer.OptimizationId };
-        var engine = NewEngine(new IOptimization[] { memOpt, netOpt });
+        var timerOpt = new MockOptimizationSuccess { Name = TimerResolutionManager.OptimizationId };
+        var priorityOpt = new MockOptimizationSuccess { Name = ProcessPriorityBooster.OptimizationId };
+        var engine = NewEngine(new IOptimization[] { timerOpt, priorityOpt });
         var profile = new GameProfile
         {
             Id = "test",
             GameName = "TestGame",
             ProcessId = 1234,
-            OptimizeMemory = false,   // Disabled
-            OptimizeNetwork = true    // Enabled
+            SetTimerResolution = false,   // Disabled
+            BoostProcessPriority = true   // Enabled
         };
 
         // Act
         await engine.ActivateProfileAsync(profile);
 
-        // Assert - memory optimizer should be skipped, network should be applied
-        Assert.Equal(0, memOpt.ApplyCallCount);
-        Assert.Equal(1, netOpt.ApplyCallCount);
-        Assert.True(netOpt.IsApplied);
+        // Assert - timer resolution should be skipped, priority should be applied
+        Assert.Equal(0, timerOpt.ApplyCallCount);
+        Assert.Equal(1, priorityOpt.ApplyCallCount);
+        Assert.True(priorityOpt.IsApplied);
     }
 
     [Fact]
