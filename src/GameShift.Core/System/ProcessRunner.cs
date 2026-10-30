@@ -31,7 +31,8 @@ public readonly record struct ProcessRunResult(int ExitCode, string StdOut, stri
 /// The caller passes an ALREADY-RESOLVED absolute file path (e.g. NativeInterop.SystemExePath(...)):
 /// the runner never resolves paths, so each caller's anti-PATH-hijack choice is preserved. The fixed
 /// startup options match every call site it replaces (UseShellExecute=false, CreateNoWindow=true,
-/// both pipes redirected, default encoding, no stdin/working-dir/env). Output is returned raw, so
+/// both pipes redirected, default encoding, no stdin/working-dir, inherited environment unless
+/// <c>environment</c> overrides variables). Output is returned raw, so
 /// each caller keeps its own trimming/parsing. Exceptions from Process.Start / WaitForExit propagate
 /// to the caller (each call site keeps its existing try/catch); a pipe-read error degrades that
 /// stream to empty (best effort) rather than faulting the run.
@@ -45,7 +46,9 @@ public static class ProcessRunner
     /// <param name="fileName">Absolute path to the executable (callers resolve it themselves).</param>
     /// <param name="arguments">Command-line arguments.</param>
     /// <param name="timeoutMs">Maximum time to wait for the process to exit, in milliseconds.</param>
-    public static ProcessRunResult Run(string fileName, string arguments, int timeoutMs)
+    /// <param name="environment">Variables to set in the child's environment, overriding inherited ones.</param>
+    public static ProcessRunResult Run(
+        string fileName, string arguments, int timeoutMs, IReadOnlyDictionary<string, string>? environment = null)
     {
         var psi = new ProcessStartInfo
         {
@@ -56,6 +59,12 @@ public static class ProcessRunner
             RedirectStandardOutput = true,
             RedirectStandardError = true,
         };
+
+        if (environment != null)
+        {
+            foreach (var (name, value) in environment)
+                psi.Environment[name] = value;
+        }
 
         using var process = Process.Start(psi);
         if (process == null)

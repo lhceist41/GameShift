@@ -7,6 +7,7 @@ using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
+using GameShift.Core.Detection;
 using GameShift.Core.GameProfiles;
 using GameShift.Core.Optimization;
 using GameShift.Core.Profiles;
@@ -21,6 +22,7 @@ public class HeroOptimizeViewModel : INotifyPropertyChanged
 {
     private readonly IReadOnlyList<IOptimization> _optimizations;
     private readonly OptimizationEngine _engine;
+    private readonly DetectionOrchestrator _orchestrator;
 
     private string _heroStatusText = "Ready to Optimize";
     private string _heroSubtitleText = "Apply recommended system optimizations for gaming";
@@ -83,10 +85,12 @@ public class HeroOptimizeViewModel : INotifyPropertyChanged
 
     private bool IsHeroOptimized => _optimizations.Any(o => o.IsApplied);
 
-    public HeroOptimizeViewModel(IReadOnlyList<IOptimization> optimizations, OptimizationEngine engine)
+    public HeroOptimizeViewModel(
+        IReadOnlyList<IOptimization> optimizations, OptimizationEngine engine, DetectionOrchestrator orchestrator)
     {
         _optimizations = optimizations;
         _engine = engine;
+        _orchestrator = orchestrator;
         OptimizeNowCommand = new RelayCommand(ExecuteOptimizeNow);
         RefreshHeroState();
     }
@@ -148,7 +152,9 @@ public class HeroOptimizeViewModel : INotifyPropertyChanged
                 HeroStatusText = "Reverting...";
                 HeroButtonText = "Reverting...";
                 HeroStatusBrush = new SolidColorBrush(Color.FromRgb(0xFF, 0xC1, 0x07));
-                await _engine.DeactivateProfileAsync();
+                // Through the orchestrator: during a game this ends the game session as a whole,
+                // including the game's own changes; a Quick Optimize session reverts through the engine.
+                await _orchestrator.EndSessionAsync();
             }
             else
             {

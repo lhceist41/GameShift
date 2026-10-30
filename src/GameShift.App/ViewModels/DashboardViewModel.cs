@@ -242,7 +242,7 @@ public class DashboardViewModel : INotifyPropertyChanged
 
         // Create sub-ViewModels
         Update = new UpdateManagementViewModel();
-        Hero = new HeroOptimizeViewModel(optimizations, engine);
+        Hero = new HeroOptimizeViewModel(optimizations, engine, orchestrator);
         // A Quick Optimize session counts its own failures, as a game session does (OnGameStarted).
         Hero.QuickOptimizeStarting += (_, _) => _sessionFailedCount = 0;
         Dpc = new DpcMonitoringViewModel(dpcMonitor);

@@ -29,7 +29,6 @@ public class TrayIconManager : IDisposable
     private readonly DpcLatencyMonitor? _dpcMonitor;
     private readonly ProfileManager? _profileManager;
     private readonly ILogger _logger;
-    private bool _isPaused;
     private bool _hasDpcWarning;
     private bool _disposed;
 
@@ -50,7 +49,7 @@ public class TrayIconManager : IDisposable
     /// <summary>
     /// Gets whether game monitoring is currently paused by the user.
     /// </summary>
-    public bool IsPaused => _isPaused;
+    public bool IsPaused => _orchestrator.IsPaused;
 
     /// <summary>Raised when the user requests the dashboard window (double-click or menu).</summary>
     public event Action? DashboardRequested;
@@ -79,7 +78,6 @@ public class TrayIconManager : IDisposable
         _dpcMonitor = dpcMonitor;
         _profileManager = profileManager;
         _logger = SettingsManager.Logger;
-        _isPaused = false;
 
         // Create TaskbarIcon using Hardcodet.NotifyIcon.Wpf (works on Win10 + Win11)
         _taskbarIcon = new TaskbarIcon();
@@ -225,7 +223,7 @@ public class TrayIconManager : IDisposable
             tooltip = "GameShift - Warning (DPC)";
             statusText = "GameShift: Warning";
         }
-        else if (_isPaused)
+        else if (_orchestrator.IsPaused)
         {
             iconName = "tray-idle";
             tooltip = "GameShift - Paused";
@@ -268,7 +266,7 @@ public class TrayIconManager : IDisposable
         try
         {
             lock (_statsLock) { _sessionOptimizationCount++; }
-            Application.Current.Dispatcher.Invoke(UpdateTrayState);
+            QueueTrayStateUpdate();
         }
         catch (Exception ex)
         {
@@ -292,12 +290,33 @@ public class TrayIconManager : IDisposable
     {
         try
         {
-            Application.Current.Dispatcher.Invoke(UpdateTrayState);
+            QueueTrayStateUpdate();
         }
         catch (Exception ex)
         {
             _logger.Warning(ex, "Failed to update tray state on optimization reverted");
         }
+    }
+
+    /// <summary>
+    /// Updates the tray state on the UI thread without waiting for it. The engine raises its events
+    /// on whatever thread ends a session, including while App.OnExit blocks the UI thread waiting for
+    /// that session to end, where a synchronous Invoke would deadlock.
+    /// </summary>
+    private void QueueTrayStateUpdate()
+    {
+        Application.Current.Dispatcher.InvokeAsync(() =>
+        {
+            if (_disposed) return;
+            try
+            {
+                UpdateTrayState();
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning(ex, "Failed to update tray state");
+            }
+        });
     }
 
     private void OnGameStarted(object? sender, GameDetectedEventArgs e)
@@ -357,7 +376,7 @@ public class TrayIconManager : IDisposable
         try
         {
             _hasDpcWarning = true;
-            Application.Current.Dispatcher.Invoke(UpdateTrayState);
+            QueueTrayStateUpdate();
         }
         catch (Exception ex)
         {
@@ -380,30 +399,18 @@ public class TrayIconManager : IDisposable
         }
     }
 
-    private void ShowSessionSummaryToast()
+    private void ShowSessionSummaryToast(
+        string gameName, TimeSpan duration, int optCount, int failedCount, double avgDpc, double peakDpc)
     {
         try
         {
+            if (_disposed) return;
+
             if (!_settings.ShowNotifications || !_settings.ShowSessionSummaryToast)
             {
                 _logger.Debug("Post-session toast suppressed by settings");
                 return;
             }
-
-            DateTime? startTime;
-            double avgDpc, peakDpc;
-            string gameName;
-            int optCount, failedCount;
-            lock (_statsLock)
-            {
-                startTime = _sessionStartTime;
-                avgDpc = _sessionDpcSampleCount > 0 ? _sessionDpcSum / _sessionDpcSampleCount : 0;
-                peakDpc = _sessionPeakDpc;
-                gameName = _sessionGameName ?? "Unknown Game";
-                optCount = _sessionOptimizationCount;
-                failedCount = _sessionFailedCount;
-            }
-            var duration = DateTime.Now - (startTime ?? DateTime.Now);
 
             var toast = new ToastNotificationWindow();
             toast.SetSessionData(gameName, duration, optCount, failedCount, avgDpc, peakDpc);
@@ -434,21 +441,25 @@ public class TrayIconManager : IDisposable
     {
         try
         {
-            // Show post-session toast BEFORE clearing session data
-            bool hasSession;
-            lock (_statsLock)
-            {
-                hasSession = _sessionStartTime.HasValue;
-            }
-            if (hasSession)
-            {
-                Application.Current.Dispatcher.Invoke(() => ShowSessionSummaryToast());
-            }
-
+            // Resuming raises this while the orchestrator holds its session lock, so the toast and the
+            // tray update are queued, not waited for (see QueueTrayStateUpdate). The toast gets the
+            // session's figures as they are now, before they are cleared below.
             _hasDpcWarning = false;
 
             lock (_statsLock)
             {
+                if (_sessionStartTime is DateTime startTime)
+                {
+                    var gameName = _sessionGameName ?? "Unknown Game";
+                    var duration = DateTime.Now - startTime;
+                    var optCount = _sessionOptimizationCount;
+                    var failedCount = _sessionFailedCount;
+                    var avgDpc = _sessionDpcSampleCount > 0 ? _sessionDpcSum / _sessionDpcSampleCount : 0;
+                    var peakDpc = _sessionPeakDpc;
+                    Application.Current.Dispatcher.InvokeAsync(() =>
+                        ShowSessionSummaryToast(gameName, duration, optCount, failedCount, avgDpc, peakDpc));
+                }
+
                 _sessionStartTime = null;
                 _sessionGameName = null;
                 _sessionPeakDpc = 0;
@@ -458,7 +469,7 @@ public class TrayIconManager : IDisposable
                 _sessionFailedCount = 0;
             }
 
-            Application.Current.Dispatcher.Invoke(UpdateTrayState);
+            QueueTrayStateUpdate();
         }
         catch (Exception ex)
         {
@@ -548,45 +559,42 @@ public class TrayIconManager : IDisposable
 
     /// <summary>
     /// Toggles game monitoring pause state. Can be called from the context menu or global hotkey.
-    /// When pausing during an active optimization session, force-deactivates optimizations first.
-    /// Must be called on the UI thread.
+    /// Pausing ends an active game session through the orchestrator; resuming optimizes a game
+    /// that is still running. Completes once the change has taken effect and returns whether
+    /// monitoring is paused after this toggle. Must be called on the UI thread; never throws.
     /// </summary>
-    public async void TogglePause()
+    public async Task<bool> TogglePauseAsync()
     {
+        var paused = _orchestrator.IsPaused;
         try
         {
-            if (!_isPaused)
-            {
-                if (_orchestrator.IsOptimizing)
-                {
-                    _logger.Information("Force-deactivating optimizations before pausing monitoring");
-                    await _engine.DeactivateProfileAsync();
-                }
-
-                _detector.StopMonitoring();
-                _isPaused = true;
-                UpdatePauseMenuItem("Resume Monitoring");
+            paused = await _orchestrator.TogglePauseAsync();
+            if (paused)
                 _logger.Information("Game monitoring paused by user");
-            }
             else
-            {
-                _detector.StartMonitoring();
-                _isPaused = false;
-                UpdatePauseMenuItem("Pause Monitoring");
                 _logger.Information("Game monitoring resumed by user");
-            }
-
-            UpdateTrayState();
         }
         catch (Exception ex)
         {
             _logger.Error(ex, "Failed to toggle pause state");
         }
+
+        try
+        {
+            UpdatePauseMenuItem(_orchestrator.IsPaused ? "Resume Monitoring" : "Pause Monitoring");
+            UpdateTrayState();
+        }
+        catch (Exception ex)
+        {
+            _logger.Warning(ex, "Failed to update tray state after toggling pause");
+        }
+
+        return paused;
     }
 
     private void OnPauseClicked(object sender, RoutedEventArgs e)
     {
-        TogglePause();
+        _ = TogglePauseAsync();
     }
 
     private void UpdatePauseMenuItem(string text)
@@ -607,15 +615,12 @@ public class TrayIconManager : IDisposable
     {
         try
         {
-            if (_orchestrator.IsOptimizing)
-            {
-                _logger.Information("Deactivating optimizations before exit");
-                await _engine.DeactivateProfileAsync();
-            }
+            _logger.Information("Ending the optimization session before exit");
+            await _orchestrator.ShutdownAsync();
         }
         catch (Exception ex)
         {
-            _logger.Error(ex, "Failed to deactivate optimizations during exit");
+            _logger.Error(ex, "Failed to end the optimization session during exit");
         }
 
         Application.Current.Shutdown();

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 using System.Text.Json;
 using GameShift.Core.System;
 using Serilog;
@@ -162,6 +163,62 @@ public class FirewallRuleAction : GameAction
         if (!_ruleCreated) return null;
         return new GameActionRevertRecord("firewall", JsonSerializer.Serialize(new { ruleName = _ruleName }));
     }
+
+    /// <summary>The rule's display name, e.g. "GameShift_Valorant_In".</summary>
+    internal string RuleName => _ruleName;
+
+    /// <summary>The program the rule allows.</summary>
+    internal string Program => _executablePath;
+
+    /// <summary>
+    /// Removes rules left behind by an earlier GameShift version or a crash: rules that match one of
+    /// <paramref name="rules"/> on display name, program, direction and the Allow action, which is
+    /// exactly how <see cref="Apply"/> creates them. A later session would otherwise take such a rule
+    /// for the user's own and never remove it. Returns the display names of the rules removed.
+    /// </summary>
+    internal static IReadOnlyList<string> RemoveLeftovers(IEnumerable<FirewallRuleAction> rules)
+    {
+        // This runs elevated at every start. The default module path searches the user's Documents
+        // folder first, where anything running as the user could plant a module, so the firewall
+        // cmdlets come only from the System32 module, loaded by its full path.
+        var modulesPath = Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "Modules");
+
+        // Progress records would otherwise reach the redirected stderr and read as a failure.
+        var script = new StringBuilder("$ProgressPreference = 'SilentlyContinue'\n")
+            .Append("try { Import-Module ").Append(Quote(Path.Combine(modulesPath, "NetSecurity", "NetSecurity.psd1")))
+            .Append(" -ErrorAction Stop } catch { [Console]::Error.WriteLine('Could not load NetSecurity: ' + $_); exit 1 }\n");
+        foreach (var rule in rules)
+        {
+            script.Append("Get-NetFirewallRule -DisplayName ").Append(Quote(rule._ruleName))
+                .Append(" -ErrorAction SilentlyContinue | Where-Object { $_.Direction -eq ").Append(Quote(rule._direction))
+                .Append(" -and $_.Action -eq 'Allow' -and (($_ | Get-NetFirewallApplicationFilter).Program -eq ")
+                .Append(Quote(rule._executablePath))
+                .Append(") } | ForEach-Object { $r = $_; try { $r | Remove-NetFirewallRule -ErrorAction Stop; $r.DisplayName }")
+                .Append(" catch { [Console]::Error.WriteLine('Could not remove ' + $r.DisplayName + ': ' + $_) } }")
+                .Append('\n');
+        }
+
+        // Encoded, so the rule names and paths need no command-line quoting.
+        var result = ProcessRunner.Run(
+            NativeInterop.SystemExePath("WindowsPowerShell\\v1.0\\powershell.exe"),
+            "-NoProfile -NonInteractive -EncodedCommand " + Convert.ToBase64String(Encoding.Unicode.GetBytes(script.ToString())),
+            30_000,
+            new Dictionary<string, string> { ["PSModulePath"] = modulesPath });
+
+        // The exit code is not checked: a lookup that finds no rule sets it too, which is the normal case.
+        if (!result.Exited || !string.IsNullOrWhiteSpace(result.StdErr))
+        {
+            Log.Warning(
+                "FirewallRuleAction: Leftover rule cleanup did not finish cleanly (exited: {Exited}): {Error}",
+                result.Exited, result.StdErr.Trim());
+        }
+
+        return result.StdOut
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .ToList();
+    }
+
+    private static string Quote(string value) => "'" + value.Replace("'", "''") + "'";
 
     /// <summary>
     /// Checks if a firewall rule with the given display name already exists.

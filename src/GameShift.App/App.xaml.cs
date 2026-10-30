@@ -298,6 +298,11 @@ public partial class App : Application
             // Step g: Initialize detection system asynchronously
             // Tray icon is already visible - this runs in background
             WriteDiag("Step g: Starting async initialization...");
+
+            // Firewall rules an earlier version or a crash left behind. Started first so that a game
+            // detected as monitoring starts waits for it; it runs in the background and never throws.
+            _ = Services.Orchestrator!.RemoveLeftoverFirewallRulesAsync();
+
             await Services.Orchestrator!.InitializeAsync();
 
             WriteDiag("Fully initialized. Monitoring for games.");
@@ -525,23 +530,29 @@ public partial class App : Application
     }
 
     /// <summary>
-    /// Handles the global hotkey press.
-    /// Dispatches to the UI thread and invokes TrayIconManager.TogglePause().
+    /// Handles the global hotkey press: toggles pause through TrayIconManager and, once the change
+    /// has taken effect, shows the resulting state. Runs on the UI thread, since the hotkey arrives
+    /// through the main window's message hook.
     /// </summary>
-    private void OnGlobalHotkeyPressed()
+    private async void OnGlobalHotkeyPressed()
     {
-        Dispatcher.Invoke(() =>
-        {
-            _trayManager?.TogglePause();
+        if (_trayManager == null) return;
 
+        var isPaused = await _trayManager.TogglePauseAsync();
+
+        try
+        {
             // Show auto-dismissing toast feedback for hotkey press
-            var isPaused = _trayManager?.IsPaused ?? false;
             var title = isPaused ? "Monitoring Paused" : "Monitoring Resumed";
             var message = isPaused
                 ? "Game detection is paused. Press Ctrl+Shift+G to resume."
                 : "Game detection is active. Optimizations will apply automatically.";
             _mainWindow?.ShowToast(title, message, TimeSpan.FromSeconds(3));
-        });
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to show the pause toggle toast");
+        }
     }
 
     protected override void OnExit(ExitEventArgs e)
@@ -568,25 +579,26 @@ public partial class App : Application
             Log.Warning(ex, "Failed to clean up page ViewModels during shutdown");
         }
 
-        // Deactivate any active optimizations.
+        // End any active session: a game session's game-specific actions and the engine's
+        // optimizations, or a Quick Optimize session.
         // Block synchronously - async void can be killed by the framework before
         // the await completes, leaving optimizations un-reverted.
         // Stop game monitoring FIRST so a game-close event can't kick off a concurrent revert that
         // holds the engine semaphore while we block on it below.
         Services.Detector?.StopMonitoring();
 
-        if (Services.Orchestrator?.IsOptimizing == true && Services.Engine != null)
+        if (Services.Orchestrator != null)
         {
             try
             {
                 // Run on a thread-pool thread so async continuations don't post back to the (blocked)
                 // UI dispatcher - avoids a sync-over-async deadlock that would hang the app on exit.
-                Task.Run(() => Services.Engine.DeactivateProfileAsync()).GetAwaiter().GetResult();
-                Log.Information("Optimizations deactivated during shutdown");
+                Task.Run(() => Services.Orchestrator.ShutdownAsync()).GetAwaiter().GetResult();
+                Log.Information("Optimization session ended for shutdown");
             }
             catch (Exception ex)
             {
-                Log.Error(ex, "Failed to deactivate optimizations during shutdown");
+                Log.Error(ex, "Failed to end the optimization session during shutdown");
             }
         }
 

@@ -150,6 +150,13 @@ public static class CompetitivePresets
         return new List<GameAction>();
     }
 
+    /// <summary>
+    /// Every firewall rule a preset can create. GameShift finds rules that earlier versions left
+    /// behind by these names and programs, so a preset must never rename a rule or change its program.
+    /// </summary>
+    internal static IReadOnlyList<FirewallRuleAction> GetFirewallRules() =>
+        _metadata.Keys.SelectMany(GetGameActions).OfType<FirewallRuleAction>().ToList();
+
     // ── Overwatch 2 ─────────────────────────────────────────────────
 
     private static GameProfile BuildOverwatch2Profile() => new()

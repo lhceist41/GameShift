@@ -37,6 +37,7 @@ public class GameDetector : IDisposable
     private readonly ConcurrentDictionary<int, ActiveGame> _activeGames;
     private readonly ProcessProbe _probe;
     private readonly Func<int, string> _liveProcessNameProbe;
+    private readonly Func<int, string> _sweepProcessNameProbe;
     private readonly object _lock = new();
     private readonly ILogger _logger;
 
@@ -88,16 +89,23 @@ public class GameDetector : IDisposable
     /// <see cref="Process.GetProcessById(int)"/> does. Defaults to
     /// <see cref="DefaultProcessNameProbe"/>.
     /// </param>
+    /// <param name="sweepProcessNameProbe">
+    /// The liveness sweep's lookup of the same kind, kept separate from the corroboration step's.
+    /// Defaults to <see cref="DefaultProcessNameProbe"/>; tests that need a synthetic game to stay
+    /// alive through <see cref="ReconcileActiveGamesOnce"/> supply their own.
+    /// </param>
     internal GameDetector(
         IEnumerable<ILibraryScanner> scanners,
         ProcessProbe probe,
-        Func<int, string>? liveProcessNameProbe = null)
+        Func<int, string>? liveProcessNameProbe = null,
+        Func<int, string>? sweepProcessNameProbe = null)
     {
         _scanners = scanners;
         _knownGames = new List<GameInfo>();
         _activeGames = new ConcurrentDictionary<int, ActiveGame>();
         _probe = probe;
         _liveProcessNameProbe = liveProcessNameProbe ?? DefaultProcessNameProbe;
+        _sweepProcessNameProbe = sweepProcessNameProbe ?? DefaultProcessNameProbe;
         _logger = SettingsManager.Logger;
     }
 
@@ -508,7 +516,7 @@ public class GameDetector : IDisposable
         {
             foreach (var (pid, active) in _activeGames.ToArray())
             {
-                if (IsTrackedGameGone(pid, active))
+                if (IsTrackedGameGone(pid, active, _sweepProcessNameProbe))
                 {
                     _logger.Information(
                         "Liveness sweep: tracked game {GameName} (PID: {ProcessId}) is gone - reconciling missed stop event",
@@ -535,9 +543,6 @@ public class GameDetector : IDisposable
         using var process = Process.GetProcessById(processId);
         return process.ProcessName;
     }
-
-    private static bool IsTrackedGameGone(int processId, ActiveGame active)
-        => IsTrackedGameGone(processId, active, DefaultProcessNameProbe);
 
     /// <summary>
     /// Liveness decision for one tracked game, with the process-name lookup injected so the

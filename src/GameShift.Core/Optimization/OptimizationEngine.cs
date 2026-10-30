@@ -86,12 +86,21 @@ public class OptimizationEngine : IDisposable
     /// </summary>
     /// <param name="optimizations">Collection of optimizations to manage</param>
     public OptimizationEngine(IEnumerable<IOptimization> optimizations)
+        : this(optimizations, new JournalManager())
+    {
+    }
+
+    /// <summary>
+    /// Creates an engine that records its sessions in <paramref name="journal"/>. Used by tests to
+    /// keep the session journal out of %ProgramData%.
+    /// </summary>
+    internal OptimizationEngine(IEnumerable<IOptimization> optimizations, JournalManager journal)
     {
         _optimizations = optimizations.ToList();
         _appliedOptimizations = new Stack<IOptimization>();
         _semaphore = new SemaphoreSlim(1, 1); // Allow one thread at a time
         _logger = SettingsManager.Logger; // Use centralized logger from Phase 1
-        _journal = new JournalManager();
+        _journal = journal;
         _registryMonitor = new RegistryChangeMonitor(_journal, _logger);
         _proBalance = new ProBalanceService();
     }
@@ -109,7 +118,7 @@ public class OptimizationEngine : IDisposable
         // reentrancy (e.g. a handler that calls DeactivateProfileAsync) can't deadlock.
         var eventsToFire = new List<Action>();
 
-        await _semaphore.WaitAsync();
+        await _semaphore.WaitAsync().ConfigureAwait(false);
         try
         {
             _logger.Information("Activating profile for game: {GameName} (PID: {ProcessId})",
@@ -177,7 +186,7 @@ public class OptimizationEngine : IDisposable
                     }
                     else
                     {
-                        success = await optimization.ApplyAsync(_snapshot, profile);
+                        success = await optimization.ApplyAsync(_snapshot, profile).ConfigureAwait(false);
                     }
 
                     if (success)
@@ -276,7 +285,7 @@ public class OptimizationEngine : IDisposable
         // reentrancy (e.g. a handler that calls ActivateProfileAsync) can't deadlock.
         var eventsToFire = new List<Action>();
 
-        await _semaphore.WaitAsync();
+        await _semaphore.WaitAsync().ConfigureAwait(false);
         try
         {
             // If the watchdog has already reverted our optimizations (because it
@@ -333,7 +342,7 @@ public class OptimizationEngine : IDisposable
                     }
                     else
                     {
-                        success = await optimization.RevertAsync(_snapshot);
+                        success = await optimization.RevertAsync(_snapshot).ConfigureAwait(false);
                     }
 
                     if (success)
