@@ -128,8 +128,9 @@ public sealed class NvApiDrsManager : IDisposable
     {
         try
         {
-            // Load the DLL - IntPtr.Zero means "not found"
-            var lib = NativeLibrary.Load("nvapi64");
+            // Load the DLL by full path; the NVIDIA driver installs it in System32. A missing file
+            // throws DllNotFoundException, the same as a failed load.
+            var lib = NativeLibrary.Load(Path.Combine(Environment.SystemDirectory, "nvapi64.dll"));
 
             // nvapi_QueryInterface is the only exported symbol
             var qiPtr = NativeLibrary.GetExport(lib, "nvapi_QueryInterface");

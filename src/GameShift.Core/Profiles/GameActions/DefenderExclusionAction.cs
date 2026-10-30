@@ -9,6 +9,7 @@ namespace GameShift.Core.Profiles.GameActions;
 /// Game-specific action that adds/removes Windows Defender exclusion paths via PowerShell.
 /// Apply adds exclusions, Revert removes them.
 /// Paths are immutable after construction - set once for the game's install directory.
+/// Only these configured paths are excluded, never a folder derived from the detected process.
 /// </summary>
 public class DefenderExclusionAction : GameAction
 {
@@ -18,6 +19,16 @@ public class DefenderExclusionAction : GameAction
     // Paths this action actually created (were absent before Apply). Only these are removed on
     // Revert, so we never delete a user's pre-existing, self-managed Defender exclusions.
     private readonly List<string> _createdPaths = new();
+
+    private const string DefenderModule = "ConfigDefender";
+    // UTF-8 on both sides (see ParameterizedPowerShell.Run), so non-ASCII paths compare exactly.
+    private const string GetExclusionsScript =
+        "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8\n(Get-MpPreference).ExclusionPath";
+    private const string AddExclusionScript = "Add-MpPreference -ExclusionPath $env:GS_ARG0";
+    private const string RemoveExclusionScript = "Remove-MpPreference -ExclusionPath $env:GS_ARG0";
+
+    /// <summary>Process-start seam; tests replace it so no PowerShell or Defender call runs.</summary>
+    internal Func<ProcessStartInfo, int, ProcessRunResult> RunProcess { get; set; } = ParameterizedPowerShell.Run;
 
     /// <param name="name">Display name, e.g. "Valorant Defender Exclusions".</param>
     /// <param name="exclusionPaths">Paths to add/remove from Windows Defender exclusions.</param>
@@ -45,14 +56,8 @@ public class DefenderExclusionAction : GameAction
             return;
         }
 
-        // Effective paths: the configured (default-install) paths plus, when known, the directory of
-        // the actually-detected executable so non-default install locations are covered too.
-        var effectivePaths = new List<string>(_exclusionPaths);
-        var exeDir = string.IsNullOrEmpty(ExecutablePath) ? null : Path.GetDirectoryName(ExecutablePath);
-        if (!string.IsNullOrEmpty(exeDir) && !effectivePaths.Contains(exeDir, StringComparer.OrdinalIgnoreCase))
-            effectivePaths.Add(exeDir);
-
-        foreach (var path in effectivePaths)
+        // Only the configured paths are excluded; ExecutablePath is deliberately not used here.
+        foreach (var path in _exclusionPaths)
         {
             if (existing.Contains(path))
             {
@@ -62,28 +67,20 @@ public class DefenderExclusionAction : GameAction
 
             try
             {
-                var psi = new ProcessStartInfo(
-                    NativeInterop.SystemExePath("WindowsPowerShell\\v1.0\\powershell.exe"),
-                    $"-Command \"Add-MpPreference -ExclusionPath '{path.Replace("'", "''")}'\"")
+                var result = RunProcess(ParameterizedPowerShell.CreateStartInfo(DefenderModule, AddExclusionScript, path), 15_000);
+                if (result.TimedOut)
                 {
-                    CreateNoWindow = true,
-                    UseShellExecute = false
-                };
-                using var process = Process.Start(psi);
-                if (process == null)
+                    Log.Warning("DefenderExclusionAction: PowerShell timed out adding exclusion for {Path}, killed process", path);
+                    continue; // not added - don't record as created, so Revert won't remove it
+                }
+                if (!result.Exited)
                 {
                     Log.Warning("DefenderExclusionAction: Failed to start PowerShell for {Path}", path);
                     continue;
                 }
-                if (!process.WaitForExit(15_000))
+                if (result.ExitCode != 0)
                 {
-                    Log.Warning("DefenderExclusionAction: PowerShell timed out adding exclusion for {Path}, killing process", path);
-                    try { process.Kill(); } catch { }
-                    continue; // not added - don't record as created, so Revert won't remove it
-                }
-                if (process.ExitCode != 0)
-                {
-                    Log.Warning("DefenderExclusionAction: Add-MpPreference failed (exit {Exit}) for {Path}", process.ExitCode, path);
+                    Log.Warning("DefenderExclusionAction: Add-MpPreference failed (exit {Exit}) for {Path}", result.ExitCode, path);
                     continue; // not added - don't record as created
                 }
                 _createdPaths.Add(path);
@@ -99,33 +96,36 @@ public class DefenderExclusionAction : GameAction
     /// <inheritdoc/>
     public override void Revert(SystemStateSnapshot snapshot)
     {
-        // Only remove exclusions THIS action created - never the user's pre-existing ones.
+        // Only remove exclusions THIS action created - never the user's pre-existing ones. A path
+        // whose removal is not confirmed stays tracked, so the crash record still names it.
+        var notRemoved = new List<string>();
         foreach (var path in _createdPaths)
         {
             try
             {
-                var psi = new ProcessStartInfo(
-                    NativeInterop.SystemExePath("WindowsPowerShell\\v1.0\\powershell.exe"),
-                    $"-Command \"Remove-MpPreference -ExclusionPath '{path.Replace("'", "''")}'\"")
+                var result = RunProcess(ParameterizedPowerShell.CreateStartInfo(DefenderModule, RemoveExclusionScript, path), 15_000);
+                if (result.Exited && result.ExitCode == 0)
                 {
-                    CreateNoWindow = true,
-                    UseShellExecute = false
-                };
-                using var process = Process.Start(psi);
-                if (process != null && !process.WaitForExit(15_000))
-                {
-                    Log.Warning("DefenderExclusionAction: PowerShell timed out removing exclusion for {Path}, killing process", path);
-                    try { process.Kill(); } catch { }
+                    Log.Information("DefenderExclusionAction: Removed exclusion path {Path}", path);
+                    continue;
                 }
-                Log.Information("DefenderExclusionAction: Removed exclusion path {Path}", path);
+
+                if (result.TimedOut)
+                    Log.Warning("DefenderExclusionAction: PowerShell timed out removing exclusion for {Path}, killed process; still tracked", path);
+                else if (!result.Exited)
+                    Log.Warning("DefenderExclusionAction: Failed to start PowerShell to remove {Path}; still tracked", path);
+                else
+                    Log.Warning("DefenderExclusionAction: Remove-MpPreference failed (exit {Exit}) for {Path}; still tracked", result.ExitCode, path);
             }
             catch (Exception ex)
             {
-                Log.Warning(ex, "DefenderExclusionAction: Failed to remove exclusion path {Path}", path);
+                Log.Warning(ex, "DefenderExclusionAction: Failed to remove exclusion path {Path}; still tracked", path);
             }
+            notRemoved.Add(path);
         }
 
         _createdPaths.Clear();
+        _createdPaths.AddRange(notRemoved);
     }
 
     /// <inheritdoc/>
@@ -139,14 +139,11 @@ public class DefenderExclusionAction : GameAction
     /// Reads the current Windows Defender exclusion paths via Get-MpPreference.
     /// Returns null if the list cannot be read (so callers can fail safe and not claim ownership).
     /// </summary>
-    private static HashSet<string>? GetExistingExclusions()
+    private HashSet<string>? GetExistingExclusions()
     {
         try
         {
-            var result = ProcessRunner.Run(
-                NativeInterop.SystemExePath("WindowsPowerShell\\v1.0\\powershell.exe"),
-                "-Command \"(Get-MpPreference).ExclusionPath\"",
-                15_000);
+            var result = RunProcess(ParameterizedPowerShell.CreateStartInfo(DefenderModule, GetExclusionsScript), 15_000);
 
             // Fail closed: trust only a clean exit-0. Failed-to-start, timed-out, or non-zero exit
             // returns null so the caller never claims ownership of exclusions it could not read.

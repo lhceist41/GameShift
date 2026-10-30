@@ -1,5 +1,6 @@
 using System.Text.Json;
 using GameShift.Core.Journal;
+using GameShift.Tests.TestHelpers;
 using Microsoft.Win32;
 using Serilog.Core;
 using Xunit;
@@ -144,5 +145,92 @@ public class GameActionRecoveryTests
         // Empty payload fails the paths check before any PowerShell process is started.
         var exception = Record.Exception(() => GameActionRecovery.Revert("defender", "{}", NoOpLogger));
         Assert.Null(exception);
+    }
+
+    private const string HostileValue = "x'\u2018\u2019\u201A\u201B; $(Get-Date) `\nend";
+
+    [Fact]
+    public void Revert_Defender_HostilePaths_ValueTravelsOnlyInEnvironment()
+    {
+        const string script = "Remove-MpPreference -ExclusionPath $env:GS_ARG0 -ErrorAction SilentlyContinue";
+        var paths = new[] { @"C:\Games\Plain\", @"C:\Games\" + HostileValue + @"\" };
+        var runner = new FakePowerShellRunner();
+
+        GameActionRecovery.Revert("defender", JsonSerializer.Serialize(new { paths }), NoOpLogger, runner.Run);
+
+        Assert.Equal(paths, runner.Calls.Select(c => Assert.Single(c.Values)));
+        Assert.All(runner.Calls, c =>
+        {
+            Assert.Equal(script, c.Script);
+            Assert.Equal(FakePowerShellRunner.ExpectedArguments(script), c.Arguments);
+            Assert.Equal(FakePowerShellRunner.ManifestPath("ConfigDefender"), c.ModuleManifest, ignoreCase: true);
+        });
+    }
+
+    private sealed class CapturingSink : Serilog.Core.ILogEventSink
+    {
+        public List<Serilog.Events.LogEvent> Events { get; } = new();
+        public void Emit(Serilog.Events.LogEvent logEvent) => Events.Add(logEvent);
+    }
+
+    [Theory]
+    [InlineData("defender", 1, true)]
+    [InlineData("defender", 0, false)]
+    [InlineData("firewall", 1, true)]
+    [InlineData("firewall", 0, false)]
+    public void Revert_RemovalNotConfirmed_LogsWarningNotRemoved(string kind, int exitCode, bool exited)
+    {
+        var sink = new CapturingSink();
+        var logger = new Serilog.LoggerConfiguration().WriteTo.Sink(sink).CreateLogger();
+        var runner = new FakePowerShellRunner
+        {
+            Respond = _ => new GameShift.Core.System.ProcessRunResult(
+                exitCode, string.Empty, string.Empty, TimedOut: !exited, Exited: exited),
+        };
+        var payload = kind == "defender"
+            ? JsonSerializer.Serialize(new { paths = new[] { @"C:\Games\A\" } })
+            : JsonSerializer.Serialize(new { ruleName = "GameShift Rule" });
+
+        GameActionRecovery.Revert(kind, payload, logger, runner.Run);
+
+        Assert.Single(runner.Calls);
+        Assert.Contains(sink.Events, e => e.Level == Serilog.Events.LogEventLevel.Warning &&
+            e.MessageTemplate.Text.Contains("not confirmed"));
+        Assert.DoesNotContain(sink.Events, e => e.MessageTemplate.Text.Contains("Removed"));
+    }
+
+    [Theory]
+    [InlineData("defender")]
+    [InlineData("firewall")]
+    public void Revert_RemovalConfirmed_LogsRemoved(string kind)
+    {
+        var sink = new CapturingSink();
+        var logger = new Serilog.LoggerConfiguration().WriteTo.Sink(sink).CreateLogger();
+        var runner = new FakePowerShellRunner();
+        var payload = kind == "defender"
+            ? JsonSerializer.Serialize(new { paths = new[] { @"C:\Games\A\" } })
+            : JsonSerializer.Serialize(new { ruleName = "GameShift Rule" });
+
+        GameActionRecovery.Revert(kind, payload, logger, runner.Run);
+
+        Assert.Contains(sink.Events, e => e.Level == Serilog.Events.LogEventLevel.Information &&
+            e.MessageTemplate.Text.Contains("Removed"));
+        Assert.DoesNotContain(sink.Events, e => e.Level >= Serilog.Events.LogEventLevel.Warning);
+    }
+
+    [Fact]
+    public void Revert_Firewall_HostileRuleName_ValueTravelsOnlyInEnvironment()
+    {
+        const string script = "Remove-NetFirewallRule -DisplayName $env:GS_ARG0 -ErrorAction SilentlyContinue";
+        var ruleName = "GameShift " + HostileValue;
+        var runner = new FakePowerShellRunner();
+
+        GameActionRecovery.Revert("firewall", JsonSerializer.Serialize(new { ruleName }), NoOpLogger, runner.Run);
+
+        var call = Assert.Single(runner.Calls);
+        Assert.Equal(script, call.Script);
+        Assert.Equal(FakePowerShellRunner.ExpectedArguments(script), call.Arguments);
+        Assert.Equal(FakePowerShellRunner.ManifestPath("NetSecurity"), call.ModuleManifest, ignoreCase: true);
+        Assert.Equal(new[] { ruleName }, call.Values);
     }
 }

@@ -23,15 +23,27 @@ namespace GameShift.Core.Journal;
 /// </summary>
 public static class GameActionRecovery
 {
-    public static void Revert(string kind, string payload, ILogger logger)
+    private const string FirewallModule = "NetSecurity";
+    private const string DefenderModule = "ConfigDefender";
+    private const string RemoveFirewallRuleScript =
+        "Remove-NetFirewallRule -DisplayName $env:GS_ARG0 -ErrorAction SilentlyContinue";
+    private const string RemoveDefenderExclusionScript =
+        "Remove-MpPreference -ExclusionPath $env:GS_ARG0 -ErrorAction SilentlyContinue";
+
+    public static void Revert(string kind, string payload, ILogger logger) =>
+        Revert(kind, payload, logger, ParameterizedPowerShell.Run);
+
+    /// <param name="runProcess">Process-start seam; tests pass a fake so no PowerShell runs.</param>
+    internal static void Revert(
+        string kind, string payload, ILogger logger, Func<ProcessStartInfo, int, ProcessRunResult> runProcess)
     {
         try
         {
             switch (kind)
             {
                 case "registry": RevertRegistry(payload, logger); break;
-                case "firewall": RevertFirewall(payload, logger); break;
-                case "defender": RevertDefender(payload, logger); break;
+                case "firewall": RevertFirewall(payload, logger, runProcess); break;
+                case "defender": RevertDefender(payload, logger, runProcess); break;
                 case "suspend": RevertSuspend(payload, logger); break;
                 default:
                     logger.Warning("[GameActionRecovery] Unknown GameAction kind '{Kind}' - skipping", kind);
@@ -92,17 +104,22 @@ public static class GameActionRecovery
         logger.Information("[GameActionRecovery] Restored {Hive}\\{Path}\\{Name} ({Kind})", hive, path, name, kind);
     }
 
-    private static void RevertFirewall(string payload, ILogger logger)
+    private static void RevertFirewall(
+        string payload, ILogger logger, Func<ProcessStartInfo, int, ProcessRunResult> runProcess)
     {
         using var doc = JsonDocument.Parse(payload);
         string ruleName = doc.RootElement.TryGetProperty("ruleName", out var r) ? r.GetString() ?? "" : "";
         if (string.IsNullOrEmpty(ruleName)) return;
 
-        RunPowerShell($"Remove-NetFirewallRule -DisplayName '{ruleName.Replace("'", "''")}' -ErrorAction SilentlyContinue");
-        logger.Information("[GameActionRecovery] Removed firewall rule '{Rule}'", ruleName);
+        var result = runProcess(ParameterizedPowerShell.CreateStartInfo(FirewallModule, RemoveFirewallRuleScript, ruleName), 15_000);
+        if (Succeeded(result))
+            logger.Information("[GameActionRecovery] Removed firewall rule '{Rule}'", ruleName);
+        else
+            logger.Warning("[GameActionRecovery] Removal of firewall rule '{Rule}' not confirmed ({Outcome})", ruleName, Describe(result));
     }
 
-    private static void RevertDefender(string payload, ILogger logger)
+    private static void RevertDefender(
+        string payload, ILogger logger, Func<ProcessStartInfo, int, ProcessRunResult> runProcess)
     {
         using var doc = JsonDocument.Parse(payload);
         if (!doc.RootElement.TryGetProperty("paths", out var paths) || paths.ValueKind != JsonValueKind.Array)
@@ -113,10 +130,18 @@ public static class GameActionRecovery
             var path = element.GetString();
             if (string.IsNullOrEmpty(path)) continue;
 
-            RunPowerShell($"Remove-MpPreference -ExclusionPath '{path.Replace("'", "''")}' -ErrorAction SilentlyContinue");
-            logger.Information("[GameActionRecovery] Removed Defender exclusion '{Path}'", path);
+            var result = runProcess(ParameterizedPowerShell.CreateStartInfo(DefenderModule, RemoveDefenderExclusionScript, path), 15_000);
+            if (Succeeded(result))
+                logger.Information("[GameActionRecovery] Removed Defender exclusion '{Path}'", path);
+            else
+                logger.Warning("[GameActionRecovery] Removal of Defender exclusion '{Path}' not confirmed ({Outcome})", path, Describe(result));
         }
     }
+
+    private static bool Succeeded(ProcessRunResult result) => result.Exited && result.ExitCode == 0;
+
+    private static string Describe(ProcessRunResult result) =>
+        result.TimedOut ? "timed out" : !result.Exited ? "PowerShell did not start" : $"exit {result.ExitCode}";
 
     private static void RevertSuspend(string payload, ILogger logger)
     {
@@ -159,23 +184,6 @@ public static class GameActionRecovery
             {
                 NativeInterop.CloseHandle(handle);
             }
-        }
-    }
-
-    private static void RunPowerShell(string command)
-    {
-        var psi = new ProcessStartInfo(
-            NativeInterop.SystemExePath("WindowsPowerShell\\v1.0\\powershell.exe"),
-            $"-Command \"{command}\"")
-        {
-            CreateNoWindow = true,
-            UseShellExecute = false
-        };
-
-        using var process = Process.Start(psi);
-        if (process != null && !process.WaitForExit(15_000))
-        {
-            try { process.Kill(); } catch { /* best effort */ }
         }
     }
 }
