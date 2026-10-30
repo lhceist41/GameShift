@@ -104,8 +104,9 @@ public partial class DashboardPage : Page
         {
             var acNames = string.Join(", ", blockingACs.Select(ac => ac.DisplayName));
             MessageBox.Show(
-                $"Cannot disable Memory Integrity - it is required by {acNames}.\n\n" +
-                "Disabling it would cause VAN:RESTRICTION errors and prevent these games from launching.",
+                $"GameShift does not turn off Memory Integrity while {acNames} is installed.\n\n" +
+                "FACEIT Anti-Cheat and Riot Vanguard's On-Demand mode require Memory Integrity, and GameShift " +
+                "cannot tell which Vanguard mode you use. Without it these games may refuse to start.",
                 "Blocked by Anti-Cheat",
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
@@ -124,7 +125,9 @@ public partial class DashboardPage : Page
         catch { /* dependency check is best-effort */ }
 
         var result = MessageBox.Show(
-            "This will disable Memory Integrity (VBS/HVCI) and schedule a reboot in 30 seconds." + depMsg + "\n\nContinue?",
+            "This will disable Memory Integrity (VBS/HVCI) and schedule a reboot in 30 seconds." + depMsg +
+            "\n\nWindows will not turn Memory Integrity back on for you. Turn it back on in Windows Security > " +
+            "Device security > Core isolation, or with Restore All in GameShift's Settings.\n\nContinue?",
             "Disable Memory Integrity",
             MessageBoxButton.YesNo,
             MessageBoxImage.Warning);
@@ -179,7 +182,7 @@ public partial class DashboardPage : Page
 
         var result = MessageBox.Show(
             "This will re-enable Memory Integrity (VBS/HVCI) and schedule a reboot in 30 seconds.\n\n" +
-            "This is required for Riot Vanguard and FACEIT Anti-Cheat to function properly.\n\nContinue?",
+            "FACEIT Anti-Cheat and Riot Vanguard's On-Demand mode require it.\n\nContinue?",
             "Re-enable Memory Integrity",
             MessageBoxButton.YesNo,
             MessageBoxImage.Question);

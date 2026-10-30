@@ -12,8 +12,8 @@ namespace GameShift.Core.SystemTweaks;
 /// </summary>
 public enum LastingChangeKind
 {
-    // Before the tweaks: if the Memory Integrity tweak was also applied, its captured originals
-    // predate this toggle's, so restoring the tweak last leaves the true original values.
+    // Covers both records of a Memory Integrity change, the toggle's and the retired tweak's,
+    // which VbsHvciToggle.ReEnableVbsHvci undoes in the right order.
     MemoryIntegrity,
     SystemTweak,
     LatencyDoctorFix,
@@ -90,7 +90,7 @@ public interface ILastingChangeSystem
     /// <summary>Null on success, otherwise the reason.</summary>
     string? RemoveCoreReservation();
 
-    /// <summary>Re-enables VBS/HVCI and clears the "disabled by GameShift" record only on success.</summary>
+    /// <summary>Undoes the Memory Integrity change from both records and clears each only on success.</summary>
     bool ReEnableMemoryIntegrity();
 
     IReadOnlyList<RenamedStartupEntry> ReadRenamedStartupEntries();
@@ -199,7 +199,7 @@ public sealed class LastingChangesInventory
 
     private IEnumerable<LastingChange> ListMemoryIntegrity(AppSettings settings)
     {
-        if (!settings.VbsHvciDisabledByGameShift) yield break;
+        if (!VbsHvciToggle.IsDisabledByGameShift(settings)) yield break;
 
         yield return new LastingChange
         {
@@ -219,6 +219,7 @@ public sealed class LastingChangesInventory
         foreach (var (className, state) in applied)
         {
             if (!state.IsAppliedByGameShift) continue;
+            if (className == nameof(Tweaks.DisableMemoryIntegrity)) continue; // listed as Memory Integrity
 
             var tweak = _system.FindTweak(className);
             yield return new LastingChange
@@ -283,7 +284,7 @@ public sealed class LastingChangesInventory
         {
             Kind = LastingChangeKind.CpuCoreReservation,
             Key = "ReservedCpuSets",
-            DisplayName = "CPU core reservation (set by GameShift's DPC Doctor or another tool)",
+            DisplayName = "CPU core reservation (set by an earlier version of GameShift's DPC Doctor or another tool)",
             UndoDescription = "Removes the reservation so Windows schedules work on every core again.",
             RequiresRestart = true,
             NeedsOwnConfirmation = true,

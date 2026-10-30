@@ -77,8 +77,9 @@ public static class AntiCheatDetector
         type is not (AntiCheatType.None or AntiCheatType.ValveAntiCheat);
 
     /// <summary>
-    /// Returns true if any installed anti-cheat requires VBS/HVCI to be enabled.
-    /// Currently: Riot Vanguard and FACEIT Anti-Cheat.
+    /// Returns true if any installed anti-cheat can require VBS/HVCI to be enabled: FACEIT
+    /// Anti-Cheat, and Riot Vanguard in its On-Demand mode. Which Vanguard mode is in use cannot
+    /// be detected, so any Vanguard install counts.
     /// </summary>
     public static bool IsVbsRequiredByAntiCheat()
     {

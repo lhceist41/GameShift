@@ -1,6 +1,5 @@
 using System.ServiceProcess;
 using GameShift.Core.Config;
-using GameShift.Core.Journal;
 using GameShift.Core.System;
 using Serilog;
 
@@ -55,38 +54,16 @@ public class HypervisorDependencyCheck
 }
 
 /// <summary>
-/// Manages BCD kernel tuning settings for gaming performance optimization.
-///
-/// Six settings are supported (never <c>testsigning</c>, <c>disableintegritychecks</c>,
-/// or <c>nointegritychecks</c>):
-///
-/// | Setting              | Tier        | Risk   |
-/// |----------------------|-------------|--------|
-/// | disabledynamictick   | Competitive | Low    |
-/// | useplatformtick      | Competitive | Low    |
-/// | tscsyncpolicy        | Competitive | Low    |
-/// | x2apicpolicy         | Both        | Low    |
-/// | hypervisorlaunchtype | Competitive | Medium |
-/// | useplatformclock     | Both        | Low    |
-///
-/// All changes require a reboot. Revert deletes the BCD value to restore the Windows default
-/// (except <c>hypervisorlaunchtype</c> which reverts to <c>Auto</c>).
+/// The six BCD kernel tuning settings earlier versions could apply. GameShift no longer applies
+/// them (Microsoft documents most of them as debugging options); it keeps their revert arguments
+/// and reads their current values so Restore All and the AMD timer advisory can undo what an
+/// earlier version set. All changes need a reboot.
 /// </summary>
 public class KernelTuningManager
 {
     private readonly ILogger _logger = SettingsManager.Logger;
 
-    /// <summary>
-    /// BCD settings that must NEVER be offered - they disable Secure Boot protections
-    /// and trigger anti-cheat bans.
-    /// </summary>
-    private static readonly HashSet<string> Blocklisted =
-        new(StringComparer.OrdinalIgnoreCase)
-        {
-            "testsigning", "disableintegritychecks", "nointegritychecks"
-        };
-
-    /// <summary>All six supported kernel tuning settings.</summary>
+    /// <summary>All six kernel tuning settings an earlier version could have applied.</summary>
     public static readonly KernelTuningSetting[] AllSettings =
     [
         new()
@@ -220,53 +197,7 @@ public class KernelTuningManager
         return true;
     }
 
-    // ── Apply / Revert ────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// Applies a single BCD setting. Returns success + message.
-    /// Records the pending reboot fix in the state journal.
-    /// </summary>
-    public (bool Success, string Message) Apply(KernelTuningSetting setting, string? currentValue)
-    {
-        if (Blocklisted.Contains(setting.BcdKey))
-            return (false, $"Setting '{setting.BcdKey}' is blocklisted for safety.");
-
-        // Forcing the platform/periodic timer degrades performance on AMD (invariant TSC):
-        // Windows logs HAL event 17 and Kernel-Power 508. Refuse to apply it there, but never
-        // block Revert() so a value set before this guard existed can still be removed.
-        if (setting.PlatformTimerTweak && CpuCapabilities.PlatformTimerTweaksHarmful)
-        {
-            _logger.Information(
-                "[KernelTuning] Skipping {Name}: forcing the platform timer degrades performance on AMD/invariant-TSC CPUs.",
-                setting.DisplayName);
-            return (false, $"{setting.DisplayName} is not applied on AMD CPUs: forcing the platform timer degrades performance (Windows logs HAL event 17 and Kernel-Power 508).");
-        }
-
-        _logger.Information("[KernelTuning] Applying: bcdedit {Args}", setting.ApplyArgs);
-        var (success, output) = RunBcdedit(setting.ApplyArgs);
-
-        if (!success)
-        {
-            _logger.Warning("[KernelTuning] bcdedit failed: {Output}", output);
-            return (false, $"bcdedit failed: {output}");
-        }
-
-        // Record in journal. This MUST stay below the platform-timer guard above: a refused apply
-        // never reaches here, so nothing that was not applied is ever journaled for revert.
-        try
-        {
-            var journal = new JournalManager();
-            journal.LoadJournal();
-            journal.RecordPendingRebootFix($"BCD: {setting.DisplayName} = {setting.RecommendedValue}");
-        }
-        catch (Exception ex)
-        {
-            _logger.Warning(ex, "[KernelTuning] Failed to record pending reboot fix in journal");
-        }
-
-        _logger.Information("[KernelTuning] Applied: {Name}. Reboot required.", setting.DisplayName);
-        return (true, $"{setting.DisplayName} applied. Reboot required.");
-    }
+    // ── Revert ────────────────────────────────────────────────────────────────
 
     /// <summary>
     /// Reverts a BCD setting to its default value.

@@ -1,6 +1,5 @@
 using System.Runtime.InteropServices;
 using GameShift.Core.Config;
-using GameShift.Core.Journal;
 using GameShift.Core.System;
 using Microsoft.Win32;
 using Serilog;
@@ -8,7 +7,7 @@ using Serilog;
 namespace GameShift.Core.Optimization;
 
 /// <summary>
-/// Describes a single logical processor for the core map UI.
+/// Describes a single logical processor.
 /// </summary>
 public class CpuCoreInfo
 {
@@ -23,38 +22,12 @@ public class CpuCoreInfo
 }
 
 /// <summary>
-/// Snapshot of current reservation state returned by <see cref="CoreIsolationManager.GetStatus"/>.
-/// </summary>
-public class CoreIsolationStatus
-{
-    public bool IsHybridCpu { get; init; }
-    public bool IsReservationActive { get; init; }
-    public IReadOnlyList<CpuCoreInfo> AllCores { get; init; } = Array.Empty<CpuCoreInfo>();
-    public IReadOnlyList<CpuCoreInfo> PCores { get; init; } = Array.Empty<CpuCoreInfo>();
-    public IReadOnlyList<CpuCoreInfo> ECores { get; init; } = Array.Empty<CpuCoreInfo>();
-    public HashSet<uint> ReservedCpuSetIds { get; init; } = new();
-    public int PCoreTotalCount { get; init; }
-    public string Message { get; init; } = "";
-}
-
-/// <summary>
-/// Manages OS-level CPU core reservation via
+/// Reads and removes an OS-level CPU core reservation in
 /// <c>HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\kernel\ReservedCpuSets</c>.
 ///
-/// Reserved cores are invisible to all processes unless explicitly assigned via
-/// <see cref="NativeInterop.SetProcessDefaultCpuSetMasks"/>. This is more powerful than
-/// soft affinity because it's OS-enforced.
-///
-/// <para>Requires reboot to take effect. Revert = delete the registry value.</para>
-///
-/// <para>Safety rails:</para>
-/// <list type="bullet">
-///   <item>Non-hybrid CPUs: feature disabled entirely</item>
-///   <item>Minimum 1 P-core must remain unreserved</item>
-///   <item>E-cores cannot be reserved</item>
-///   <item>Warning when fewer than 4 P-cores</item>
-///   <item>Validated before write: reserved count &lt; total P-cores</item>
-/// </list>
+/// Earlier versions could set one from DPC Doctor; GameShift no longer does. The value does not
+/// record who wrote it, so removing it is always the user's explicit choice. A change needs a
+/// reboot.
 /// </summary>
 public class CoreIsolationManager
 {
@@ -65,103 +38,6 @@ public class CoreIsolationManager
     private const string ValueName = "ReservedCpuSets";
 
     // ── Public API ────────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// Reads CPU topology and current reservation status.
-    /// Returns a status object suitable for the UI core map.
-    /// </summary>
-    public CoreIsolationStatus GetStatus()
-    {
-        var (pCores, eCores, isHybrid) = DetectTopology();
-        var reserved = ReadCurrentReservation();
-
-        if (!isHybrid)
-        {
-            return new CoreIsolationStatus
-            {
-                IsHybridCpu = false,
-                Message = "Core isolation is only available on hybrid CPUs (Intel 12th-15th gen, AMD Zen 5c)."
-            };
-        }
-
-        return new CoreIsolationStatus
-        {
-            IsHybridCpu = true,
-            IsReservationActive = reserved.Count > 0,
-            AllCores = pCores.Concat(eCores).ToList(),
-            PCores = pCores,
-            ECores = eCores,
-            ReservedCpuSetIds = reserved,
-            PCoreTotalCount = pCores.Count,
-            Message = reserved.Count > 0
-                ? $"{reserved.Count} core(s) reserved for gaming. Reboot required for changes to take effect."
-                : "No cores reserved. Select P-cores to isolate for gaming."
-        };
-    }
-
-    /// <summary>
-    /// Writes the ReservedCpuSets registry value for the given CPU Set IDs.
-    /// Returns a validation error string, or null on success.
-    /// </summary>
-    public string? ApplyReservation(IReadOnlyList<uint> cpuSetIdsToReserve)
-    {
-        var (pCores, _, isHybrid) = DetectTopology();
-
-        if (!isHybrid)
-            return "Core isolation requires a hybrid CPU.";
-
-        if (cpuSetIdsToReserve.Count == 0)
-            return "No cores selected.";
-
-        // Safety: validate all selected IDs are P-cores
-        var pCoreIds = new HashSet<uint>(pCores.Select(c => c.CpuSetId));
-        foreach (var id in cpuSetIdsToReserve)
-        {
-            if (!pCoreIds.Contains(id))
-                return $"CPU Set ID {id} is not a P-core. Only P-cores can be reserved.";
-        }
-
-        // Safety: at least 1 P-core must remain unreserved
-        if (cpuSetIdsToReserve.Count >= pCores.Count)
-            return $"Cannot reserve all {pCores.Count} P-cores. At least 1 must remain for OS/background work.";
-
-        // Build bitmask (indexed by logical processor number - see BuildBitmask)
-        byte[] bitmask = BuildBitmask(cpuSetIdsToReserve, pCores);
-
-        try
-        {
-            using var key = Registry.LocalMachine.OpenSubKey(KernelKeyPath, writable: true);
-            if (key == null)
-                return "Cannot open kernel registry key for writing.";
-
-            key.SetValue(ValueName, bitmask, RegistryValueKind.Binary);
-
-            _logger.Information(
-                "[CoreIsolation] Reserved {Count} P-cores (IDs: {Ids}) - reboot required",
-                cpuSetIdsToReserve.Count,
-                string.Join(", ", cpuSetIdsToReserve));
-
-            // Record in journal
-            try
-            {
-                var journal = new JournalManager();
-                journal.LoadJournal();
-                journal.RecordPendingRebootFix(
-                    $"Core Isolation: {cpuSetIdsToReserve.Count} P-cores reserved for gaming");
-            }
-            catch (Exception ex)
-            {
-                _logger.Warning(ex, "[CoreIsolation] Failed to record pending reboot fix");
-            }
-
-            return null; // Success
-        }
-        catch (Exception ex)
-        {
-            _logger.Error(ex, "[CoreIsolation] Failed to write ReservedCpuSets");
-            return $"Registry write failed: {ex.Message}";
-        }
-    }
 
     /// <summary>
     /// Removes the ReservedCpuSets registry value, restoring default Windows scheduling
@@ -184,22 +60,6 @@ public class CoreIsolationManager
             _logger.Error(ex, "[CoreIsolation] Failed to remove ReservedCpuSets");
             return $"Registry delete failed: {ex.Message}";
         }
-    }
-
-    /// <summary>
-    /// Returns the default suggested reservation: all P-cores except the last one
-    /// (leave one P-core unreserved for OS work).
-    /// </summary>
-    public IReadOnlyList<uint> GetDefaultSuggestion()
-    {
-        var (pCores, _, isHybrid) = DetectTopology();
-        if (!isHybrid || pCores.Count < 2) return Array.Empty<uint>();
-
-        // Reserve all P-cores except the last one
-        return pCores
-            .Take(pCores.Count - 1)
-            .Select(c => c.CpuSetId)
-            .ToList();
     }
 
     /// <summary>
@@ -321,38 +181,5 @@ public class CoreIsolationManager
         finally { Marshal.FreeHGlobal(buffer); }
 
         return (pCores, eCores, allClasses.Count > 1);
-    }
-
-    /// <summary>
-    /// Builds the ReservedCpuSets bitmask. The kernel value is a flat affinity bitmask indexed
-    /// by LOGICAL PROCESSOR NUMBER, not by CPU Set ID (those are offset, typically by 0x100), so
-    /// each selected CPU Set ID must be translated to its logical processor index first -
-    /// mirroring HybridCpuDetector.CpuSetsToAffinityMask / IntelHybridDetector, which already do this.
-    /// </summary>
-    private static byte[] BuildBitmask(IReadOnlyList<uint> cpuSetIds, IReadOnlyList<CpuCoreInfo> allCores)
-    {
-        if (cpuSetIds.Count == 0) return Array.Empty<byte>();
-
-        var idToLogical = new Dictionary<uint, byte>();
-        foreach (var c in allCores)
-            idToLogical[c.CpuSetId] = c.LogicalProcessorIndex;
-
-        // Resolve logical processor indices first so the array is sized to the real bit positions.
-        var logicalIndices = new List<int>();
-        foreach (var id in cpuSetIds)
-        {
-            if (idToLogical.TryGetValue(id, out var logical))
-                logicalIndices.Add(logical);
-        }
-        if (logicalIndices.Count == 0) return Array.Empty<byte>();
-
-        int maxLogical = logicalIndices.Max();
-        int byteCount = (maxLogical / 8) + 1;
-        var bitmask = new byte[byteCount];
-
-        foreach (var logical in logicalIndices)
-            bitmask[logical / 8] |= (byte)(1 << (logical % 8));
-
-        return bitmask;
     }
 }

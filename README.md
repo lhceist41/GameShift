@@ -58,7 +58,6 @@ These activate when a game launches and revert when the game closes.
 | **Timer Resolution** | Advanced, off by default. Requests a 1 ms system timer resolution during gameplay. Runs on a dedicated windowless thread immune to minimize/occlusion resets. |
 | **Power Plan Switching** | Switches from Balanced to the High Performance plan during gaming, if Windows has it, and back afterwards. Any other plan you chose is left alone, and Ryzen X3D processors with two CCDs stay on Balanced, which AMD's chipset driver needs to keep games on the V-Cache CCD. |
 | **Core Pinning** | Advanced, off by default. One switch pins the game to the P-cores on Intel 12th-15th gen and AMD hybrid CPUs, or to the V-Cache CCD on Ryzen X3D processors with two CCDs, via the CPU Sets API. On hybrid CPUs it also keeps background processes on the E-cores, using soft affinity that cooperates with Intel Thread Director. |
-| **Core Isolation** | Advanced opt-in feature: reserves specific P-cores exclusively for gaming via `ReservedCpuSets`. No other process can schedule onto reserved cores - OS-enforced. Visual core map in the UI for selecting which cores to reserve. Requires reboot. |
 | **Efficiency Mode Control** | One switch puts background processes in Windows 11 efficiency mode (EcoQoS), which keeps them on E-cores on hybrid CPUs, and turns off power throttling for the game (HighQoS). Rescans every 30 seconds to catch newly spawned processes. |
 
 ### Monitoring & Diagnostics
@@ -66,36 +65,22 @@ These activate when a game launches and revert when the game closes.
 | Feature | Description |
 |:--------|:------------|
 | **Real-time Performance** | Live CPU, GPU, RAM, VRAM, and network ping telemetry with sparkline graphs. Pauses during gaming to eliminate polling overhead. |
-| **DPC Latency Doctor** | ETW-based per-driver DPC/ISR attribution, known problematic driver database, one-click quick fixes (registry, BCDEdit, netsh, power plan, network adapter) with rollback. Interrupt affinity display showing current GPU and USB interrupt core assignments, MSI mode status. Kernel tuning panel with per-setting apply/revert for `disabledynamictick`, `useplatformtick`, `tscsyncpolicy`, `x2apicpolicy`, `hypervisorlaunchtype`, and `useplatformclock`. Core isolation visual map for reserving P-cores. |
+| **DPC Latency Doctor** | ETW-based per-driver DPC/ISR attribution and a known problematic driver database. One-click fixes with rollback: turn off multi-plane overlay (MPO) for multi-monitor flicker, turn off USB selective suspend, switch the GPU to MSI mode, and network adapter settings. It no longer changes Windows boot settings (BCDEdit); values an earlier version set are undone by Restore All. If a CPU core reservation is set, DPC Doctor can remove it. |
 | **DPC Load Monitor** | Passive sampling of DPC load (the share of CPU time spent in deferred procedure calls) during gaming, with configurable spike thresholds and toast notifications. |
 | **GPU Advisories** | Detects HAGS (Hardware Accelerated GPU Scheduling) and Resizable BAR/SAM status. Shows recommendations if performance features are available but not enabled. |
 | **Session History** | Post-session summary toast with duration, applied/failed optimization counts, and DPC statistics. Per-game tracking and statistics. |
 
 ### Persistent System Tweaks
 
-One-time optimizations that persist across reboots. Applied once, revertible at any time.
+Changes that persist across reboots and can be reverted at any time.
 
 | Tweak | What it does |
 |:------|:-------------|
-| **Game DVR Disable** | Disables Game Bar capture hooks and Game DVR recording. Keeps Game Mode enabled (it complements GameShift). |
-| **VBS/HVCI Disable** | Disables Virtualization-Based Security and Memory Integrity for 5-15% FPS uplift. Safety interlock blocks disable when Riot Vanguard is detected. |
-| **NTFS Optimization** | Disables last access time updates, 8.3 name creation, and increases NTFS memory cache usage. |
-| **Kernel Memory** | `DisablePagingExecutive` keeps kernel pages in physical RAM. `LargeSystemCache=0` optimizes for applications. |
+| **GPU Scheduling (HAGS)** | Turns hardware-accelerated GPU scheduling on or off as recommended for your graphics card, and warns before turning it off where Frame Generation needs it. Requires a reboot. |
+| **Memory Integrity (VBS/HVCI)** | The Dashboard banner can turn Memory Integrity off, which can cost a few percent of FPS on average when it is on. Not offered while FACEIT Anti-Cheat or Riot Vanguard is installed: FACEIT and Vanguard's On-Demand mode require it. Windows does not turn it back on for you; use Windows Security > Device security > Core isolation, or Restore All. Requires a reboot. |
 | **Full-Screen Optimizations** | Per-game disable via GameConfigStore registry. |
 
-### Interrupt & Kernel Tuning
-
-Available through the DPC Doctor page with per-setting control and full rollback.
-
-| Feature | What it does |
-|:--------|:-------------|
-| **GPU Interrupt Affinity** | Pins GPU interrupts to a specific P-core (not core 0) for consistent DPC latency. |
-| **USB Controller Affinity** | Pins USB host controller interrupts to reduce input latency. |
-| **MSI Mode** | Enables Message Signaled Interrupts for GPU and USB controllers where supported. |
-| **BCDEdit Kernel Tuning** | Configures `tscsyncpolicy enhanced` and `x2apicpolicy enable` for improved timer accuracy and interrupt routing. Competitive tier includes hypervisor disable (with Hyper-V/WSL2/Docker dependency check). The platform-timer tweaks (`disabledynamictick`, `useplatformtick`) are skipped on AMD CPUs, where forcing the platform timer degrades performance. |
-
-> [!WARNING]
-> Interrupt affinity and BCDEdit changes require a reboot. GameShift tracks pending reboot fixes in the state journal and prompts you when a restart is needed.
+Earlier versions also offered Game DVR, NTFS, kernel memory, page file, power throttling, memory compression, large pages, multimedia scheduler, kernel boot (BCDEdit) and CPU core reservation tweaks. They can no longer be applied: we found no measurement that shows a benefit on current Windows, or Microsoft documents the boot settings as debugging options. The multi-plane overlay, USB selective suspend and MSI mode fixes moved to DPC Doctor. Anything you applied with an earlier version can still be undone with **Restore All GameShift Tweaks** in Settings.
 
 ### Game Library & Profiles
 
@@ -192,8 +177,8 @@ dotnet run --project src/GameShift.App
 - **Registry keys**  - Writes IFEO entries and a few per-game values for built-in games. All original values captured before any write and verified after revert.
 - **Power plans**  - Switches from Balanced to High Performance during a game. Your original plan GUID is saved and restored.
 - **Process priority & scheduling**  - Elevates game priority and assigns CPU sets. All released on game exit.
-- **BCD settings**  - Optional kernel tuning (timer, APIC, TSC) via BCDEdit with one-click revert. Tracked in pending reboot fixes.
-- **Interrupt affinity**  - Optional GPU and USB interrupt routing changes with rollback to default Windows assignment.
+- **BCD settings**  - Only turning Memory Integrity off changes a boot setting (`hypervisorlaunchtype`), and turning it back on restores it. Kernel tuning values an earlier version set are undone by Restore All while they still have the value GameShift set.
+- **Interrupt settings**  - DPC Doctor can switch the GPU to MSI mode, with rollback. Interrupt changes an earlier version made are undone by Restore All.
 
 ### Why administrator privileges are required
 
@@ -212,13 +197,13 @@ GameShift includes built-in anti-cheat detection and automatic compatibility adj
 
 | Anti-Cheat | Status | Approach |
 |:-----------|:-------|:---------|
-| **Riot Vanguard** (Valorant, LoL) | ✅ Fully compatible | VBS/HVCI safety interlock prevents conflicts. GameShift blocks VBS disable when Vanguard is detected. |
+| **Riot Vanguard** (Valorant, LoL) | ✅ Fully compatible | GameShift does not turn off Memory Integrity (VBS/HVCI) while Vanguard is installed, because Vanguard's On-Demand mode requires it. |
 | **Easy Anti-Cheat** (Fortnite, Apex, Rust, Elden Ring) | ✅ Fully compatible | IFEO registry fallback for priority. |
 | **BattlEye** (Arknights: Endfield, PUBG) | ✅ Fully compatible | IFEO registry fallback. |
 | **RICOCHET** (Call of Duty) | ✅ Fully compatible | IFEO registry fallback. |
 | **TencentACE** (Wuthering Waves) | ✅ Fully compatible | IFEO registry fallback. |
 | **Valve Anti-Cheat** (CS2, Deadlock) | ✅ Fully compatible | User-mode only; no restrictions on system-level tools. |
-| **FACEIT AC** | ✅ Fully compatible | VBS/HVCI safety gating. |
+| **FACEIT AC** | ✅ Fully compatible | GameShift does not turn off Memory Integrity (VBS/HVCI) while FACEIT Anti-Cheat is installed, because FACEIT requires it. |
 
 GameShift does **not** inject into game processes, does **not** modify game files, and does **not** hook into game memory. All optimizations operate at the Windows system level using standard Win32 APIs and registry settings.
 
@@ -262,7 +247,7 @@ Earlier versions created it for Background Mode, which has been removed. When yo
 <details>
 <summary><strong>Do I need an Intel hybrid CPU to benefit?</strong></summary>
 <br/>
-No. CPU Sets scheduling and Core Isolation are hybrid-only features, but everything else - timer resolution, service suppression, power plan switching, interrupt affinity, kernel tuning - works on any modern CPU from Intel or AMD.
+No. CPU Sets scheduling is a hybrid-only feature, but everything else - timer resolution, service suppression, power plan switching, DPC Doctor - works on any modern CPU from Intel or AMD.
 </details>
 
 <details>

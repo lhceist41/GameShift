@@ -20,8 +20,8 @@ public class DpcFixResult
 
 /// <summary>
 /// Executes DPC latency fixes and persists rollback state to AppSettings.
-/// Supports 5 action types: RegistrySet, BcdEdit, NetshCommand, PowerPlanSetting, SetNetAdapterProperty.
-/// All fixes require admin privileges.
+/// Applies 4 action types: RegistrySet, NetshCommand, PowerPlanSetting, SetNetAdapterProperty.
+/// Reverts those plus BcdEdit, which earlier versions could apply. All fixes require admin privileges.
 /// </summary>
 public class DpcFixEngine
 {
@@ -40,15 +40,23 @@ public class DpcFixEngine
 
         // Cheap pre-check to avoid running system commands for an already-applied fix. The
         // authoritative dedup is re-done inside the Update below, under the settings lock.
-        if (SettingsManager.Load().AppliedDpcFixes.Any(f => f.FixId == fix.Id))
+        var current = SettingsManager.Load();
+        if (current.AppliedDpcFixes.Any(f => f.FixId == fix.Id))
             return new DpcFixResult { Success = false, Message = "This fix has already been applied." };
+
+        if (RetiredTweakHolding(fix.Id, current) != null)
+            return new DpcFixResult
+            {
+                Success = false,
+                Message = "An earlier version of GameShift already made this change from System Tweaks. " +
+                          "Undo it with Restore All in Settings before applying it here."
+            };
 
         try
         {
             var (result, applied) = fix.ActionType switch
             {
                 "RegistrySet" => ApplyRegistryFix(fix),
-                "BcdEdit" => ApplyBcdEditFix(fix),
                 "NetshCommand" => ApplyNetshFix(fix),
                 "PowerPlanSetting" => ApplyPowerPlanFix(fix),
                 "SetNetAdapterProperty" => ApplyNetAdapterFix(fix),
@@ -77,6 +85,28 @@ public class DpcFixEngine
             return new DpcFixResult { Success = false, Message = ex.Message };
         }
     }
+
+    // The System Tweaks that earlier versions offered for the same settings. Each recorded the value
+    // it replaced, so applying the fix on top would capture GameShift's own value and a later
+    // Restore All, which undoes tweaks first, would put it back.
+    private static readonly Dictionary<string, string> RetiredTweakByFixId = new(StringComparer.Ordinal)
+    {
+        ["disable_mpo"] = nameof(SystemTweaks.Tweaks.DisableMpo),
+        ["disable_usb_selective_suspend"] = nameof(SystemTweaks.Tweaks.DisableUsbSelectiveSuspend),
+        ["msi_mode_nvidia"] = nameof(SystemTweaks.Tweaks.OptimizeInterruptHandling),
+        ["msi_mode_amd"] = nameof(SystemTweaks.Tweaks.OptimizeInterruptHandling),
+    };
+
+    /// <summary>
+    /// The retired System Tweak an earlier version applied for the same setting as
+    /// <paramref name="fixId"/>, or null when there is none.
+    /// </summary>
+    internal static string? RetiredTweakHolding(string fixId, AppSettings settings) =>
+        RetiredTweakByFixId.TryGetValue(fixId, out var tweak)
+        && settings.SystemTweaks?.AppliedTweaks.TryGetValue(tweak, out var state) == true
+        && state.IsAppliedByGameShift
+            ? tweak
+            : null;
 
     /// <summary>
     /// Checks whether a quick fix is currently active (for toggle state display).
@@ -151,10 +181,10 @@ public class DpcFixEngine
     private static readonly Regex IntegerLiteralPattern =
         new(@"^-?[0-9]{1,19}$", RegexOptions.Compiled);
 
-    // bcdedit reverts GameShift generates only ever target the two platform-timer elements it can set
-    // (disabledynamictick = Disable Dynamic Tick, useplatformtick = Disable HPET). The element name is
-    // ALLOWLISTED, not merely shape-checked, so a tampered ledger cannot revert into e.g.
-    // "/set nointegritychecks on" (disabling driver-signature enforcement) or "/set safeboot minimal".
+    // bcdedit reverts GameShift generates only ever target the two platform-timer elements earlier
+    // versions could set (disabledynamictick = Disable Dynamic Tick, useplatformtick = Disable HPET).
+    // The element name is ALLOWLISTED, not merely shape-checked, so a tampered ledger cannot revert
+    // into e.g. "/set nointegritychecks on" (disabling driver-signature enforcement) or "/set safeboot minimal".
     private static readonly Regex BcdRevertArgsPattern =
         new(@"^/(set|deletevalue)\s+(disabledynamictick|useplatformtick)(\s+[A-Za-z0-9]{1,16})?$",
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
@@ -352,45 +382,7 @@ public class DpcFixEngine
         return new DpcFixResult { Success = true, Message = "Fix reverted.", RebootRequired = applied.RequiresReboot };
     }
 
-    // -- BcdEdit fixes ─────────────────────────────────────────────
-
-    /// <summary>
-    /// True when a bcdedit command would force a platform/periodic timer (useplatformtick or
-    /// disabledynamictick set on), which degrades performance on AMD / invariant-TSC CPUs.
-    /// Pure so the policy is unit-testable. Only blocks applies (/set), never reverts.
-    /// </summary>
-    internal static bool ShouldSkipBcdApply(string? command, bool platformTimerTweaksHarmful)
-    {
-        if (!platformTimerTweaksHarmful || string.IsNullOrEmpty(command)) return false;
-        if (!command.Contains("/set", StringComparison.OrdinalIgnoreCase)) return false;
-        return command.Contains("useplatformtick", StringComparison.OrdinalIgnoreCase)
-            || command.Contains("disabledynamictick", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private (DpcFixResult result, AppliedDpcFix? applied) ApplyBcdEditFix(DriverAutoFix fix)
-    {
-        // Forcing the platform timer degrades performance on AMD (HAL event 17, Kernel-Power 508).
-        // Refuse to apply it there; RevertBcdEditFix is never gated so a prior value can be removed.
-        if (ShouldSkipBcdApply(fix.Command, CpuCapabilities.PlatformTimerTweaksHarmful))
-            return (new DpcFixResult { Success = false, Message = "Skipped on AMD: forcing the platform timer degrades performance (Windows logs HAL event 17 and Kernel-Power 508)." }, null);
-
-        var (success, output) = RunProcess(NativeInterop.SystemExePath("bcdedit.exe"), StripLeadingTool(fix.Command!, "bcdedit "));
-        if (!success)
-            return (new DpcFixResult { Success = false, Message = $"bcdedit failed: {output}" }, null);
-
-        var applied = new AppliedDpcFix
-        {
-            FixId = fix.Id,
-            Description = fix.Name,
-            ActionType = "BcdEdit",
-            PreviousValue = fix.RevertCommand,
-            Target = fix.Command!,
-            AppliedAt = DateTime.Now,
-            RequiresReboot = true
-        };
-
-        return (new DpcFixResult { Success = true, Message = "Fix applied. Reboot required.", RebootRequired = true }, applied);
-    }
+    // -- BcdEdit fixes (revert only) ───────────────────────────────
 
     private DpcFixResult RevertBcdEditFix(AppliedDpcFix applied)
     {
@@ -453,56 +445,9 @@ public class DpcFixEngine
 
     // -- Power plan fixes ──────────────────────────────────────────
 
-    /// <summary>Well-known GUIDs for built-in Windows power plans.</summary>
-    private const string HighPerformanceGuid = "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c";
-    private const string UltimatePerformanceGuid = "e9a42b02-d5df-448d-aa00-03f14749eb61";
-
     private (DpcFixResult result, AppliedDpcFix? applied) ApplyPowerPlanFix(DriverAutoFix fix)
     {
-        if (fix.Value == "high_performance")
-        {
-            // Get current active power plan for rollback
-            var (curSuccess, currentPlan) = RunProcess(NativeInterop.SystemExePath("powercfg.exe"), "/getactivescheme");
-            string? previousGuid = null;
-            if (curSuccess && currentPlan.Length > 10)
-            {
-                // Output: "Power Scheme GUID: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx  (name)"
-                var parts = currentPlan.Split(' ');
-                for (int i = 0; i < parts.Length; i++)
-                {
-                    if (parts[i].Contains('-') && parts[i].Length >= 36)
-                    {
-                        previousGuid = parts[i].Trim();
-                        break;
-                    }
-                }
-            }
-
-            // Try High Performance first; if it doesn't exist, try Ultimate Performance;
-            // if neither exists, duplicate from the hidden Ultimate Performance template.
-            var targetGuid = FindOrCreatePerformancePlan();
-            if (targetGuid == null)
-                return (new DpcFixResult { Success = false, Message = "Could not find or create a High Performance power plan." }, null);
-
-            var (success, output) = RunProcess(NativeInterop.SystemExePath("powercfg.exe"), $"/setactive {targetGuid}");
-            if (!success)
-                return (new DpcFixResult { Success = false, Message = $"powercfg failed: {output}" }, null);
-
-            var planApplied = new AppliedDpcFix
-            {
-                FixId = fix.Id,
-                Description = fix.Name,
-                ActionType = "PowerPlanSetting",
-                PreviousValue = previousGuid,
-                Target = targetGuid,
-                AppliedAt = DateTime.Now,
-                RequiresReboot = false
-            };
-
-            return (new DpcFixResult { Success = true, Message = "High Performance power plan activated." }, planApplied);
-        }
-
-        // USB selective suspend or other power plan sub-setting
+        // A power plan sub-setting such as USB selective suspend
         var subgroup = fix.Subgroup ?? "";
         var setting = fix.Setting ?? "";
         var value = fix.Value ?? "0";
@@ -572,96 +517,6 @@ public class DpcFixEngine
         RunProcess(NativeInterop.SystemExePath("powercfg.exe"), "/setactive SCHEME_CURRENT");
 
         return new DpcFixResult { Success = s, Message = s ? "Setting reverted." : o };
-    }
-
-    // -- Power plan helpers ──────────────────────────────────────────
-
-    /// <summary>
-    /// Finds an existing high-performance plan or creates one from the hidden template.
-    /// Many OEM and Windows 11 installs don't ship the classic High Performance GUID.
-    /// Falls back to Ultimate Performance, then duplicates from the hidden template.
-    /// </summary>
-    private static string? FindOrCreatePerformancePlan()
-    {
-        // 1. Check if classic High Performance exists
-        if (IsPlanAvailable(HighPerformanceGuid))
-            return HighPerformanceGuid;
-
-        // 2. Check if Ultimate Performance exists
-        if (IsPlanAvailable(UltimatePerformanceGuid))
-            return UltimatePerformanceGuid;
-
-        // 3. List all plans - look for any existing "Ultimate Performance" variant
-        var (listOk, listOut) = RunProcess(NativeInterop.SystemExePath("powercfg.exe"), "-list");
-        if (listOk)
-        {
-            foreach (var line in listOut.Split('\n'))
-            {
-                if (line.Contains("Ultimate Performance", StringComparison.OrdinalIgnoreCase) ||
-                    line.Contains("High Performance", StringComparison.OrdinalIgnoreCase))
-                {
-                    // Extract the GUID from the line
-                    var guid = ExtractGuidFromLine(line);
-                    if (guid != null)
-                        return guid;
-                }
-            }
-        }
-
-        // 4. None found - duplicate from hidden Ultimate Performance template
-        var (dupOk, dupOut) = RunProcess(NativeInterop.SystemExePath("powercfg.exe"), $"-duplicatescheme {UltimatePerformanceGuid}");
-        if (dupOk)
-        {
-            var newGuid = ExtractGuidFromLine(dupOut);
-            if (newGuid != null)
-            {
-                Log.Information("DpcFixEngine: created Ultimate Performance plan {Guid}", newGuid);
-                return newGuid;
-            }
-        }
-
-        // 5. Last resort - try duplicating from High Performance template
-        var (dup2Ok, dup2Out) = RunProcess(NativeInterop.SystemExePath("powercfg.exe"), $"-duplicatescheme {HighPerformanceGuid}");
-        if (dup2Ok)
-        {
-            var newGuid = ExtractGuidFromLine(dup2Out);
-            if (newGuid != null)
-            {
-                Log.Information("DpcFixEngine: created High Performance plan {Guid}", newGuid);
-                return newGuid;
-            }
-        }
-
-        return null;
-    }
-
-    /// <summary>
-    /// Checks if a power plan GUID is registered on this system.
-    /// </summary>
-    private static bool IsPlanAvailable(string guid)
-    {
-        var (ok, output) = RunProcess(NativeInterop.SystemExePath("powercfg.exe"), $"-query {guid}");
-        return ok && !output.Contains("Invalid Parameters", StringComparison.OrdinalIgnoreCase);
-    }
-
-    /// <summary>
-    /// Extracts a GUID from a powercfg output line like:
-    /// "Power Scheme GUID: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx  (Name)"
-    /// </summary>
-    private static string? ExtractGuidFromLine(string line)
-    {
-        var parts = line.Split(' ');
-        foreach (var part in parts)
-        {
-            var trimmed = part.Trim();
-            if (trimmed.Length >= 36 && trimmed.Contains('-'))
-            {
-                // Validate it looks like a GUID
-                if (Guid.TryParse(trimmed, out _))
-                    return trimmed;
-            }
-        }
-        return null;
     }
 
     // -- Network adapter fixes ─────────────────────────────────────

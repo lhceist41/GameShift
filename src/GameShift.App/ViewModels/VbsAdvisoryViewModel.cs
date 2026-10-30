@@ -57,9 +57,10 @@ public class VbsAdvisoryViewModel : INotifyPropertyChanged
                 _vbsBannerSeverity = "error";
                 _showVbsBanner = true;
                 var acNames = string.Join(", ", blockingACs.Select(ac => ac.DisplayName));
-                _vbsBannerMessage = $"Memory Integrity is disabled but required by {acNames}. " +
-                    "You may experience VAN:RESTRICTION errors or anti-cheat failures. " +
-                    "Click Re-enable & Reboot to fix.";
+                _vbsBannerMessage = $"Memory Integrity is off, and {acNames} is installed. " +
+                    "FACEIT Anti-Cheat and Riot Vanguard's On-Demand mode require Memory Integrity, " +
+                    "so their games may refuse to start (for example with a VAN:RESTRICTION error). " +
+                    "Click Re-enable & Reboot to turn it back on.";
             }
             else
             {

@@ -57,7 +57,7 @@ The source also contains **GameShift.Watchdog** (a Windows service that would ru
 - Every change is reverted, with verification, when your game exits. Automatic recovery after an app crash or blue screen (the watchdog service and boot-recovery task) is still in development and not enabled in releases
 - Registry changes are monitored via `RegNotifyChangeKeyValue` to detect external tampering during sessions
 - The watchdog named pipe accepts only heartbeat signals - it does not accept or execute commands
-- BCDEdit modifications are gated behind user confirmation and tracked in pending reboot fixes
-- VBS/HVCI disable is blocked when Riot Vanguard is detected (safety interlock)
-- The "Disable Memory Integrity" system tweak now also disables VBS (`EnableVirtualizationBasedSecurity`) and clears `RequirePlatformSecurityFeatures`. UEFI-locked VBS may require additional BIOS changes.
+- GameShift no longer applies kernel tuning BCDEdit values. Its only BCD change is `hypervisorlaunchtype off` when the user confirms turning Memory Integrity off. Reverting values an earlier version set is limited to the known settings, and Restore All only touches a value that still has the value GameShift set
+- Turning VBS/HVCI off is blocked while Riot Vanguard or FACEIT Anti-Cheat is installed (FACEIT and Vanguard's On-Demand mode require it)
+- The "Disable Memory Integrity" system tweak of earlier versions can no longer be applied. A change it made is undone from its recorded original values by Re-enable Memory Integrity or Restore All
 - Source code is fully open and auditable

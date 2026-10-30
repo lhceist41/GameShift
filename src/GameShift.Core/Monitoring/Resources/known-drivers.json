@@ -76,19 +76,6 @@
       "gamingImpact": "Same as GPU driver issues - stuttering, hitching, and frame drops, especially during graphically intense moments.",
       "autoFixes": [
         {
-          "id": "disable_hags",
-          "name": "Disable Hardware Accelerated GPU Scheduling",
-          "actionType": "RegistrySet",
-          "registryPath": "HKLM\\SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers",
-          "registryKey": "HwSchMode",
-          "registryValue": "1",
-          "registryType": "DWORD",
-          "impact": "Medium",
-          "requiresReboot": true,
-          "simpleExplanation": "Hardware GPU scheduling lets the GPU manage its own work queue, but it can cause latency spikes on some systems. This switches back to letting Windows manage the queue.",
-          "technicalExplanation": "Disables HW-accelerated GPU scheduling (WDDM 2.7+), reverting to OS-managed GPU work submission."
-        },
-        {
           "id": "disable_mpo",
           "name": "Disable Multi-Plane Overlay",
           "actionType": "RegistrySet",
@@ -98,8 +85,8 @@
           "registryType": "DWORD",
           "impact": "Medium",
           "requiresReboot": true,
-          "simpleExplanation": "Multi-Plane Overlay lets Windows compose windows in hardware, but it causes stuttering on many systems. Disabling it forces software composition, which is more consistent.",
-          "technicalExplanation": "Sets DWM OverlayTestMode=5, disabling MPO hardware composition. Fixes frame pacing issues on multi-monitor and mixed refresh rate setups."
+          "simpleExplanation": "Multi-Plane Overlay lets Windows compose windows in hardware. On some multi-monitor and mixed refresh rate setups it causes flicker or black screens. Turning it off fixes that; leave it on if you do not see these problems.",
+          "technicalExplanation": "Sets DWM OverlayTestMode=5, which turns off MPO hardware composition."
         }
       ],
       "manualFixes": [
@@ -182,31 +169,7 @@
       "knownIssue": "Power state transitions causing latency. Usually from aggressive CPU idle states.",
       "simpleExplanation": "Windows is putting your CPU into deep sleep states to save power, and waking up takes too long. Think of it like your CPU taking a nap between frames and being slow to wake up.",
       "gamingImpact": "Random stutters and frame time spikes, especially when CPU load fluctuates (e.g., entering a new area or loading assets).",
-      "autoFixes": [
-        {
-          "id": "high_perf_power_plan",
-          "name": "Set High Performance Power Plan",
-          "actionType": "PowerPlanSetting",
-          "subgroup": "",
-          "setting": "",
-          "value": "high_performance",
-          "impact": "High",
-          "requiresReboot": false,
-          "simpleExplanation": "Stops Windows from slowing down your CPU and other hardware to save power. Keeps everything running at full speed.",
-          "technicalExplanation": "Activates the High Performance power plan, disabling CPU frequency scaling and C-state transitions."
-        },
-        {
-          "id": "disable_dynamic_tick",
-          "name": "Disable Dynamic Tick",
-          "actionType": "BcdEdit",
-          "command": "bcdedit /set disabledynamictick yes",
-          "revertCommand": "bcdedit /deletevalue disabledynamictick",
-          "impact": "Medium",
-          "requiresReboot": true,
-          "simpleExplanation": "Windows normally adjusts its internal clock speed to save power. This can cause tiny delays when the clock needs to speed back up. Disabling it keeps the clock running at full speed all the time.",
-          "technicalExplanation": "Disables the Windows tickless timer, forcing a fixed 15.6ms (or custom) timer interrupt rate. Eliminates tick coalescing latency."
-        }
-      ],
+      "autoFixes": [],
       "manualFixes": [
         "Disable C-States in BIOS (C1E, C3, C6, C7, C10).",
         "Disable Intel SpeedStep / AMD Cool'n'Quiet in BIOS.",

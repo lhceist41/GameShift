@@ -144,15 +144,9 @@
                         Padding="15" Margin="0,0,0,8"
                         BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1">
                     <StackPanel>
-                        <TextBlock Text="One-time registry optimizations that benefit all games. Each tweak detects current state and can be individually toggled."
+                        <TextBlock Text="Lasting changes to Windows that stay after GameShift closes. Restore All undoes every lasting change GameShift recorded, including tweaks that earlier versions offered."
                                    FontSize="11" Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,0,0,12"
                                    TextWrapping="Wrap"/>
-                        <Button Content="Apply All Recommended" Padding="12,6"
-                                Background="{DynamicResource GS.Accent.Primary}"
-                                Foreground="White" BorderThickness="0"
-                                FontWeight="SemiBold" Cursor="Hand"
-                                HorizontalAlignment="Left" Margin="0,0,0,8"
-                                Click="OnApplyAllTweaksClicked"/>
                         <Button Content="Restore All GameShift Tweaks" Padding="12,6"
                                 Background="{DynamicResource GS.Surface.Border}"
                                 Foreground="{DynamicResource GS.Text.Primary}" BorderThickness="0"

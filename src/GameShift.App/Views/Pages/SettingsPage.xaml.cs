@@ -87,7 +87,7 @@ public partial class SettingsPage : Page
         TweaksList.Items.Clear();
 
         string? lastCategory = null;
-        foreach (var tweak in mgr.Tweaks)
+        foreach (var tweak in mgr.OfferedTweaks)
         {
             // Category header
             if (tweak.Category != lastCategory)
@@ -165,42 +165,17 @@ public partial class SettingsPage : Page
             Grid.SetColumn(textStack, 0);
             grid.Children.Add(textStack);
 
-            // Check if this tweak is blocked by anti-cheat
-            bool isBlockedByAntiCheat = tweak is GameShift.Core.SystemTweaks.Tweaks.DisableMemoryIntegrity
-                && !isApplied
-                && AntiCheatDetector.IsVbsRequiredByAntiCheat();
-
-            // Check if memory compression is inapplicable (< 32GB RAM)
-            bool isMemCompInapplicable = tweak is GameShift.Core.SystemTweaks.Tweaks.DisableMemoryCompression memComp
-                && !memComp.IsApplicable && !isApplied;
-
-            bool isBlocked = isBlockedByAntiCheat || isMemCompInapplicable;
-
             var btn = new Button
             {
-                Content = isBlocked ? "Blocked" : (isApplied ? (isGameShift ? "Revert" : "Applied") : "Apply"),
+                Content = isApplied ? (isGameShift ? "Revert" : "Applied") : "Apply",
                 Padding = new Thickness(12, 6, 12, 6),
                 VerticalAlignment = VerticalAlignment.Center,
                 Cursor = System.Windows.Input.Cursors.Hand,
-                IsEnabled = !isBlocked && (!isApplied || isGameShift),
+                IsEnabled = !isApplied || isGameShift,
                 Tag = tweak
             };
 
-            if (isBlockedByAntiCheat)
-            {
-                btn.Background = (Brush)FindResource("GS.Surface.Base");
-                btn.Foreground = (Brush)FindResource("GS.Text.Secondary");
-                var blockingACs = AntiCheatDetector.GetVbsRequiringAntiCheats();
-                var acNames = string.Join(", ", blockingACs.Select(ac => ac.DisplayName));
-                btn.ToolTip = $"Blocked: required by {acNames}";
-            }
-            else if (isMemCompInapplicable)
-            {
-                btn.Background = (Brush)FindResource("GS.Surface.Base");
-                btn.Foreground = (Brush)FindResource("GS.Text.Secondary");
-                btn.ToolTip = "Memory compression should remain enabled on systems with less than 32GB RAM.";
-            }
-            else if (isApplied && !isGameShift)
+            if (isApplied && !isGameShift)
             {
                 btn.Background = (Brush)FindResource("GS.Surface.Base");
                 btn.Foreground = (Brush)FindResource("GS.Text.Secondary");
@@ -237,46 +212,6 @@ public partial class SettingsPage : Page
         {
             mgr.RevertTweak(tweak);
         }
-        else if (tweak is GameShift.Core.SystemTweaks.Tweaks.DisableMemoryIntegrity)
-        {
-            // Check anti-cheat blocking
-            var blockingACs = AntiCheatDetector.GetVbsRequiringAntiCheats();
-            if (blockingACs.Count > 0)
-            {
-                var acNames = string.Join(", ", blockingACs.Select(ac => ac.DisplayName));
-                MessageBox.Show(
-                    $"Cannot disable Memory Integrity - it is required by {acNames}.\n\n" +
-                    "Disabling it would cause VAN:RESTRICTION errors and prevent these games from launching.",
-                    "Blocked by Anti-Cheat",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Error);
-                return;
-            }
-
-            var result = MessageBox.Show(
-                "Disabling Memory Integrity reduces system security. This removes VBS overhead which can improve FPS, but makes your system more vulnerable to kernel-level attacks.\n\nAre you sure you want to proceed?",
-                "Security Warning",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Warning);
-            if (result != MessageBoxResult.Yes) return;
-            mgr.ApplyTweak(tweak);
-        }
-        else if (tweak is GameShift.Core.SystemTweaks.Tweaks.OptimizeInterruptHandling interrupt)
-        {
-            interrupt.ScanDevices();
-            var gpuName = interrupt.PrimaryGpu?.DisplayName ?? "your primary GPU";
-            var result = MessageBox.Show(
-                $"This enables MSI mode for {gpuName} and pins GPU/USB interrupts to a dedicated core.\n\n" +
-                "It takes effect on the NEXT REBOOT and is stored in the device configuration. On rare " +
-                "hardware a device can fail to start under MSI after reboot (black screen, or an " +
-                "unresponsive keyboard/mouse). If that happens the in-app revert is unreachable and you " +
-                "would need Windows Safe Mode to recover.\n\nContinue?",
-                "Interrupt Optimization (reboot required)",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Warning);
-            if (result != MessageBoxResult.Yes) return;
-            mgr.ApplyTweak(tweak);
-        }
         else if (tweak is GameShift.Core.SystemTweaks.Tweaks.DisableHags hags)
         {
             hags.EvaluateRecommendation();
@@ -293,45 +228,6 @@ public partial class SettingsPage : Page
             }
             mgr.ApplyTweak(tweak);
         }
-        else if (tweak is GameShift.Core.SystemTweaks.Tweaks.EnableLargePages)
-        {
-            var result = MessageBox.Show(
-                "This grants the Lock Pages in Memory privilege to your user account. " +
-                "Games that support large pages (UE5, Minecraft Java with -XX:+UseLargePages) will use 2MB pages for reduced TLB misses. " +
-                "Requires logoff or reboot.\n\nContinue?",
-                "Large Pages Privilege",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Question);
-            if (result != MessageBoxResult.Yes) return;
-            mgr.ApplyTweak(tweak);
-        }
-        else if (tweak is GameShift.Core.SystemTweaks.Tweaks.OptimizePageFile)
-        {
-            // Free-space guard: a fixed page file on a near-full system drive can fail to allocate
-            // or fill the boot drive.
-            var space = GameShift.Core.SystemTweaks.Tweaks.OptimizePageFile.CheckSystemDriveSpace();
-            if (!space.Ok)
-            {
-                MessageBox.Show(
-                    $"Not enough free space on the system drive to safely set a fixed page file " +
-                    $"(needs about {space.NeededMB / 1024} GB, {(space.FreeMB < 0 ? 0 : space.FreeMB) / 1024} GB free).\n\n" +
-                    "Free up space and try again.",
-                    "Page File",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Warning);
-                return;
-            }
-
-            var result = MessageBox.Show(
-                $"This sets a fixed {GameShift.Core.SystemTweaks.Tweaks.OptimizePageFile.ComputeFixedSizeMB() / 1024} GB page file on your system drive to prevent " +
-                "dynamic-resize stutter. It replaces the current automatic sizing and requires a reboot. " +
-                "Any page file you placed on another drive is kept.\n\nContinue?",
-                "Fixed Page File (reboot required)",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Warning);
-            if (result != MessageBoxResult.Yes) return;
-            mgr.ApplyTweak(tweak);
-        }
         else
         {
             mgr.ApplyTweak(tweak);
@@ -339,24 +235,6 @@ public partial class SettingsPage : Page
 
         // Refresh the list
         PopulateTweaksList();
-    }
-
-    private void OnApplyAllTweaksClicked(object sender, RoutedEventArgs e)
-    {
-        var mgr = App.Services.TweaksMgr;
-        if (mgr == null) return;
-
-        int count = mgr.ApplyAllRecommended();
-        PopulateTweaksList();
-
-        if (count > 0)
-        {
-            (DataContext as SettingsViewModel)!.StatusMessage = $"{count} tweaks applied.";
-        }
-        else
-        {
-            (DataContext as SettingsViewModel)!.StatusMessage = "All recommended tweaks already applied.";
-        }
     }
 
     private async void OnRestoreAllTweaksClicked(object sender, RoutedEventArgs e)
@@ -396,8 +274,8 @@ public partial class SettingsPage : Page
             foreach (var group in list.NeedingOwnConfirmation.GroupBy(i => i.Kind))
             {
                 var intro = group.Key == LastingChangeKind.CpuCoreReservation
-                    ? "A CPU core reservation is set on this PC. GameShift's DPC Doctor can set one, " +
-                      "but so can other tools, and GameShift does not record who set it.\n\n"
+                    ? "A CPU core reservation is set on this PC. Earlier versions of GameShift's DPC Doctor " +
+                      "could set one, but so can other tools, and GameShift does not record who set it.\n\n"
                     : "These startup apps are turned off by a \"~\" in front of their name. GameShift turns " +
                       "startup apps off this way, but other tools can too, and GameShift does not record " +
                       "which ones it turned off.\n\n";

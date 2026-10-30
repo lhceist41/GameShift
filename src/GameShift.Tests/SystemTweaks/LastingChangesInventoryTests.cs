@@ -1,5 +1,6 @@
 using GameShift.Core.Config;
 using GameShift.Core.Monitoring;
+using GameShift.Core.Optimization;
 using GameShift.Core.System;
 using GameShift.Core.SystemTweaks;
 using Xunit;
@@ -237,18 +238,112 @@ public class LastingChangesInventoryTests
         var manager = new SystemTweaksManager();
         var system = new FakeSystem { FindTweakOverride = manager.GetTweakByClassName };
         system.Settings.SystemTweaks = new SystemTweaksSettings();
-        system.Settings.SystemTweaks.AppliedTweaks[nameof(Core.SystemTweaks.Tweaks.DisableMemoryIntegrity)] =
+        system.Settings.SystemTweaks.AppliedTweaks[nameof(Core.SystemTweaks.Tweaks.DisableMpo)] =
             new TweakState { IsAppliedByGameShift = true };
 
         var item = Assert.Single(Inventory(system).List().Items);
 
-        Assert.Equal(new Core.SystemTweaks.Tweaks.DisableMemoryIntegrity().Name, item.DisplayName);
+        Assert.Equal(new Core.SystemTweaks.Tweaks.DisableMpo().Name, item.DisplayName);
         Assert.True(item.RequiresRestart);
 
         // Every tweak class stays registered, so a ledger entry for one whose card is gone still resolves.
         var tweakTypes = typeof(ISystemTweak).Assembly.GetTypes()
             .Where(t => typeof(ISystemTweak).IsAssignableFrom(t) && t is { IsClass: true, IsAbstract: false });
         Assert.All(tweakTypes, t => Assert.NotNull(manager.GetTweakByClassName(t.Name)));
+    }
+
+    [Fact]
+    public void EveryRetiredTweak_IsListed_AndRevertedThroughItsRegisteredClass()
+    {
+        var manager = new SystemTweaksManager();
+        var retired = manager.Tweaks
+            .Where(SystemTweaksManager.IsRetired)
+            .Where(t => t is not Core.SystemTweaks.Tweaks.DisableMemoryIntegrity)
+            .ToList();
+        var system = new FakeSystem { FindTweakOverride = manager.GetTweakByClassName };
+        system.Settings.SystemTweaks = new SystemTweaksSettings();
+        foreach (var tweak in retired)
+            system.Settings.SystemTweaks.AppliedTweaks[tweak.GetType().Name] = new TweakState { IsAppliedByGameShift = true };
+        var inventory = Inventory(system);
+
+        var items = inventory.List().Items;
+        Assert.Equal(14, items.Count);
+        Assert.All(items, i => Assert.Equal(LastingChangeKind.SystemTweak, i.Kind));
+        Assert.Equal(retired.Select(t => t.Name).Order(), items.Select(i => i.DisplayName).Order());
+
+        var results = inventory.Undo(items);
+
+        Assert.All(results, r => Assert.Equal(LastingChangeOutcome.Undone, r.Outcome));
+        Assert.Equal(retired.Select(t => "tweak:" + t.GetType().Name).Order(), system.Calls.Order());
+        Assert.Empty(system.Settings.SystemTweaks.AppliedTweaks);
+    }
+
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public void MemoryIntegrity_FromEitherRecord_IsOneItem_UndoneOnce(bool toggleRecord, bool tweakRecord)
+    {
+        var manager = new SystemTweaksManager();
+        var system = new FakeSystem { FindTweakOverride = manager.GetTweakByClassName };
+        system.Settings.VbsHvciDisabledByGameShift = toggleRecord;
+        system.Settings.SystemTweaks = new SystemTweaksSettings();
+        if (tweakRecord)
+            system.Settings.SystemTweaks.AppliedTweaks[nameof(Core.SystemTweaks.Tweaks.DisableMemoryIntegrity)] =
+                new TweakState { IsAppliedByGameShift = true, OriginalValues = "{}" };
+        var inventory = Inventory(system);
+
+        var item = Assert.Single(inventory.List().Items);
+        Assert.Equal(LastingChangeKind.MemoryIntegrity, item.Kind);
+        Assert.True(item.RequiresRestart);
+
+        var result = Assert.Single(inventory.Undo([item]));
+
+        Assert.Equal(LastingChangeOutcome.Undone, result.Outcome);
+        Assert.Equal(["vbs"], system.Calls);
+        Assert.False(VbsHvciToggle.IsDisabledByGameShift(system.Settings));
+    }
+
+    [Theory]
+    [InlineData("disable_hags", "RegistrySet")]
+    [InlineData("disable_dynamic_tick", "BcdEdit")]
+    [InlineData("disable_hpet", "BcdEdit")]
+    [InlineData("high_perf_power_plan", "PowerPlanSetting")]
+    public void DroppedDpcDoctorFix_IsListed_AndRevertedThroughTheDpcDoctorEngine(string fixId, string actionType)
+    {
+        var system = new FakeSystem();
+        system.Settings.AppliedDpcFixes.Add(new AppliedDpcFix { FixId = fixId, ActionType = actionType, Description = fixId });
+        var inventory = Inventory(system);
+
+        var item = Assert.Single(inventory.List().Items);
+        Assert.Equal(LastingChangeKind.LatencyDoctorFix, item.Kind);
+
+        var result = Assert.Single(inventory.Undo([item]));
+
+        Assert.Equal(LastingChangeOutcome.Undone, result.Outcome);
+        Assert.Equal(["dpc:" + fixId], system.Calls);
+    }
+
+    [Fact]
+    public void EveryKernelSetting_StillAtGameShiftsValue_IsListed_AndRevertedThroughTheKernelReverter()
+    {
+        var system = new FakeSystem();
+        foreach (var setting in KernelTuningManager.AllSettings)
+        {
+            system.Settings.AppliedDpcFixes.Add(BcdEntry(setting.Id));
+            system.Bcd[setting.BcdKey] = setting.RecommendedValue == "<not set>" ? null : setting.RecommendedValue;
+        }
+        var inventory = Inventory(system);
+
+        var items = inventory.List().Items;
+        Assert.Equal(KernelTuningManager.AllSettings.Select(s => s.Id).Order(), items.Select(i => i.Key).Order());
+        Assert.All(items, i => Assert.Equal(LastingChangeKind.KernelSetting, i.Kind));
+
+        var results = inventory.Undo(items);
+
+        Assert.All(results, r => Assert.Equal(LastingChangeOutcome.Undone, r.Outcome));
+        Assert.DoesNotContain(system.Calls, c => c.StartsWith("dpc:"));
+        Assert.Empty(system.Settings.AppliedDpcFixes);
     }
 
     [Fact]
@@ -423,7 +518,8 @@ public class LastingChangesInventoryTests
         {
             Calls.Add("vbs");
             if (AllRevertsFail) return false;
-            Settings.VbsHvciDisabledByGameShift = false;
+            VbsHvciToggle.ForgetToggleRecord(Settings);
+            VbsHvciToggle.ForgetTweakRecord(Settings);
             return true;
         }
 

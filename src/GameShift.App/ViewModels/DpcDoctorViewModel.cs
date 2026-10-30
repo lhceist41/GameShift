@@ -7,7 +7,6 @@ using GameShift.Core.Config;
 using GameShift.Core.Monitoring;
 using GameShift.Core.Optimization;
 using GameShift.Core.System;
-using GameShift.Core.SystemTweaks;
 using Serilog;
 
 namespace GameShift.App.ViewModels;
@@ -115,57 +114,6 @@ public class QuickFixViewModel : INotifyPropertyChanged
 }
 
 /// <summary>
-/// ViewModel for a kernel tuning BCD setting in the DPC Doctor page.
-/// Shows current vs recommended value, risk badge, and apply/revert state.
-/// </summary>
-public class KernelTuningItemViewModel : INotifyPropertyChanged
-{
-    private string _currentValue = "<not set>";
-    private bool _isApplied;
-    private string _statusMessage = "";
-    private bool _hasWarning;
-    private string _warningMessage = "";
-
-    public KernelTuningSetting Setting { get; init; } = null!;
-    public string CurrentValue { get => _currentValue; set { _currentValue = value; OnPropertyChanged(); OnPropertyChanged(nameof(NeedsChange)); } }
-    public bool IsApplied { get => _isApplied; set { _isApplied = value; OnPropertyChanged(); OnPropertyChanged(nameof(ActionLabel)); } }
-    public string StatusMessage { get => _statusMessage; set { _statusMessage = value; OnPropertyChanged(); } }
-    public bool HasWarning { get => _hasWarning; set { _hasWarning = value; OnPropertyChanged(); } }
-    public string WarningMessage { get => _warningMessage; set { _warningMessage = value; OnPropertyChanged(); } }
-
-    public string ActionLabel => _isApplied ? "Revert" : "Apply";
-    public bool NeedsChange => !string.Equals(
-        _currentValue, Setting.RecommendedValue, StringComparison.OrdinalIgnoreCase);
-
-    public event PropertyChangedEventHandler? PropertyChanged;
-    protected void OnPropertyChanged([CallerMemberName] string? name = null) =>
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
-}
-
-/// <summary>
-/// ViewModel for a single core in the Core Isolation visual map.
-/// </summary>
-public class CoreMapItemViewModel : INotifyPropertyChanged
-{
-    private bool _isSelected;
-
-    public uint CpuSetId { get; init; }
-    public string Label { get; init; } = "";
-    public bool IsPCore { get; init; }
-    public bool CanSelect { get; init; } // Only P-cores can be selected
-
-    public bool IsSelected
-    {
-        get => _isSelected;
-        set { _isSelected = value; OnPropertyChanged(); }
-    }
-
-    public event PropertyChangedEventHandler? PropertyChanged;
-    protected void OnPropertyChanged([CallerMemberName] string? name = null) =>
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
-}
-
-/// <summary>
 /// ViewModel for the DPC Doctor page.
 /// Manages ETW trace capture, diagnosed issues, and quick fixes.
 /// </summary>
@@ -265,24 +213,13 @@ public class DpcDoctorViewModel : INotifyPropertyChanged
     public ObservableCollection<QuickFixViewModel> QuickFixes { get; } = new();
     public ObservableCollection<string> RebootComparisonLines { get; } = new();
 
-    /// <summary>Kernel tuning BCD settings with current/recommended values and apply/revert actions.</summary>
-    public ObservableCollection<KernelTuningItemViewModel> KernelTuningItems { get; } = new();
+    // ── CPU core reservation (remove only) ──────────────────────────────────
 
-    // ── Core Isolation (Sprint 5C) ────────────────────────────────────────────
-
-    private string _coreIsolationStatus = "Loading...";
-    private string _coreIsolationWarning = "";
-    private bool _showCoreIsolationWarning;
-    private bool _isCoreIsolationAvailable;
-    private CoreIsolationStatus? _coreIsolationData;
+    private string _coreIsolationStatus = "";
+    private bool _isCoreReservationPresent;
 
     public string CoreIsolationStatus { get => _coreIsolationStatus; set { _coreIsolationStatus = value; OnPropertyChanged(); } }
-    public string CoreIsolationWarning { get => _coreIsolationWarning; set { _coreIsolationWarning = value; OnPropertyChanged(); } }
-    public bool ShowCoreIsolationWarning { get => _showCoreIsolationWarning; set { _showCoreIsolationWarning = value; OnPropertyChanged(); } }
-    public bool IsCoreIsolationAvailable { get => _isCoreIsolationAvailable; set { _isCoreIsolationAvailable = value; OnPropertyChanged(); } }
-
-    /// <summary>Core map items for the visual display.</summary>
-    public ObservableCollection<CoreMapItemViewModel> CoreMapItems { get; } = new();
+    public bool IsCoreReservationPresent { get => _isCoreReservationPresent; set { _isCoreReservationPresent = value; OnPropertyChanged(); } }
 
     public DpcDoctorViewModel(
         DpcTraceEngine? traceEngine,
@@ -310,8 +247,7 @@ public class DpcDoctorViewModel : INotifyPropertyChanged
             _dpcMon.LatencySampled += OnFallbackLatencySampled;
 
         InitializeQuickFixes(snapshot);
-        InitializeKernelTuning();
-        InitializeCoreIsolation();
+        InitializeCoreReservation();
         CheckPendingRebootComparison(snapshot);
         RefreshInterruptAffinityStatus();
     }
@@ -576,70 +512,34 @@ public class DpcDoctorViewModel : INotifyPropertyChanged
     {
         if (_driverDb == null || _fixEngine == null) return;
 
-        // Quick fix 1: Disable Dynamic Tick (from ACPI.sys)
-        if (_driverDb.TryGetDriver("ACPI.sys", out var acpi))
-        {
-            var fix = acpi.AutoFixes.FirstOrDefault(f => f.Id == "disable_dynamic_tick");
-            if (fix != null)
-            {
-                QuickFixes.Add(new QuickFixViewModel
-                {
-                    FixId = fix.Id,
-                    Name = "Disable Dynamic Tick",
-                    SimpleTooltip = fix.SimpleExplanation,
-                    TechnicalTooltip = fix.TechnicalExplanation,
-                    RequiresReboot = true,
-                    Fix = fix,
-                    IsActive = _fixEngine.IsFixActive(fix.Id, snapshot)
-                });
-            }
-        }
-
-        // Quick fix 2: Force MSI Mode for GPU (detect vendor)
+        // Force MSI Mode for GPU (detect vendor)
         var gpuInfo = GpuPciDetector.DetectGpuMsiState();
         if (gpuInfo != null)
         {
             var gpuDriver = gpuInfo.Vendor == "NVIDIA" ? "nvlddmkm.sys" : "atikmdag.sys";
             var msiFixId = gpuInfo.Vendor == "NVIDIA" ? "msi_mode_nvidia" : "msi_mode_amd";
-
-            if (_driverDb.TryGetDriver(gpuDriver, out var gpuDb))
-            {
-                var fix = gpuDb.AutoFixes.FirstOrDefault(f => f.Id == msiFixId);
-                if (fix != null)
-                {
-                    QuickFixes.Add(new QuickFixViewModel
-                    {
-                        FixId = fix.Id,
-                        Name = "Force MSI Mode for GPU",
-                        SimpleTooltip = fix.SimpleExplanation,
-                        TechnicalTooltip = fix.TechnicalExplanation,
-                        RequiresReboot = true,
-                        Fix = fix,
-                        IsActive = gpuInfo.MsiEnabled || _fixEngine.IsFixActive(fix.Id, snapshot)
-                    });
-                }
-            }
+            AddQuickFix(gpuDriver, msiFixId, "Force MSI Mode for GPU", snapshot, alreadyActive: gpuInfo.MsiEnabled);
         }
 
-        // Quick fix 3: Disable HPET (bcdedit)
+        AddQuickFix("dxgkrnl.sys", "disable_mpo", "Fix Multi-Monitor Flicker (MPO)", snapshot);
+        AddQuickFix("USBPORT.sys", "disable_usb_selective_suspend", "Disable USB Selective Suspend", snapshot);
+    }
+
+    private void AddQuickFix(string driverFileName, string fixId, string name, AppSettings snapshot, bool alreadyActive = false)
+    {
+        if (!_driverDb!.TryGetDriver(driverFileName, out var driver)) return;
+        var fix = driver.AutoFixes.FirstOrDefault(f => f.Id == fixId);
+        if (fix == null) return;
+
         QuickFixes.Add(new QuickFixViewModel
         {
-            FixId = "disable_hpet",
-            Name = "Disable HPET",
-            SimpleTooltip = "The High Precision Event Timer is a hardware clock that some systems handle poorly, causing delays. Disabling it forces Windows to use the faster TSC built into your CPU.",
-            TechnicalTooltip = "Runs 'bcdedit /set useplatformtick yes' to disable HPET, forcing TSC as the primary clock source.",
-            RequiresReboot = true,
-            Fix = new DriverAutoFix
-            {
-                Id = "disable_hpet",
-                Name = "Disable HPET",
-                ActionType = "BcdEdit",
-                Command = "bcdedit /set useplatformtick yes",
-                RevertCommand = "bcdedit /deletevalue useplatformtick",
-                RequiresReboot = true,
-                Impact = "Medium"
-            },
-            IsActive = _fixEngine.IsFixActive("disable_hpet", snapshot)
+            FixId = fix.Id,
+            Name = name,
+            SimpleTooltip = fix.SimpleExplanation,
+            TechnicalTooltip = fix.TechnicalExplanation,
+            RequiresReboot = fix.RequiresReboot,
+            Fix = fix,
+            IsActive = alreadyActive || _fixEngine!.IsFixActive(fix.Id, snapshot)
         });
     }
 
@@ -721,187 +621,17 @@ public class DpcDoctorViewModel : INotifyPropertyChanged
         _successBannerTimer?.Stop();
     }
 
-    // ── Kernel tuning (Sprint 7) ─────────────────────────────────────────────
+    // ── CPU core reservation ────────────────────────────────────────────────
 
-    private void InitializeKernelTuning()
+    private void InitializeCoreReservation()
     {
         try
         {
-            var mgr = new KernelTuningManager();
-            var currentValues = mgr.ReadCurrentValues();
-
-            foreach (var setting in KernelTuningManager.AllSettings)
-            {
-                var item = new KernelTuningItemViewModel
-                {
-                    Setting = setting,
-                    CurrentValue = currentValues.TryGetValue(setting.BcdKey, out var v) && v != null
-                        ? v
-                        : "<not set>",
-                };
-
-                // Check if the current value already matches the recommendation
-                item.IsApplied = !item.NeedsChange;
-
-                // Hypervisor: warn about dependencies
-                if (setting.Id == "hypervisorlaunchtype" && !item.IsApplied)
-                {
-                    var deps = mgr.CheckHypervisorDependencies();
-                    if (deps.HasDependencies)
-                    {
-                        item.HasWarning = true;
-                        item.WarningMessage = deps.Summary;
-                    }
-                }
-
-                // Platform-timer tweaks degrade performance on AMD: warn (and Apply will refuse).
-                // Still shown so a value set earlier can be reverted.
-                if (setting.PlatformTimerTweak && !item.IsApplied &&
-                    GameShift.Core.System.CpuCapabilities.PlatformTimerTweaksHarmful)
-                {
-                    item.HasWarning = true;
-                    item.WarningMessage =
-                        "Not recommended on AMD CPUs: forcing the platform timer degrades performance (Windows logs HAL event 17 and Kernel-Power 508).";
-                }
-
-                KernelTuningItems.Add(item);
-            }
+            IsCoreReservationPresent = CoreIsolationManager.IsReservationPresent();
         }
         catch (Exception ex)
         {
-            Log.Warning(ex, "[DpcDoctorViewModel] Failed to initialize kernel tuning");
-        }
-    }
-
-    /// <summary>
-    /// Toggles a kernel tuning setting: applies if not active, reverts if active.
-    /// </summary>
-    public void ToggleKernelTuningSetting(KernelTuningItemViewModel item)
-    {
-        if (_fixEngine == null) return;
-
-        var mgr = new KernelTuningManager();
-
-        if (item.IsApplied)
-        {
-            // Revert
-            var (success, msg) = mgr.Revert(item.Setting);
-            item.StatusMessage = msg;
-            if (success)
-            {
-                item.IsApplied = false;
-                item.CurrentValue = "<not set>";
-                ShowRebootPrompt = true;
-                RebootFixName = item.Setting.DisplayName;
-                SettingsManager.Update(s => KernelTuningManager.RemoveLedgerEntries(s, item.Setting));
-            }
-        }
-        else
-        {
-            // Apply
-            var (success, msg) = mgr.Apply(item.Setting, item.CurrentValue);
-            item.StatusMessage = msg;
-            if (success)
-            {
-                item.IsApplied = true;
-                item.CurrentValue = item.Setting.RecommendedValue;
-                ShowRebootPrompt = true;
-                RebootFixName = item.Setting.DisplayName;
-
-                // Persist in AppSettings for reboot tracking - transactional (no clobber) and
-                // idempotent (guards mirror the engine's ApplyFix dedup).
-                var fixId = KernelTuningManager.LedgerFixId(item.Setting);
-                SettingsManager.Update(s =>
-                {
-                    if (!s.PendingRebootFixes.Contains(fixId))
-                        s.PendingRebootFixes.Add(fixId);
-                    if (!s.AppliedDpcFixes.Any(f => f.FixId == fixId))
-                        s.AppliedDpcFixes.Add(new AppliedDpcFix
-                        {
-                            FixId = fixId,
-                            Description = item.Setting.DisplayName,
-                            ActionType = "BcdEdit",
-                            PreviousValue = item.Setting.RevertArgs,
-                            Target = item.Setting.ApplyArgs,
-                            AppliedAt = DateTime.Now,
-                            RequiresReboot = true
-                        });
-                });
-            }
-        }
-    }
-
-    // ── Core Isolation (Sprint 5C) ──────────────────────────────────────────
-
-    private void InitializeCoreIsolation()
-    {
-        try
-        {
-            var mgr = new GameShift.Core.Optimization.CoreIsolationManager();
-            _coreIsolationData = mgr.GetStatus();
-
-            IsCoreIsolationAvailable = _coreIsolationData.IsHybridCpu;
-            CoreIsolationStatus = _coreIsolationData.Message;
-
-            if (!_coreIsolationData.IsHybridCpu)
-                return;
-
-            if (_coreIsolationData.PCoreTotalCount < 4)
-            {
-                ShowCoreIsolationWarning = true;
-                CoreIsolationWarning = "Your CPU has fewer than 4 P-cores. Core reservation may not be beneficial.";
-            }
-
-            // Build core map
-            CoreMapItems.Clear();
-            foreach (var core in _coreIsolationData.AllCores)
-            {
-                CoreMapItems.Add(new CoreMapItemViewModel
-                {
-                    CpuSetId = core.CpuSetId,
-                    Label = core.Label,
-                    IsPCore = core.IsPCore,
-                    CanSelect = core.IsPCore, // Only P-cores can be reserved
-                    IsSelected = _coreIsolationData.ReservedCpuSetIds.Contains(core.CpuSetId)
-                });
-            }
-        }
-        catch (Exception ex)
-        {
-            Log.Warning(ex, "[DpcDoctorViewModel] Failed to initialize core isolation");
-            CoreIsolationStatus = "Failed to detect CPU topology.";
-        }
-    }
-
-    /// <summary>
-    /// Applies the current core map selection as a reservation. Requires reboot.
-    /// </summary>
-    public void ApplyCoreIsolation(bool restartNow)
-    {
-        var selected = CoreMapItems.Where(c => c.IsSelected && c.IsPCore).Select(c => c.CpuSetId).ToList();
-
-        var mgr = new GameShift.Core.Optimization.CoreIsolationManager();
-        var error = mgr.ApplyReservation(selected);
-
-        if (error != null)
-        {
-            CoreIsolationStatus = $"Error: {error}";
-            return;
-        }
-
-        CoreIsolationStatus = $"{selected.Count} P-core(s) reserved. Reboot required.";
-        ShowRebootPrompt = true;
-        RebootFixName = "Core Isolation";
-
-        if (restartNow)
-        {
-            global::System.Diagnostics.Process.Start(new global::System.Diagnostics.ProcessStartInfo
-            {
-                FileName = NativeInterop.SystemExePath("shutdown.exe"),
-                Arguments = "/r /t 10",
-                UseShellExecute = false,
-                CreateNoWindow = true
-            });
+            Log.Warning(ex, "[DpcDoctorViewModel] Failed to read the CPU core reservation");
         }
     }
 
@@ -910,7 +640,7 @@ public class DpcDoctorViewModel : INotifyPropertyChanged
     /// </summary>
     public void RemoveCoreIsolation()
     {
-        var mgr = new GameShift.Core.Optimization.CoreIsolationManager();
+        var mgr = new CoreIsolationManager();
         var error = mgr.RemoveReservation();
 
         if (error != null)
@@ -921,26 +651,7 @@ public class DpcDoctorViewModel : INotifyPropertyChanged
 
         CoreIsolationStatus = "Reservation removed. Reboot required to restore default scheduling.";
         ShowRebootPrompt = true;
-        RebootFixName = "Core Isolation removal";
-
-        // Deselect all in core map
-        foreach (var item in CoreMapItems)
-            item.IsSelected = false;
-    }
-
-    /// <summary>
-    /// Selects the default recommended cores (all P-cores except last).
-    /// </summary>
-    public void SelectDefaultCores()
-    {
-        var mgr = new GameShift.Core.Optimization.CoreIsolationManager();
-        var defaults = new HashSet<uint>(mgr.GetDefaultSuggestion());
-
-        foreach (var item in CoreMapItems)
-        {
-            if (item.IsPCore)
-                item.IsSelected = defaults.Contains(item.CpuSetId);
-        }
+        RebootFixName = "Core reservation removal";
     }
 
     // ── Interrupt affinity status ────────────────────────────────────────────

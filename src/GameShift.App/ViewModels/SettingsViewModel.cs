@@ -465,12 +465,12 @@ public class SettingsViewModel : INotifyPropertyChanged
         }
 
         if (_vbsHvciToggle.IsEitherEnabled)
-            VbsHvciStatus = "Enabled (5-15% FPS penalty)";
+            VbsHvciStatus = "Enabled";
         else
             VbsHvciStatus = "Disabled";
 
         var settings = SettingsManager.Load();
-        ShowReEnableButton = settings.VbsHvciDisabledByGameShift && !_vbsHvciToggle.IsEitherEnabled;
+        ShowReEnableButton = VbsHvciToggle.IsDisabledByGameShift(settings) && !_vbsHvciToggle.IsEitherEnabled;
     }
 
     /// <summary>

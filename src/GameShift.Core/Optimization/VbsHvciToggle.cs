@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Microsoft.Win32;
 using GameShift.Core.Config;
 using GameShift.Core.System;
+using GameShift.Core.SystemTweaks.Tweaks;
 using Serilog;
 
 namespace GameShift.Core.Optimization;
@@ -48,7 +49,7 @@ public class VbsHvciToggle
     /// Banner message shown when VBS/HVCI is detected as enabled.
     /// </summary>
     public string BannerMessage =>
-        "Memory Integrity (VBS/HVCI) is enabled \u2014 this costs 5-15% gaming FPS.";
+        "Memory Integrity (VBS/HVCI) is on. It can lower gaming FPS by a few percent on average.";
 
     /// <summary>
     /// Whether the dashboard should display the VBS/HVCI warning banner.
@@ -70,8 +71,8 @@ public class VbsHvciToggle
     /// Warning message displayed when VBS-requiring anti-cheat is detected.
     /// </summary>
     public string VanguardWarning =>
-        "Riot Vanguard / FACEIT Anti-Cheat requires Memory Integrity (VBS/HVCI) to be enabled. " +
-        "Disabling it will prevent you from playing Valorant, League of Legends, and FACEIT-protected games.";
+        "FACEIT Anti-Cheat and Riot Vanguard's On-Demand mode require Memory Integrity (VBS/HVCI). " +
+        "Turning it off can stop their games from starting.";
 
     // ── Detection ──────────────────────────────────────────────────────
 
@@ -329,42 +330,91 @@ public class VbsHvciToggle
 
     // ── Re-enable VBS/HVCI ──────────────────────────────────────────────
 
+    // Earlier versions could turn Memory Integrity off from two places, each with its own record:
+    // this toggle (the settings flag plus the RequirePlatformSecurityFeatures original) and the
+    // retired "Disable Memory Integrity" system tweak (its captured original values).
+    private const string MemoryIntegrityTweakName = nameof(DisableMemoryIntegrity);
+
+    /// <summary>True when either record says GameShift turned Memory Integrity off.</summary>
+    public static bool IsDisabledByGameShift(AppSettings settings) =>
+        settings.VbsHvciDisabledByGameShift || RecordedMemoryIntegrityTweak(settings) != null;
+
+    internal static TweakState? RecordedMemoryIntegrityTweak(AppSettings settings) =>
+        settings.SystemTweaks?.AppliedTweaks.TryGetValue(MemoryIntegrityTweakName, out var state) == true
+        && state.IsAppliedByGameShift
+            ? state
+            : null;
+
     /// <summary>
-    /// Re-enables both VBS and HVCI by setting their registry values to 1
-    /// and restoring the hypervisor launch type to auto.
-    /// Changes take effect after reboot. Caller handles the reboot prompt.
+    /// What re-enabling undoes. <c>TurnOn</c>: write the enabled values and restore this toggle's
+    /// record, also when nothing was recorded and the user asked to turn it on. <c>RestoreTweak</c>:
+    /// restore the tweak's captured originals. When both apply the tweak goes last: it recorded a
+    /// change only when VBS and HVCI were not both off already, so its originals are normally older.
     /// </summary>
-    /// <returns>True only when every value was restored; on false the tracking is kept for a retry.</returns>
+    internal static (bool TurnOn, bool RestoreTweak) PlanReEnable(AppSettings settings)
+    {
+        bool tweak = RecordedMemoryIntegrityTweak(settings) != null;
+        return (settings.VbsHvciDisabledByGameShift || !tweak, tweak);
+    }
+
+    /// <summary>
+    /// Undoes GameShift's Memory Integrity change from whichever record holds it, or turns VBS and
+    /// HVCI on when nothing is recorded. Changes take effect after reboot. Caller handles the reboot
+    /// prompt.
+    /// </summary>
+    /// <returns>True only when every step succeeded; on false the records are kept for a retry.</returns>
     public bool ReEnableVbsHvci()
     {
         try
         {
-            _logger.Information("VbsHvciToggle: Re-enabling VBS and HVCI");
-
-            // Enable HVCI (Memory Integrity)
-            bool hvciResult = WriteRegistryDword(HvciScenarioPath, HvciValueName, 1);
-            if (!hvciResult)
-            {
-                _logger.Error("VbsHvciToggle: Failed to re-enable HVCI");
-                return false;
-            }
-
-            // Enable VBS
-            bool vbsResult = WriteRegistryDword(DeviceGuardPath, VbsValueName, 1);
-            if (!vbsResult)
-            {
-                _logger.Error("VbsHvciToggle: Failed to re-enable VBS");
-                return false;
-            }
-
-            // Restore hypervisor launch type
-            bool hypervisorResult = SetHypervisorLaunchType(off: false);
-
-            // Restore RequirePlatformSecurityFeatures to its captured original: if it existed before
-            // GameShift cleared it, write the captured DWORD back so platform-security enforcement is
-            // restored exactly as it was; otherwise delete it (the consumer-default absent state).
             var settings = SettingsManager.Load();
-            bool rpsfResult;
+            var (turnOn, restoreTweak) = PlanReEnable(settings);
+
+            if (turnOn && !TurnOnVbsHvci(settings))
+                return false;
+
+            if (restoreTweak && !RestoreMemoryIntegrityTweak(RecordedMemoryIntegrityTweak(settings)!))
+                return false;
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.Error(ex, "VbsHvciToggle: Failed to re-enable VBS/HVCI");
+            return false;
+        }
+    }
+
+    private bool TurnOnVbsHvci(AppSettings settings)
+    {
+        _logger.Information("VbsHvciToggle: Re-enabling VBS and HVCI");
+
+        // Enable HVCI (Memory Integrity)
+        bool hvciResult = WriteRegistryDword(HvciScenarioPath, HvciValueName, 1);
+        if (!hvciResult)
+        {
+            _logger.Error("VbsHvciToggle: Failed to re-enable HVCI");
+            return false;
+        }
+
+        // Enable VBS
+        bool vbsResult = WriteRegistryDword(DeviceGuardPath, VbsValueName, 1);
+        if (!vbsResult)
+        {
+            _logger.Error("VbsHvciToggle: Failed to re-enable VBS");
+            return false;
+        }
+
+        // Restore hypervisor launch type
+        bool hypervisorResult = SetHypervisorLaunchType(off: false);
+
+        // Restore RequirePlatformSecurityFeatures to its captured original: if it existed before
+        // GameShift cleared it, write the captured DWORD back so platform-security enforcement is
+        // restored exactly as it was; otherwise delete it (the consumer-default absent state).
+        // Without a record GameShift never cleared it, so it is left as it is.
+        bool rpsfResult = true;
+        if (settings.VbsHvciDisabledByGameShift)
+        {
             try
             {
                 using var dgKey = Registry.LocalMachine.OpenSubKey(DeviceGuardPath, writable: true);
@@ -382,34 +432,50 @@ public class VbsHvciToggle
                 _logger.Warning(ex, "VbsHvciToggle: Failed to restore RequirePlatformSecurityFeatures");
                 rpsfResult = false;
             }
-
-            // A partial re-enable keeps the tracking and the captured original, so a retry (which
-            // rewrites the same values) can finish it instead of losing the original.
-            if (!hypervisorResult || !rpsfResult)
-            {
-                _logger.Error(
-                    "VbsHvciToggle: Re-enable incomplete (hypervisor launch type restored: {Hypervisor}, RequirePlatformSecurityFeatures restored: {Rpsf})",
-                    hypervisorResult, rpsfResult);
-                return false;
-            }
-
-            // Update tracking (clear the captured original now that it has been restored)
-            settings.VbsHvciDisabledByGameShift = false;
-            settings.VbsHvciOriginalRpsfExisted = false;
-            settings.VbsHvciOriginalRpsfValue = 0;
-            SettingsManager.Save(settings);
-
-            _logger.Information(
-                "VbsHvciToggle: VBS and HVCI re-enabled successfully. Reboot required for changes to take effect");
-
-            return true;
         }
-        catch (Exception ex)
+
+        // A partial re-enable keeps the tracking and the captured original, so a retry (which
+        // rewrites the same values) can finish it instead of losing the original.
+        if (!hypervisorResult || !rpsfResult)
         {
-            _logger.Error(ex, "VbsHvciToggle: Failed to re-enable VBS/HVCI");
+            _logger.Error(
+                "VbsHvciToggle: Re-enable incomplete (hypervisor launch type restored: {Hypervisor}, RequirePlatformSecurityFeatures restored: {Rpsf})",
+                hypervisorResult, rpsfResult);
             return false;
         }
+
+        // Clear the tracking and the captured original now that it has been restored
+        if (settings.VbsHvciDisabledByGameShift)
+            SettingsManager.Update(ForgetToggleRecord);
+
+        _logger.Information(
+            "VbsHvciToggle: VBS and HVCI re-enabled successfully. Reboot required for changes to take effect");
+
+        return true;
     }
+
+    private bool RestoreMemoryIntegrityTweak(TweakState state)
+    {
+        if (!new DisableMemoryIntegrity().Revert(state.OriginalValues))
+        {
+            _logger.Error("VbsHvciToggle: Failed to restore the values the Memory Integrity tweak recorded");
+            return false;
+        }
+
+        SettingsManager.Update(ForgetTweakRecord);
+        _logger.Information("VbsHvciToggle: Restored the values the Memory Integrity tweak recorded. Reboot required");
+        return true;
+    }
+
+    internal static void ForgetToggleRecord(AppSettings settings)
+    {
+        settings.VbsHvciDisabledByGameShift = false;
+        settings.VbsHvciOriginalRpsfExisted = false;
+        settings.VbsHvciOriginalRpsfValue = 0;
+    }
+
+    internal static void ForgetTweakRecord(AppSettings settings) =>
+        settings.SystemTweaks?.AppliedTweaks.Remove(MemoryIntegrityTweakName);
 
     // ── Hypervisor launch type (bcdedit) ─────────────────────────────────
 

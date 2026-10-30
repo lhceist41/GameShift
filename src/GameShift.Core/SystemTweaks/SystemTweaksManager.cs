@@ -1,6 +1,6 @@
-using System.Text.Json;
 using GameShift.Core.Config;
-using GameShift.Core.Optimization;
+using GameShift.Core.SystemTweaks.Tweaks;
+using Serilog;
 
 namespace GameShift.Core.SystemTweaks;
 
@@ -12,8 +12,37 @@ public class SystemTweaksManager
 {
     private readonly List<ISystemTweak> _tweaks;
 
-    /// <summary>All registered tweaks.</summary>
+    /// <summary>
+    /// Tweaks that can no longer be applied. They stay registered so the changes earlier versions
+    /// recorded can still be reverted: <see cref="RevertAllTweaks"/> and Restore All resolve ledger
+    /// entries by class name and cannot revert a class that is missing.
+    /// </summary>
+    private static readonly HashSet<string> RetiredTweaks = new(StringComparer.Ordinal)
+    {
+        nameof(DisableGameDvr),
+        nameof(DisableMpo),
+        nameof(OptimizeMmcss),
+        nameof(OptimizeWin32PrioritySeparation),
+        nameof(DisableMemoryIntegrity),
+        nameof(DisablePowerThrottling),
+        nameof(OptimizePageFile),
+        nameof(DisableLastAccessTimestamp),
+        nameof(DisableNtfs8dot3),
+        nameof(DisableUsbSelectiveSuspend),
+        nameof(OptimizeInterruptHandling),
+        nameof(DisableMemoryCompression),
+        nameof(EnableLargePages),
+        nameof(OptimizeNtfsMemoryUsage),
+        nameof(OptimizeKernelMemory),
+    };
+
+    /// <summary>All registered tweaks, including the retired ones kept for revert.</summary>
     public IReadOnlyList<ISystemTweak> Tweaks => _tweaks;
+
+    /// <summary>The tweaks that can still be applied.</summary>
+    public IReadOnlyList<ISystemTweak> OfferedTweaks => _tweaks.Where(t => !IsRetired(t)).ToList();
+
+    public static bool IsRetired(ISystemTweak tweak) => RetiredTweaks.Contains(tweak.GetType().Name);
 
     public SystemTweaksManager()
     {
@@ -64,14 +93,9 @@ public class SystemTweaksManager
     {
         var className = tweak.GetType().Name;
 
-        // Hard-block DisableMemoryIntegrity when VBS-requiring anti-cheat is installed
-        if (tweak is Tweaks.DisableMemoryIntegrity && AntiCheatDetector.IsVbsRequiredByAntiCheat())
+        if (IsRetired(tweak))
         {
-            var blockers = string.Join(", ",
-                AntiCheatDetector.GetVbsRequiringAntiCheats().Select(ac => ac.DisplayName));
-            SettingsManager.Logger.Warning(
-                "[SystemTweaks] DisableMemoryIntegrity BLOCKED - {AntiCheats} require VBS/HVCI enabled",
-                blockers);
+            Log.Warning("[SystemTweaks] {Tweak} can no longer be applied; it can only be reverted", className);
             return false;
         }
 
@@ -179,44 +203,6 @@ public class SystemTweaksManager
         {
             var tweak = _tweaks.FirstOrDefault(t => t.GetType().Name == className);
             if (tweak != null && RevertTweak(tweak)) count++;
-        }
-        return count;
-    }
-
-    /// <summary>
-    /// Applies all recommended tweaks.
-    /// Exclusions:
-    ///   - DisableMemoryIntegrity: security/anti-cheat gated, never auto-applied
-    ///   - OptimizePageFile: requires reboot + user understanding
-    ///   - OptimizeInterruptHandling: higher risk, requires reboot (opt-in only)
-    ///   - DisableMemoryCompression: only for 32GB+ systems, requires reboot (opt-in only)
-    ///   - EnableLargePages: requires logoff/reboot, game support varies (opt-in only)
-    ///   - DisableHags: context-dependent - follows recommendation engine
-    ///     (Enable/Disable/NoChange), only applies when recommendation differs from current state
-    /// Returns count of successfully applied tweaks.
-    /// </summary>
-    public int ApplyAllRecommended()
-    {
-        int count = 0;
-        foreach (var tweak in _tweaks)
-        {
-            if (tweak is Tweaks.DisableMemoryIntegrity) continue;     // Security gated
-            if (tweak is Tweaks.OptimizePageFile) continue;            // Opt-in only
-            if (tweak is Tweaks.OptimizeInterruptHandling) continue;   // Higher risk, opt-in only
-            if (tweak is Tweaks.DisableMemoryCompression) continue;    // 32GB+ only, opt-in only
-            if (tweak is Tweaks.EnableLargePages) continue;            // Opt-in only
-
-            // HAGS: context-dependent - skip if NoChange recommendation
-            if (tweak is Tweaks.DisableHags hags)
-            {
-                hags.EvaluateRecommendation();
-                if (hags.Recommendation == GameShift.Core.SystemTweaks.Tweaks.HagsRecommendation.NoChange) continue;
-            }
-
-            if (tweak.DetectIsApplied()) continue;                     // Skip already applied
-
-            if (ApplyTweak(tweak))
-                count++;
         }
         return count;
     }
