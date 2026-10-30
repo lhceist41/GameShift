@@ -64,6 +64,26 @@ public class ProcessPrioritySetActionTests
     }
 
     [Theory]
+    [InlineData("Battle.net", "Battle.net")]
+    [InlineData("Battle.net.exe", "Battle.net")]
+    [InlineData("LeagueClientUx", "LeagueClientUx")]
+    [InlineData("LeagueClientUx.EXE", "LeagueClientUx")]
+    public void ConfiguredName_DropsOnlyATrailingExe(string configured, string processName)
+    {
+        _processes.Add(ClientPid, processName, ProcessPriorityClass.Normal);
+        var action = new ProcessPrioritySetAction("Launcher Priority Reduction", configured, ProcessPriorityClass.BelowNormal)
+        {
+            Processes = _processes,
+        };
+
+        action.Apply(new SystemStateSnapshot());
+        Assert.Equal(ProcessPriorityClass.BelowNormal, _processes.PriorityOf(ClientPid));
+
+        action.Revert(new SystemStateSnapshot());
+        Assert.Equal(ProcessPriorityClass.Normal, _processes.PriorityOf(ClientPid));
+    }
+
+    [Theory]
     [InlineData(ProcessPriorityClass.Normal, ProcessPriorityClass.BelowNormal, false)]
     [InlineData(ProcessPriorityClass.High, ProcessPriorityClass.BelowNormal, false)]
     [InlineData(ProcessPriorityClass.BelowNormal, ProcessPriorityClass.BelowNormal, true)]

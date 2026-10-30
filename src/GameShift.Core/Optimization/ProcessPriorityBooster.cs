@@ -25,6 +25,7 @@ public class ProcessPriorityBooster : IOptimization, IJournaledOptimization
     private readonly ILogger _logger = SettingsManager.Logger;
 
     private int _boostedProcessId;
+    private string? _boostedProcessName;
     private bool _usedIfeo;
     private string _ifeoExeName = string.Empty;
     private string _ifeoSubKeyPath = string.Empty;
@@ -123,6 +124,7 @@ public class ProcessPriorityBooster : IOptimization, IJournaledOptimization
         _ifeoPerfOptionsPreviouslyExisted = false;
         _ifeoOriginalValues = null;
         _boostedProcessId = 0;
+        _boostedProcessName = null;
         _originalPrioritySeparation = null;
         _prioritySeparationApplied = false;
 
@@ -249,6 +251,7 @@ public class ProcessPriorityBooster : IOptimization, IJournaledOptimization
                 originalPriority);
 
             _boostedProcessId = profile.ProcessId;
+            _boostedProcessName = processName;
             _usedIfeo = false;
             return true;
         }
@@ -451,7 +454,17 @@ public class ProcessPriorityBooster : IOptimization, IJournaledOptimization
         try
         {
             // Restore original priority
-            Processes.SetPriority(_boostedProcessId, originalPriority);
+            if (string.IsNullOrEmpty(_boostedProcessName))
+            {
+                Processes.SetPriority(_boostedProcessId, originalPriority);
+            }
+            else if (!Processes.RestoreIfSameProcess(_boostedProcessId, _boostedProcessName, originalPriority))
+            {
+                _logger.Information(
+                    "[ProcessPriorityBooster] PID {ProcessId} now belongs to another process, skipping restore",
+                    _boostedProcessId);
+                return true;
+            }
 
             _logger.Information(
                 "[ProcessPriorityBooster] Reverted process {ProcessId} priority to {Original} via runtime API",

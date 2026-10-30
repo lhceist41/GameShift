@@ -33,6 +33,10 @@ public class ProcessPrioritySetAction : GameAction
     /// <inheritdoc/>
     public override string Name => _name;
 
+    // Only a trailing .exe is dropped: Path.GetFileNameWithoutExtension would turn "Battle.net" into "Battle".
+    private string BareProcessName =>
+        _processName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? _processName[..^4] : _processName;
+
     /// <inheritdoc/>
     public override string Impact => $"Set {_processName} priority to {_targetPriority}";
 
@@ -52,7 +56,7 @@ public class ProcessPrioritySetAction : GameAction
             return;
         }
 
-        var bareProcessName = Path.GetFileNameWithoutExtension(_processName);
+        var bareProcessName = BareProcessName;
 
         try
         {
@@ -105,7 +109,7 @@ public class ProcessPrioritySetAction : GameAction
     /// <inheritdoc/>
     public override void Revert(SystemStateSnapshot snapshot)
     {
-        var bareProcessName = Path.GetFileNameWithoutExtension(_processName);
+        var bareProcessName = BareProcessName;
 
         foreach (var (pid, originalPriority) in _originalPriorities)
         {

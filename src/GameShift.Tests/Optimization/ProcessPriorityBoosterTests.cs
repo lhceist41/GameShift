@@ -84,6 +84,21 @@ public class ProcessPriorityBoosterTests
     }
 
     [Fact]
+    public void GamePidReusedByAnotherProcess_IsNotGivenTheGamesOldPriority()
+    {
+        _processes.Add(GamePid, "Game", ProcessPriorityClass.Normal);
+        var booster = NewBooster();
+        Assert.Equal(OptimizationState.Applied, booster.Apply().State);
+        Assert.Equal(ProcessPriorityClass.High, _processes.PriorityOf(GamePid));
+
+        _processes.Add(GamePid, "OtherApp", ProcessPriorityClass.AboveNormal); // game exited, PID reused
+        Assert.Equal(OptimizationState.Reverted, booster.Revert().State);
+
+        Assert.Equal(ProcessPriorityClass.AboveNormal, _processes.PriorityOf(GamePid));
+        Assert.Equal(OriginalSeparation, _separation.Value);
+    }
+
+    [Fact]
     public void FailureWithNothingChanged_ReportsFailed()
     {
         _separation.Value = GamingSeparation; // already at the gaming value, nothing to change
