@@ -1,8 +1,10 @@
+using System.Text.Json;
 using GameShift.Core.Config;
 using GameShift.Core.Monitoring;
 using GameShift.Core.Optimization;
 using GameShift.Core.System;
 using GameShift.Core.SystemTweaks;
+using GameShift.Core.SystemTweaks.Tweaks;
 using Xunit;
 
 namespace GameShift.Tests.SystemTweaks;
@@ -436,6 +438,192 @@ public class LastingChangesInventoryTests
         Assert.Contains("Restart your PC", text);
     }
 
+    // ── A retired tweak and the DPC Doctor fix for the same setting ─────
+
+    private static readonly DateTime TweakTime = new(2026, 10, 1, 12, 0, 0, DateTimeKind.Utc);
+
+    private static ISystemTweak? PairTweak(string className) => className switch
+    {
+        nameof(DisableMpo) => new DisableMpo(),
+        nameof(DisableUsbSelectiveSuspend) => new DisableUsbSelectiveSuspend(),
+        nameof(OptimizeInterruptHandling) => new OptimizeInterruptHandling(),
+        "FakeTweak" => new FakeTweak(),
+        _ => null,
+    };
+
+    /// <summary>
+    /// A ledger as 3.9.0 wrote it: the tweak's time in UTC, the fix's in local time, read back
+    /// through the same JSON round trip as the settings file.
+    /// </summary>
+    private static AppSettings StackedLedger(string fixId, DateTime? tweakAt, DateTime? fixAt, Action<AppSettings>? more = null)
+    {
+        var settings = new AppSettings { SystemTweaks = new SystemTweaksSettings() };
+        settings.SystemTweaks.AppliedTweaks[DpcFixEngine.RetiredTweakByFixId[fixId]] =
+            new TweakState { IsAppliedByGameShift = true, AppliedAt = tweakAt ?? default };
+        settings.AppliedDpcFixes.Add(new AppliedDpcFix
+        {
+            FixId = fixId,
+            Description = "Fix " + fixId,
+            ActionType = "RegistrySet",
+            AppliedAt = fixAt?.ToLocalTime() ?? default,
+        });
+        more?.Invoke(settings);
+        return JsonSerializer.Deserialize<AppSettings>(JsonSerializer.Serialize(settings))!;
+    }
+
+    private static FakeSystem PairSystem(AppSettings settings, params string[] failingKeys) =>
+        new() { Settings = settings, FindTweakOverride = PairTweak, FailingKeys = failingKeys.ToHashSet() };
+
+    [Theory]
+    [InlineData("disable_mpo")]
+    [InlineData("disable_usb_selective_suspend")]
+    [InlineData("msi_mode_nvidia")]
+    [InlineData("msi_mode_amd")]
+    public void StackedPair_IsUndoneLatestFirst(string fixId)
+    {
+        var tweakClass = DpcFixEngine.RetiredTweakByFixId[fixId];
+
+        // Fix applied after the tweak: the fix holds the tweak's value, so it goes first.
+        var fixLater = PairSystem(StackedLedger(fixId, TweakTime, TweakTime.AddMinutes(1)));
+        var results = Inventory(fixLater).Undo(Inventory(fixLater).List().Items);
+        Assert.Equal(["dpc:" + fixId, "tweak:" + tweakClass], fixLater.Calls);
+        Assert.All(results, r => Assert.Equal(LastingChangeOutcome.Undone, r.Outcome));
+        Assert.Empty(fixLater.Settings.AppliedDpcFixes);
+        Assert.Empty(fixLater.Settings.SystemTweaks!.AppliedTweaks);
+
+        // Fix applied 30 minutes before the tweak. In local time east of UTC it reads later, so
+        // there this also fails if the two times are compared without normalizing.
+        var tweakLater = PairSystem(StackedLedger(fixId, TweakTime, TweakTime.AddMinutes(-30)));
+        Inventory(tweakLater).Undo(Inventory(tweakLater).List().Items);
+        Assert.Equal(["tweak:" + tweakClass, "dpc:" + fixId], tweakLater.Calls);
+    }
+
+    [Fact]
+    public void LedgerTimes_KeepTheirKindThroughTheSettingsRoundTrip()
+    {
+        var utc = DateTime.UtcNow;
+        var local = DateTime.Now;
+        var json = JsonSerializer.Serialize(new AppSettings
+        {
+            SystemTweaks = new SystemTweaksSettings { AppliedTweaks = { ["T"] = new TweakState { AppliedAt = utc } } },
+            AppliedDpcFixes = { new AppliedDpcFix { FixId = "f", AppliedAt = local } },
+        });
+
+        var read = JsonSerializer.Deserialize<AppSettings>(json)!;
+        var tweakAt = read.SystemTweaks!.AppliedTweaks["T"].AppliedAt;
+        var fixAt = read.AppliedDpcFixes[0].AppliedAt;
+
+        Assert.Equal(DateTimeKind.Utc, tweakAt.Kind);
+        Assert.Equal(DateTimeKind.Local, fixAt.Kind);
+        Assert.Equal(utc, LastingChangesInventory.AppliedAtUtc(tweakAt));
+        Assert.Equal(local.ToUniversalTime(), LastingChangesInventory.AppliedAtUtc(fixAt));
+
+        var missing = JsonSerializer.Deserialize<AppliedDpcFix>("""{"FixId":"f"}""")!;
+        Assert.Null(LastingChangesInventory.AppliedAtUtc(missing.AppliedAt));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void StackedPair_LaterMemberFails_EarlierIsLeftAloneAndStaysRecorded(bool fixLater)
+    {
+        const string fixId = "disable_mpo";
+        var system = PairSystem(
+            StackedLedger(fixId, TweakTime, TweakTime.AddMinutes(fixLater ? 1 : -1)),
+            fixLater ? fixId : nameof(DisableMpo));
+        var inventory = Inventory(system);
+
+        var results = inventory.Undo(inventory.List().Items);
+
+        Assert.Equal([fixLater ? "dpc:" + fixId : "tweak:" + nameof(DisableMpo)], system.Calls);
+        var later = Assert.Single(results, r => r.Outcome == LastingChangeOutcome.Failed);
+        var earlier = Assert.Single(results, r => r.Outcome == LastingChangeOutcome.LeftAlone);
+        Assert.Contains(later.Change.DisplayName, earlier.Message);
+        Assert.Single(system.Settings.AppliedDpcFixes);
+        Assert.True(system.Settings.SystemTweaks!.AppliedTweaks.ContainsKey(nameof(DisableMpo)));
+        Assert.Equal(2, inventory.List().Recorded.Count);
+    }
+
+    [Fact]
+    public void StackedPair_OnlyTheEarlierMemberSelected_IsLeftAlone()
+    {
+        const string fixId = "msi_mode_nvidia";
+        var system = PairSystem(StackedLedger(fixId, TweakTime, TweakTime.AddMinutes(1)));
+        var inventory = Inventory(system);
+        var items = inventory.List().Items;
+        var tweak = items.Single(i => i.Kind == LastingChangeKind.SystemTweak);
+        var fix = items.Single(i => i.Kind == LastingChangeKind.LatencyDoctorFix);
+
+        var result = Assert.Single(inventory.Undo([tweak]));
+
+        Assert.Equal(LastingChangeOutcome.LeftAlone, result.Outcome);
+        Assert.Contains(fix.DisplayName, result.Message);
+        Assert.Contains("still in place", result.Message);
+        Assert.Empty(system.Calls);
+
+        // The later member alone is fine; once it is undone, the earlier one is no longer held back.
+        Assert.Equal(LastingChangeOutcome.Undone, Assert.Single(inventory.Undo([fix])).Outcome);
+        Assert.Equal(LastingChangeOutcome.Undone, Assert.Single(inventory.Undo([tweak])).Outcome);
+        Assert.Equal(["dpc:" + fixId, "tweak:" + nameof(OptimizeInterruptHandling)], system.Calls);
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public void StackedPair_WithoutDistinctTimes_UndoesTheFixFirst(bool tweakHasTime, bool fixHasTime)
+    {
+        const string fixId = "disable_usb_selective_suspend";
+        // Both present means equal.
+        var system = PairSystem(StackedLedger(fixId,
+            tweakHasTime ? TweakTime : null,
+            fixHasTime ? TweakTime : null));
+        var inventory = Inventory(system);
+
+        inventory.Undo(inventory.List().Items.Reverse());
+
+        Assert.Equal(["dpc:" + fixId, "tweak:" + nameof(DisableUsbSelectiveSuspend)], system.Calls);
+    }
+
+    [Fact]
+    public void StackedPair_DoesNotReorderTheOtherItems()
+    {
+        var settings = StackedLedger("disable_mpo", TweakTime.AddMinutes(-5), TweakTime.AddMinutes(-10), s =>
+        {
+            s.VbsHvciDisabledByGameShift = true;
+            s.SystemTweaks!.AppliedTweaks["FakeTweak"] = new TweakState { IsAppliedByGameShift = true, AppliedAt = TweakTime };
+            s.AppliedDpcFixes.Add(new AppliedDpcFix { FixId = "ndis_interrupt_moderation", ActionType = "SetNetAdapterProperty", AppliedAt = TweakTime.AddMinutes(-20) });
+            s.AppliedDpcFixes.Add(BcdEntry("tscsyncpolicy"));
+        });
+        var system = PairSystem(settings);
+        system.Bcd["tscsyncpolicy"] = "Enhanced";
+        var inventory = Inventory(system);
+
+        var results = inventory.Undo(inventory.List().Items);
+
+        Assert.Equal(
+            ["vbs", "tweak:DisableMpo", "dpc:disable_mpo", "tweak:FakeTweak", "dpc:ndis_interrupt_moderation",
+                "kernel:tscsyncpolicy", "forget:tscsyncpolicy"],
+            system.Calls);
+        Assert.All(results, r => Assert.Equal(LastingChangeOutcome.Undone, r.Outcome));
+    }
+
+    [Fact]
+    public void StackedPairMembers_AreNotChanged_WhenTheLedgerCannotBeReadBeforeUndoing()
+    {
+        var system = PairSystem(StackedLedger("disable_mpo", TweakTime, TweakTime.AddMinutes(1), s =>
+            s.SystemTweaks!.AppliedTweaks["FakeTweak"] = new TweakState { IsAppliedByGameShift = true }));
+        var inventory = Inventory(system);
+        var items = inventory.List().Items;
+        system.LoadFails = true;
+
+        var results = inventory.Undo(items);
+
+        Assert.Equal(["tweak:FakeTweak"], system.Calls);
+        Assert.Equal(2, results.Count(r => r.Outcome == LastingChangeOutcome.Failed));
+    }
+
     private sealed class FakeTweak : ISystemTweak
     {
         public string Name => "Fake tweak";
@@ -452,7 +640,7 @@ public class LastingChangesInventoryTests
     /// </summary>
     private sealed class FakeSystem : ILastingChangeSystem
     {
-        public AppSettings Settings { get; } = new();
+        public AppSettings Settings { get; init; } = new();
         public Dictionary<string, string?> Bcd { get; } = KernelTuningManager.AllSettings
             .ToDictionary(s => s.BcdKey, _ => (string?)null, StringComparer.OrdinalIgnoreCase);
         public bool BcdReadable { get; init; } = true;
@@ -461,9 +649,12 @@ public class LastingChangesInventoryTests
         public bool AllRevertsFail { get; init; }
         public bool ThrowOnDpcRevert { get; init; }
         public Func<string, ISystemTweak?>? FindTweakOverride { get; init; }
+        public HashSet<string> FailingKeys { get; init; } = new();
+        public bool LoadFails { get; set; }
         public List<string> Calls { get; } = new();
 
-        public AppSettings LoadSettings() => Settings;
+        public AppSettings LoadSettings() =>
+            LoadFails ? throw new IOException("settings locked") : Settings;
 
         public ISystemTweak? FindTweak(string className) =>
             FindTweakOverride != null ? FindTweakOverride(className)
@@ -473,7 +664,7 @@ public class LastingChangesInventoryTests
         {
             var className = tweak.GetType().Name;
             Calls.Add("tweak:" + className);
-            if (AllRevertsFail) return false;
+            if (AllRevertsFail || FailingKeys.Contains(className)) return false;
             Settings.SystemTweaks?.AppliedTweaks.Remove(className);
             return true;
         }
@@ -482,7 +673,7 @@ public class LastingChangesInventoryTests
         {
             Calls.Add("dpc:" + fixId);
             if (ThrowOnDpcRevert) throw new InvalidOperationException("boom");
-            if (AllRevertsFail) return new DpcFixResult { Success = false, Message = "failed" };
+            if (AllRevertsFail || FailingKeys.Contains(fixId)) return new DpcFixResult { Success = false, Message = "failed" };
             Settings.AppliedDpcFixes.RemoveAll(f => f.FixId == fixId);
             Settings.PendingRebootFixes.Remove(fixId);
             return new DpcFixResult { Success = true, Message = "reverted" };

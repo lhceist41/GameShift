@@ -87,9 +87,9 @@ public class DpcFixEngine
     }
 
     // The System Tweaks that earlier versions offered for the same settings. Each recorded the value
-    // it replaced, so applying the fix on top would capture GameShift's own value and a later
-    // Restore All, which undoes tweaks first, would put it back.
-    private static readonly Dictionary<string, string> RetiredTweakByFixId = new(StringComparer.Ordinal)
+    // it replaced, so applying the fix on top would capture GameShift's own value, and undoing the
+    // two in the wrong order would put it back.
+    internal static readonly IReadOnlyDictionary<string, string> RetiredTweakByFixId = new Dictionary<string, string>(StringComparer.Ordinal)
     {
         ["disable_mpo"] = nameof(SystemTweaks.Tweaks.DisableMpo),
         ["disable_usb_selective_suspend"] = nameof(SystemTweaks.Tweaks.DisableUsbSelectiveSuspend),

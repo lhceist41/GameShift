@@ -158,17 +158,63 @@ public sealed class LastingChangesInventory
         IEnumerable<LastingChange> items, IEnumerable<LastingChange>? separatelyConfirmed = null)
     {
         var confirmed = new HashSet<LastingChange>(separatelyConfirmed ?? []);
+        var selected = items.Distinct().ToList();
         var results = new List<LastingChangeResult>();
+        var handled = new HashSet<LastingChange>();
         IReadOnlyDictionary<string, string?>? bcdNow = null;
         bool bcdRead = false;
 
-        foreach (var item in items.Distinct().OrderBy(i => i.Kind))
+        var pairs = ReadStackedPairs(selected, out bool ledgerUnreadable);
+
+        foreach (var item in selected.OrderBy(i => i.Kind))
         {
-            if (item.NeedsOwnConfirmation && !confirmed.Contains(item))
+            if (!handled.Add(item)) continue;
+
+            if (ledgerUnreadable && IsPairMember(item))
             {
-                results.Add(new(item, LastingChangeOutcome.LeftAlone, "Not confirmed, so it was left as it is."));
+                results.Add(Logged(Failed(item, "GameShift's settings could not be read, so it was not changed.")));
                 continue;
             }
+
+            var pair = pairs.FirstOrDefault(p => p.Any(m => m.Matches(item)));
+            if (pair == null)
+            {
+                results.Add(UndoChecked(item));
+                continue;
+            }
+
+            // The later change captured the earlier one's value, so the earlier one is undone only
+            // after the later one was, or it would end at GameShift's value instead of the original.
+            string? leftAloneMessage = null;
+            foreach (var member in pair)
+            {
+                var memberItem = selected.FirstOrDefault(member.Matches);
+                if (memberItem == null)
+                {
+                    leftAloneMessage ??= $"\"{member.DisplayName}\" changed the same setting after it and is still in place, so it was left as it is. Undo both together to get the original value back.";
+                    continue;
+                }
+                handled.Add(memberItem);
+
+                if (leftAloneMessage != null)
+                {
+                    results.Add(Logged(new(memberItem, LastingChangeOutcome.LeftAlone, leftAloneMessage)));
+                    continue;
+                }
+
+                var result = UndoChecked(memberItem);
+                results.Add(result);
+                if (result.Outcome != LastingChangeOutcome.Undone)
+                    leftAloneMessage = $"\"{member.DisplayName}\" changed the same setting after it and was not undone, so it was left as it is. Undoing this one alone would bring back GameShift's value.";
+            }
+        }
+
+        return results;
+
+        LastingChangeResult UndoChecked(LastingChange item)
+        {
+            if (item.NeedsOwnConfirmation && !confirmed.Contains(item))
+                return new(item, LastingChangeOutcome.LeftAlone, "Not confirmed, so it was left as it is.");
 
             if (item.Kind == LastingChangeKind.KernelSetting && !bcdRead)
             {
@@ -186,13 +232,15 @@ public sealed class LastingChangesInventory
                 _logger.Warning(ex, "[LastingChanges] Undo of {Kind} {Key} failed", item.Kind, item.Key);
                 result = new(item, LastingChangeOutcome.Failed, ex.Message);
             }
-
-            _logger.Information("[LastingChanges] {Kind} {Key}: {Outcome} ({Message})",
-                item.Kind, item.Key, result.Outcome, result.Message);
-            results.Add(result);
+            return Logged(result);
         }
+    }
 
-        return results;
+    private LastingChangeResult Logged(LastingChangeResult result)
+    {
+        _logger.Information("[LastingChanges] {Kind} {Key}: {Outcome} ({Message})",
+            result.Change.Kind, result.Change.Key, result.Outcome, result.Message);
+        return result;
     }
 
     // ── Listing ─────────────────────────────────────────────────────────
@@ -388,6 +436,76 @@ public sealed class LastingChangesInventory
 
     private static LastingChangeResult Failed(LastingChange item, string message) =>
         new(item, LastingChangeOutcome.Failed, message);
+
+    // ── Stacked tweak and fix ───────────────────────────────────────────
+
+    /// <summary>A recorded change to a setting that another recorded change also made.</summary>
+    private sealed record StackedMember(LastingChangeKind Kind, string Key, string DisplayName, DateTime? AppliedAtUtc)
+    {
+        public bool Matches(LastingChange item) => item.Kind == Kind && item.Key == Key;
+    }
+
+    private static bool IsPairMember(LastingChange item) => item.Kind switch
+    {
+        LastingChangeKind.SystemTweak => DpcFixEngine.RetiredTweakByFixId.Values.Contains(item.Key),
+        LastingChangeKind.LatencyDoctorFix => DpcFixEngine.RetiredTweakByFixId.ContainsKey(item.Key),
+        _ => false,
+    };
+
+    /// <summary>
+    /// Each retired tweak recorded together with a DPC Doctor fix for the same setting, members in
+    /// the order they must be undone. Read only when such an item is to be undone.
+    /// </summary>
+    private List<IReadOnlyList<StackedMember>> ReadStackedPairs(List<LastingChange> selected, out bool ledgerUnreadable)
+    {
+        ledgerUnreadable = false;
+        if (!selected.Any(IsPairMember)) return [];
+
+        AppSettings settings;
+        try
+        {
+            settings = _system.LoadSettings();
+        }
+        catch (Exception ex)
+        {
+            _logger.Warning(ex, "[LastingChanges] Failed to load settings before undoing");
+            ledgerUnreadable = true;
+            return [];
+        }
+
+        var tweaks = settings.SystemTweaks?.AppliedTweaks;
+        if (tweaks == null) return [];
+
+        return settings.AppliedDpcFixes
+            .Where(f => DpcFixEngine.RetiredTweakByFixId.ContainsKey(f.FixId))
+            .GroupBy(f => f.FixId)
+            .Select(g => g.First())
+            .GroupBy(f => DpcFixEngine.RetiredTweakByFixId[f.FixId])
+            .Where(g => tweaks.TryGetValue(g.Key, out var state) && state.IsAppliedByGameShift)
+            .Select(g => UndoOrder(
+                g.Select(f => new StackedMember(LastingChangeKind.LatencyDoctorFix, f.FixId,
+                        string.IsNullOrWhiteSpace(f.Description) ? f.FixId : f.Description, AppliedAtUtc(f.AppliedAt)))
+                 .Append(new StackedMember(LastingChangeKind.SystemTweak, g.Key,
+                        _system.FindTweak(g.Key)?.Name ?? g.Key, AppliedAtUtc(tweaks[g.Key].AppliedAt)))
+                 .ToList()))
+            .ToList();
+    }
+
+    // Latest first. Without a distinct time for every member, fixes go before the tweak: the
+    // tweak leaves a value it found already set alone, so only a tweak-first pair depends on order.
+    private static IReadOnlyList<StackedMember> UndoOrder(List<StackedMember> members)
+    {
+        var times = members.Select(m => m.AppliedAtUtc).ToList();
+        bool distinctTimes = times.All(t => t != null) && times.Distinct().Count() == times.Count;
+        return distinctTimes
+            ? members.OrderByDescending(m => m.AppliedAtUtc).ToList()
+            : members.OrderBy(m => m.Kind == LastingChangeKind.SystemTweak).ToList();
+    }
+
+    // Tweaks save AppliedAt in UTC and DPC Doctor fixes in local time; both read back with their
+    // Kind set. A missing value reads back as default.
+    internal static DateTime? AppliedAtUtc(DateTime appliedAt) =>
+        appliedAt == default ? null : appliedAt.ToUniversalTime();
 
     // ── Rules ───────────────────────────────────────────────────────────
 
