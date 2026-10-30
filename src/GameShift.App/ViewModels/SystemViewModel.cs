@@ -2,8 +2,6 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
-using System.Windows.Media;
-using GameShift.Core.Monitoring;
 using GameShift.Core.System;
 
 namespace GameShift.App.ViewModels;
@@ -11,7 +9,6 @@ namespace GameShift.App.ViewModels;
 /// <summary>
 /// ViewModel for the System Overview page.
 /// Gathers hardware info, Windows features, and top processes via SystemInfoGatherer.
-/// Temperature and Startup sections are populated in Phase F.
 /// </summary>
 public class SystemViewModel : INotifyPropertyChanged
 {
@@ -67,66 +64,17 @@ public class SystemViewModel : INotifyPropertyChanged
     // ── Top Processes ──────────────────────────────────────────────────────
     public ObservableCollection<SystemInfoGatherer.ProcessInfo> TopProcesses { get; } = new();
 
-    // ── Temperature placeholders (Phase F) ─────────────────────────────────
-    private string _cpuTemp = "N/A";
-    public string CpuTemp { get => _cpuTemp; set { _cpuTemp = value; OnPropertyChanged(); } }
-
-    private string _gpuTemp = "N/A";
-    public string GpuTemp { get => _gpuTemp; set { _gpuTemp = value; OnPropertyChanged(); } }
-
-    private bool _tempAvailable;
-    public bool TempAvailable { get => _tempAvailable; set { _tempAvailable = value; OnPropertyChanged(); } }
-
-    private Brush _cpuTempBrush = new SolidColorBrush(Color.FromRgb(0x80, 0x80, 0x80));
-    public Brush CpuTempBrush { get => _cpuTempBrush; set { _cpuTempBrush = value; OnPropertyChanged(); } }
-
-    private Brush _gpuTempBrush = new SolidColorBrush(Color.FromRgb(0x80, 0x80, 0x80));
-    public Brush GpuTempBrush { get => _gpuTempBrush; set { _gpuTempBrush = value; OnPropertyChanged(); } }
-
-    // ── Startup Apps placeholders (Phase F) ────────────────────────────────
+    // ── Startup Apps ───────────────────────────────────────────────────────
     public ObservableCollection<StartupAppItem> StartupApps { get; } = new();
 
     private bool _isRefreshing;
     public bool IsRefreshing { get => _isRefreshing; set { _isRefreshing = value; OnPropertyChanged(); } }
-
-    private readonly TemperatureMonitor? _tempMonitor;
 
     // ── Constructor ────────────────────────────────────────────────────────
 
     public SystemViewModel()
     {
         _ = RefreshAsync();
-
-        _tempMonitor = App.Services.TempMon;
-        if (_tempMonitor != null && _tempMonitor.IsAvailable)
-        {
-            TempAvailable = true;
-            _tempMonitor.TemperatureUpdated += OnTemperatureUpdated;
-            _tempMonitor.Start();
-        }
-    }
-
-    // ── Temperature Event Handler ───────────────────────────────────────────
-
-    private void OnTemperatureUpdated(object? sender, TemperatureSample e)
-    {
-        System.Windows.Application.Current?.Dispatcher.BeginInvoke(() =>
-        {
-            CpuTemp = e.CpuTempCelsius > 0 ? $"{e.CpuTempCelsius:F0}\u00B0C" : "N/A";
-            GpuTemp = e.GpuTempCelsius > 0 ? $"{e.GpuTempCelsius:F0}\u00B0C" : "N/A";
-
-            // Update brushes based on thresholds
-            CpuTempBrush = GetTempBrush(e.CpuTempCelsius);
-            GpuTempBrush = GetTempBrush(e.GpuTempCelsius);
-        });
-    }
-
-    private static Brush GetTempBrush(float temp)
-    {
-        if (temp <= 0) return new SolidColorBrush(Color.FromRgb(0x80, 0x80, 0x80));
-        if (temp < 60) return new SolidColorBrush(Color.FromRgb(0x4A, 0xDE, 0x80)); // green
-        if (temp < 80) return new SolidColorBrush(Color.FromRgb(0xFB, 0xBF, 0x24)); // yellow
-        return new SolidColorBrush(Color.FromRgb(0xF8, 0x71, 0x71)); // red
     }
 
     // ── Public Methods ─────────────────────────────────────────────────────
@@ -223,9 +171,7 @@ public class SystemViewModel : INotifyPropertyChanged
                         Name = app.Name,
                         Publisher = app.Source,
                         Source = app.Source,
-                        IsRecommendedDisable = app.IsRecommendedDisable,
-                        IsEnabled = app.IsEnabled,
-                        AppInfo = app
+                        IsRecommendedDisable = app.IsRecommendedDisable
                     });
                 }
             });
@@ -242,21 +188,6 @@ public class SystemViewModel : INotifyPropertyChanged
         }
     }
 
-    public void ToggleStartupApp(StartupAppItem item)
-    {
-        if (item.AppInfo == null) return;
-        StartupAppManager.ToggleStartupApp(item.AppInfo, item.IsEnabled);
-    }
-
-    public void Cleanup()
-    {
-        if (_tempMonitor != null)
-        {
-            _tempMonitor.TemperatureUpdated -= OnTemperatureUpdated;
-            _tempMonitor.Stop();
-        }
-    }
-
     // ── INotifyPropertyChanged ─────────────────────────────────────────────
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -268,20 +199,10 @@ public class SystemViewModel : INotifyPropertyChanged
 /// <summary>
 /// Model for startup app items displayed in the System Overview page.
 /// </summary>
-public class StartupAppItem : INotifyPropertyChanged
+public class StartupAppItem
 {
     public string Name { get; set; } = "";
     public string Publisher { get; set; } = "";
     public string Source { get; set; } = "";
     public bool IsRecommendedDisable { get; set; }
-    public StartupAppInfo? AppInfo { get; set; }
-
-    private bool _isEnabled;
-    public bool IsEnabled
-    {
-        get => _isEnabled;
-        set { _isEnabled = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsEnabled))); }
-    }
-
-    public event PropertyChangedEventHandler? PropertyChanged;
 }

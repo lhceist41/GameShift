@@ -6,7 +6,6 @@ namespace GameShift.Core.Profiles.GameActions;
 
 /// <summary>
 /// Game-specific action that sets a named process to a specific priority class during gameplay.
-/// Less aggressive than ProcessSuspendAction - lowers priority instead of freezing the process.
 /// Example use: set LeagueClientUx to BelowNormal during gameplay to free CPU time.
 /// Restores original priority on revert.
 /// </summary>

@@ -165,27 +165,6 @@
                     </StackPanel>
                 </Border>
 
-                <!-- Temperature Section (Phase F placeholder) -->
-                <TextBlock Text="TEMPERATURE" FontSize="11" FontWeight="Bold"
-                           Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,0,0,8"/>
-
-                <Border Background="{DynamicResource GS.Surface.Card}" CornerRadius="8"
-                        Padding="15" Margin="0,0,0,20"
-                        BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1">
-                    <StackPanel>
-                        <DockPanel Margin="0,0,0,6">
-                            <TextBlock Text="CPU Temperature" Foreground="{DynamicResource GS.Text.Primary}"/>
-                            <TextBlock Text="{Binding CpuTemp}" DockPanel.Dock="Right" HorizontalAlignment="Right"
-                                       Foreground="{Binding CpuTempBrush}" FontWeight="SemiBold"/>
-                        </DockPanel>
-                        <DockPanel>
-                            <TextBlock Text="GPU Temperature" Foreground="{DynamicResource GS.Text.Primary}"/>
-                            <TextBlock Text="{Binding GpuTemp}" DockPanel.Dock="Right" HorizontalAlignment="Right"
-                                       Foreground="{Binding GpuTempBrush}" FontWeight="SemiBold"/>
-                        </DockPanel>
-                    </StackPanel>
-                </Border>
-
                 <!-- Top Processes -->
                 <TextBlock Text="TOP PROCESSES (BY CPU TIME)" FontSize="11" FontWeight="Bold"
                            Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,0,0,8"/>
@@ -218,9 +197,12 @@
                     </ItemsControl>
                 </Border>
 
-                <!-- Startup Apps Section (Phase F placeholder) -->
+                <!-- Startup Apps Section -->
                 <TextBlock Text="STARTUP APPLICATIONS" FontSize="11" FontWeight="Bold"
-                           Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,0,0,8"/>
+                           Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,0,0,4"/>
+                <TextBlock Text="Turn startup apps on or off in Windows Settings &gt; Apps &gt; Startup."
+                           FontSize="11" Foreground="{DynamicResource GS.Text.Secondary}"
+                           TextWrapping="Wrap" Margin="0,0,0,8"/>
 
                 <Border Background="{DynamicResource GS.Surface.Card}" CornerRadius="8"
                         Padding="15" Margin="0,0,0,20"
@@ -229,9 +211,6 @@
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <DockPanel Margin="0,0,0,6">
-                                    <CheckBox DockPanel.Dock="Left" IsChecked="{Binding IsEnabled, Mode=TwoWay}"
-                                              VerticalAlignment="Center" Margin="0,0,8,0"
-                                              Checked="OnStartupToggled" Unchecked="OnStartupToggled"/>
                                     <StackPanel>
                                         <StackPanel Orientation="Horizontal">
                                             <TextBlock Text="{Binding Name}" Foreground="{DynamicResource GS.Text.Primary}" FontWeight="SemiBold"/>

@@ -9,19 +9,12 @@ namespace GameShift.Core.System;
 public static partial class NativeInterop
 {
     // ============================================================
-    // ntdll.dll - Process Suspension/Resumption
+    // ntdll.dll - Process Resumption
     // ============================================================
 
     /// <summary>
-    /// Suspends all threads in a process.
-    /// Used by ProcessSuspendAction.
-    /// </summary>
-    [DllImport("ntdll.dll")]
-    internal static extern int NtSuspendProcess(IntPtr processHandle);
-
-    /// <summary>
     /// Resumes all threads in a previously suspended process.
-    /// Used by ProcessSuspendAction and by crash recovery to resume suspended processes.
+    /// Used by crash recovery to resume processes suspended by earlier versions.
     /// </summary>
     [DllImport("ntdll.dll")]
     internal static extern int NtResumeProcess(IntPtr processHandle);

@@ -99,13 +99,10 @@ public partial class FirstRunWizardWindow : Window
         try
         {
             // Load existing settings first, then overlay wizard values to avoid
-            // resetting all other settings (BackgroundMode, profiles, etc.) to defaults
+            // resetting all other settings (profiles, etc.) to defaults
             var settings = SettingsManager.Load();
             settings.StartWithWindows = StartWithWindowsCheckBox.IsChecked == true;
             settings.ShowNotifications = NotificationsCheckBox.IsChecked == true;
-            settings.GpuVendorOverride = (GpuVendorComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Auto";
-            // Easy Mode (default) unless the user opted into advanced features.
-            settings.AdvancedMode = AdvancedFeaturesCheckBox.IsChecked == true;
 
             SettingsManager.Save(settings);
 
@@ -121,8 +118,8 @@ public partial class FirstRunWizardWindow : Window
             }
 
             WizardCompleted = true;
-            Log.Information("FirstRunWizard completed - settings saved (StartWithWindows={StartWithWindows}, ShowNotifications={ShowNotifications}, GpuVendor={GpuVendor})",
-                settings.StartWithWindows, settings.ShowNotifications, settings.GpuVendorOverride);
+            Log.Information("FirstRunWizard completed - settings saved (StartWithWindows={StartWithWindows}, ShowNotifications={ShowNotifications})",
+                settings.StartWithWindows, settings.ShowNotifications);
         }
         catch (Exception ex)
         {

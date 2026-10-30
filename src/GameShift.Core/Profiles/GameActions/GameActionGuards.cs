@@ -1,9 +1,8 @@
 namespace GameShift.Core.Profiles.GameActions;
 
 /// <summary>
-/// Shared safety guards for per-game actions. Single source of truth for the anti-cheat process
-/// blocklist so <see cref="ProcessSuspendAction"/> and <see cref="ProcessPrioritySetAction"/> can
-/// never drift apart (e.g. one being updated while the other lags).
+/// Shared safety guards for per-game actions: the anti-cheat process blocklist that
+/// <see cref="ProcessPrioritySetAction"/> checks before touching a process.
 /// </summary>
 public static class GameActionGuards
 {

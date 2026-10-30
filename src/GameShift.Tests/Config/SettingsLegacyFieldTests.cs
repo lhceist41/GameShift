@@ -25,14 +25,14 @@ public class SettingsLegacyFieldTests
                 {
                   "PreferEtwDpcMonitoring": false,
                   "DefaultDpcThresholdMicroseconds": 2500,
-                  "QuickSwitchProfileId": "profile-A"
+                  "SkippedUpdateVersion": "3.8.8"
                 }
                 """);
 
             var loaded = SettingsManager.Load();
 
             Assert.Equal(2500, loaded.DefaultDpcThresholdMicroseconds);
-            Assert.Equal("profile-A", loaded.QuickSwitchProfileId);
+            Assert.Equal("3.8.8", loaded.SkippedUpdateVersion);
         }
         finally
         {

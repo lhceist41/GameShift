@@ -127,22 +127,6 @@ public static class ServiceFactory
         services.SessionStore.Load();
         services.SessionTrk = new SessionTracker(services.Detector!, services.DpcMon, services.Engine!, services.SessionStore);
 
-        // Temperature monitor
-        services.TempMon = new TemperatureMonitor();
-
-        // Driver version tracker (scan asynchronously)
-        services.DriverTracker = new DriverVersionTracker();
-        _ = services.DriverTracker.ScanAndCheckAsync().ContinueWith(t =>
-        {
-            if (t.IsFaulted)
-                Log.Warning(t.Exception?.InnerException, "DriverVersionTracker background scan failed");
-        }, TaskContinuationOptions.OnlyOnFaulted);
-        writeDiag("DriverVersionTracker initialized (scanning in background)");
-
-        // Benchmark service
-        services.Benchmark = new BenchmarkService();
-        writeDiag("BenchmarkService initialized");
-
         // System Tweaks manager
         services.TweaksMgr = new SystemTweaksManager();
         writeDiag("SystemTweaksManager initialized");

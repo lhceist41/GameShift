@@ -66,13 +66,10 @@ These activate when a game launches and revert when the game closes.
 | Feature | Description |
 |:--------|:------------|
 | **Real-time Performance** | Live CPU, GPU, RAM, VRAM, and network ping telemetry with sparkline graphs. Pauses during gaming to eliminate polling overhead. |
-| **Temperature Monitoring** | CPU and GPU temperature tracking via LibreHardwareMonitor. |
 | **DPC Latency Doctor** | ETW-based per-driver DPC/ISR attribution, known problematic driver database, one-click quick fixes (registry, BCDEdit, netsh, power plan, network adapter) with rollback. Interrupt affinity display showing current GPU and USB interrupt core assignments, MSI mode status. Kernel tuning panel with per-setting apply/revert for `disabledynamictick`, `useplatformtick`, `tscsyncpolicy`, `x2apicpolicy`, `hypervisorlaunchtype`, and `useplatformclock`. Core isolation visual map for reserving P-cores. |
 | **DPC Load Monitor** | Passive sampling of DPC load (the share of CPU time spent in deferred procedure calls) during gaming, with configurable spike thresholds and toast notifications. |
 | **GPU Advisories** | Detects HAGS (Hardware Accelerated GPU Scheduling) and Resizable BAR/SAM status. Shows recommendations if performance features are available but not enabled. |
 | **Session History** | Post-session summary toast with duration, applied/failed optimization counts, and DPC statistics. Per-game tracking and statistics. |
-| **Driver Version Tracker** | Detects installed GPU and audio drivers, checks against known advisory database, flags problematic versions. |
-| **Benchmarking** | PresentMon-based frame time capture for performance measurement. |
 
 ### Persistent System Tweaks
 

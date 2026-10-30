@@ -10,7 +10,6 @@ public class StartupAppInfo
     public string Source { get; set; } = ""; // "Registry HKCU", "Registry HKLM", "Startup Folder"
     public string RegistryPath { get; set; } = "";
     public string RegistryValueName { get; set; } = "";
-    public bool IsEnabled { get; set; } = true;
     public bool IsRecommendedDisable { get; set; } = false;
 }
 
@@ -22,7 +21,7 @@ public sealed record RenamedStartupEntry(bool CurrentUser, string ValueName)
 
 /// <summary>
 /// Reads startup applications from Registry Run/RunOnce keys (HKCU+HKLM)
-/// and shell:startup folder. Provides enable/disable toggle by renaming registry values.
+/// and shell:startup folder.
 /// </summary>
 public static class StartupAppManager
 {
@@ -54,8 +53,8 @@ public static class StartupAppManager
     private const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
 
     /// <summary>
-    /// Run values turned off by a "~" prefix (the way <see cref="ToggleStartupApp"/> disables
-    /// them) whose original name is free, in the current user's and the machine's Run key.
+    /// Run values renamed with a "~" prefix (the way earlier versions' startup switch turned them
+    /// off) whose original name is free, in the current user's and the machine's Run key.
     /// Nothing records which ones GameShift renamed, so callers must not restore them unasked.
     /// </summary>
     public static List<RenamedStartupEntry> GetRenamedEntries()
@@ -127,8 +126,7 @@ public static class StartupAppManager
                 var command = key.GetValue(valueName)?.ToString() ?? "";
                 if (string.IsNullOrWhiteSpace(command)) continue;
 
-                bool isDisabled = valueName.StartsWith("~");
-                var cleanName = isDisabled ? valueName[1..] : valueName;
+                var cleanName = valueName.StartsWith("~") ? valueName[1..] : valueName;
 
                 apps.Add(new StartupAppInfo
                 {
@@ -137,7 +135,6 @@ public static class StartupAppManager
                     Source = source,
                     RegistryPath = path,
                     RegistryValueName = valueName,
-                    IsEnabled = !isDisabled,
                     IsRecommendedDisable = _safeToDisable.Any(s =>
                         cleanName.Contains(s, StringComparison.OrdinalIgnoreCase))
                 });
@@ -164,7 +161,6 @@ public static class StartupAppManager
                     Name = name,
                     Command = file,
                     Source = "Startup Folder",
-                    IsEnabled = true,
                     IsRecommendedDisable = _safeToDisable.Any(s =>
                         name.Contains(s, StringComparison.OrdinalIgnoreCase))
                 });
@@ -173,49 +169,6 @@ public static class StartupAppManager
         catch (Exception ex)
         {
             Log.Warning(ex, "Failed to read startup folder");
-        }
-    }
-
-    /// <summary>
-    /// Toggle a startup app by renaming the registry value (prefix with ~ to disable).
-    /// </summary>
-    public static bool ToggleStartupApp(StartupAppInfo app, bool enable)
-    {
-        if (app.Source == "Startup Folder") return false; // Can't toggle folder shortcuts via registry
-
-        try
-        {
-            var hive = app.Source.Contains("HKCU") ? Registry.CurrentUser : Registry.LocalMachine;
-            using var key = hive.OpenSubKey(app.RegistryPath, writable: true);
-            if (key == null) return false;
-
-            var currentValue = key.GetValue(app.RegistryValueName)?.ToString();
-            if (currentValue == null) return false;
-
-            if (enable && app.RegistryValueName.StartsWith("~"))
-            {
-                // Re-enable: rename ~Name to Name
-                var newName = app.RegistryValueName[1..];
-                key.SetValue(newName, currentValue);
-                key.DeleteValue(app.RegistryValueName);
-                app.RegistryValueName = newName;
-            }
-            else if (!enable && !app.RegistryValueName.StartsWith("~"))
-            {
-                // Disable: rename Name to ~Name
-                var newName = "~" + app.RegistryValueName;
-                key.SetValue(newName, currentValue);
-                key.DeleteValue(app.RegistryValueName);
-                app.RegistryValueName = newName;
-            }
-
-            app.IsEnabled = enable;
-            return true;
-        }
-        catch (Exception ex)
-        {
-            Log.Warning(ex, "Failed to toggle startup app {Name}", app.Name);
-            return false;
         }
     }
 }

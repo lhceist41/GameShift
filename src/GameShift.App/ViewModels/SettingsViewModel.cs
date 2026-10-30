@@ -24,10 +24,7 @@ public class SettingsViewModel : INotifyPropertyChanged
     private bool _showNotifications;
     private bool _enableLogging;
     private string _logLevel = "Information";
-    private int _memoryThresholdMB;
-    private int _timerResolution100ns;
     // v2 fields
-    private string _gpuVendorOverride = "Auto";
     private int _defaultDpcThresholdMicroseconds = 1000;
     private string _defaultDpcThresholdPercentText = DpcLoad.FormatThreshold(1000);
     private string _vbsHvciStatus = "Unknown";
@@ -162,25 +159,7 @@ public class SettingsViewModel : INotifyPropertyChanged
         set { if (_logLevel != value) { _logLevel = value; IsDirty = true; OnPropertyChanged(); } }
     }
 
-    public int MemoryThresholdMB
-    {
-        get => _memoryThresholdMB;
-        set { if (_memoryThresholdMB != value) { _memoryThresholdMB = value; IsDirty = true; OnPropertyChanged(); } }
-    }
-
-    public int TimerResolution100ns
-    {
-        get => _timerResolution100ns;
-        set { if (_timerResolution100ns != value) { _timerResolution100ns = value; IsDirty = true; OnPropertyChanged(); } }
-    }
-
-    // ── v2 GPU / DPC / VBS properties ────────────────────────────────
-
-    public string GpuVendorOverride
-    {
-        get => _gpuVendorOverride;
-        set { if (_gpuVendorOverride != value) { _gpuVendorOverride = value; IsDirty = true; OnPropertyChanged(); } }
-    }
+    // ── v2 DPC / VBS properties ────────────────────────────────
 
     public int DefaultDpcThresholdMicroseconds
     {
@@ -215,8 +194,6 @@ public class SettingsViewModel : INotifyPropertyChanged
         get => _showReEnableButton;
         private set { _showReEnableButton = value; OnPropertyChanged(); }
     }
-
-    public List<string> GpuVendorOptions { get; } = new() { "Auto", "NVIDIA", "AMD" };
 
     // ── UI state ──────────────────────────────────────────────────────
 
@@ -256,9 +233,6 @@ public class SettingsViewModel : INotifyPropertyChanged
         _showNotifications = settings.ShowNotifications;
         _enableLogging = settings.EnableLogging;
         _logLevel = settings.LogLevel;
-        _memoryThresholdMB = settings.MemoryThresholdMB;
-        _timerResolution100ns = settings.TimerResolution100ns;
-        _gpuVendorOverride = settings.GpuVendorOverride;
         _defaultDpcThresholdMicroseconds = settings.DefaultDpcThresholdMicroseconds;
         _defaultDpcThresholdPercentText = DpcLoad.FormatThreshold(settings.DefaultDpcThresholdMicroseconds);
         _showGameDetectedToast = settings.ShowGameDetectedToast;
@@ -284,9 +258,6 @@ public class SettingsViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(ShowNotifications));
         OnPropertyChanged(nameof(EnableLogging));
         OnPropertyChanged(nameof(LogLevel));
-        OnPropertyChanged(nameof(MemoryThresholdMB));
-        OnPropertyChanged(nameof(TimerResolution100ns));
-        OnPropertyChanged(nameof(GpuVendorOverride));
         OnPropertyChanged(nameof(DefaultDpcThresholdMicroseconds));
         OnPropertyChanged(nameof(DefaultDpcThresholdPercentText));
         OnPropertyChanged(nameof(ShowGameDetectedToast));
@@ -315,9 +286,6 @@ public class SettingsViewModel : INotifyPropertyChanged
         settings.ShowNotifications = ShowNotifications;
         settings.EnableLogging = EnableLogging;
         settings.LogLevel = LogLevel;
-        settings.MemoryThresholdMB = MemoryThresholdMB;
-        settings.TimerResolution100ns = TimerResolution100ns;
-        settings.GpuVendorOverride = GpuVendorOverride;
         settings.DefaultDpcThresholdMicroseconds = DefaultDpcThresholdMicroseconds;
         settings.ShowGameDetectedToast = ShowGameDetectedToast;
         settings.ShowSessionSummaryToast = ShowSessionSummaryToast;

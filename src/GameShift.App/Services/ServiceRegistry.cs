@@ -22,7 +22,6 @@ public class ServiceRegistry
     public PingMonitor? PingMon { get; set; }
     public SessionHistoryStore? SessionStore { get; set; }
     public SessionTracker? SessionTrk { get; set; }
-    public TemperatureMonitor? TempMon { get; set; }
     public HardwareScanResult? HardwareScan { get; set; }
     public KnownDriverDatabase? DriverDb { get; set; }
 
@@ -33,8 +32,6 @@ public class ServiceRegistry
     public DpcFixEngine? DpcFix { get; set; }
     public SystemTweaksManager? TweaksMgr { get; set; }
     public GameProfileManager? GameProfileMgr { get; set; }
-    public DriverVersionTracker? DriverTracker { get; set; }
-    public BenchmarkService? Benchmark { get; set; }
 
     /// <summary>
     /// Read-only journal reader used by the App layer to surface boot-recovery warnings

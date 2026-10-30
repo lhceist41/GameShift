@@ -184,7 +184,7 @@ public partial class App : Application
             {
                 if (Services.Detector != null)
                 {
-                    _trayManager = new TrayIconManager(Services.Orchestrator!, Services.Engine!, Services.Detector, settings, Services.DpcMon, Services.ProfileMgr);
+                    _trayManager = new TrayIconManager(Services.Orchestrator!, Services.Engine!, Services.Detector, settings, Services.DpcMon);
 
                     // Wire tray menu actions - show MainWindow and navigate to the requested page
                     _trayManager.DashboardRequested += () => ShowAndNavigate(typeof(DashboardPage));
@@ -635,9 +635,6 @@ public partial class App : Application
         // Dispose performance and network monitors (v2.3)
         Services.PerfMon?.Dispose();
         Services.PingMon?.Dispose();
-
-        // Dispose temperature monitor (v2.3)
-        Services.TempMon?.Dispose();
 
         // Dispose DPC trace engine
         Services.DpcTrace?.Dispose();

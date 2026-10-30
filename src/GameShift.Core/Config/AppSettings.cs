@@ -31,18 +31,6 @@ public class AppSettings
     /// </summary>
     public string LogLevel { get; set; } = "Information";
 
-    /// <summary>
-    /// Memory threshold in MB before considering a process as a game.
-    /// Processes using more memory than this are candidates for optimization.
-    /// </summary>
-    public int MemoryThresholdMB { get; set; } = 1024;
-
-    /// <summary>
-    /// Timer resolution in 100-nanosecond units.
-    /// Default 5000 = 0.5ms (5000 * 100ns = 500,000ns = 0.5ms).
-    /// </summary>
-    public int TimerResolution100ns { get; set; } = 5000;
-
     // -- v2 VBS/HVCI Advisory fields ----------------------------------------
 
     /// <summary>
@@ -78,13 +66,6 @@ public class AppSettings
     /// Last time VBS/HVCI state was checked. Null if never checked.
     /// </summary>
     public DateTime? VbsHvciLastChecked { get; set; } = null;
-
-    // -- v2 GPU fields -------------------------------------------------------
-
-    /// <summary>
-    /// GPU vendor override. "Auto" detects via WMI, "NVIDIA" or "AMD" forces vendor.
-    /// </summary>
-    public string GpuVendorOverride { get; set; } = "Auto";
 
     // -- v2 DPC Monitoring fields ------------------------------------------------
 
@@ -134,14 +115,6 @@ public class AppSettings
     /// </summary>
     public bool SuppressNotificationsDuringGaming { get; set; } = true;
 
-    /// <summary>
-    /// Profile ID selected via Quick Profile Switch.
-    /// Empty string means "use default profile lookup" (no override).
-    /// Set by TrayIconManager.OnProfileSelected, read by DetectionOrchestrator.OnGameStarted.
-    /// Cleared after a game session uses it.
-    /// </summary>
-    public string QuickSwitchProfileId { get; set; } = string.Empty;
-
     // -- v2.1 Convenience Features ----------------------------------------
 
     /// <summary>
@@ -169,8 +142,8 @@ public class AppSettings
 
     /// <summary>
     /// Whether Advanced Mode is enabled. Default false (Easy Mode: only Dashboard and
-    /// Settings visible) so new users aren't overwhelmed on first launch. The first-run
-    /// wizard asks and sets this; users can also toggle it from the Dashboard or Settings.
+    /// Settings visible) so new users aren't overwhelmed on first launch. Users can toggle it
+    /// from the Dashboard or Settings.
     /// </summary>
     public bool AdvancedMode { get; set; } = false;
 
@@ -288,7 +261,6 @@ public class BackgroundModeSettings
     /// <summary>Master toggle for all Background Mode services.</summary>
     public bool Enabled { get; set; } = false;
 
-    // -- StandbyListCleaner --
     /// <summary>Enable always-on standby list cleaning.</summary>
     public bool StandbyListCleanerEnabled { get; set; } = true;
     /// <summary>
@@ -308,23 +280,19 @@ public class BackgroundModeSettings
     /// <summary>When true, standby list purging only occurs during active gaming sessions.</summary>
     public bool StandbyListOnlyDuringGaming { get; set; } = true;
 
-    // -- TimerResolutionService --
     /// <summary>Enable always-on timer resolution lock.</summary>
     public bool TimerResolutionEnabled { get; set; } = true;
     /// <summary>Target timer resolution in 100ns units. 5000 = 0.5ms.</summary>
     public int TimerResolution100ns { get; set; } = 5000;
 
-    // -- PowerPlanManager --
     /// <summary>Enable always-on power plan management.</summary>
     public bool PowerPlanEnabled { get; set; } = true;
     /// <summary>Minutes of user idle before switching to balanced plan. 0 = never switch.</summary>
     public int IdleTimeoutMinutes { get; set; } = 15;
 
-    // -- TaskDeferralService --
     /// <summary>Enable Windows scheduled task deferral during gaming.</summary>
     public bool TaskDeferralEnabled { get; set; } = true;
 
-    // -- ProBalance --
     /// <summary>
     /// Enable dynamic background CPU restraint during gaming sessions.
     /// Demotes background processes that exceed 15% CPU for 3 consecutive samples
@@ -332,7 +300,6 @@ public class BackgroundModeSettings
     /// </summary>
     public bool ProBalanceEnabled { get; set; } = true;
 
-    // -- ProcessPriorityPersistence --
     /// <summary>Enable persistent process priority rules.</summary>
     public bool ProcessPriorityEnabled { get; set; } = false;
     /// <summary>

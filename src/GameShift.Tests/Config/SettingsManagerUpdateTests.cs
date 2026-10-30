@@ -24,12 +24,12 @@ public class SettingsManagerUpdateTests
         try
         {
             // Seed an unrelated field that the Update below must NOT touch.
-            SettingsManager.Save(new AppSettings { QuickSwitchProfileId = "profile-A" });
+            SettingsManager.Save(new AppSettings { SkippedUpdateVersion = "3.8.8" });
 
             SettingsManager.Update(s => s.AppliedDpcFixes.Add(new AppliedDpcFix { FixId = "f1" }));
 
             var reloaded = SettingsManager.Load();
-            Assert.Equal("profile-A", reloaded.QuickSwitchProfileId);            // unrelated field preserved
+            Assert.Equal("3.8.8", reloaded.SkippedUpdateVersion);                // unrelated field preserved
             Assert.Single(reloaded.AppliedDpcFixes);
             Assert.Equal("f1", reloaded.AppliedDpcFixes[0].FixId);
         }

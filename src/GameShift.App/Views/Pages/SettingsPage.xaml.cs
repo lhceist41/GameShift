@@ -493,7 +493,6 @@ public partial class SettingsPage : Page
             var features = new List<string>();
             if (profile.IntelHybridPCoreOnly) features.Add("P-Core Only");
             if (profile.LauncherPriority != null) features.Add($"Launcher \u2192 {profile.LauncherPriority}");
-            if (profile.GamingStandbyThresholdMB != null) features.Add($"Standby: {profile.GamingStandbyThresholdMB}MB");
             if (features.Count > 0)
             {
                 mainStack.Children.Add(new TextBlock

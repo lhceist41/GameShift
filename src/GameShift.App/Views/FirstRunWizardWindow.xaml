@@ -44,12 +44,6 @@
                            Foreground="#E6EDF3"
                            HorizontalAlignment="Center"
                            TextAlignment="Center"
-                           Margin="0,0,0,8"/>
-                <TextBlock Text="Zero permanent changes, zero risk."
-                           FontSize="14"
-                           Foreground="#8B949E"
-                           HorizontalAlignment="Center"
-                           TextAlignment="Center"
                            Margin="0,0,0,40"/>
 
                 <!-- Step indicator -->
@@ -206,27 +200,6 @@
                 <!-- Settings card -->
                 <Border Background="#161B22" CornerRadius="8" Padding="20">
                     <StackPanel>
-                        <!-- Show advanced features (sets Easy vs Advanced Mode) -->
-                        <DockPanel Margin="0,0,0,16">
-                            <StackPanel DockPanel.Dock="Left" MaxWidth="330">
-                                <TextBlock Text="Show advanced features"
-                                           FontSize="14"
-                                           Foreground="#E6EDF3"/>
-                                <TextBlock Text="Extra pages and per-optimization controls for power users. Leave off for a simpler app."
-                                           FontSize="12"
-                                           Foreground="#8B949E"
-                                           TextWrapping="Wrap"/>
-                            </StackPanel>
-                            <CheckBox x:Name="AdvancedFeaturesCheckBox"
-                                      DockPanel.Dock="Right"
-                                      HorizontalAlignment="Right"
-                                      VerticalAlignment="Center"
-                                      IsChecked="False"/>
-                        </DockPanel>
-
-                        <!-- Divider -->
-                        <Rectangle Height="1" Fill="#30363D" Margin="0,0,0,16"/>
-
                         <!-- Start with Windows -->
                         <DockPanel Margin="0,0,0,16">
                             <StackPanel DockPanel.Dock="Left">
@@ -248,7 +221,7 @@
                         <Rectangle Height="1" Fill="#30363D" Margin="0,0,0,16"/>
 
                         <!-- Enable notifications -->
-                        <DockPanel Margin="0,0,0,16">
+                        <DockPanel>
                             <StackPanel DockPanel.Dock="Left">
                                 <TextBlock Text="Enable Notifications"
                                            FontSize="14"
@@ -262,35 +235,6 @@
                                       HorizontalAlignment="Right"
                                       VerticalAlignment="Center"
                                       IsChecked="True"/>
-                        </DockPanel>
-
-                        <!-- Divider -->
-                        <Rectangle Height="1" Fill="#30363D" Margin="0,0,0,16"/>
-
-                        <!-- GPU Vendor -->
-                        <DockPanel>
-                            <StackPanel DockPanel.Dock="Left">
-                                <TextBlock Text="GPU Vendor"
-                                           FontSize="14"
-                                           Foreground="#E6EDF3"/>
-                                <TextBlock Text="Override GPU vendor for driver optimizations"
-                                           FontSize="12"
-                                           Foreground="#8B949E"/>
-                            </StackPanel>
-                            <ComboBox x:Name="GpuVendorComboBox"
-                                      DockPanel.Dock="Right"
-                                      HorizontalAlignment="Right"
-                                      VerticalAlignment="Center"
-                                      Width="110"
-                                      Background="#21262D"
-                                      Foreground="#E6EDF3"
-                                      BorderBrush="#30363D"
-                                      SelectedIndex="0">
-                                <ComboBoxItem Content="Auto"/>
-                                <ComboBoxItem Content="NVIDIA"/>
-                                <ComboBoxItem Content="AMD"/>
-                                <ComboBoxItem Content="Intel"/>
-                            </ComboBox>
                         </DockPanel>
                     </StackPanel>
                 </Border>

@@ -9,7 +9,7 @@ namespace GameShift.Core.Detection;
 /// <summary>
 /// Event args for any process spawn detected via WMI.
 /// Fired for ALL processes, not just game matches.
-/// Used by ProcessPriorityPersistence and ProcessSnapshotService.
+/// Used by ProcessSnapshotService.
 /// </summary>
 public class ProcessSpawnedEventArgs : EventArgs
 {
@@ -63,8 +63,7 @@ public class GameDetector : IDisposable
 
     /// <summary>
     /// Fired for every process start detected via WMI, before game matching.
-    /// Used by ProcessPriorityPersistence (replaces its duplicate WMI watcher)
-    /// and ProcessSnapshotService (dirty flag for cache invalidation).
+    /// Used by ProcessSnapshotService (dirty flag for cache invalidation).
     /// </summary>
     public event EventHandler<ProcessSpawnedEventArgs>? ProcessSpawned;
 

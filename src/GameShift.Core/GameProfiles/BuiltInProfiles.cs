@@ -47,7 +47,7 @@ public static class BuiltInProfiles
         RecommendedTweaks = new[] { "DisableGameDvr", "DisableHags", "DisableMpo", "OptimizeMmcss", "OptimizeWin32PrioritySeparation", "DisablePowerThrottling" },
         Notes = new[]
         {
-            "OW2 has a documented memory leak - RAM usage climbs from ~3GB to 7-8GB over extended sessions. Aggressive standby list cleaning helps.",
+            "OW2 has a documented memory leak - RAM usage climbs from ~3GB to 7-8GB over extended sessions.",
             "Battle.net launcher consumes significant CPU. Profile sets it to Below Normal priority during gameplay.",
             "On Intel hybrid CPUs (12th-14th gen), E-cores hurt OW2 performance. Profile auto-pins to P-cores only.",
             "NVIDIA users: Enable Reflex (On + Boost) in OW2 settings. Use Fullscreen (not Borderless). Set Shader Cache to 10GB in NVIDIA Control Panel.",
@@ -100,8 +100,7 @@ public static class BuiltInProfiles
             "LoL's gameplay loop runs primarily on a single thread. Single-core CPU performance matters most.",
             "LoL now uses Vanguard anti-cheat (same as Valorant). Priority/affinity changes are safe.",
             "The League Client (Electron-based) is a significant resource hog. Profile demotes all client processes to Below Normal.",
-            "Lightweight game - if you're not hitting 144+ FPS, background processes are likely the bottleneck, not hardware.",
-            "Timer resolution from Background Mode helps with LoL's frame pacing."
+            "Lightweight game - if you're not hitting 144+ FPS, background processes are likely the bottleneck, not hardware."
         }
     };
 
@@ -145,7 +144,7 @@ public static class BuiltInProfiles
         RecommendedTweaks = new[] { "DisableGameDvr", "OptimizeWin32PrioritySeparation", "DisablePowerThrottling" },
         Notes = new[]
         {
-            "Extremely latency-sensitive rhythm game. Timer resolution (0.5ms from Background Mode) is the single most impactful optimization.",
+            "Extremely latency-sensitive rhythm game.",
             "MUST use exclusive fullscreen (not borderless) - adds up to one full frame of latency otherwise.",
             "Frame limiter: Set to Unlimited if your PC sustains 500+ FPS without drops, otherwise use Optimal. Never use VSync.",
             "Disable fullscreen optimizations on osu!.exe via Compatibility tab.",
@@ -173,7 +172,7 @@ public static class BuiltInProfiles
         {
             "Modified Unity engine - main-thread dominant with 6-8 worker threads. CPU bottleneck during multi-operator battles and zone transitions.",
             "Uses ACE (Anti-Cheat Expert) by Tencent in an obfuscated variant. Likely USER-MODE only (game runs on Linux via Proton which cannot execute kernel drivers). Process priority and ISLC are safe. Third-party filter/frame interpolation apps are officially confirmed to cause freezes.",
-            "Memory leak confirmed - performance degrades over extended sessions. ISLC standby cleaning enabled. Restart the game every 2-3 hours if you notice increasing stutter.",
+            "Memory leak confirmed - performance degrades over extended sessions. Restart the game every 2-3 hours if you notice increasing stutter.",
             "Default renderer is Vulkan. DX11 is the safer fallback for crash-prone systems (toggle in launcher near Play button). Vulkan can be unstable on Intel/AMD GPU drivers.",
             "DLSS 4 with Multi Frame Generation supported day-one (RTX 50 series gets ~3x FPS at 4K). DLSS Balanced recommended. Frame Generation adds input latency - skip for action combat. NVIDIA Reflex supported but mutually exclusive with Frame Generation.",
             "NO FSR or XeSS support - AMD users only get TAAU (Temporal AA Upscaling) as a non-DLSS alternative.",
@@ -298,8 +297,7 @@ public static class BuiltInProfiles
             "Source 2 engine -- heavily main-thread-bound. 1-2 cores saturate while others idle. On Intel hybrid CPUs (12th-14th gen), P-core-only affinity provides up to 15% FPS improvement (confirmed by Valve's own built-in CPU Core Usage Preference setting added Dec 2024).",
             "Uses VAC (Valve Anti-Cheat) -- FULLY USER-MODE (Ring 3). No kernel driver. Process priority, CPU affinity, ISLC, timer resolution, and all system optimization tools are completely safe. No confirmed VAC bans from any optimization tool, ever.",
             "VAC overhead is negligible -- brief sub-millisecond scans from steamservice.exe. VACNet/VAC Live (server-side AI) has zero client-side cost.",
-            "Memory leak confirmed -- VRAM fills progressively over extended sessions causing FPS degradation. ISLC standby cleaning enabled. Restart the game every 1-2 hours if you notice declining FPS.",
-            "0.5ms timer resolution is one of the MOST IMPACTFUL optimizations for CS2. The game does NOT call timeBeginPeriod() internally. Forcing 0.5ms produces 20-30% improvement in 1%/0.1% lows and eliminates visible microstutter. Average FPS is unchanged.",
+            "Memory leak confirmed -- VRAM fills progressively over extended sessions causing FPS degradation. Restart the game every 1-2 hours if you notice declining FPS.",
             "DX11 outperforms Vulkan by ~18% on NVIDIA/AMD GPUs. Vulkan is only recommended for Linux and Intel Arc GPUs. Launch option: -vulkan to switch.",
             "Fullscreen Exclusive is MANDATORY for competitive play -- borderless adds DWM compositor overhead and measurable input lag. CS2 defaults to borderless windowed; players must manually switch. Disable Fullscreen Optimizations on cs2.exe.",
             "NVIDIA Reflex natively supported (up to 35% latency reduction). However, some advanced players report Reflex is 'broken' in CS2 (Jan 2025) and use -noreflex + NVIDIA CP Ultra Low Latency Mode instead.",
@@ -331,12 +329,11 @@ public static class BuiltInProfiles
         {
             "Unreal Engine 5 -- Game Thread is the primary bottleneck during competitive play. Building triggers game thread spikes (object spawning, collision, network replication). Endgame with 30+ players is the worst case.",
             "Uses Easy Anti-Cheat (EAC) -- KERNEL-LEVEL (Ring 0) driver. EasyAntiCheat_EOS.sys loads when Fortnite launches and sometimes FAILS TO UNLOAD after game exit (persists until reboot). EAC BLOCKS direct SetProcessAffinityMask() and SetPriorityClass() on the game process.",
-            "EAC LIMITATION: GameShift uses direct Win32 API calls for priority and affinity. EAC blocks cross-process handle access on the game executable, so priority and affinity settings from this profile may not apply to the game process itself. Launcher demotion, ISLC, timer resolution, and all system tweaks still work normally.",
+            "EAC LIMITATION: GameShift uses direct Win32 API calls for priority and affinity. EAC blocks cross-process handle access on the game executable, so priority and affinity settings from this profile may not apply to the game process itself. Launcher demotion and system tweaks still work normally.",
             "Priority workaround: set via registry at HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\FortniteClient-Win64-Shipping.exe\\PerfOptions with DWORD CpuPriorityClass = 3. This is applied at process creation before EAC protection activates.",
             "Affinity workaround: set affinity on EpicGamesLauncher.exe before Fortnite spawns -- child processes inherit affinity. Direct affinity changes on the game process will be blocked by EAC.",
             "ISLC, timer resolution tools, and MSI Afterburner are confirmed safe with EAC. Process Lasso has one isolated EAC ban report (different game, later reversed). RTSS overlays are blocked but never cause bans.",
             "Known EAC bugs: BSODs (DRIVER_VERIFIER_FAILURE, SYSTEM_THREAD_EXCEPTION_NOT_HANDLED), conflicts with ASUS AI Suite / Avast / some motherboard utilities, kernel scan loop bug that pushes System process to 30-40% CPU after game exit.",
-            "0.5ms timer resolution provides 25-30% smoother frame-time consistency. Fortnite internally requests 1ms via timeBeginPeriod(1) -- overriding to 0.5ms halves the OS scheduler wake interval for additional benefit.",
             "Ultimate Performance power plan provides ~7% avg FPS gain with significantly reduced frame drops in dense areas. NOTE: AMD CPUs should stick with Balanced (AMD has its own power management).",
             "HAGS is VENDOR-DEPENDENT: NVIDIA should keep HAGS ON (marginal benefit, required for DLSS FG). AMD must turn HAGS OFF -- confirmed 39% degradation in 0.1% lows on RX 9070 XT. Not included in recommended tweaks due to this split.",
             "Three rendering modes: DX12 (default, enables Nanite/Lumen/TSR -- best for mid+ hardware), DX11 (legacy, more stable on old hardware), Performance Mode (-FeatureLevelES31 -- 20-50% FPS boost but items don't render until ~30m). DX12 has ~10% better 0.1% lows than DX11.",
@@ -374,7 +371,7 @@ public static class BuiltInProfiles
         {
             "Modified Source engine (Titanfall 2 fork) -- heavily main-thread-bound. Two threads carry most load while others are lightly utilized. CPU bottlenecks hard in endgame with many squads.",
             "Uses Easy Anti-Cheat (EAC) -- KERNEL-LEVEL (Ring 0). EAC blocks direct SetProcessAffinityMask() and SetPriorityClass() on r5apex_dx12.exe. Priority set via IFEO registry. Affinity via parent process inheritance.",
-            "EAC LIMITATION: GameShift uses direct Win32 API calls for priority and affinity. EAC blocks cross-process handle access on the game executable, so priority and affinity settings from this profile may not apply to the game process itself. Launcher demotion, ISLC, timer resolution, and all system tweaks still work normally.",
+            "EAC LIMITATION: GameShift uses direct Win32 API calls for priority and affinity. EAC blocks cross-process handle access on the game executable, so priority and affinity settings from this profile may not apply to the game process itself. Launcher demotion and system tweaks still work normally.",
             "Priority workaround: set via registry at HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\r5apex_dx12.exe\\PerfOptions with DWORD CpuPriorityClass = 3. This is applied at process creation before EAC protection activates.",
             "CRITICAL: r5apex_dx12.exe frequently fails to terminate after game exit, leaving a zombie process consuming 40%+ system memory. If you notice high RAM usage after closing Apex, check Task Manager and manually end the process.",
             "VRAM memory leak tied to texture streaming budget. VRAM usage climbs continuously regardless of configured cap. Setting texture budget to 'None' caps VRAM at ~2GB and prevents the leak.",
@@ -385,8 +382,7 @@ public static class BuiltInProfiles
             "Server tick rate is 20Hz (confirmed by Respawn's April 2021 deep-dive, unchanged since). Nagle tweaks irrelevant -- gameplay uses UDP on ports 37000-40000.",
             "Config: videoconfig.txt at %USERPROFILE%\\Saved Games\\Respawn\\Apex\\local\\videoconfig.txt. Set to Read-Only after editing. autoexec.cfg at <Install Dir>\\cfg\\autoexec.cfg.",
             "Launch options: -novid +fps_max 0 -high -fullscreen. REMOVE -threads if present -- incorrect values hurt performance. FPS hard cap: 300.",
-            "Shader cache corruption causes stutter after updates. Clear %ProgramData%\\NVIDIA Corporation\\NV_Cache\\ when performance degrades after a game update.",
-            "0.5ms timer resolution improves frame pacing consistency. Apex does NOT call timeBeginPeriod() internally."
+            "Shader cache corruption causes stutter after updates. Clear %ProgramData%\\NVIDIA Corporation\\NV_Cache\\ when performance degrades after a game update."
         }
     };
 
@@ -408,7 +404,7 @@ public static class BuiltInProfiles
         {
             "Unity engine -- aggressively main-thread-bound (4-6 effective threads). Single-core IPC is the dominant performance factor. Large L3 cache CPUs (5800X3D, 7800X3D) excel due to Unity's cache-sensitive memory access patterns.",
             "Uses Easy Anti-Cheat (EAC) -- KERNEL-LEVEL (Ring 0). Same process manipulation restrictions as other EAC titles. Priority via IFEO registry, affinity via parent process inheritance.",
-            "EAC LIMITATION: GameShift uses direct Win32 API calls for priority and affinity. EAC blocks cross-process handle access on the game executable, so priority and affinity settings from this profile may not apply to the game process itself. Launcher demotion, ISLC, timer resolution, and all system tweaks still work normally.",
+            "EAC LIMITATION: GameShift uses direct Win32 API calls for priority and affinity. EAC blocks cross-process handle access on the game executable, so priority and affinity settings from this profile may not apply to the game process itself. Launcher demotion and system tweaks still work normally.",
             "Priority workaround: set via registry at HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\RustClient.exe\\PerfOptions with DWORD CpuPriorityClass = 3. This is applied at process creation before EAC protection activates.",
             "MOST RAM-DEMANDING game in GameShift's profile set. 16GB is genuinely insufficient for high-pop servers. Typical usage: 8-10GB fresh wipe, 13-16GB+ late wipe (200+ players). Memory grows continuously with no plateau.",
             "gc.buffer is the SINGLE MOST IMPACTFUL optimization for Rust. Controls Unity's incremental garbage collector buffer. Without it, GC runs cause micro-stutters every few seconds. Recommended: 2048 for 16GB systems, 4096 for 32GB. Set via launch option: -gc.buffer 2048",
@@ -420,7 +416,7 @@ public static class BuiltInProfiles
             "Server tick rate: 30 ticks/second. Gameplay uses UDP on port 28015. Nagle tweaks irrelevant (UDP).",
             "Performance killers: Grass Quality, Shadow Quality/Distance/Cascades, Tree/Mesh Quality. Console: graphics.lodbias 0.53, effects.maxgibs -1, sss.enable 0, graphics.waves 0, itemskins 0.",
             "Config: <Steam>\\steamapps\\common\\Rust\\cfg\\client.cfg. Launch options: -gc.buffer 2048 -gc.incremental_milliseconds 1 -forceUnloadBundles -window-mode exclusive. Most other circulated launch options are non-functional.",
-            "0.5ms timer resolution provides frame pacing improvement. Ultimate Performance power plan strongly recommended for Rust's single-thread-bound workload."
+            "Ultimate Performance power plan strongly recommended for Rust's single-thread-bound workload."
         }
     };
 
@@ -442,12 +438,11 @@ public static class BuiltInProfiles
         {
             "Custom FromSoftware engine -- 1 main rendering thread + 7 worker threads. GPU is massively underutilized; CPU command list processing time exceeds GPU processing time in most frames. The primary stutter is the buffer swap/present instruction stalling for 60ms+ on the CPU.",
             "Uses Easy Anti-Cheat (EAC) -- KERNEL-LEVEL (Ring 0). EAC blocks direct SetProcessAffinityMask() and SetPriorityClass() on eldenring.exe. Priority via IFEO registry. Affinity via parent process inheritance through start_protected_game.exe.",
-            "EAC LIMITATION: GameShift uses direct Win32 API calls for priority and affinity. EAC blocks cross-process handle access on the game executable, so priority and affinity settings from this profile may not apply to the game process itself. Launcher demotion, ISLC, timer resolution, and all system tweaks still work normally.",
+            "EAC LIMITATION: GameShift uses direct Win32 API calls for priority and affinity. EAC blocks cross-process handle access on the game executable, so priority and affinity settings from this profile may not apply to the game process itself. Launcher demotion and system tweaks still work normally.",
             "Priority workaround: set via registry at HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\eldenring.exe\\PerfOptions with DWORD CpuPriorityClass = 3. This is applied at process creation before EAC protection activates.",
             "REMOVING CPU 0 FROM AFFINITY is the single most impactful optimization. Windows uses Core 0 for USB/HID interrupts, input polling, and kernel DPCs. When the main thread lands on CPU 0, interrupt contention causes severe frametime spikes. Requires ~25 second delay after launch (game needs CPU 0 during initialization). GameShift's affinity system applies immediately at detection -- for Elden Ring, manually removing CPU 0 after 25 seconds via Task Manager provides additional benefit.",
             "On Intel 12th-14th gen hybrid CPUs, Elden Ring shows the WORST stutter of any platform. PC Gamer Nsight analysis: 100ms+ spikes on i7-14700KF from E-core scheduling. P-core-only affinity + CPU 0 removal is critical.",
             "HARD 60 FPS CAP with game logic tied to framerate (inherited from Dark Souls 2 engine). Expected frame time: 16.67ms. Actual: regularly spikes to 30ms, severe stutters reach 60-100ms+.",
-            "0.5ms timer resolution is CRITICAL for Elden Ring. Since every frame must land within a 16.67ms budget, even 0.5ms granularity improvement reduces late frame presentation. This is one of the highest-impact timer resolution games in the entire profile set.",
             "Fullscreen mode forces monitor to 60Hz even on higher-refresh panels. BORDERLESS WINDOWED is recommended -- allows native refresh rate, enables HAGS benefits, better alt-tab.",
             "Shader compilation stutter is the most notorious PC issue. DX12 PSOs compiled at runtime on first encounter with new areas/enemies/spells. No async pre-compilation. Set NVIDIA Shader Cache to Unlimited for eldenring.exe.",
             "Disable Control Flow Guard (CFG) in Windows Exploit Protection for eldenring.exe -- known to worsen DX12 compilation stalls.",
@@ -477,11 +472,10 @@ public static class BuiltInProfiles
         {
             "Identical FromSoftware engine to base Elden Ring -- all Elden Ring optimizations apply directly. Same threading model (1 main + 7 workers), same DX12 renderer, same frame pacing characteristics.",
             "Uses Easy Anti-Cheat (EAC) -- KERNEL-LEVEL (Ring 0). Same restrictions as Elden Ring. Unlike base ER, EAC bypass is NOT viable since Nightreign is always-online multiplayer.",
-            "EAC LIMITATION: GameShift uses direct Win32 API calls for priority and affinity. EAC blocks cross-process handle access on the game executable, so priority and affinity settings from this profile may not apply to the game process itself. Launcher demotion, ISLC, timer resolution, and all system tweaks still work normally.",
+            "EAC LIMITATION: GameShift uses direct Win32 API calls for priority and affinity. EAC blocks cross-process handle access on the game executable, so priority and affinity settings from this profile may not apply to the game process itself. Launcher demotion and system tweaks still work normally.",
             "Priority workaround: set via registry at HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\nightreign.exe\\PerfOptions with DWORD CpuPriorityClass = 3. This is applied at process creation before EAC protection activates.",
             "HARD 60 FPS CAP persists (pre-rendered cutscenes are 30 FPS). No native V-sync toggle -- causes tearing on some configs. AMD users may be locked to 30fps; fix by forcing V-sync off in Adrenalin (introduces tearing).",
             "CPU 0 removal + P-core affinity applies identically to base Elden Ring. Same 25-second post-launch delay required. GameShift's affinity system applies immediately -- for best results, manually remove CPU 0 after 25 seconds via Task Manager.",
-            "0.5ms timer resolution is critical -- same rationale as Elden Ring (16.67ms frame budget makes timer granularity high-impact).",
             "Stutter is 'nowhere near as bad' as base Elden Ring but still present. Same GPU underutilization pattern.",
             "Always-online 3-player co-op roguelike -- network quality directly impacts core gameplay. P2P networking via Steam ports (TCP 27015, 27036; UDP 27015, 27031-27036). Open NAT critical.",
             "No native DLSS, FSR, XeSS, or NVIDIA Reflex. Third-party NRSS mod adds these but requires EAC disabled (not viable for online play).",
@@ -518,7 +512,7 @@ public static class BuiltInProfiles
             "WARNING: FACEIT Anti-Cheat conflicts with RICOCHET. Uninstall FACEIT AC before playing CoD to avoid launch failures.",
             "WARNING: Windows Memory Integrity (Core Isolation / HVCI) conflicts with RICOCHET and should be disabled. BO6 Season 2 triggered widespread 'Unexpected Kernel Mode Trap' BSODs after a RICOCHET driver update.",
             "TPM 2.0 and Secure Boot required for Black Ops 7 (Nov 2025) and Warzone Season 01 (Dec 2025) via Azure remote attestation. Not required for BO6 or MWIII.",
-            "Memory leaks CONFIRMED and acknowledged on Activision's Trello board. Warzone RAM usage climbs to 97-100% within 30-90 minutes on 16GB systems. 32GB strongly recommended. ISLC standby cleaning is critical.",
+            "Memory leaks CONFIRMED and acknowledged on Activision's Trello board. Warzone RAM usage climbs to 97-100% within 30-90 minutes on 16GB systems. 32GB strongly recommended.",
             "VRAM management is notoriously poor. Engine UNDERREPORTS usage by 3-6 GB. Use in-game VRAM Scale Target (config key: VideoMemoryScale, range 0.0-2.0, default 0.85). Recommended: 0.60-0.70 for 8GB cards, 0.70-0.80 for 12GB, 0.80 for 16GB+.",
             "Config tweak: GPUUploadHeaps = false in config file. Disables Resizable BAR which causes frame pacing stutters in Warzone (NVIDIA) and all modes (AMD). Widely recommended community fix.",
             "On-Demand Texture Streaming is the PRIMARY cause of packet burst errors. Downloads textures from Activision's CDN during gameplay, competing with UDP packets. Set to 'Minimal' for competitive play.",
@@ -564,8 +558,7 @@ public static class BuiltInProfiles
             "Crowd Density (in Graphics settings) is actually a CPU setting. Every NPC requires AI pathfinding and physics. In Dogtown, high density can crush even an i9-13900K. Lowering High to Medium yields ~10-15% CPU headroom.",
             "'Fullscreen' mode is actually borderless windowed internally. True exclusive fullscreen can be forced by changing WindowMode to Fullscreen in UserSettings.json.",
             "NVMe SSD highly recommended. CDPR recommends NVMe for RT Overdrive preset. MaxNodesPerFrame=1800 + NVMe dramatically reduces texture pop-in during driving.",
-            "Single-player only -- no network requirements, no multiplayer, no ports to configure.",
-            "0.5ms timer resolution provides marginal frame pacing improvement. Game is primarily GPU-bound so timer resolution is less impactful than CPU-bound competitive titles. Most beneficial at 1080p high-FPS without RT where CPU bottlenecks emerge."
+            "Single-player only -- no network requirements, no multiplayer, no ports to configure."
         }
     };
 
@@ -595,7 +588,6 @@ public static class BuiltInProfiles
             "GraalVM EE provides 20%+ improvement in chunk generation and modest client FPS gains with better 1% lows. Only supports G1GC.",
             "Optimization mod stack (Fabric): Sodium (2-5x FPS rendering rewrite), Lithium (50%+ tick improvement), FerriteCore (30-50% RAM reduction), Iris (shader support), Entity Culling, ImmediatelyFast, Krypton (networking). Sodium supersedes OptiFine with far better performance and mod compatibility.",
             "ISLC's primary value for Minecraft is the 0.5ms timer resolution feature, NOT standby list cleaning. The JVM manages its own heap memory independently of the Windows standby list.",
-            "0.5ms timer resolution improves frame pacing by 20-30% in 1%/0.1% lows. Java calls timeBeginPeriod(1) for Thread.sleep() - ISLC's 0.5ms override provides additional precision.",
             "Game tick rate: fixed 20 TPS (50ms budget). Client render loop is decoupled and interpolates between ticks. Chunk loading, entity rendering, and redstone all compete for the Server Thread's 50ms budget.",
             "Network: TCP only (unusual for games), port 25565. TCP_NODELAY=true since version 1.8.1. Nagle's algorithm is not a concern on modern versions.",
             "Vanilla uses OpenGL 3.3 - no DLSS, FSR, NVIDIA Reflex, or any modern GPU features. Sodium requires OpenGL 4.5. VulkanMod replaces renderer with Vulkan 1.2+ but has limited mod compatibility.",
@@ -628,8 +620,7 @@ public static class BuiltInProfiles
             "HAGS causes severe stuttering in FFXIV - MUST be disabled. Multiple confirmed reports on official Square Enix forums, especially in borderless windowed mode.",
             "Borderless windowed has a BitBlt (legacy) presentation mode bug - breaks G-Sync/FreeSync and causes frame pacing issues. Fixes: Windows 11 'Optimizations for windowed games' toggle, or use Fullscreen Exclusive (recommended for best performance and VRR).",
             "Frame rate cap bug: DX11 client does NOT properly limit FPS when minimized. Game runs at uncapped FPS while minimized, wasting resources and generating heat.",
-            "Extended session memory growth: starts at 2.5-3 GB, grows over time. Dawntrail (7.0) worsened this. ACT+Cactbot adds ~6.7 GB over 3 hours. Dalamud plugins have documented memory leaks. ISLC standby cleaning is specifically beneficial for FFXIV's gradual memory accumulation.",
-            "0.5ms timer resolution provides marginal but real improvement to input polling and frame timing, particularly for double-weaving oGCDs in combat (2.5s GCD with ~0.6-0.7s animation locks).",
+            "Extended session memory growth: starts at 2.5-3 GB, grows over time. Dawntrail (7.0) worsened this. ACT+Cactbot adds ~6.7 GB over 3 hours. Dalamud plugins have documented memory leaks.",
             "Network: TCP for all gameplay. Ports: TCP 55296-55551 (primary gameplay), 80, 443, 8080. Server tick rate ~3 seconds for DoT/HoT/AoE snapshots. Latency directly affects ability queuing - higher RTT extends effective animation lock. Gaming VPNs (Mudfish, ExitLag) help by optimizing routing to data centers.",
             "In-game 'Character and Object Quantity' (System Config → Other → Display Limits) is the single most effective CPU optimization. Reducing from Maximum to Minimum dramatically improves FPS in crowded areas.",
             "Config: %USERPROFILE%\\Documents\\My Games\\FINAL FANTASY XIV - A Realm Reborn\\FFXIV.cfg. Key tunables: ScreenMode (0=Windowed, 1=Fullscreen, 2=Borderless), Fps, FPSInActive, DisplayObjectLimitType, OcclusionCulling.",

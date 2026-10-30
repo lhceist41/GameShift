@@ -50,7 +50,6 @@ public class BackgroundModeSettingsCompatibilityTests
         Assert.True(loaded.BackgroundMode.TaskDeferralEnabled);
         Assert.False(loaded.StartMinimized);
         Assert.Equal(2500, loaded.DefaultDpcThresholdMicroseconds);
-        Assert.Equal("profile-A", loaded.QuickSwitchProfileId);
         Assert.Equal("1.1.1.1", loaded.PingTarget);
     }
 
@@ -67,7 +66,6 @@ public class BackgroundModeSettingsCompatibilityTests
         Assert.Equal("BelowNormal", reloaded.BackgroundMode.ProcessPriorityRules["example.exe"]);
         Assert.False(reloaded.StartMinimized);
         Assert.Equal(2500, reloaded.DefaultDpcThresholdMicroseconds);
-        Assert.Equal("profile-A", reloaded.QuickSwitchProfileId);
         Assert.Equal("1.1.1.1", reloaded.PingTarget);
     }
 
@@ -79,6 +77,6 @@ public class BackgroundModeSettingsCompatibilityTests
         var loaded = JsonSerializer.Deserialize<AppSettings>(json)!;
 
         Assert.False(loaded.BackgroundMode!.Enabled);
-        Assert.Equal("profile-A", loaded.QuickSwitchProfileId);
+        Assert.Equal("1.1.1.1", loaded.PingTarget);
     }
 }

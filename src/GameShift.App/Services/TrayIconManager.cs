@@ -8,7 +8,6 @@ using GameShift.Core.Config;
 using GameShift.Core.Detection;
 using GameShift.Core.Monitoring;
 using GameShift.Core.Optimization;
-using GameShift.Core.Profiles;
 using Hardcodet.Wpf.TaskbarNotification;
 using Serilog;
 
@@ -27,7 +26,6 @@ public class TrayIconManager : IDisposable
     private readonly GameDetector _detector;
     private readonly AppSettings _settings;
     private readonly DpcLatencyMonitor? _dpcMonitor;
-    private readonly ProfileManager? _profileManager;
     private readonly ILogger _logger;
     private bool _hasDpcWarning;
     private bool _disposed;
@@ -68,15 +66,13 @@ public class TrayIconManager : IDisposable
         OptimizationEngine engine,
         GameDetector detector,
         AppSettings settings,
-        DpcLatencyMonitor? dpcMonitor = null,
-        ProfileManager? profileManager = null)
+        DpcLatencyMonitor? dpcMonitor = null)
     {
         _orchestrator = orchestrator;
         _engine = engine;
         _detector = detector;
         _settings = settings;
         _dpcMonitor = dpcMonitor;
-        _profileManager = profileManager;
         _logger = SettingsManager.Logger;
 
         // Create TaskbarIcon using Hardcodet.NotifyIcon.Wpf (works on Win10 + Win11)
@@ -175,13 +171,6 @@ public class TrayIconManager : IDisposable
         var profileItem = new MenuItem { Header = "Profile Editor" };
         profileItem.Click += (s, e) => ProfileEditorRequested?.Invoke();
         menu.Items.Add(profileItem);
-
-        // Quick Profile Switch submenu
-        var profileSwitchItem = new MenuItem { Header = "Quick Profile Switch" };
-        profileSwitchItem.Tag = "profileSwitch";
-        profileSwitchItem.SubmenuOpened += OnProfileSubmenuOpened;
-        profileSwitchItem.Items.Add(new MenuItem { Header = "Loading...", IsEnabled = false });
-        menu.Items.Add(profileSwitchItem);
 
         menu.Items.Add(new Separator());
 
@@ -495,65 +484,6 @@ public class TrayIconManager : IDisposable
         catch (Exception ex)
         {
             _logger.Warning(ex, "Failed to process notification: {Title}", title);
-        }
-    }
-
-    private void OnProfileSubmenuOpened(object sender, RoutedEventArgs e)
-    {
-        if (sender is not MenuItem submenu || _profileManager == null) return;
-
-        try
-        {
-            submenu.Items.Clear();
-            var profiles = _profileManager.GetAllProfiles();
-
-            if (profiles.Count == 0)
-            {
-                submenu.Items.Add(new MenuItem { Header = "No profiles available", IsEnabled = false });
-                return;
-            }
-
-            foreach (var profile in profiles)
-            {
-                var displayName = string.IsNullOrEmpty(profile.GameName)
-                    ? (profile.Id == "default" ? "Default" : profile.Id)
-                    : profile.GameName;
-
-                var item = new MenuItem { Header = displayName };
-                var capturedProfile = profile;
-                item.Click += (_, _) => OnProfileSelected(capturedProfile);
-                submenu.Items.Add(item);
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.Warning(ex, "Failed to populate profile switch submenu");
-        }
-    }
-
-    private void OnProfileSelected(GameProfile profile)
-    {
-        try
-        {
-            // Persist only this field transactionally. Saving the whole held _settings snapshot
-            // (taken at startup) would clobber any other settings changed elsewhere since then.
-            _settings.QuickSwitchProfileId = profile.Id;
-            SettingsManager.Update(s => s.QuickSwitchProfileId = profile.Id);
-
-            if (_orchestrator.IsOptimizing)
-            {
-                _logger.Information(
-                    "Profile '{ProfileId}' selected via Quick Switch. Game is active - will apply on next session.",
-                    profile.Id);
-            }
-            else
-            {
-                _logger.Information("Profile '{ProfileId}' selected via Quick Switch (no active game)", profile.Id);
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.Warning(ex, "Failed to handle profile selection for '{ProfileId}'", profile.Id);
         }
     }
 

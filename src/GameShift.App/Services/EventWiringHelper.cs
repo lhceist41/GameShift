@@ -42,8 +42,8 @@ public static class EventWiringHelper
         // Pause dashboard monitors during gaming (they poll every 1-2s and the dashboard isn't visible)
         if (services.Detector != null)
         {
-            monitorPauseGameStarted = (_, _) => { services.PerfMon?.Pause(); services.PingMon?.Pause(); services.TempMon?.Pause(); };
-            monitorResumeAllGamesStopped = (object? _, EventArgs _2) => { services.PerfMon?.Resume(); services.PingMon?.Resume(); services.TempMon?.Resume(); };
+            monitorPauseGameStarted = (_, _) => { services.PerfMon?.Pause(); services.PingMon?.Pause(); };
+            monitorResumeAllGamesStopped = (object? _, EventArgs _2) => { services.PerfMon?.Resume(); services.PingMon?.Resume(); };
             services.Detector.GameStarted += monitorPauseGameStarted;
             services.Detector.AllGamesStopped += monitorResumeAllGamesStopped;
         }

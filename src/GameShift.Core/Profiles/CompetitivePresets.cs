@@ -305,7 +305,6 @@ public static class CompetitivePresets
             "LoL Fullscreen + DPI Override",
             @"C:\Riot Games\League of Legends\Game\League of Legends.exe",
             includeDpiOverride: true),
-        // ProcessPrioritySetAction replaces ProcessSuspendAction - less aggressive
         new ProcessPrioritySetAction(
             "LoL Client Priority Reduction",
             "LeagueClientUx",

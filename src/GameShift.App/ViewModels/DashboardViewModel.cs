@@ -141,7 +141,7 @@ public class DashboardViewModel : INotifyPropertyChanged
     }
 
     /// <summary>
-    /// GPU vendor string from settings (GpuVendorOverride), or "Unknown".
+    /// GPU name from <see cref="GpuDetector"/>, or "Unknown".
     /// </summary>
     public string GpuInfo
     {
