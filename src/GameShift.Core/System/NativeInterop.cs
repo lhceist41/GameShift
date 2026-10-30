@@ -79,6 +79,23 @@ public static partial class NativeInterop
         IntPtr UserRootPowerKey,
         ref Guid SchemeGuid);
 
+    /// <summary>
+    /// With <see cref="ACCESS_SCHEME"/>, returns the power scheme GUID at <paramref name="Index"/>;
+    /// returns ERROR_NO_MORE_ITEMS past the last scheme.
+    /// https://learn.microsoft.com/windows/win32/api/powrprof/nf-powrprof-powerenumerate
+    /// </summary>
+    [DllImport("powrprof.dll")]
+    internal static extern uint PowerEnumerate(
+        IntPtr RootPowerKey,
+        IntPtr SchemeGuid,
+        IntPtr SubGroupOfPowerSettingsGuid,
+        uint AccessFlags,
+        uint Index,
+        ref Guid Buffer,
+        ref uint BufferSize);
+
+    internal const uint ACCESS_SCHEME = 16;
+
     // ============================================================
     // ntdll.dll - NT Native API
     // ============================================================

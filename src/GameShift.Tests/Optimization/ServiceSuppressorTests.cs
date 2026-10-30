@@ -88,6 +88,48 @@ public class ServiceSuppressorTests
         Assert.Equal(new[] { Dependent }, _services.Restarted);
     }
 
+    [Fact]
+    public void SessionServices_AreExactlyTheUpdateDeliveryTransferAndIndexingServices()
+    {
+        var names = ServiceSuppressor.SessionServices.Select(s => s.ServiceName)
+            .Order(StringComparer.OrdinalIgnoreCase).ToArray();
+
+        Assert.Equal(new[] { "BITS", "DoSvc", "UsoSvc", "WSearch", "wuauserv" }, names);
+    }
+
+    [Fact]
+    public void JournalRecord_RestartsEveryListedService_IncludingOnesNoLongerSuppressed()
+    {
+        // Services an earlier version could stop (and a dependent it cascaded into).
+        _services.Add("SysMain");
+        _services.Add("Spooler");
+        _services.Add("WdiSystemHost");
+        var record = """{"Services":["SysMain","Spooler","WdiSystemHost"]}""";
+
+        var result = new ServiceSuppressor { Services = _services }.RevertFromRecord(record);
+
+        Assert.Equal(OptimizationState.Reverted, result.State);
+        Assert.Equal(new[] { "SysMain", "Spooler", "WdiSystemHost" }, _services.Restarted);
+    }
+
+    /// <summary>
+    /// Describes current behavior, not correct behavior: Apply journals the list as "services" but
+    /// RevertFromRecord binds "Services" case-sensitively, so a record Apply wrote restarts nothing
+    /// and still reports Reverted. Flip to assert SysMain is restarted once the revert path binds the
+    /// key Apply writes.
+    /// </summary>
+    [Fact]
+    public void JournalRecordAsApplyWritesIt_CurrentlyRestartsNothing()
+    {
+        _services.Add("SysMain");
+        var record = JsonSerializer.Serialize(new { services = new[] { "SysMain" } });
+
+        var result = new ServiceSuppressor { Services = _services }.RevertFromRecord(record);
+
+        Assert.Equal(OptimizationState.Reverted, result.State);
+        Assert.Empty(_services.Restarted);
+    }
+
     private sealed class FakeServices : ServiceSuppressor.IServiceControl
     {
         private readonly Dictionary<string, List<string>> _dependents = new(StringComparer.OrdinalIgnoreCase);

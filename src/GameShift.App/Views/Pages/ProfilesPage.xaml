@@ -89,7 +89,7 @@
                                 <StackPanel Margin="10,0,0,0">
                                     <TextBlock Text="Windows Service Suppressor" FontWeight="SemiBold"
                                                Foreground="{DynamicResource GS.Text.Primary}"/>
-                                    <TextBlock Text="Temporarily stops non-essential services"
+                                    <TextBlock Text="Pauses Windows Update, Delivery Optimization, background transfers and search indexing"
                                                FontSize="11" Foreground="{DynamicResource GS.Text.Secondary}"/>
                                 </StackPanel>
                             </DockPanel>
@@ -102,24 +102,9 @@
                                           IsChecked="{Binding SwitchPowerPlan, Mode=TwoWay}"
                                           VerticalAlignment="Center"/>
                                 <StackPanel Margin="10,0,0,0">
-                                    <TextBlock Text="Ultimate Performance Power Plan" FontWeight="SemiBold"
+                                    <TextBlock Text="High Performance Power Plan" FontWeight="SemiBold"
                                                Foreground="{DynamicResource GS.Text.Primary}"/>
-                                    <TextBlock Text="Switches to max performance power plan"
-                                               FontSize="11" Foreground="{DynamicResource GS.Text.Secondary}"/>
-                                </StackPanel>
-                            </DockPanel>
-                        </Border>
-
-                        <Border Background="{DynamicResource GS.Surface.Base}" CornerRadius="6"
-                                Padding="12,10" Margin="0,0,0,6">
-                            <DockPanel>
-                                <CheckBox DockPanel.Dock="Left"
-                                          IsChecked="{Binding SetTimerResolution, Mode=TwoWay}"
-                                          VerticalAlignment="Center"/>
-                                <StackPanel Margin="10,0,0,0">
-                                    <TextBlock Text="System Timer Resolution" FontWeight="SemiBold"
-                                               Foreground="{DynamicResource GS.Text.Primary}"/>
-                                    <TextBlock Text="Requests a 1 ms timer for lower input latency"
+                                    <TextBlock Text="Switches from Balanced to High Performance (not on Ryzen X3D with two CCDs)"
                                                FontSize="11" Foreground="{DynamicResource GS.Text.Secondary}"/>
                                 </StackPanel>
                             </DockPanel>
@@ -144,12 +129,46 @@
                                 Padding="12,10" Margin="0,0,0,6">
                             <DockPanel>
                                 <CheckBox DockPanel.Dock="Left"
-                                          IsChecked="{Binding UsePerformanceCoresOnly, Mode=TwoWay}"
+                                          IsChecked="{Binding EnableEfficiencyMode, Mode=TwoWay}"
                                           VerticalAlignment="Center"/>
                                 <StackPanel Margin="10,0,0,0">
-                                    <TextBlock Text="Hybrid CPU Optimizer" FontWeight="SemiBold"
+                                    <TextBlock Text="Put background apps in efficiency mode" FontWeight="SemiBold"
                                                Foreground="{DynamicResource GS.Text.Primary}"/>
-                                    <TextBlock Text="Pin to P-cores only (hybrid CPUs, off by default)"
+                                    <TextBlock Text="Windows 11 EcoQoS for background apps while the game keeps full speed"
+                                               FontSize="11" Foreground="{DynamicResource GS.Text.Secondary}"/>
+                                </StackPanel>
+                            </DockPanel>
+                        </Border>
+
+                        <!-- ADVANCED -->
+                        <TextBlock Text="ADVANCED" FontSize="11" FontWeight="Bold"
+                                   Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,15,0,8"/>
+
+                        <Border Background="{DynamicResource GS.Surface.Base}" CornerRadius="6"
+                                Padding="12,10" Margin="0,0,0,6">
+                            <DockPanel>
+                                <CheckBox DockPanel.Dock="Left"
+                                          IsChecked="{Binding SetTimerResolution, Mode=TwoWay}"
+                                          VerticalAlignment="Center"/>
+                                <StackPanel Margin="10,0,0,0">
+                                    <TextBlock Text="System Timer Resolution" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource GS.Text.Primary}"/>
+                                    <TextBlock Text="Requests a 1 ms timer while the game runs (off by default)"
+                                               FontSize="11" Foreground="{DynamicResource GS.Text.Secondary}"/>
+                                </StackPanel>
+                            </DockPanel>
+                        </Border>
+
+                        <Border Background="{DynamicResource GS.Surface.Base}" CornerRadius="6"
+                                Padding="12,10" Margin="0,0,0,6">
+                            <DockPanel>
+                                <CheckBox DockPanel.Dock="Left"
+                                          IsChecked="{Binding PinGameCores, Mode=TwoWay}"
+                                          VerticalAlignment="Center"/>
+                                <StackPanel Margin="10,0,0,0">
+                                    <TextBlock Text="Pin the game to P-cores or the V-Cache CCD" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource GS.Text.Primary}"/>
+                                    <TextBlock Text="Hybrid CPUs and Ryzen X3D with two CCDs (off by default)"
                                                FontSize="11" Foreground="{DynamicResource GS.Text.Secondary}"/>
                                 </StackPanel>
                             </DockPanel>

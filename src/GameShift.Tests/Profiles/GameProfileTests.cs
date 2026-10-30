@@ -45,24 +45,112 @@ public class GameProfileTests
     }
 
     [Fact]
-    public void IsOptimizationEnabled_DefaultProfile_AllMainTogglesEnabled()
+    public void IsOptimizationEnabled_DefaultProfile_EnablesTheFourMainOptimizations()
     {
         var profile = GameProfile.CreateDefault();
 
         Assert.True(profile.IsOptimizationEnabled(ServiceSuppressor.OptimizationId));
         Assert.True(profile.IsOptimizationEnabled(PowerPlanSwitcher.OptimizationId));
-        Assert.True(profile.IsOptimizationEnabled(TimerResolutionManager.OptimizationId));
         Assert.True(profile.IsOptimizationEnabled(ProcessPriorityBooster.OptimizationId));
+        Assert.True(profile.IsOptimizationEnabled(EfficiencyModeController.OptimizationId));
     }
 
     [Fact]
-    public void IsOptimizationEnabled_DefaultProfile_EnablesHybridCpuDetector()
+    public void IsOptimizationEnabled_DefaultProfile_LeavesTheAdvancedOptimizationsOff()
     {
         var profile = GameProfile.CreateDefault();
 
-        // HybridCpuDetector is enabled by default because V-Cache CCD pinning (PinToVCacheCcd)
-        // defaults on; the module no-ops on non-X3D / non-hybrid topologies.
-        Assert.True(profile.IsOptimizationEnabled(HybridCpuDetector.OptimizationId));
+        Assert.False(profile.IsOptimizationEnabled(TimerResolutionManager.OptimizationId));
+        Assert.False(profile.IsOptimizationEnabled(HybridCpuDetector.OptimizationId));
+    }
+
+    // ── Core pinning switch ───────────────────────────────────────────
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void PinGameCores_SetsBothPinningFlags(bool on)
+    {
+        var profile = new GameProfile { UsePerformanceCoresOnly = !on, PinToVCacheCcd = !on };
+
+        profile.PinGameCores = on;
+
+        Assert.Equal(on, profile.UsePerformanceCoresOnly);
+        Assert.Equal(on, profile.PinToVCacheCcd);
+        Assert.Equal(on, profile.IsOptimizationEnabled(HybridCpuDetector.OptimizationId));
+    }
+
+    [Fact]
+    public void PinGameCores_ReadsOnWhenEitherFlagIsOn()
+    {
+        Assert.True(new GameProfile { PinToVCacheCcd = true }.PinGameCores);
+        Assert.True(new GameProfile { UsePerformanceCoresOnly = true }.PinGameCores);
+        Assert.False(new GameProfile().PinGameCores);
+    }
+
+    // ── Schema version and migration ──────────────────────────────────
+
+    [Fact]
+    public void SchemaVersion_IsCurrentInCode_AndZeroWhenTheJsonHasNone()
+    {
+        Assert.Equal(GameProfile.CurrentSchemaVersion, new GameProfile().SchemaVersion);
+        Assert.Equal(0, JsonSerializer.Deserialize<GameProfile>("""{"Id":"old"}""")!.SchemaVersion);
+        Assert.Equal(GameProfile.CurrentSchemaVersion, new GameProfile().Clone().SchemaVersion);
+    }
+
+    [Fact]
+    public void UpgradeSchema_Version0_TurnsTimerAndPinningOff()
+    {
+        var profile = JsonSerializer.Deserialize<GameProfile>(
+            """{"Id":"old","SetTimerResolution":true,"UsePerformanceCoresOnly":true,"PinToVCacheCcd":true,"EnableEfficiencyMode":true}""")!;
+
+        Assert.True(profile.UpgradeSchema());
+
+        Assert.False(profile.SetTimerResolution);
+        Assert.False(profile.UsePerformanceCoresOnly);
+        Assert.False(profile.PinToVCacheCcd);
+        Assert.True(profile.EnableEfficiencyMode);
+        Assert.Equal(GameProfile.CurrentSchemaVersion, profile.SchemaVersion);
+    }
+
+    [Fact]
+    public void UpgradeSchema_IsIdempotent()
+    {
+        var profile = JsonSerializer.Deserialize<GameProfile>("""{"Id":"old","SetTimerResolution":true}""")!;
+        profile.UpgradeSchema();
+        profile.SetTimerResolution = true; // turned on again by the user after the migration
+
+        Assert.False(profile.UpgradeSchema());
+        Assert.True(profile.SetTimerResolution);
+    }
+
+    [Fact]
+    public void UpgradeSchema_Version1_KeepsTimerAndPinningOn()
+    {
+        var profile = JsonSerializer.Deserialize<GameProfile>(
+            """{"Id":"new","SchemaVersion":1,"SetTimerResolution":true,"UsePerformanceCoresOnly":true,"PinToVCacheCcd":true}""")!;
+
+        Assert.False(profile.UpgradeSchema());
+
+        Assert.True(profile.SetTimerResolution);
+        Assert.True(profile.PinGameCores);
+    }
+
+    [Fact]
+    public void PresetProfiles_AreCurrent_WithTheAdvancedOptimizationsOff()
+    {
+        foreach (var exe in new[]
+                 {
+                     CompetitivePresets.Overwatch2Exe, CompetitivePresets.ValorantExe, CompetitivePresets.LeagueExe,
+                     CompetitivePresets.DeadlockExe, CompetitivePresets.OsuExe,
+                 })
+        {
+            var preset = CompetitivePresets.GetPresetProfile(exe)!;
+
+            Assert.Equal(GameProfile.CurrentSchemaVersion, preset.SchemaVersion);
+            Assert.False(preset.SetTimerResolution, exe);
+            Assert.False(preset.PinGameCores, exe);
+        }
     }
 
     // ── OptimizationId consistency ────────────────────────────────────

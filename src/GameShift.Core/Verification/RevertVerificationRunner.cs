@@ -112,6 +112,7 @@ public static class RevertVerificationRunner
         GameName = "State Verification Probe",
         ExecutableName = SystemStateProber.ProbeExecutableName,
         ProcessId = global::System.Environment.ProcessId,
+        SetTimerResolution = true,
         UsePerformanceCoresOnly = false,
         PinToVCacheCcd = false,
     };

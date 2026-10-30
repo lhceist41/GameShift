@@ -2,7 +2,6 @@ using GameShift.Core.Config;
 using GameShift.Core.Journal;
 using GameShift.Core.Profiles;
 using GameShift.Core.System;
-using GameShift.Core.Watchdog;
 using Serilog;
 
 namespace GameShift.Core.Optimization;
@@ -52,7 +51,6 @@ public class OptimizationEngine : IDisposable
     /// for crash recovery against the same in-memory session as the optimizations.
     /// </summary>
     internal JournalManager Journal => _journal;
-    private readonly RegistryChangeMonitor _registryMonitor;
 
     /// <summary>
     /// Number of optimizations currently applied (used by SessionTracker for session stats).
@@ -100,7 +98,6 @@ public class OptimizationEngine : IDisposable
         _semaphore = new SemaphoreSlim(1, 1); // Allow one thread at a time
         _logger = SettingsManager.Logger; // Use centralized logger from Phase 1
         _journal = journal;
-        _registryMonitor = new RegistryChangeMonitor(_journal, _logger);
     }
 
     /// <summary>
@@ -217,11 +214,6 @@ public class OptimizationEngine : IDisposable
 
             _logger.Information("Profile activation complete. Applied {AppliedCount}, skipped {SkippedCount} (disabled in profile or Background Mode).",
                 _appliedCount, skippedCount);
-
-            // Start registry change monitoring so external modifications are detected
-            // during the gaming session (e.g. Windows Update agent, other apps).
-            if (_appliedCount > 0)
-                _registryMonitor.StartSession();
         }
         finally
         {
@@ -286,10 +278,6 @@ public class OptimizationEngine : IDisposable
                 _logger.Information(
                     "[OptimizationEngine] Watchdog already recovered optimizations - skipping LIFO revert");
 
-                // Still stop the registry monitor - it runs in-process and the watchdog has no
-                // visibility into it.
-                _registryMonitor.StopSession();
-
                 _appliedOptimizations.Clear(); // Clear in-memory tracking
                 Interlocked.Exchange(ref _appliedCount, 0);
                 _snapshot = null;
@@ -298,9 +286,6 @@ public class OptimizationEngine : IDisposable
 
             _logger.Information("Deactivating profile. Reverting {Count} optimizations in LIFO order.",
                 _appliedCount);
-
-            // Stop registry watchers before reverting so they don't fire on our own writes
-            _registryMonitor.StopSession();
 
             // Revert in reverse order (LIFO via Stack)
             while (_appliedOptimizations.TryPop(out var optimization))
@@ -372,7 +357,6 @@ public class OptimizationEngine : IDisposable
 
     public void Dispose()
     {
-        _registryMonitor.Dispose();
         _semaphore.Dispose();
     }
 }

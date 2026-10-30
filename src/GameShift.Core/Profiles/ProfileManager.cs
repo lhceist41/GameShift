@@ -99,8 +99,7 @@ public class ProfileManager
                 {
                     if (File.Exists(defaultPath))
                     {
-                        var json = File.ReadAllText(defaultPath);
-                        var profile = JsonSerializer.Deserialize<GameProfile>(json);
+                        var profile = ReadProfile(defaultPath);
 
                         if (profile != null)
                         {
@@ -146,8 +145,7 @@ public class ProfileManager
             {
                 if (File.Exists(profilePath))
                 {
-                    var json = File.ReadAllText(profilePath);
-                    var profile = JsonSerializer.Deserialize<GameProfile>(json);
+                    var profile = ReadProfile(profilePath);
 
                     if (profile != null)
                     {
@@ -184,14 +182,7 @@ public class ProfileManager
             {
                 var safeId = SanitizeGameId(profile.Id);
                 var profilePath = Path.Combine(_profilesDirectory, $"{safeId}.json");
-                var json = JsonSerializer.Serialize(profile, WriteOptions);
-                // Atomic write: serialize to a temp file then move-replace, so a crash or full disk
-                // mid-write cannot truncate the profile. A truncated profile would fail to
-                // deserialize and GetProfileForGame would silently fall back to default, losing the
-                // user's tuned settings without warning. Mirrors SettingsManager/SessionHistoryStore.
-                var tmpPath = profilePath + ".tmp";
-                File.WriteAllText(tmpPath, json);
-                File.Move(tmpPath, profilePath, overwrite: true);
+                WriteProfileFile(profilePath, profile);
 
                 // Invalidate cached default if saving the default profile
                 if (profile.Id == "default")
@@ -207,6 +198,44 @@ public class ProfileManager
                 throw;
             }
         }
+    }
+
+    /// <summary>
+    /// Reads a profile file. A profile saved by an earlier version is brought to the current format
+    /// and written back to the same file, so the migration runs once.
+    /// </summary>
+    private GameProfile? ReadProfile(string path)
+    {
+        var profile = JsonSerializer.Deserialize<GameProfile>(File.ReadAllText(path));
+        if (profile == null || !profile.UpgradeSchema())
+            return profile;
+
+        try
+        {
+            WriteProfileFile(path, profile);
+            _logger.Information("Migrated profile {ProfileId} to format {Version}", profile.Id, profile.SchemaVersion);
+        }
+        catch (Exception ex)
+        {
+            // The migrated profile is still used; the file is migrated again on the next load.
+            _logger.Warning(ex, "Failed to save migrated profile {Path}", path);
+        }
+
+        return profile;
+    }
+
+    /// <summary>
+    /// Atomic write: serialize to a temp file then move-replace, so a crash or full disk
+    /// mid-write cannot truncate the profile. A truncated profile would fail to
+    /// deserialize and GetProfileForGame would silently fall back to default, losing the
+    /// user's tuned settings without warning. Mirrors SettingsManager/SessionHistoryStore.
+    /// </summary>
+    private static void WriteProfileFile(string profilePath, GameProfile profile)
+    {
+        var json = JsonSerializer.Serialize(profile, WriteOptions);
+        var tmpPath = profilePath + ".tmp";
+        File.WriteAllText(tmpPath, json);
+        File.Move(tmpPath, profilePath, overwrite: true);
     }
 
     /// <summary>
@@ -267,8 +296,7 @@ public class ProfileManager
                 {
                     try
                     {
-                        var json = File.ReadAllText(file);
-                        var profile = JsonSerializer.Deserialize<GameProfile>(json);
+                        var profile = ReadProfile(file);
 
                         if (profile != null)
                         {
@@ -303,7 +331,7 @@ public class ProfileManager
     /// <summary>
     /// Creates a new GameProfile from a GameInfo instance.
     /// Populates game identity fields from the detection data.
-    /// All optimization toggles use class defaults (all enabled except UsePerformanceCoresOnly).
+    /// All optimization toggles use class defaults (timer resolution and core pinning off).
     /// Does NOT auto-save; caller should modify as needed then call SaveProfile().
     /// </summary>
     /// <param name="gameInfo">Game detection information to create profile from</param>

@@ -18,8 +18,17 @@ public enum OptimizationIntensity
 /// Each game can have different optimizations enabled/disabled, persisted as JSON files.
 /// Supports per-game profiles and a default profile for unmatched games.
 /// </summary>
-public class GameProfile
+public class GameProfile : IJsonOnDeserializing
 {
+    /// <summary>The profile format this version writes.</summary>
+    public const int CurrentSchemaVersion = 1;
+
+    /// <summary>
+    /// Format of the saved profile. A profile written before versioning has no value and reads as 0;
+    /// a profile created in code is current.
+    /// </summary>
+    public int SchemaVersion { get; set; } = CurrentSchemaVersion;
+
     /// <summary>
     /// Unique identifier for this profile.
     /// Matches the game's ID from GameInfo (e.g. "steam_12345", "manual_cyberpunk2077").
@@ -48,16 +57,16 @@ public class GameProfile
     public bool SuppressServices { get; set; } = true;
 
     /// <summary>
-    /// Whether to switch to the Ultimate Performance power plan during gameplay.
+    /// Whether to switch from Balanced to the High Performance power plan during gameplay.
     /// Maps to "Ultimate Performance Power Plan" optimization.
     /// </summary>
     public bool SwitchPowerPlan { get; set; } = true;
 
     /// <summary>
-    /// Whether to set the system timer to high resolution during gameplay.
+    /// Whether to request a 1 ms system timer resolution during gameplay. Advanced, off by default.
     /// Maps to "System Timer Resolution Manager" optimization.
     /// </summary>
-    public bool SetTimerResolution { get; set; } = true;
+    public bool SetTimerResolution { get; set; } = false;
 
     /// <summary>
     /// Whether to boost the game process priority during gameplay.
@@ -67,17 +76,16 @@ public class GameProfile
 
     /// <summary>
     /// Whether to pin the game process to performance cores only on hybrid CPUs.
-    /// Maps to "Hybrid CPU Optimizer" optimization.
-    /// Default false - most games benefit from all cores; enable only for specific titles.
+    /// Maps to "Hybrid CPU Optimizer" optimization. Set together with
+    /// <see cref="PinToVCacheCcd"/> through <see cref="PinGameCores"/>.
     /// </summary>
     public bool UsePerformanceCoresOnly { get; set; } = false;
 
     // ── v4 Process Intelligence toggles ─────────────────────────────
 
     /// <summary>
-    /// Whether to apply Windows 11 Efficiency Mode to background processes during gameplay.
-    /// Maps to "Efficiency Mode Control" optimization.
-    /// Constrains background processes to E-cores on hybrid CPUs.
+    /// Whether to put background apps in efficiency mode during gameplay. Drives
+    /// "Efficiency Mode Control" and the QoS half of "CPU Scheduling Optimizer".
     /// Gracefully skips on Windows 10.
     /// Default true - reduces background CPU competition with the game.
     /// </summary>
@@ -86,18 +94,26 @@ public class GameProfile
     // ── v5 Platform Coverage toggles ───────────────────────────────
 
     /// <summary>
-    /// Whether to pin the game process to the V-Cache CCD on AMD X3D processors.
-    /// Maps to V-Cache CCD pinning in "Hybrid CPU Optimizer".
-    /// Default true - auto-detected; no effect on non-X3D CPUs.
+    /// Whether to pin the game process to the V-Cache CCD on AMD X3D processors with two CCDs.
+    /// Maps to V-Cache CCD pinning in "Hybrid CPU Optimizer". Set together with
+    /// <see cref="UsePerformanceCoresOnly"/> through <see cref="PinGameCores"/>.
     /// </summary>
-    public bool PinToVCacheCcd { get; set; } = true;
+    public bool PinToVCacheCcd { get; set; } = false;
 
     /// <summary>
-    /// Whether to suppress Tier 2 (medium-impact) Windows services during gameplay.
-    /// Sub-toggle of SuppressServices - only active when service suppression is enabled.
-    /// Default true - Tier 2 services (Print Spooler, Fax, etc.) are safe for gaming PCs.
+    /// The one "pin the game to P-cores or the V-Cache CCD" switch. Advanced, off by default.
+    /// Reads on when either pinning flag is on; setting it sets both.
     /// </summary>
-    public bool SuppressTier2Services { get; set; } = true;
+    [JsonIgnore]
+    public bool PinGameCores
+    {
+        get => UsePerformanceCoresOnly || PinToVCacheCcd;
+        set
+        {
+            UsePerformanceCoresOnly = value;
+            PinToVCacheCcd = value;
+        }
+    }
 
     // ── v2 DPC Monitoring toggles ────────────────────────────────────
 
@@ -189,6 +205,7 @@ public class GameProfile
     public bool ManageMemoryPriority { get; set; } = true;
     public bool EmptyWorkingSets { get; set; } = true;
     public int HardMinWorkingSetMB { get; set; } = 2048;
+    public bool SuppressTier2Services { get; set; } = true;
     public bool SuppressScheduledTasks { get; set; } = true;
     public bool SuppressDefenderScheduledScan { get; set; } = false;
     public bool UnparkCpuCores { get; set; } = true;
@@ -209,7 +226,7 @@ public class GameProfile
 
     /// <summary>
     /// Creates the default profile with standard optimization settings.
-    /// All optimizations enabled except UsePerformanceCoresOnly.
+    /// Timer resolution and core pinning are off; everything else is on.
     /// Used when no per-game profile exists.
     /// </summary>
     /// <returns>A default GameProfile instance with Id="default"</returns>
@@ -237,6 +254,25 @@ public class GameProfile
         return clone;
     }
 
+    void IJsonOnDeserializing.OnDeserializing() => SchemaVersion = 0;
+
+    /// <summary>
+    /// Brings a profile saved by an earlier version to the current format. Returns true when it
+    /// changed, so the caller saves it once.
+    /// </summary>
+    public bool UpgradeSchema()
+    {
+        if (SchemaVersion >= CurrentSchemaVersion)
+            return false;
+
+        // Version 0 stored every flag, so a deliberate "on" cannot be told from the old default.
+        // Timer resolution and core pinning are off until the user turns them on again.
+        SetTimerResolution = false;
+        PinGameCores = false;
+        SchemaVersion = CurrentSchemaVersion;
+        return true;
+    }
+
     // ── Query methods ─────────────────────────────────────────────────
 
     /// <summary>
@@ -254,10 +290,7 @@ public class GameProfile
             PowerPlanSwitcher.OptimizationId => SwitchPowerPlan,
             TimerResolutionManager.OptimizationId => SetTimerResolution,
             ProcessPriorityBooster.OptimizationId => BoostProcessPriority,
-            // Enable when the user wants P-core-only OR V-Cache CCD pinning (default on). The module
-            // itself no-ops by topology, so gating on ONLY UsePerformanceCoresOnly previously and
-            // silently disabled V-Cache pinning and LP-core exclusion for everyone.
-            HybridCpuDetector.OptimizationId => UsePerformanceCoresOnly || PinToVCacheCcd,
+            HybridCpuDetector.OptimizationId => PinGameCores,
             EfficiencyModeController.OptimizationId => EnableEfficiencyMode,
             _ => true // Unknown optimizations are enabled by default
         };

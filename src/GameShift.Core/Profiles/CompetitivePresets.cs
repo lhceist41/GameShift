@@ -166,14 +166,8 @@ public static class CompetitivePresets
         AntiCheat = AntiCheatType.None,
         SuppressServices = true,
         SwitchPowerPlan = true,
-        SetTimerResolution = true,
         BoostProcessPriority = true,
-        // CPU-bound at high framerates - E-cores hurt performance on Intel hybrid CPUs
-        UsePerformanceCoresOnly = true,
-        EnableEfficiencyMode = true,
-        // v5 toggles
-        PinToVCacheCcd = true,
-        SuppressTier2Services = true
+        EnableEfficiencyMode = true
     };
 
     private static List<GameAction> BuildOverwatch2Actions() => new()
@@ -220,7 +214,7 @@ public static class CompetitivePresets
             "HAGS enabled"),
         new OneTimeTipAction(
             "ow2_hybrid_cpu",
-            "OW2 TIP: GameShift is pinning Overwatch 2 to P-cores only. Intel 13th/14th gen users: ensure you have the latest BIOS/microcode update installed - these CPUs had documented instability issues.",
+            "OW2 TIP: Intel 13th/14th gen users: ensure you have the latest BIOS/microcode update installed - these CPUs had documented instability issues.",
             hw => hw.IsHybridCpu,
             "Intel hybrid CPU detected"),
         new OneTimeTipAction(
@@ -242,14 +236,8 @@ public static class CompetitivePresets
         AntiCheat = AntiCheatType.RiotVanguard,
         SuppressServices = true,
         SwitchPowerPlan = true,
-        SetTimerResolution = true,
         BoostProcessPriority = true,
-        // Hybrid CPU - not beneficial for Valorant (modern multi-threaded engine)
-        UsePerformanceCoresOnly = false,
-        EnableEfficiencyMode = true,
-        // v5 toggles
-        PinToVCacheCcd = true,
-        SuppressTier2Services = true
+        EnableEfficiencyMode = true
     };
 
     private static List<GameAction> BuildValorantActions() => new()
@@ -307,14 +295,8 @@ public static class CompetitivePresets
         AntiCheat = AntiCheatType.RiotVanguard,
         SuppressServices = true,
         SwitchPowerPlan = true,
-        SetTimerResolution = true,
         BoostProcessPriority = true,
-        // LoL is single-thread bound - performance cores only beneficial
-        UsePerformanceCoresOnly = true,
-        EnableEfficiencyMode = true,
-        // v5 toggles
-        PinToVCacheCcd = true,
-        SuppressTier2Services = true
+        EnableEfficiencyMode = true
     };
 
     private static List<GameAction> BuildLeagueActions() => new()
@@ -364,14 +346,8 @@ public static class CompetitivePresets
         AntiCheat = AntiCheatType.ValveAntiCheat,
         SuppressServices = true,
         SwitchPowerPlan = true,
-        SetTimerResolution = true,
         BoostProcessPriority = true,
-        // Deadlock benefits from all cores (Source 2 engine, multi-threaded rendering)
-        UsePerformanceCoresOnly = false,
-        EnableEfficiencyMode = true,
-        // v5 toggles
-        PinToVCacheCcd = true,
-        SuppressTier2Services = true
+        EnableEfficiencyMode = true
     };
 
     private static List<GameAction> BuildDeadlockActions() => new()
@@ -434,13 +410,8 @@ public static class CompetitivePresets
         AntiCheat = AntiCheatType.None,
         SuppressServices = true,
         SwitchPowerPlan = true,
-        SetTimerResolution = true,         // Critical for osu! audio/input timing
         BoostProcessPriority = false,      // osu! sets its own High priority internally
-        UsePerformanceCoresOnly = true,    // osu! is extremely single-threaded
-        EnableEfficiencyMode = true,
-        // v5 toggles
-        PinToVCacheCcd = true,
-        SuppressTier2Services = true
+        EnableEfficiencyMode = true
     };
 
     private static List<GameAction> BuildOsuActions()
@@ -464,7 +435,7 @@ public static class CompetitivePresets
                 "OSU! TIP: If using a drawing tablet, install OpenTabletDriver for lower latency than manufacturer drivers. See github.com/OpenTabletDriver."),
             new OneTimeTipAction(
                 "osu_timer",
-                "OSU! TIP: GameShift requests a 1 ms system timer resolution while osu! runs, which helps audio sync and input timing."),
+                "OSU! TIP: GameShift can request a 1 ms system timer resolution while osu! runs. It is off by default: turn on System Timer Resolution under Advanced in the osu! profile."),
             new OneTimeTipAction(
                 "osu_amd_opengl",
                 "OSU! TIP: AMD drivers 22.5.2+ may have issues with OpenGL fullscreen in osu!. If you experience problems, try Borderless or use the DirectX/Compatibility renderer.",

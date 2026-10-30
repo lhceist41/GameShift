@@ -26,6 +26,9 @@ namespace GameShift.Core.Optimization;
 ///   <item>HighQoS on the game process still applies (works on any modern CPU)</item>
 /// </list>
 ///
+/// <para>CPU Set assignment follows the profile's core pinning switch; the QoS half follows its
+/// efficiency mode switch (see <see cref="Decide"/>).</para>
+///
 /// Requires Windows 11 22H2+ (build 22621) for <c>SetProcessDefaultCpuSetMasks</c>.
 /// Falls back to power-throttling-only on older builds.
 /// </summary>
@@ -36,7 +39,7 @@ public class CpuSchedulingOptimizer : IOptimization
     public const string OptimizationId = "CPU Scheduling Optimizer";
     public string Name => OptimizationId;
     public string Description =>
-        "Routes background processes to E-cores and ensures the game process gets HighQoS scheduling";
+        "Keeps the game at full speed while background apps are in efficiency mode, and keeps background apps off a pinned game's cores";
 
     public bool IsApplied { get; private set; }
     public bool IsAvailable => true; // HighQoS works on all modern CPUs
@@ -50,6 +53,9 @@ public class CpuSchedulingOptimizer : IOptimization
     private NativeInterop.GROUP_AFFINITY[]? _eCoreMasks;
     private NativeInterop.GROUP_AFFINITY[]? _reservedMasks; // Cores reserved for game
     private NativeInterop.GROUP_AFFINITY[]? _unreservedMasks; // Non-reserved for background
+
+    private bool _steerCpuSets;
+    private bool _setQos;
 
     // ── Applied state for revert ──────────────────────────────────────────────
 
@@ -71,6 +77,7 @@ public class CpuSchedulingOptimizer : IOptimization
         try
         {
             DetectTopologyAndCapabilities();
+            (_steerCpuSets, _setQos) = Decide(profile, _hasReservedCores);
 
             if (!_isHybrid)
             {
@@ -91,7 +98,7 @@ public class CpuSchedulingOptimizer : IOptimization
             // ── Game process: P-core affinity + HighQoS ───────────────────────
             _gamePid = profile.ProcessId;
 
-            if (_gamePid > 0)
+            if (_gamePid > 0 && (_steerCpuSets || _setQos))
             {
                 try
                 {
@@ -105,7 +112,7 @@ public class CpuSchedulingOptimizer : IOptimization
                         try
                         {
                             // CPU Set assignment (hybrid only)
-                            if (_isHybrid && _hasCpuSetMasksApi)
+                            if (_steerCpuSets && _isHybrid && _hasCpuSetMasksApi)
                             {
                                 // Use reserved cores if active, otherwise all P-cores
                                 var gameMasks = _hasReservedCores && _reservedMasks?.Length > 0
@@ -133,7 +140,7 @@ public class CpuSchedulingOptimizer : IOptimization
 
                             // HighQoS: disable power throttling. Only record applied if the call
                             // actually succeeded, so revert doesn't touch a process we never changed.
-                            if (ApplyPowerThrottling(hGame, disableThrottling: true))
+                            if (_setQos && ApplyPowerThrottling(hGame, disableThrottling: true))
                             {
                                 _gameHighQosApplied = true;
                                 _logger.Information(
@@ -154,16 +161,19 @@ public class CpuSchedulingOptimizer : IOptimization
             }
 
             // ── Background processes: E-core affinity + EcoQoS ────────────────
-            var gameProcessNames = ResolveGameProcessNames(profile);
-            AssignBackgroundProcesses(gameProcessNames);
+            if (_steerCpuSets || _setQos)
+            {
+                var gameProcessNames = ResolveGameProcessNames(profile);
+                AssignBackgroundProcesses(gameProcessNames);
 
-            // Periodically rescan so background processes spawned AFTER launch are also routed.
-            // Only new PIDs are touched (see _processedBgPids), so this is safe to call repeatedly.
-            _rescanTimer = new Timer(
-                _ => { try { AssignBackgroundProcesses(gameProcessNames); } catch { /* best effort */ } },
-                null,
-                TimeSpan.FromSeconds(30),
-                TimeSpan.FromSeconds(30));
+                // Periodically rescan so background processes spawned AFTER launch are also routed.
+                // Only new PIDs are touched (see _processedBgPids), so this is safe to call repeatedly.
+                _rescanTimer = new Timer(
+                    _ => { try { AssignBackgroundProcesses(gameProcessNames); } catch { /* best effort */ } },
+                    null,
+                    TimeSpan.FromSeconds(30),
+                    TimeSpan.FromSeconds(30));
+            }
 
             IsApplied = true;
             return Task.FromResult(true);
@@ -315,6 +325,14 @@ public class CpuSchedulingOptimizer : IOptimization
         }
     }
 
+    /// <summary>
+    /// CPU Set steering follows the core pinning switch, or an active core reservation, whose
+    /// reserved cores only a steered game can use. HighQoS for the game and EcoQoS for background
+    /// apps follow the efficiency mode switch.
+    /// </summary>
+    internal static (bool SteerCpuSets, bool SetQos) Decide(GameProfile profile, bool reservationActive) =>
+        (profile.PinGameCores || reservationActive, profile.EnableEfficiencyMode);
+
     // ── Topology detection ────────────────────────────────────────────────────
 
     private void DetectTopologyAndCapabilities()
@@ -462,7 +480,7 @@ public class CpuSchedulingOptimizer : IOptimization
                     var bgMasks = _hasReservedCores && _unreservedMasks?.Length > 0
                         ? _unreservedMasks
                         : _eCoreMasks;
-                    if (_isHybrid && _hasCpuSetMasksApi && bgMasks != null && bgMasks.Length > 0)
+                    if (_steerCpuSets && _isHybrid && _hasCpuSetMasksApi && bgMasks != null && bgMasks.Length > 0)
                     {
                         if (NativeInterop.SetProcessDefaultCpuSetMasks(
                                 hProc, bgMasks, (ushort)bgMasks.Length))
@@ -474,11 +492,14 @@ public class CpuSchedulingOptimizer : IOptimization
 
                     // EcoQoS: enable power throttling. Capture whether the process was already
                     // throttled so revert can leave the OS/other tools' setting intact.
-                    bool wasEcoQos = IsEcoQosEnabled(hProc);
-                    if (ApplyPowerThrottling(hProc, disableThrottling: false))
+                    if (_setQos)
                     {
-                        lock (_lock) { _bgThrottlePids.Add((process.Id, process.ProcessName, wasEcoQos)); }
-                        throttleCount++;
+                        bool wasEcoQos = IsEcoQosEnabled(hProc);
+                        if (ApplyPowerThrottling(hProc, disableThrottling: false))
+                        {
+                            lock (_lock) { _bgThrottlePids.Add((process.Id, process.ProcessName, wasEcoQos)); }
+                            throttleCount++;
+                        }
                     }
                 }
                 finally

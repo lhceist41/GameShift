@@ -53,13 +53,13 @@ These activate when a game launches and revert when the game closes.
 
 | Optimization | What it does |
 |:-------------|:-------------|
-| **Process Priority Booster** | Elevates the game to High priority with optimal `Win32PrioritySeparation` (0x2A). Detects anti-cheat systems and automatically falls back to IFEO registry when runtime API calls are blocked. |
-| **Service Suppression** | Pauses 20+ non-essential Windows services across three configurable tiers - telemetry, indexing, Windows Update, Delivery Optimization, and more. Safety list protects critical services. |
-| **Timer Resolution** | Requests a 1 ms system timer resolution during gameplay. Runs on a dedicated windowless thread immune to minimize/occlusion resets. |
-| **Power Plan Switching** | Activates Ultimate Performance scheme during gaming. Creates the plan if missing. |
-| **Hybrid CPU Scheduling** | Detects P-cores vs E-cores on Intel 12th-15th gen and AMD hybrid CPUs via CPU Sets API. Assigns the game to P-cores and background processes to E-cores using soft affinity that cooperates with Intel Thread Director. Disables power throttling on the game (HighQoS) and enables EcoQoS on background processes. Falls back gracefully on non-hybrid CPUs. |
+| **Process Priority Booster** | Elevates the game to High priority. Detects anti-cheat systems and automatically falls back to IFEO registry when runtime API calls are blocked. |
+| **Service Suppression** | Pauses Windows Update, Update Orchestrator, Delivery Optimization, background transfers (BITS) and search indexing during gameplay, and starts them again when the game exits. Safety list protects critical services. |
+| **Timer Resolution** | Advanced, off by default. Requests a 1 ms system timer resolution during gameplay. Runs on a dedicated windowless thread immune to minimize/occlusion resets. |
+| **Power Plan Switching** | Switches from Balanced to the High Performance plan during gaming, if Windows has it, and back afterwards. Any other plan you chose is left alone, and Ryzen X3D processors with two CCDs stay on Balanced, which AMD's chipset driver needs to keep games on the V-Cache CCD. |
+| **Core Pinning** | Advanced, off by default. One switch pins the game to the P-cores on Intel 12th-15th gen and AMD hybrid CPUs, or to the V-Cache CCD on Ryzen X3D processors with two CCDs, via the CPU Sets API. On hybrid CPUs it also keeps background processes on the E-cores, using soft affinity that cooperates with Intel Thread Director. |
 | **Core Isolation** | Advanced opt-in feature: reserves specific P-cores exclusively for gaming via `ReservedCpuSets`. No other process can schedule onto reserved cores - OS-enforced. Visual core map in the UI for selecting which cores to reserve. Requires reboot. |
-| **Efficiency Mode Control** | Applies Windows 11 EcoQoS to background processes, constraining them to E-cores. Rescans every 30 seconds to catch newly spawned processes. |
+| **Efficiency Mode Control** | One switch puts background processes in Windows 11 efficiency mode (EcoQoS), which keeps them on E-cores on hybrid CPUs, and turns off power throttling for the game (HighQoS). Rescans every 30 seconds to catch newly spawned processes. |
 
 ### Background Mode (Always-On)
 
@@ -204,8 +204,8 @@ dotnet run --project src/GameShift.App
 ### What GameShift changes (and how it reverts)
 
 - **Services**  - Temporarily pauses non-essential services. Original start types recorded in journal, restored on session end.
-- **Registry keys**  - Writes the `Win32PrioritySeparation` scheduling value, IFEO entries, and a few per-game values for built-in games. All original values captured before any write and verified after revert.
-- **Power plans**  - Creates or switches to Ultimate Performance (or the custom "GameShift Performance" plan). Your original plan GUID is saved and restored.
+- **Registry keys**  - Writes IFEO entries and a few per-game values for built-in games. All original values captured before any write and verified after revert.
+- **Power plans**  - Switches from Balanced to High Performance during a game (or uses the custom "GameShift Performance" plan when Background Mode is on). Your original plan GUID is saved and restored.
 - **Process priority & scheduling**  - Elevates game priority and assigns CPU sets. All released on game exit.
 - **BCD settings**  - Optional kernel tuning (timer, APIC, TSC) via BCDEdit with one-click revert. Tracked in pending reboot fixes.
 - **Interrupt affinity**  - Optional GPU and USB interrupt routing changes with rollback to default Windows assignment.

@@ -57,12 +57,6 @@ public class SystemStateSnapshot
     public Dictionary<string, object> RegistryValues { get; set; } = new();
 
     /// <summary>
-    /// Original Win32PrioritySeparation registry value before session-scoped override.
-    /// Null if not modified. Used for crash recovery to restore original scheduling quantum.
-    /// </summary>
-    public int? OriginalPrioritySeparation { get; set; }
-
-    /// <summary>
     /// IFEO (Image File Execution Options) PerfOptions entries created by GameShift.
     /// Key: IFEO subkey path (e.g., "SOFTWARE\Microsoft\Windows NT\...\game.exe\PerfOptions")
     /// Value: JSON of original values if the key existed, or null if GameShift created it.
@@ -185,17 +179,6 @@ public class SystemStateSnapshot
         {
             TimerResolution = resolution100ns;
         }
-    }
-
-    /// <summary>
-    /// Records the original Win32PrioritySeparation value before session-scoped override.
-    /// Only records if not already set (preserves first/original state).
-    /// Use case: ProcessPriorityBooster records original value before setting gaming-optimal 0x2A.
-    /// </summary>
-    /// <param name="originalValue">Original Win32PrioritySeparation DWORD value</param>
-    public void RecordPrioritySeparation(int originalValue)
-    {
-        OriginalPrioritySeparation ??= originalValue;
     }
 
     /// <summary>

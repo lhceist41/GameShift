@@ -931,6 +931,7 @@
                                     <!-- CheckBox styled as toggle switch; stops row click from expanding -->
                                     <CheckBox Grid.Column="2"
                                               IsChecked="{Binding IsEnabled, Mode=TwoWay}"
+                                              IsEnabled="{Binding CanToggle}"
                                               VerticalAlignment="Center"
                                               Margin="8,0"
                                               Checked="OnOptimizationToggleChanged"

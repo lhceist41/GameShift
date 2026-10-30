@@ -26,7 +26,8 @@ public class ProfileEditorViewModel : INotifyPropertyChanged
     private bool _switchPowerPlan;
     private bool _setTimerResolution;
     private bool _boostProcessPriority;
-    private bool _usePerformanceCoresOnly;
+    private bool _pinGameCores;
+    private bool _enableEfficiencyMode;
 
     // v2 DPC Monitoring
     private bool _enableDpcMonitoring;
@@ -83,10 +84,16 @@ public class ProfileEditorViewModel : INotifyPropertyChanged
         set { if (_boostProcessPriority != value) { _boostProcessPriority = value; IsDirty = true; OnPropertyChanged(); } }
     }
 
-    public bool UsePerformanceCoresOnly
+    public bool PinGameCores
     {
-        get => _usePerformanceCoresOnly;
-        set { if (_usePerformanceCoresOnly != value) { _usePerformanceCoresOnly = value; IsDirty = true; OnPropertyChanged(); } }
+        get => _pinGameCores;
+        set { if (_pinGameCores != value) { _pinGameCores = value; IsDirty = true; OnPropertyChanged(); } }
+    }
+
+    public bool EnableEfficiencyMode
+    {
+        get => _enableEfficiencyMode;
+        set { if (_enableEfficiencyMode != value) { _enableEfficiencyMode = value; IsDirty = true; OnPropertyChanged(); } }
     }
 
     // ── v2 DPC Monitoring ────────────────────────────────────────────
@@ -256,7 +263,8 @@ public class ProfileEditorViewModel : INotifyPropertyChanged
         _switchPowerPlan = profile.SwitchPowerPlan;
         _setTimerResolution = profile.SetTimerResolution;
         _boostProcessPriority = profile.BoostProcessPriority;
-        _usePerformanceCoresOnly = profile.UsePerformanceCoresOnly;
+        _pinGameCores = profile.PinGameCores;
+        _enableEfficiencyMode = profile.EnableEfficiencyMode;
 
         // v2 fields
         _enableDpcMonitoring = profile.EnableDpcMonitoring;
@@ -277,7 +285,8 @@ public class ProfileEditorViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(SwitchPowerPlan));
         OnPropertyChanged(nameof(SetTimerResolution));
         OnPropertyChanged(nameof(BoostProcessPriority));
-        OnPropertyChanged(nameof(UsePerformanceCoresOnly));
+        OnPropertyChanged(nameof(PinGameCores));
+        OnPropertyChanged(nameof(EnableEfficiencyMode));
         OnPropertyChanged(nameof(EnableDpcMonitoring));
         OnPropertyChanged(nameof(DpcThresholdMicroseconds));
         OnPropertyChanged(nameof(DpcThresholdPercentText));
@@ -394,7 +403,8 @@ public class ProfileEditorViewModel : INotifyPropertyChanged
         profile.SwitchPowerPlan = SwitchPowerPlan;
         profile.SetTimerResolution = SetTimerResolution;
         profile.BoostProcessPriority = BoostProcessPriority;
-        profile.UsePerformanceCoresOnly = UsePerformanceCoresOnly;
+        profile.PinGameCores = PinGameCores;
+        profile.EnableEfficiencyMode = EnableEfficiencyMode;
 
         // v2 fields
         profile.EnableDpcMonitoring = EnableDpcMonitoring;

@@ -462,11 +462,11 @@ public class DashboardViewModel : INotifyPropertyChanged
 
             var afterValues = new[]
             {
-                "Non-essential services stopped",  // 0
-                "Ultimate Performance plan",       // 1
-                "1 ms timer resolution",           // 2
-                "High priority",                   // 3
-                "P-cores prioritized for game"     // 4
+                "Update and indexing services paused",     // 0
+                "High Performance plan (from Balanced)",   // 1
+                "1 ms timer resolution",                   // 2
+                "High priority",                           // 3
+                "Game pinned to P-cores or V-Cache CCD"    // 4
             };
 
             int index = 0;
@@ -501,6 +501,8 @@ public class DashboardViewModel : INotifyPropertyChanged
                     Status = status,
                     StatusBrush = statusBrush,
                     IsEnabled = isEnabled,
+                    // Follows the efficiency mode and core pinning switches, so it has none of its own.
+                    CanToggle = opt.Name != CpuSchedulingOptimizer.OptimizationId,
                     BeforeValue = index < beforeValues.Length ? beforeValues[index] : "Original state",
                     AfterValue = index < afterValues.Length ? afterValues[index] : "Optimized state"
                 };
@@ -543,13 +545,13 @@ public class DashboardViewModel : INotifyPropertyChanged
                 profile.BoostProcessPriority = item.IsEnabled;
                 break;
             case HybridCpuDetector.OptimizationId:
-                profile.UsePerformanceCoresOnly = item.IsEnabled;
+                profile.PinGameCores = item.IsEnabled;
                 break;
             case EfficiencyModeController.OptimizationId:
                 profile.EnableEfficiencyMode = item.IsEnabled;
                 break;
             case CpuSchedulingOptimizer.OptimizationId:
-                // CpuSchedulingOptimizer is always-on when available, no per-profile toggle
+                // No switch of its own: it follows EnableEfficiencyMode and PinGameCores
                 break;
         }
 
@@ -876,6 +878,9 @@ public class ExpandableOptimizationItem : INotifyPropertyChanged
         get => _isExpanded;
         set { _isExpanded = value; OnPropertyChanged(); }
     }
+
+    /// <summary>False for a row whose state follows other switches.</summary>
+    public bool CanToggle { get; set; } = true;
 
     private bool _isEnabled = true;
 

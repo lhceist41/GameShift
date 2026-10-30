@@ -17,8 +17,7 @@ namespace GameShift.Core.Optimization;
 ///
 /// Implements IJournaledOptimization so the watchdog can clean up IFEO registry
 /// changes after a main-app crash. Only IFEO changes are journaled - the live
-/// PriorityClass path is ephemeral (dies with the game process) and the
-/// Win32PrioritySeparation value is captured in the snapshot-based recovery path.
+/// PriorityClass path is ephemeral (dies with the game process).
 /// </summary>
 public class ProcessPriorityBooster : IOptimization, IJournaledOptimization
 {
@@ -32,24 +31,12 @@ public class ProcessPriorityBooster : IOptimization, IJournaledOptimization
     private bool _ifeoPerfOptionsPreviouslyExisted;
     private Dictionary<string, int>? _ifeoOriginalValues;
 
-    // Win32PrioritySeparation session-scoped override
-    private int? _originalPrioritySeparation;
-    private bool _prioritySeparationApplied;
-
     // Context stored by CanApply() for use by Apply().
     private SystemContext? _context;
 
     internal IProcessPriorityAccess Processes { get; init; } = SystemProcessPriorityAccess.Instance;
 
-    internal IPrioritySeparationStore PrioritySeparation { get; init; } = RegistryPrioritySeparationStore.Instance;
-
     private const string IfeoBasePath = @"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options";
-
-    /// <summary>
-    /// Gaming-optimal Win32PrioritySeparation value.
-    /// 0x2A = fixed quantum (0x20) | short length (0x08) | max foreground boost (0x02).
-    /// </summary>
-    private const int GamingPrioritySeparation = 0x2A;
 
     public const string OptimizationId = "Process Priority Booster";
 
@@ -125,15 +112,9 @@ public class ProcessPriorityBooster : IOptimization, IJournaledOptimization
         _ifeoOriginalValues = null;
         _boostedProcessId = 0;
         _boostedProcessName = null;
-        _originalPrioritySeparation = null;
-        _prioritySeparationApplied = false;
 
         try
         {
-            // Apply session-scoped Win32PrioritySeparation (gaming-optimal scheduling quantum).
-            // Captured via snapshot for crash recovery - not journaled here.
-            ApplyPrioritySeparation(snapshot);
-
             bool pathSuccess;
             if (profile.RequiresIfeoFallback)
             {
@@ -144,16 +125,10 @@ public class ProcessPriorityBooster : IOptimization, IJournaledOptimization
                 pathSuccess = ApplyViaRuntimeApi(snapshot, profile);
             }
 
-            // A failed per-process priority boost (PID reuse, the game process exited, or an
-            // anti-cheat block) must NOT orphan the system-wide Win32PrioritySeparation tweak
-            // that was already applied above. If that change was made, the optimization must
-            // still be tracked so the engine reverts it on session end. Only report a hard
-            // failure when there was a real game process to boost, that boost failed, AND nothing
-            // was changed system-wide. With no game to target (e.g. Quick Optimize / system-only
-            // optimize) the per-process boost is not applicable, so a no-op - including when
-            // Win32PrioritySeparation is already at the gaming value - is success, not failure.
+            // With no game to target (e.g. Quick Optimize) the per-process boost is not applicable,
+            // so a no-op is success, not failure.
             bool hadGameToBoost = profile.ProcessId > 0;
-            if (!pathSuccess && !_prioritySeparationApplied && hadGameToBoost)
+            if (!pathSuccess && hadGameToBoost)
                 return Fail("Failed to apply priority boost");
 
             IsApplied = true;
@@ -163,9 +138,9 @@ public class ProcessPriorityBooster : IOptimization, IJournaledOptimization
         {
             _logger.Error(ex, "[ProcessPriorityBooster] Failed to apply priority boost");
 
-            // Whatever failed, a system-wide change already made must stay tracked so the engine
+            // Whatever failed, an IFEO change already made must stay tracked so the engine
             // reverts it; the engine only reverts optimizations that report Applied.
-            if (_prioritySeparationApplied || _usedIfeo)
+            if (_usedIfeo)
             {
                 IsApplied = true;
                 return BuildAppliedResult();
@@ -400,9 +375,6 @@ public class ProcessPriorityBooster : IOptimization, IJournaledOptimization
 
         try
         {
-            // Revert session-scoped Win32PrioritySeparation
-            bool separationRestored = RevertPrioritySeparation();
-
             bool pathSuccess;
             if (_usedIfeo)
             {
@@ -414,9 +386,6 @@ public class ProcessPriorityBooster : IOptimization, IJournaledOptimization
             }
 
             IsApplied = false;
-
-            if (!separationRestored)
-                return RevertFail("Failed to restore Win32PrioritySeparation");
 
             if (!pathSuccess)
                 return RevertFail("Failed to revert priority boost");
@@ -677,171 +646,6 @@ public class ProcessPriorityBooster : IOptimization, IJournaledOptimization
             _logger.Error(ex, "[ProcessPriorityBooster] RevertFromRecord failed");
             return RevertFail(ex.Message);
         }
-    }
-
-    // ── Win32PrioritySeparation ──────────────────────────────────────
-
-    /// <summary>
-    /// Sets Win32PrioritySeparation to gaming-optimal value (0x2A).
-    /// 0x2A = fixed quantum, short length, maximum foreground boost.
-    /// Records original value in snapshot for crash recovery.
-    /// Takes effect immediately - no reboot required.
-    /// </summary>
-    private void ApplyPrioritySeparation(SystemStateSnapshot snapshot)
-    {
-        try
-        {
-            if (!PrioritySeparation.TryRead(out var currentValue))
-            {
-                _logger.Warning(
-                    "[ProcessPriorityBooster] Cannot open PriorityControl registry key");
-                return;
-            }
-
-            _originalPrioritySeparation = currentValue;
-
-            // Record in snapshot for crash recovery
-            if (currentValue.HasValue)
-            {
-                snapshot.RecordPrioritySeparation(currentValue.Value);
-            }
-
-            // Skip if already set to gaming-optimal value
-            if (currentValue == GamingPrioritySeparation)
-            {
-                _logger.Debug(
-                    "[ProcessPriorityBooster] Win32PrioritySeparation already 0x{Value:X2}, skipping",
-                    GamingPrioritySeparation);
-                _prioritySeparationApplied = false;
-                return;
-            }
-
-            PrioritySeparation.Write(GamingPrioritySeparation);
-            _prioritySeparationApplied = true;
-
-            _logger.Information(
-                "[ProcessPriorityBooster] Win32PrioritySeparation set to 0x{New:X2} (was: 0x{Original:X2})",
-                GamingPrioritySeparation,
-                currentValue ?? 0);
-        }
-        catch (Exception ex)
-        {
-            _logger.Warning(
-                ex,
-                "[ProcessPriorityBooster] Failed to set Win32PrioritySeparation");
-        }
-    }
-
-    /// <summary>
-    /// Restores the original Win32PrioritySeparation value. Returns false when the restore failed;
-    /// the captured original is then kept.
-    /// </summary>
-    private bool RevertPrioritySeparation()
-    {
-        if (!_prioritySeparationApplied)
-            return true;
-
-        try
-        {
-            if (_originalPrioritySeparation.HasValue)
-            {
-                PrioritySeparation.Write(_originalPrioritySeparation.Value);
-                _logger.Information(
-                    "[ProcessPriorityBooster] Win32PrioritySeparation restored to 0x{Original:X2}",
-                    _originalPrioritySeparation.Value);
-            }
-            else
-            {
-                // Value did not exist before Apply - delete the one we created (don't leave a default).
-                PrioritySeparation.Delete();
-                _logger.Information(
-                    "[ProcessPriorityBooster] Win32PrioritySeparation deleted (was absent before apply)");
-            }
-
-            _prioritySeparationApplied = false;
-            return true;
-        }
-        catch (Exception ex)
-        {
-            _logger.Warning(
-                ex,
-                "[ProcessPriorityBooster] Failed to restore Win32PrioritySeparation");
-            return false;
-        }
-    }
-
-    /// <summary>
-    /// Restores Win32PrioritySeparation from a stale snapshot during crash recovery.
-    /// Called by startup logic when a stale lockfile is found.
-    /// </summary>
-    public static void RestorePrioritySeparationFromSnapshot(SystemStateSnapshot snapshot)
-    {
-        if (!snapshot.OriginalPrioritySeparation.HasValue)
-            return;
-
-        try
-        {
-            using var key = Registry.LocalMachine.OpenSubKey(
-                @"SYSTEM\CurrentControlSet\Control\PriorityControl", writable: true);
-
-            key?.SetValue("Win32PrioritySeparation", snapshot.OriginalPrioritySeparation.Value,
-                RegistryValueKind.DWord);
-
-            SettingsManager.Logger.Information(
-                "[ProcessPriorityBooster] Crash recovery - restored Win32PrioritySeparation to 0x{Value:X2}",
-                snapshot.OriginalPrioritySeparation.Value);
-        }
-        catch (Exception ex)
-        {
-            SettingsManager.Logger.Warning(
-                ex,
-                "[ProcessPriorityBooster] Crash recovery - failed to restore Win32PrioritySeparation");
-        }
-    }
-
-    /// <summary>
-    /// Reads and writes HKLM PriorityControl\Win32PrioritySeparation. A seam so the apply and
-    /// revert paths can be tested without the registry.
-    /// </summary>
-    internal interface IPrioritySeparationStore
-    {
-        /// <summary>False when the PriorityControl key cannot be opened.</summary>
-        bool TryRead(out int? value);
-
-        void Write(int value);
-
-        void Delete();
-    }
-
-    private sealed class RegistryPrioritySeparationStore : IPrioritySeparationStore
-    {
-        public static readonly RegistryPrioritySeparationStore Instance = new();
-
-        private const string KeyPath = @"SYSTEM\CurrentControlSet\Control\PriorityControl";
-        private const string ValueName = "Win32PrioritySeparation";
-
-        public bool TryRead(out int? value)
-        {
-            using var key = Registry.LocalMachine.OpenSubKey(KeyPath);
-            value = key?.GetValue(ValueName) as int?;
-            return key != null;
-        }
-
-        public void Write(int value)
-        {
-            using var key = OpenWritable();
-            key.SetValue(ValueName, value, RegistryValueKind.DWord);
-        }
-
-        public void Delete()
-        {
-            using var key = OpenWritable();
-            key.DeleteValue(ValueName, throwOnMissingValue: false);
-        }
-
-        private static RegistryKey OpenWritable() =>
-            Registry.LocalMachine.OpenSubKey(KeyPath, writable: true)
-            ?? throw new InvalidOperationException("Cannot open the PriorityControl registry key");
     }
 
     // ── Result helpers ────────────────────────────────────────────────────────

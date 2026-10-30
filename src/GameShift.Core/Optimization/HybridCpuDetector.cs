@@ -459,7 +459,7 @@ public class HybridCpuDetector : IOptimization, IJournaledOptimization
     /// Categorizes logical processors by EfficiencyClass into P/E/LP tiers.
     /// Also detects AMD X3D V-Cache CCD via processor name check and CCD grouping.
     /// </summary>
-    private CpuTopology DetectTopology()
+    internal static CpuTopology DetectTopology()
     {
         var topology = new CpuTopology();
 
@@ -556,29 +556,33 @@ public class HybridCpuDetector : IOptimization, IJournaledOptimization
     /// and grouping cores by LastLevelCacheIndex (CCD boundary).
     /// On current X3D SKUs, CCD0 (the first LLC group) contains V-Cache.
     /// </summary>
-    private void DetectVCacheCcd(CpuTopology topology)
+    private static void DetectVCacheCcd(CpuTopology topology)
     {
-        // Group P-cores by their L3 cache group (CCD)
-        var ccdGroups = topology.PerformanceCores
-            .GroupBy(c => c.LastLevelCacheIndex)
-            .ToList();
-
-        // Need at least 2 CCDs for V-Cache to be beneficial
-        if (ccdGroups.Count < 2)
+        topology.VCacheCcdIndex = ResolveVCacheCcdIndex(topology.PerformanceCores, GetCpuName);
+        if (topology.VCacheCcdIndex == null)
             return;
-
-        // Check if this is an AMD X3D processor
-        string cpuName = GetCpuName();
-        if (!cpuName.Contains("X3D", StringComparison.OrdinalIgnoreCase))
-            return;
-
-        // CCD0 has V-Cache on all current X3D SKUs (5800X3D, 7800X3D, 9800X3D, 9950X3D)
-        topology.VCacheCcdIndex = 0;
 
         SettingsManager.Logger.Information(
             "[HybridCpuDetector] AMD X3D detected - V-Cache CCD index: {CcdIndex} ({CoreCount} cores)",
             topology.VCacheCcdIndex,
-            ccdGroups[0].Count());
+            topology.PerformanceCores.Count(c => c.LastLevelCacheIndex == topology.VCacheCcdIndex));
+    }
+
+    /// <summary>
+    /// The V-Cache CCD index, set only for an X3D CPU whose cores span two or more L3 groups (CCDs).
+    /// A single-CCD X3D has one L3 group and gets null, so a non-null result identifies a
+    /// dual-CCD X3D. The CPU name is read only when there are two or more groups.
+    /// </summary>
+    internal static int? ResolveVCacheCcdIndex(IEnumerable<CpuCore> performanceCores, Func<string> cpuName)
+    {
+        if (performanceCores.Select(c => c.LastLevelCacheIndex).Distinct().Count() < 2)
+            return null;
+
+        if (!cpuName().Contains("X3D", StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        // CCD0 has V-Cache on all current X3D SKUs (5800X3D, 7800X3D, 9800X3D, 9950X3D)
+        return 0;
     }
 
     /// <summary>
