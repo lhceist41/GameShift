@@ -2,6 +2,7 @@ using System;
 using System.Windows;
 using System.Windows.Controls;
 using GameShift.Core.Detection;
+using GameShift.Core.Monitoring;
 
 namespace GameShift.App.Views.Pages;
 
@@ -38,8 +39,8 @@ public partial class SetupWizardPage : Page
             GpuResult.Text = _scanner.GpuName;
             RamResult.Text = $"{_scanner.TotalRamGb:F0} GB";
             VbsResult.Text = _scanner.VbsEnabled ? "Enabled (impacts performance)" : "Disabled";
-            DpcResult.Text = $"{_scanner.DpcBaselineUs:F0} \u00B5s" +
-                (_scanner.DpcBaselineUs > 1000 ? " (High \u2014 check drivers)" : " (Normal)");
+            DpcResult.Text = DpcLoad.Format(_scanner.DpcBaselineUs) +
+                (_scanner.DpcBaselineUs > 1000 ? " of CPU time (High, check drivers)" : " of CPU time (Normal)");
             ResultsPanel.Visibility = Visibility.Visible;
             ScanProgress.Text = "Scan complete.";
         }

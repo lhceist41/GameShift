@@ -20,7 +20,7 @@
                 <StackPanel>
                     <TextBlock Text="Hardware Scan" FontSize="16" FontWeight="SemiBold"
                                Foreground="{DynamicResource GS.Text.Primary}" Margin="0,0,0,8"/>
-                    <TextBlock Text="Detect your GPU, RAM, VBS status, and DPC latency baseline."
+                    <TextBlock Text="Detect your GPU, RAM, VBS status, and DPC load baseline."
                                FontSize="13" Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,0,0,16"/>
 
                     <Button x:Name="ScanButton" Content="Scan Hardware" Padding="16,8"
@@ -79,7 +79,7 @@
                                     <ColumnDefinition Width="120"/>
                                     <ColumnDefinition Width="*"/>
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0" Text="DPC Baseline:" FontWeight="SemiBold"
+                                <TextBlock Grid.Column="0" Text="DPC Load:" FontWeight="SemiBold"
                                            Foreground="{DynamicResource GS.Text.Secondary}"/>
                                 <TextBlock Grid.Column="1" x:Name="DpcResult"
                                            Foreground="{DynamicResource GS.Text.Primary}"/>

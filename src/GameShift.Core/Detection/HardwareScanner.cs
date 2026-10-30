@@ -27,7 +27,7 @@ public class HardwareScanner
     /// <summary>Whether VBS/HVCI is currently enabled.</summary>
     public bool VbsEnabled { get; private set; }
 
-    /// <summary>Baseline DPC latency in microseconds (average over 5-second sample).</summary>
+    /// <summary>Baseline DPC load in the stored DpcLoad scale (average over a 3-second sample).</summary>
     public double DpcBaselineUs { get; private set; }
 
     /// <summary>Whether the scan has completed.</summary>
@@ -66,7 +66,7 @@ public class HardwareScanner
             // Step 4: DPC baseline (quick 3-second sample)
             progress?.Report("Measuring DPC baseline (3s)...");
             DpcBaselineUs = MeasureDpcBaseline();
-            Log.Information("HardwareScanner: DPC baseline = {DpcUs:F0} µs", DpcBaselineUs);
+            Log.Information("HardwareScanner: DPC load baseline = {DpcLoad}", Monitoring.DpcLoad.Format(DpcBaselineUs));
 
             // Step 5: Build consolidated HardwareScanResult
             progress?.Report("Building hardware profile...");
@@ -605,8 +605,8 @@ public class HardwareScanner
     }
 
     /// <summary>
-    /// Takes a quick 3-second DPC latency baseline measurement.
-    /// Returns average latency in microseconds, or 0 if measurement fails.
+    /// Takes a quick 3-second DPC load baseline measurement.
+    /// Returns the average in the stored DpcLoad scale, or 0 if measurement fails.
     /// </summary>
     private static double MeasureDpcBaseline()
     {
@@ -622,7 +622,7 @@ public class HardwareScanner
                 count++;
             };
 
-            monitor.Start(1000); // 1000µs threshold (default)
+            monitor.Start(1000); // default threshold, 0.1% of CPU time
             Thread.Sleep(3000); // 3-second sample
             monitor.Stop();
 

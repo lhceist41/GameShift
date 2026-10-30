@@ -6,6 +6,7 @@
       FontFamily="Segoe UI" FontSize="14">
     <Page.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
+        <helpers:DpcLoadTextConverter x:Key="DpcLoadText"/>
 
         <!-- Card Text Crossfade Animation (300ms, CubicEase) - Feature #5 -->
         <Style x:Key="AnimatedTextStyle" TargetType="TextBlock">
@@ -236,7 +237,7 @@
                                 Click="OnDismissDpcSpikeClicked"/>
                     </StackPanel>
                     <StackPanel VerticalAlignment="Center">
-                        <TextBlock Text="DPC Latency Spike" FontWeight="Bold"
+                        <TextBlock Text="High DPC Load" FontWeight="Bold"
                                    Foreground="{DynamicResource GS.Status.Error}" FontSize="13"/>
                         <TextBlock Text="{Binding Dpc.DpcSpikeAlertMessage, Mode=OneWay}"
                                    FontSize="12" Foreground="{DynamicResource GS.Text.Primary}"
@@ -622,12 +623,13 @@
             <UniformGrid Rows="1" Columns="4" Margin="-8,8,-8,0"
                          Visibility="{Binding IsAdvancedMode, Converter={StaticResource BoolToVisibility}}">
 
-                <!-- Card 3: DPC Latency -->
+                <!-- Card 3: DPC Load -->
                 <Border Background="{DynamicResource GS.Surface.Card}"
                         CornerRadius="8" Padding="16" Margin="8"
                         BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1">
                     <StackPanel>
-                        <TextBlock Text="DPC Latency" FontSize="12"
+                        <TextBlock Text="DPC Load" FontSize="12"
+                                   ToolTip="Share of CPU time drivers spend on deferred procedure calls (DPC). Lower is better."
                                    Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,0,0,6"/>
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
                             <Ellipse Width="10" Height="10" Margin="0,0,8,0" VerticalAlignment="Center"
@@ -635,7 +637,7 @@
                             <TextBlock Text="{Binding Dpc.DpcLatencyText, Mode=OneWay, NotifyOnTargetUpdated=True}" FontSize="22" FontWeight="Bold"
                                        Foreground="{DynamicResource GS.Text.Primary}" Style="{StaticResource AnimatedTextStyle}"/>
                         </StackPanel>
-                        <!-- Average latency or inactive placeholder -->
+                        <!-- Average load or inactive placeholder -->
                         <TextBlock FontSize="13" Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,0,0,4">
                             <TextBlock.Style>
                                 <Style TargetType="TextBlock">
@@ -648,8 +650,7 @@
                                 </Style>
                             </TextBlock.Style>
                             <Run Text="Avg: "/>
-                            <Run Text="{Binding Dpc.AverageDpcLatency, Mode=OneWay, StringFormat={}{0:F0}}"/>
-                            <Run Text="µs"/>
+                            <Run Text="{Binding Dpc.AverageDpcLoadText, Mode=OneWay}"/>
                         </TextBlock>
                         <TextBlock Text="Monitoring inactive" FontSize="13"
                                    Foreground="{DynamicResource GS.Text.Disabled}" Margin="0,0,0,4">
@@ -870,8 +871,8 @@
                                 </StackPanel>
                                 <StackPanel DockPanel.Dock="Right" HorizontalAlignment="Right" VerticalAlignment="Center">
                                     <TextBlock FontSize="11" Foreground="{DynamicResource GS.Text.Secondary}" HorizontalAlignment="Right">
-                                        <Run Text="DPC: "/>
-                                        <Run Text="{Binding AvgDpcDuring, StringFormat={}{0:F0}us, Mode=OneWay}"/>
+                                        <Run Text="DPC load: "/>
+                                        <Run Text="{Binding AvgDpcDuring, Converter={StaticResource DpcLoadText}, Mode=OneWay}"/>
                                     </TextBlock>
                                     <TextBlock FontSize="10" Foreground="{DynamicResource GS.Text.Secondary}" HorizontalAlignment="Right"
                                                Text="{Binding StartTime, StringFormat={}{0:MMM d h:mm tt}, Mode=OneWay}"/>

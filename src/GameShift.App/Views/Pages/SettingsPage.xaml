@@ -77,7 +77,7 @@
                                   Margin="20,0,0,8"
                                   IsEnabled="{Binding ShowNotifications}"/>
 
-                        <CheckBox Content="DPC latency alert toast"
+                        <CheckBox Content="DPC load alert toast"
                                   IsChecked="{Binding ShowDpcAlertToast, Mode=TwoWay}"
                                   Foreground="{DynamicResource GS.Text.Primary}"
                                   Margin="20,0,0,12"
@@ -388,11 +388,12 @@
                         Padding="15" Margin="0,0,0,15"
                         BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1">
                     <StackPanel>
-                        <TextBlock Text="Default DPC Threshold (microseconds)" FontWeight="SemiBold"
+                        <TextBlock Text="Default DPC load alert (% of CPU time)" FontWeight="SemiBold"
                                    Foreground="{DynamicResource GS.Text.Primary}"/>
-                        <TextBlock Text="Global default. Per-game overrides in Profile Editor."
+                        <TextBlock Text="Alerts when drivers spend more than this share of CPU time on deferred procedure calls (DPC). Global default. Per-game overrides in Profile Editor."
+                                   TextWrapping="Wrap"
                                    FontSize="11" Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,2,0,6"/>
-                        <TextBox Text="{Binding DefaultDpcThresholdMicroseconds, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                        <TextBox Text="{Binding DefaultDpcThresholdPercentText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                  Width="100" HorizontalAlignment="Left"
                                  Background="{DynamicResource GS.Surface.Base}"
                                  Foreground="{DynamicResource GS.Text.Primary}"

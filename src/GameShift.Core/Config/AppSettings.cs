@@ -89,8 +89,8 @@ public class AppSettings
     // -- v2 DPC Monitoring fields ------------------------------------------------
 
     /// <summary>
-    /// Global default DPC latency threshold in microseconds.
-    /// Per-game overrides in GameProfile.DpcThresholdMicroseconds.
+    /// Global default DPC load threshold in the stored DpcLoad scale (percent x 10000;
+    /// 1000 = 0.1% of CPU time). Per-game overrides in GameProfile.DpcThresholdMicroseconds.
     /// </summary>
     public int DefaultDpcThresholdMicroseconds { get; set; } = 1000;
 
@@ -158,15 +158,6 @@ public class AppSettings
     /// Default: Google DNS (8.8.8.8). Configurable in Settings > Network.
     /// </summary>
     public string PingTarget { get; set; } = "8.8.8.8";
-
-    // -- DPC Monitoring Preferences ----------------------------------------
-
-    /// <summary>
-    /// Whether to prefer ETW-based DPC monitoring over PerformanceCounter.
-    /// ETW provides per-driver attribution but has slightly higher overhead (~1-3% CPU).
-    /// When false, always uses PerformanceCounter regardless of admin privileges.
-    /// </summary>
-    public bool PreferEtwDpcMonitoring { get; set; } = true;
 
     // -- DPC Doctor --------------------------------------------------------
 

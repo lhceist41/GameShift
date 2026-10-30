@@ -279,7 +279,7 @@ public class GameProfile
     public bool EnableDpcMonitoring { get; set; } = true;
 
     /// <summary>
-    /// DPC latency threshold in microseconds for spike alerts.
+    /// DPC load threshold for spike alerts, in the stored DpcLoad scale (percent x 10000).
     /// When a sample exceeds this value, DpcSpikeDetected fires (with 30s cooldown).
     /// 0 means use the global AppSettings.DefaultDpcThresholdMicroseconds value.
     /// Default 0 -- use global setting.

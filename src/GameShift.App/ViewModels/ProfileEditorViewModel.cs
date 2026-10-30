@@ -5,6 +5,7 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using GameShift.Core.Config;
 using GameShift.Core.Detection;
+using GameShift.Core.Monitoring;
 using GameShift.Core.Profiles;
 using GameShift.Core.Profiles.GameActions;
 
@@ -225,6 +226,24 @@ public class ProfileEditorViewModel : INotifyPropertyChanged
         set { if (_dpcThresholdMicroseconds != value) { _dpcThresholdMicroseconds = value; IsDirty = true; OnPropertyChanged(); } }
     }
 
+    private string _dpcThresholdPercentText = "0";
+
+    /// <summary>
+    /// The per-game threshold as typed, in percent of CPU time. Text that does not parse keeps the last valid value.
+    /// </summary>
+    public string DpcThresholdPercentText
+    {
+        get => _dpcThresholdPercentText;
+        set
+        {
+            if (_dpcThresholdPercentText == value) return;
+            _dpcThresholdPercentText = value;
+            OnPropertyChanged();
+            if (DpcLoad.TryParseThreshold(value, out var threshold))
+                DpcThresholdMicroseconds = threshold;
+        }
+    }
+
     // ── UI state ──────────────────────────────────────────────────────
 
     /// <summary>
@@ -379,6 +398,7 @@ public class ProfileEditorViewModel : INotifyPropertyChanged
         _disableMpo = profile.DisableMpo;
         _enableDpcMonitoring = profile.EnableDpcMonitoring;
         _dpcThresholdMicroseconds = profile.DpcThresholdMicroseconds;
+        _dpcThresholdPercentText = DpcLoad.FormatThreshold(profile.DpcThresholdMicroseconds);
         _intensity = profile.Intensity.ToString();
 
         IsDirty = false;
@@ -412,6 +432,7 @@ public class ProfileEditorViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(DisableMpo));
         OnPropertyChanged(nameof(EnableDpcMonitoring));
         OnPropertyChanged(nameof(DpcThresholdMicroseconds));
+        OnPropertyChanged(nameof(DpcThresholdPercentText));
         OnPropertyChanged(nameof(Intensity));
         OnPropertyChanged(nameof(HasSelectedProfile));
     }
@@ -439,8 +460,8 @@ public class ProfileEditorViewModel : INotifyPropertyChanged
             ? $"{stats.TotalPlayTime.TotalHours:F1} hours"
             : $"{stats.TotalPlayTime.TotalMinutes:F0} minutes";
         SessionCount = $"{stats.SessionCount} sessions";
-        AvgDpcLatency = $"{stats.AvgDpcLatency:F0} us";
-        BestDpcLatency = $"{stats.BestDpcLatency:F0} us";
+        AvgDpcLatency = DpcLoad.Format(stats.AvgDpcLatency);
+        BestDpcLatency = DpcLoad.Format(stats.BestDpcLatency);
     }
 
     /// <summary>

@@ -507,26 +507,16 @@ public partial class App : Application
     }
 
     /// <summary>
-    /// Handles DPC spike events by showing a toast notification with driver info and fix suggestion.
-    /// Shows a toast with offending driver name and specific fix description.
+    /// Handles DPC spike events by showing a toast notification with the DPC load.
     /// The 30-second cooldown is enforced by DpcLatencyMonitor.
     /// </summary>
     private void OnDpcSpikeDetected(object? sender, DpcSpikeEventArgs e)
     {
         if (_trayManager == null) return;
 
-        var driverInfo = e.DriverName != null ? e.DriverName : "unknown driver";
-        var fixSuggestion = e.DriverName != null
-            ? Services.DpcMon?.GetFixSuggestion(e.DriverName)
-            : null;
+        var message = $"Drivers used {DpcLoad.Format(e.LatencyMicroseconds)} of CPU time for deferred procedure calls (DPC load). DPC Doctor can find the driver.";
 
-        var message = $"DPC latency spike: {e.LatencyMicroseconds:F0}\u00B5s ({driverInfo})";
-        if (fixSuggestion != null)
-        {
-            message += $"\n{fixSuggestion}";
-        }
-
-        _trayManager.ShowDpcNotification("DPC Latency Warning", message);
+        _trayManager.ShowDpcNotification("High DPC Load", message);
     }
 
     /// <summary>

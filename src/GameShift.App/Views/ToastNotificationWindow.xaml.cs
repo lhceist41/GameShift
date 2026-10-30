@@ -1,6 +1,7 @@
 using System;
 using System.Windows;
 using System.Windows.Threading;
+using GameShift.Core.Monitoring;
 
 namespace GameShift.App.Views;
 
@@ -72,8 +73,8 @@ public partial class ToastNotificationWindow : Window
             OptCountText.Text = total > 0 ? $"{optimizationCount}/{total}" : optimizationCount.ToString();
         }
 
-        AvgDpcText.Text = avgDpcMicroseconds > 0 ? $"{avgDpcMicroseconds:F0} \u00B5s" : "N/A";
-        PeakDpcText.Text = peakDpcMicroseconds > 0 ? $"{peakDpcMicroseconds:F0} \u00B5s" : "N/A";
+        AvgDpcText.Text = avgDpcMicroseconds > 0 ? DpcLoad.Format(avgDpcMicroseconds) : "N/A";
+        PeakDpcText.Text = peakDpcMicroseconds > 0 ? DpcLoad.Format(peakDpcMicroseconds) : "N/A";
     }
 
     private void OnCloseClicked(object sender, RoutedEventArgs e)

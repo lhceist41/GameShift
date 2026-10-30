@@ -85,7 +85,7 @@
 
                 <!-- Avg DPC -->
                 <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,0,8,0">
-                    <TextBlock Text="Avg DPC" FontSize="11"
+                    <TextBlock Text="Avg DPC load" FontSize="11"
                                Foreground="{DynamicResource GS.Text.Secondary}"/>
                     <TextBlock x:Name="AvgDpcText" FontSize="14" FontWeight="SemiBold"
                                Foreground="{DynamicResource GS.Text.Primary}"/>
@@ -93,7 +93,7 @@
 
                 <!-- Peak DPC -->
                 <StackPanel Grid.Row="1" Grid.Column="1" Margin="8,0,0,0">
-                    <TextBlock Text="Peak DPC" FontSize="11"
+                    <TextBlock Text="Peak DPC load" FontSize="11"
                                Foreground="{DynamicResource GS.Text.Secondary}"/>
                     <TextBlock x:Name="PeakDpcText" FontSize="14" FontWeight="SemiBold"
                                Foreground="{DynamicResource GS.Text.Primary}"/>

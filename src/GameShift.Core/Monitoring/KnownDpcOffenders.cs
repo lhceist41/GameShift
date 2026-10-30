@@ -539,8 +539,7 @@ public static class KnownDpcOffenders
     }
 
     /// <summary>
-    /// Returns a one-line fix suggestion for a driver. Backward-compatible with
-    /// DpcLatencyMonitor.GetFixSuggestion().
+    /// Returns a one-line fix suggestion for a driver.
     /// </summary>
     public static string? GetFixSuggestion(string driverFileName)
     {

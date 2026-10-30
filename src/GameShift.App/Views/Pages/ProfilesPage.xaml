@@ -388,18 +388,18 @@
                                               IsChecked="{Binding EnableDpcMonitoring, Mode=TwoWay}"
                                               VerticalAlignment="Center"/>
                                     <StackPanel Margin="10,0,0,0">
-                                        <TextBlock Text="DPC Latency Monitoring" FontWeight="SemiBold"
+                                        <TextBlock Text="DPC Load Monitoring" FontWeight="SemiBold"
                                                    Foreground="{DynamicResource GS.Text.Primary}"/>
-                                        <TextBlock Text="Monitor DPC latency and alert on spikes during gameplay"
+                                        <TextBlock Text="Watch DPC load and alert on spikes during gameplay"
                                                    FontSize="11" Foreground="{DynamicResource GS.Text.Secondary}"/>
                                     </StackPanel>
                                 </DockPanel>
                                 <StackPanel Margin="0,10,0,0">
-                                    <TextBlock Text="DPC Threshold (microseconds)" FontWeight="SemiBold"
+                                    <TextBlock Text="DPC load alert (% of CPU time)" FontWeight="SemiBold"
                                                FontSize="12" Foreground="{DynamicResource GS.Text.Primary}"/>
                                     <TextBlock Text="Per-game override. 0 = use global setting."
                                                FontSize="11" Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,2,0,6"/>
-                                    <TextBox Text="{Binding DpcThresholdMicroseconds, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                    <TextBox Text="{Binding DpcThresholdPercentText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                              Width="100" HorizontalAlignment="Left"
                                              Background="{DynamicResource GS.Surface.Base}"
                                              Foreground="{DynamicResource GS.Text.Primary}"
@@ -540,12 +540,12 @@
                                                Foreground="{DynamicResource GS.Text.Secondary}" FontWeight="SemiBold"/>
                                 </DockPanel>
                                 <DockPanel Margin="0,0,0,6">
-                                    <TextBlock Text="Avg DPC Latency" Foreground="{DynamicResource GS.Text.Primary}"/>
+                                    <TextBlock Text="Avg DPC Load" Foreground="{DynamicResource GS.Text.Primary}"/>
                                     <TextBlock Text="{Binding AvgDpcLatency}" DockPanel.Dock="Right" HorizontalAlignment="Right"
                                                Foreground="{DynamicResource GS.Text.Secondary}" FontWeight="SemiBold"/>
                                 </DockPanel>
                                 <DockPanel>
-                                    <TextBlock Text="Best DPC Latency" Foreground="{DynamicResource GS.Text.Primary}"/>
+                                    <TextBlock Text="Best DPC Load" Foreground="{DynamicResource GS.Text.Primary}"/>
                                     <TextBlock Text="{Binding BestDpcLatency}" DockPanel.Dock="Right" HorizontalAlignment="Right"
                                                Foreground="{DynamicResource GS.Accent.Primary}" FontWeight="SemiBold"/>
                                 </DockPanel>

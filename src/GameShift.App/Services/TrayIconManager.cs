@@ -417,8 +417,8 @@ public class TrayIconManager : IDisposable
             toast.Show();
 
             _logger.Information(
-                "Post-session toast shown for {GameName}: duration={Duration}, opts={OptCount}, failed={FailedCount}, avgDpc={AvgDpc:F0}us, peakDpc={PeakDpc:F0}us",
-                gameName, duration, optCount, failedCount, avgDpc, peakDpc);
+                "Post-session toast shown for {GameName}: duration={Duration}, opts={OptCount}, failed={FailedCount}, avgDpcLoad={AvgDpc}, peakDpcLoad={PeakDpc}",
+                gameName, duration, optCount, failedCount, DpcLoad.Format(avgDpc), DpcLoad.Format(peakDpc));
         }
         catch (Exception ex)
         {
@@ -427,7 +427,7 @@ public class TrayIconManager : IDisposable
     }
 
     /// <summary>
-    /// Shows a DPC latency alert notification, checking the per-type ShowDpcAlertToast setting.
+    /// Shows a DPC load alert notification, checking the per-type ShowDpcAlertToast setting.
     /// </summary>
     public void ShowDpcNotification(string title, string message)
     {

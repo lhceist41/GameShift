@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using GameShift.Core.Config;
+using GameShift.Core.Monitoring;
 using GameShift.Core.Optimization;
 using GameShift.Core.Profiles;
 using GameShift.Core.System;
@@ -28,6 +29,7 @@ public class SettingsViewModel : INotifyPropertyChanged
     // v2 fields
     private string _gpuVendorOverride = "Auto";
     private int _defaultDpcThresholdMicroseconds = 1000;
+    private string _defaultDpcThresholdPercentText = DpcLoad.FormatThreshold(1000);
     private string _vbsHvciStatus = "Unknown";
     private bool _showReEnableButton = false;
     private VbsHvciToggle? _vbsHvciToggle;
@@ -286,6 +288,22 @@ public class SettingsViewModel : INotifyPropertyChanged
         set { if (_defaultDpcThresholdMicroseconds != value) { _defaultDpcThresholdMicroseconds = value; IsDirty = true; OnPropertyChanged(); } }
     }
 
+    /// <summary>
+    /// The default threshold as typed, in percent of CPU time. Text that does not parse keeps the last valid value.
+    /// </summary>
+    public string DefaultDpcThresholdPercentText
+    {
+        get => _defaultDpcThresholdPercentText;
+        set
+        {
+            if (_defaultDpcThresholdPercentText == value) return;
+            _defaultDpcThresholdPercentText = value;
+            OnPropertyChanged();
+            if (DpcLoad.TryParseThreshold(value, out var threshold))
+                DefaultDpcThresholdMicroseconds = threshold;
+        }
+    }
+
     public string VbsHvciStatus
     {
         get => _vbsHvciStatus;
@@ -342,6 +360,7 @@ public class SettingsViewModel : INotifyPropertyChanged
         _timerResolution100ns = settings.TimerResolution100ns;
         _gpuVendorOverride = settings.GpuVendorOverride;
         _defaultDpcThresholdMicroseconds = settings.DefaultDpcThresholdMicroseconds;
+        _defaultDpcThresholdPercentText = DpcLoad.FormatThreshold(settings.DefaultDpcThresholdMicroseconds);
         _showGameDetectedToast = settings.ShowGameDetectedToast;
         _showSessionSummaryToast = settings.ShowSessionSummaryToast;
         _showDpcAlertToast = settings.ShowDpcAlertToast;
@@ -390,6 +409,7 @@ public class SettingsViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(TimerResolution100ns));
         OnPropertyChanged(nameof(GpuVendorOverride));
         OnPropertyChanged(nameof(DefaultDpcThresholdMicroseconds));
+        OnPropertyChanged(nameof(DefaultDpcThresholdPercentText));
         OnPropertyChanged(nameof(ShowGameDetectedToast));
         OnPropertyChanged(nameof(ShowSessionSummaryToast));
         OnPropertyChanged(nameof(ShowDpcAlertToast));

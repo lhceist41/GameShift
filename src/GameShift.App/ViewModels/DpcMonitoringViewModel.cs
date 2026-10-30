@@ -11,7 +11,7 @@ using GameShift.Core.Monitoring;
 namespace GameShift.App.ViewModels;
 
 /// <summary>
-/// Manages DPC latency monitoring, sparkline display, spike alerts,
+/// Manages DPC load monitoring, sparkline display, spike alerts,
 /// and inline troubleshooter results on the dashboard.
 /// </summary>
 public class DpcMonitoringViewModel : INotifyPropertyChanged
@@ -29,7 +29,7 @@ public class DpcMonitoringViewModel : INotifyPropertyChanged
     private bool _showDpcIndicator;
     private PointCollection _sparklinePoints = new();
     private Brush _sparklineBrush = new SolidColorBrush(Color.FromRgb(0x4A, 0xDE, 0x80));
-    private double _averageDpcLatency;
+    private string _averageDpcLoadText = "";
     private bool _showDpcSpikeAlert;
     private string _dpcSpikeAlertMessage = "";
     private bool _showTroubleshooter;
@@ -68,10 +68,10 @@ public class DpcMonitoringViewModel : INotifyPropertyChanged
         private set { _sparklineBrush = value; OnPropertyChanged(); }
     }
 
-    public double AverageDpcLatency
+    public string AverageDpcLoadText
     {
-        get => _averageDpcLatency;
-        private set { _averageDpcLatency = value; OnPropertyChanged(); }
+        get => _averageDpcLoadText;
+        private set { _averageDpcLoadText = value; OnPropertyChanged(); }
     }
 
     public bool ShowDpcSpikeAlert
@@ -151,12 +151,12 @@ public class DpcMonitoringViewModel : INotifyPropertyChanged
                 brush = new SolidColorBrush(Color.FromRgb(0xF8, 0x71, 0x71));
             }
 
-            DpcLatencyText = $"{latencyUs:F0}\u00B5s ({label})";
+            DpcLatencyText = $"{DpcLoad.Format(latencyUs)} ({label})";
             DpcLatencyBrush = brush;
             SparklineBrush = brush;
 
             if (_dpcMonitor != null)
-                AverageDpcLatency = Math.Round(_dpcMonitor.AverageLatencyMicroseconds, 0);
+                AverageDpcLoadText = DpcLoad.Format(_dpcMonitor.AverageLatencyMicroseconds);
 
             _sparklineSamples.Enqueue(latencyUs);
             while (_sparklineSamples.Count > MaxSparklineSamples)
@@ -198,8 +198,7 @@ public class DpcMonitoringViewModel : INotifyPropertyChanged
             var settings = SettingsManager.Load();
             if (settings.DpcSpikeAlertDismissed) return;
 
-            DpcSpikeAlertMessage = $"DPC spike detected: {e.LatencyMicroseconds:F0}\u00B5s" +
-                (string.IsNullOrEmpty(e.DriverName) ? "" : $" \u2014 suspected driver: {e.DriverName}");
+            DpcSpikeAlertMessage = $"Drivers used {DpcLoad.Format(e.LatencyMicroseconds)} of CPU time for deferred procedure calls (DPC load).";
             ShowDpcSpikeAlert = true;
         });
     }

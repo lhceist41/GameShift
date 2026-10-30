@@ -739,7 +739,8 @@ public class DetectionOrchestrator
     /// <summary>
     /// Logs DPC spikes to CSV for later analysis.
     /// Fire-and-forget: exceptions are logged but never block the monitor or game session.
-    /// CSV format: timestamp, latency_us, driver, game_active
+    /// CSV format: timestamp, latency_us, driver, game_active. The column names are kept so rows
+    /// still append to existing files; latency_us is the DPC load x 10000 and driver is always empty.
     /// </summary>
     private void OnDpcSpikeDetected(object? sender, DpcSpikeEventArgs e)
     {
@@ -756,10 +757,9 @@ public class DetectionOrchestrator
             if (writeHeader)
                 writer.WriteLine("timestamp,latency_us,driver,game_active");
 
-            writer.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff},{e.LatencyMicroseconds:F0},{e.DriverName ?? ""},{(_isOptimizing ? "true" : "false")}");
+            writer.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff},{e.LatencyMicroseconds:F0},,{(_isOptimizing ? "true" : "false")}");
 
-            _logger.Information("DPC spike logged: {Latency}us (driver: {Driver})",
-                e.LatencyMicroseconds, e.DriverName ?? "unknown");
+            _logger.Information("DPC load spike logged: {DpcLoad} of CPU time", DpcLoad.Format(e.LatencyMicroseconds));
         }
         catch (Exception ex)
         {
