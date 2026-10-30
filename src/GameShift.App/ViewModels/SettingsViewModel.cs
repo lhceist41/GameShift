@@ -52,20 +52,6 @@ public class SettingsViewModel : INotifyPropertyChanged
     // Game Profiles fields
     private bool _gameProfilesEnabled;
 
-    // Background Mode fields
-    private bool _bgEnabled;
-    private bool _bgStandbyListEnabled;
-    private int _bgStandbyListStandbyThresholdMB;
-    private int _bgStandbyListFreeMemoryMinMB;
-    private int _bgStandbyListPollIntervalMs;
-    private bool _bgStandbyListOnlyDuringGaming;
-    private bool _bgTimerEnabled;
-    private int _bgTimerResolution100ns;
-    private bool _bgPowerPlanEnabled;
-    private int _bgIdleTimeoutMinutes;
-    private bool _bgTaskDeferralEnabled;
-    private bool _bgProcessPriorityEnabled;
-
     private bool _isDirty;
     private string _statusMessage = "";
 
@@ -155,85 +141,6 @@ public class SettingsViewModel : INotifyPropertyChanged
     {
         get => _pingTarget;
         set { if (_pingTarget != value) { _pingTarget = value; IsDirty = true; OnPropertyChanged(); } }
-    }
-
-    // ── Background Mode properties ────────────────────────────────────
-    public bool BgEnabled
-    {
-        get => _bgEnabled;
-        set { if (_bgEnabled != value) { _bgEnabled = value; IsDirty = true; OnPropertyChanged(); } }
-    }
-
-    public bool BgStandbyListEnabled
-    {
-        get => _bgStandbyListEnabled;
-        set { if (_bgStandbyListEnabled != value) { _bgStandbyListEnabled = value; IsDirty = true; OnPropertyChanged(); } }
-    }
-
-    public int BgStandbyListStandbyThresholdMB
-    {
-        get => _bgStandbyListStandbyThresholdMB;
-        set { if (_bgStandbyListStandbyThresholdMB != value) { _bgStandbyListStandbyThresholdMB = value; IsDirty = true; OnPropertyChanged(); } }
-    }
-
-    public int BgStandbyListFreeMemoryMinMB
-    {
-        get => _bgStandbyListFreeMemoryMinMB;
-        set { if (_bgStandbyListFreeMemoryMinMB != value) { _bgStandbyListFreeMemoryMinMB = value; IsDirty = true; OnPropertyChanged(); } }
-    }
-
-    public int BgStandbyListPollIntervalMs
-    {
-        get => _bgStandbyListPollIntervalMs;
-        set { if (_bgStandbyListPollIntervalMs != value) { _bgStandbyListPollIntervalMs = value; IsDirty = true; OnPropertyChanged(); } }
-    }
-
-    public bool BgStandbyListOnlyDuringGaming
-    {
-        get => _bgStandbyListOnlyDuringGaming;
-        set { if (_bgStandbyListOnlyDuringGaming != value) { _bgStandbyListOnlyDuringGaming = value; IsDirty = true; OnPropertyChanged(); } }
-    }
-
-    /// <summary>
-    /// Read-only hint showing auto-scaled defaults based on detected total RAM.
-    /// Shown in the UI next to the threshold fields to guide manual overrides.
-    /// </summary>
-    public string BgStandbyListAutoHint { get; private set; } = "";
-
-    public bool BgTimerEnabled
-    {
-        get => _bgTimerEnabled;
-        set { if (_bgTimerEnabled != value) { _bgTimerEnabled = value; IsDirty = true; OnPropertyChanged(); } }
-    }
-
-    public int BgTimerResolution100ns
-    {
-        get => _bgTimerResolution100ns;
-        set { if (_bgTimerResolution100ns != value) { _bgTimerResolution100ns = value; IsDirty = true; OnPropertyChanged(); } }
-    }
-
-    public bool BgPowerPlanEnabled
-    {
-        get => _bgPowerPlanEnabled;
-        set { if (_bgPowerPlanEnabled != value) { _bgPowerPlanEnabled = value; IsDirty = true; OnPropertyChanged(); } }
-    }
-
-    public int BgIdleTimeoutMinutes
-    {
-        get => _bgIdleTimeoutMinutes;
-        set { if (_bgIdleTimeoutMinutes != value) { _bgIdleTimeoutMinutes = value; IsDirty = true; OnPropertyChanged(); } }
-    }
-
-    public bool BgTaskDeferralEnabled
-    {
-        get => _bgTaskDeferralEnabled;
-        set { if (_bgTaskDeferralEnabled != value) { _bgTaskDeferralEnabled = value; IsDirty = true; OnPropertyChanged(); } }
-    }
-
-    public bool BgProcessPriorityEnabled
-    {
-        get => _bgProcessPriorityEnabled;
-        set { if (_bgProcessPriorityEnabled != value) { _bgProcessPriorityEnabled = value; IsDirty = true; OnPropertyChanged(); } }
     }
 
     // ── Game Profiles properties ────────────────────────────────────
@@ -361,26 +268,6 @@ public class SettingsViewModel : INotifyPropertyChanged
         _globalHotkeyBinding = settings.GlobalHotkeyBinding;
         _pingTarget = settings.PingTarget;
 
-        // Background Mode
-        var bg = settings.BackgroundMode ?? new BackgroundModeSettings();
-        _bgEnabled = bg.Enabled;
-        _bgStandbyListEnabled = bg.StandbyListCleanerEnabled;
-        _bgStandbyListStandbyThresholdMB = bg.StandbyListStandbyThresholdMB;
-        _bgStandbyListFreeMemoryMinMB = bg.StandbyListFreeMemoryMinMB;
-        _bgStandbyListPollIntervalMs = bg.StandbyListPollIntervalMs > 0 ? bg.StandbyListPollIntervalMs : 1000;
-        _bgStandbyListOnlyDuringGaming = bg.StandbyListOnlyDuringGaming;
-
-        // Compute auto-scale hint for display
-        var (autoStandby, autoFree) = GameShift.Core.BackgroundMode.StandbyListCleaner.ComputeDefaults();
-        BgStandbyListAutoHint = $"Auto: Standby={autoStandby} MB, FreeMin={autoFree} MB  (0 = use auto)";
-
-        _bgTimerEnabled = bg.TimerResolutionEnabled;
-        _bgTimerResolution100ns = bg.TimerResolution100ns;
-        _bgPowerPlanEnabled = bg.PowerPlanEnabled;
-        _bgIdleTimeoutMinutes = bg.IdleTimeoutMinutes;
-        _bgTaskDeferralEnabled = bg.TaskDeferralEnabled;
-        _bgProcessPriorityEnabled = bg.ProcessPriorityEnabled;
-
         // App mode
         _advancedMode = settings.AdvancedMode;
 
@@ -408,19 +295,6 @@ public class SettingsViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(SuppressNotificationsDuringGaming));
         OnPropertyChanged(nameof(GlobalHotkeyBinding));
         OnPropertyChanged(nameof(PingTarget));
-        OnPropertyChanged(nameof(BgEnabled));
-        OnPropertyChanged(nameof(BgStandbyListEnabled));
-        OnPropertyChanged(nameof(BgStandbyListStandbyThresholdMB));
-        OnPropertyChanged(nameof(BgStandbyListFreeMemoryMinMB));
-        OnPropertyChanged(nameof(BgStandbyListPollIntervalMs));
-        OnPropertyChanged(nameof(BgStandbyListOnlyDuringGaming));
-        OnPropertyChanged(nameof(BgStandbyListAutoHint));
-        OnPropertyChanged(nameof(BgTimerEnabled));
-        OnPropertyChanged(nameof(BgTimerResolution100ns));
-        OnPropertyChanged(nameof(BgPowerPlanEnabled));
-        OnPropertyChanged(nameof(BgIdleTimeoutMinutes));
-        OnPropertyChanged(nameof(BgTaskDeferralEnabled));
-        OnPropertyChanged(nameof(BgProcessPriorityEnabled));
         OnPropertyChanged(nameof(AdvancedMode));
         OnPropertyChanged(nameof(IsEasyMode));
         OnPropertyChanged(nameof(GameProfilesEnabled));
@@ -452,21 +326,6 @@ public class SettingsViewModel : INotifyPropertyChanged
         settings.GlobalHotkeyBinding = GlobalHotkeyBinding;
         settings.PingTarget = PingTarget;
 
-        // Background Mode
-        settings.BackgroundMode ??= new BackgroundModeSettings();
-        settings.BackgroundMode.Enabled = BgEnabled;
-        settings.BackgroundMode.StandbyListCleanerEnabled = BgStandbyListEnabled;
-        settings.BackgroundMode.StandbyListStandbyThresholdMB = BgStandbyListStandbyThresholdMB;
-        settings.BackgroundMode.StandbyListFreeMemoryMinMB = BgStandbyListFreeMemoryMinMB;
-        settings.BackgroundMode.StandbyListPollIntervalMs = BgStandbyListPollIntervalMs;
-        settings.BackgroundMode.StandbyListOnlyDuringGaming = BgStandbyListOnlyDuringGaming;
-        settings.BackgroundMode.TimerResolutionEnabled = BgTimerEnabled;
-        settings.BackgroundMode.TimerResolution100ns = BgTimerResolution100ns;
-        settings.BackgroundMode.PowerPlanEnabled = BgPowerPlanEnabled;
-        settings.BackgroundMode.IdleTimeoutMinutes = BgIdleTimeoutMinutes;
-        settings.BackgroundMode.TaskDeferralEnabled = BgTaskDeferralEnabled;
-        settings.BackgroundMode.ProcessPriorityEnabled = BgProcessPriorityEnabled;
-
         // Game Profiles
         settings.GameProfiles ??= new GameProfileSettings();
         settings.GameProfiles.Enabled = GameProfilesEnabled;
@@ -475,9 +334,6 @@ public class SettingsViewModel : INotifyPropertyChanged
 
         // Apply startup registration change to Windows registry
         StartupManager.SetStartWithWindows(settings.StartWithWindows);
-
-        // Apply Background Mode changes live
-        App.Services.BackgroundMode?.ApplySettings();
 
         IsDirty = false;
         StatusMessage = "Settings saved.";

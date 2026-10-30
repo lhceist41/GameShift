@@ -14,7 +14,6 @@ using GameShift.Core.Detection;
 using GameShift.Core.Monitoring;
 using GameShift.Core.Optimization;
 using GameShift.Core.Profiles;
-using GameShift.Core.BackgroundMode;
 using GameShift.Core.GameProfiles;
 using GameShift.Core.Updates;
 
@@ -42,10 +41,6 @@ public class DashboardViewModel : INotifyPropertyChanged
 
     private string _optimizationSummary = "0/0 Active";
     private string _gpuInfo = "Unknown";
-
-    // Background Mode status
-    private string _bgModeStatus = "Disabled";
-    private string _bgModeDetails = "";
 
     // Game Profile status
     private string _activeProfileName = "No Profile";
@@ -175,19 +170,6 @@ public class DashboardViewModel : INotifyPropertyChanged
 
     // ── Session History properties ────────────────────────────────────────
     public ObservableCollection<GameSession> RecentSessions { get; } = new();
-
-    // ── Background Mode properties ───────────────────────────────────────
-    public string BgModeStatus
-    {
-        get => _bgModeStatus;
-        private set { _bgModeStatus = value; OnPropertyChanged(); }
-    }
-
-    public string BgModeDetails
-    {
-        get => _bgModeDetails;
-        private set { _bgModeDetails = value; OnPropertyChanged(); }
-    }
 
     // ── Game Profile properties ──────────────────────────────────────
     public string ActiveProfileName
@@ -391,25 +373,6 @@ public class DashboardViewModel : INotifyPropertyChanged
 
             // Update DPC indicator visibility via sub-VM
             Dpc.RefreshIndicatorVisibility();
-
-            // Background Mode status
-            var bg = App.Services.BackgroundMode;
-            if (bg != null && bg.IsEnabled)
-            {
-                BgModeStatus = "Active";
-                var parts = new List<string>();
-                if (bg.StandbyListCleaner.IsRunning) parts.Add("Memory");
-                if (bg.TimerResolution.IsLocked) parts.Add("Timer");
-                if (bg.PowerPlan.IsRunning) parts.Add(bg.PowerPlan.IsIdle ? "Power (idle)" : "Power");
-                if (bg.TaskDeferral.IsDeferred) parts.Add($"Tasks ({bg.TaskDeferral.DeferredCount})");
-                if (bg.ProcessPriority.IsRunning) parts.Add("Priority");
-                BgModeDetails = parts.Count > 0 ? string.Join(" \u00b7 ", parts) : "No services active";
-            }
-            else
-            {
-                BgModeStatus = "Disabled";
-                BgModeDetails = "Enable in Settings \u2192 Background Mode";
-            }
 
             // Game Profile status
             var gpm = App.Services.GameProfileMgr;

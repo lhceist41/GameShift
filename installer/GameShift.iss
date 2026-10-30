@@ -84,7 +84,7 @@ SolidCompression=yes
 WizardStyle=modern
 
 [Messages]
-ConfirmUninstall=Before you remove %1, undo the lasting changes it made: open %1, uncheck Easy Mode in Settings and click "Restore All GameShift Tweaks".%n%nAre you sure you want to completely remove %1 and all of its components?
+ConfirmUninstall=Before you remove %1, undo the lasting changes it made: open %1, uncheck Easy Mode in Settings and click "Restore All GameShift Tweaks". If you used Background Mode in an earlier version, the uninstall steps in the GameShift README on GitHub name one registry value it may have left.%n%nAre you sure you want to completely remove %1 and all of its components?
 
 [Files]
 Source: "{#PublishFolder}{#AppExeName}"; DestDir: "{app}"; Flags: ignoreversion

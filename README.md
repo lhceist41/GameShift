@@ -61,18 +61,6 @@ These activate when a game launches and revert when the game closes.
 | **Core Isolation** | Advanced opt-in feature: reserves specific P-cores exclusively for gaming via `ReservedCpuSets`. No other process can schedule onto reserved cores - OS-enforced. Visual core map in the UI for selecting which cores to reserve. Requires reboot. |
 | **Efficiency Mode Control** | One switch puts background processes in Windows 11 efficiency mode (EcoQoS), which keeps them on E-cores on hybrid CPUs, and turns off power throttling for the game (HighQoS). Rescans every 30 seconds to catch newly spawned processes. |
 
-### Background Mode (Always-On)
-
-These run 24/7 when Background Mode is enabled, independent of gaming sessions.
-
-| Service | What it does |
-|:--------|:-------------|
-| **Standby List Cleaner** | Threshold-based polling - only purges when both the standby list exceeds a configured size AND free memory drops below a minimum. Auto-scaled defaults by total RAM. |
-| **Timer Resolution Lock** | Maintains high timer resolution at all times (0.5ms default). Includes Windows 11 `GlobalTimerResolutionRequests` registry fix. |
-| **Custom Power Plan** | Creates a "GameShift Performance" plan cloned from Ultimate Performance with 50+ aggressive overrides covering processor tuning, storage, USB, wireless, idle resiliency, interrupt steering, display, sleep, multimedia, and vendor-aware heterogeneous scheduling (Intel hybrid P/E core bias, AMD single/dual-CCD). Three-state management: Gaming (idle disabled), Desktop (custom plan active), and Idle (auto-switches to Balanced after configurable timeout). |
-| **Task Deferral** | Defers resource-heavy Windows scheduled tasks during active gaming sessions. |
-| **Process Priority Persistence** | Applies persistent priority rules to background processes (e.g., Chrome → BelowNormal). Respects active gaming sessions. |
-
 ### Monitoring & Diagnostics
 
 | Feature | Description |
@@ -156,7 +144,7 @@ For games with kernel-level anti-cheat (EAC, BattlEye, RICOCHET, TencentACE), Ga
 
 When you accept an update, the installed GameShift downloads the new installer into its own folder, checks it against the SHA-256 digest GitHub reports for the release, and runs it; the installer replaces the files and starts GameShift again.
 
-To uninstall, first undo GameShift's lasting changes: open GameShift, uncheck **Easy Mode** in Settings and click **Restore All GameShift Tweaks**. It undoes the changes GameShift recorded (system tweaks, DPC Doctor fixes, kernel boot settings and Memory Integrity) and asks separately about a CPU core reservation and startup apps turned off with a "~" in front of their name. Then remove GameShift in Windows Settings > Apps.
+To uninstall, first undo GameShift's lasting changes: open GameShift, uncheck **Easy Mode** in Settings and click **Restore All GameShift Tweaks**. It undoes the changes GameShift recorded (system tweaks, DPC Doctor fixes, kernel boot settings and Memory Integrity) and asks separately about a CPU core reservation and startup apps turned off with a "~" in front of their name. If you used Background Mode in an earlier version and GameShift ever closed unexpectedly while it was on, the `GlobalTimerResolutionRequests` value in `HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\kernel` may still be set. GameShift did not record whether that value existed before, so it leaves it alone; delete it in Registry Editor if you did not set it yourself. Then remove GameShift in Windows Settings > Apps.
 
 ### Portable exe
 
@@ -205,7 +193,7 @@ dotnet run --project src/GameShift.App
 
 - **Services**  - Temporarily pauses non-essential services. Original start types recorded in journal, restored on session end.
 - **Registry keys**  - Writes IFEO entries and a few per-game values for built-in games. All original values captured before any write and verified after revert.
-- **Power plans**  - Switches from Balanced to High Performance during a game (or uses the custom "GameShift Performance" plan when Background Mode is on). Your original plan GUID is saved and restored.
+- **Power plans**  - Switches from Balanced to High Performance during a game. Your original plan GUID is saved and restored.
 - **Process priority & scheduling**  - Elevates game priority and assigns CPU sets. All released on game exit.
 - **BCD settings**  - Optional kernel tuning (timer, APIC, TSC) via BCDEdit with one-click revert. Tracked in pending reboot fixes.
 - **Interrupt affinity**  - Optional GPU and USB interrupt routing changes with rollback to default Windows assignment.
@@ -259,7 +247,7 @@ Yes. GameShift scans Xbox/Game Pass install directories alongside Steam, Epic, a
 <details>
 <summary><strong>Can I use it on a laptop?</strong></summary>
 <br/>
-Yes. GameShift is particularly effective on laptops where Windows aggressively throttles performance to save battery. The Background Mode idle timeout automatically switches to Balanced when you step away, preserving battery when you're not gaming.
+Yes. GameShift is particularly effective on laptops where Windows aggressively throttles performance to save battery. The switch to High Performance lasts only while a game runs, so your usual plan is back when you stop playing.
 </details>
 
 <details>
@@ -271,7 +259,7 @@ GameShift reverts every change when your game exits, and records all original va
 <details>
 <summary><strong>What is the "GameShift Performance" power plan?</strong></summary>
 <br/>
-When Background Mode is enabled, GameShift creates a custom power plan cloned from Ultimate Performance with 50+ overrides covering processor boost, core parking, USB suspend, PCI Express power management, idle resiliency, interrupt steering, display/sleep settings, multimedia optimization, and vendor-aware scheduling for Intel hybrid and AMD X3D processors. It manages three states: Gaming (max performance), Desktop (custom plan, idle monitoring), and Idle (switches to Balanced after a configurable timeout to save power).
+Earlier versions created it for Background Mode, which has been removed. When you start this version, GameShift deletes the plan. If it was still your active plan, GameShift first switches you to Balanced (or to another existing plan if Balanced is missing), because it never recorded which plan you used before; choose your preferred plan in Control Panel > Power Options. If GameShift closed unexpectedly during a game while Background Mode was on, it also re-enables the Windows maintenance tasks Background Mode paused and tells you which ones.
 </details>
 
 <details>

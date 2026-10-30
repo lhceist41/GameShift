@@ -96,6 +96,29 @@ public static partial class NativeInterop
 
     internal const uint ACCESS_SCHEME = 16;
 
+    /// <summary>
+    /// Deletes a power scheme. Windows refuses to delete the active scheme.
+    /// https://learn.microsoft.com/windows/win32/api/powersetting/nf-powersetting-powerdeletescheme
+    /// </summary>
+    [DllImport("powrprof.dll")]
+    internal static extern uint PowerDeleteScheme(
+        IntPtr RootPowerKey,
+        ref Guid SchemeGuid);
+
+    /// <summary>
+    /// Reads a scheme's friendly name as a null-terminated UTF-16 string. With a null
+    /// <paramref name="Buffer"/>, returns the required size in <paramref name="BufferSize"/>.
+    /// https://learn.microsoft.com/windows/win32/api/powersetting/nf-powersetting-powerreadfriendlyname
+    /// </summary>
+    [DllImport("powrprof.dll")]
+    internal static extern uint PowerReadFriendlyName(
+        IntPtr RootPowerKey,
+        ref Guid SchemeGuid,
+        IntPtr SubGroupOfPowerSettingsGuid,
+        IntPtr PowerSettingGuid,
+        byte[]? Buffer,
+        ref uint BufferSize);
+
     // ============================================================
     // ntdll.dll - NT Native API
     // ============================================================

@@ -11,8 +11,6 @@ namespace GameShift.App.Services;
 /// </summary>
 public sealed class EventSubscriptions
 {
-    public EventHandler<GameDetectedEventArgs>? BgModeGameStarted { get; init; }
-    public EventHandler? BgModeAllGamesStopped { get; init; }
     public EventHandler<GameDetectedEventArgs>? MonitorPauseGameStarted { get; init; }
     public EventHandler? MonitorResumeAllGamesStopped { get; init; }
     public EventHandler<ProcessSpawnedEventArgs>? MarkDirtyHandler { get; init; }
@@ -30,8 +28,6 @@ public static class EventWiringHelper
     /// </summary>
     public static EventSubscriptions WireAll(ServiceRegistry services)
     {
-        EventHandler<GameDetectedEventArgs>? bgModeGameStarted = null;
-        EventHandler? bgModeAllGamesStopped = null;
         EventHandler<GameDetectedEventArgs>? monitorPauseGameStarted = null;
         EventHandler? monitorResumeAllGamesStopped = null;
         EventHandler<ProcessSpawnedEventArgs>? markDirtyHandler = null;
@@ -41,15 +37,6 @@ public static class EventWiringHelper
         {
             markDirtyHandler = (_, _) => ProcessSnapshotService.MarkDirty();
             services.Detector.ProcessSpawned += markDirtyHandler;
-        }
-
-        // Wire Background Mode gaming session hooks
-        if (services.Detector != null && services.BackgroundMode != null)
-        {
-            bgModeGameStarted = (_, _) => services.BackgroundMode.OnGamingStart();
-            bgModeAllGamesStopped = (object? _, EventArgs _2) => services.BackgroundMode.OnGamingStop();
-            services.Detector.GameStarted += bgModeGameStarted;
-            services.Detector.AllGamesStopped += bgModeAllGamesStopped;
         }
 
         // Pause dashboard monitors during gaming (they poll every 1-2s and the dashboard isn't visible)
@@ -70,8 +57,6 @@ public static class EventWiringHelper
 
         return new EventSubscriptions
         {
-            BgModeGameStarted = bgModeGameStarted,
-            BgModeAllGamesStopped = bgModeAllGamesStopped,
             MonitorPauseGameStarted = monitorPauseGameStarted,
             MonitorResumeAllGamesStopped = monitorResumeAllGamesStopped,
             MarkDirtyHandler = markDirtyHandler
@@ -88,8 +73,6 @@ public static class EventWiringHelper
 
         if (subs != null)
         {
-            if (subs.BgModeGameStarted != null) services.Detector.GameStarted -= subs.BgModeGameStarted;
-            if (subs.BgModeAllGamesStopped != null) services.Detector.AllGamesStopped -= subs.BgModeAllGamesStopped;
             if (subs.MonitorPauseGameStarted != null) services.Detector.GameStarted -= subs.MonitorPauseGameStarted;
             if (subs.MonitorResumeAllGamesStopped != null) services.Detector.AllGamesStopped -= subs.MonitorResumeAllGamesStopped;
             if (subs.MarkDirtyHandler != null) services.Detector.ProcessSpawned -= subs.MarkDirtyHandler;

@@ -163,7 +163,7 @@ public partial class App : Application
             var settings = await Task.Run(() => ServiceFactory.CreateAll(Services, WriteDiag));
             WriteDiag("Core services created");
 
-            // Wire inter-service events (background mode, monitor pause, game profiles, etc.).
+            // Wire inter-service events (monitor pause, game profiles, etc.).
             // Back on the UI thread now that services exist.
             _eventSubs = EventWiringHelper.WireAll(Services);
 
@@ -237,6 +237,7 @@ public partial class App : Application
             // Step f1: Surface any boot-recovery warnings recorded by the watchdog.
             // Deferred to ApplicationIdle so the MessageBoxes appear after MainWindow renders.
             CheckJournalWarnings();
+            ShowBackgroundModeRetirementNotice();
 
             // Step f2: Register global hotkey
             // Must happen after MainWindow is shown so the window handle is available.
@@ -402,6 +403,26 @@ public partial class App : Application
         {
             Log.Warning(ex, "Failed to check journal warnings");
         }
+    }
+
+    /// <summary>
+    /// Tells the user once what the Background Mode cleanup changed or could not change.
+    /// Deferred like <see cref="CheckJournalWarnings"/> so the MainWindow can own the MessageBox.
+    /// </summary>
+    private void ShowBackgroundModeRetirementNotice()
+    {
+        var message = Services.BackgroundModeRetirementMessage;
+        if (string.IsNullOrEmpty(message)) return;
+
+        Dispatcher.BeginInvoke(() =>
+        {
+            MessageBox.Show(
+                _mainWindow!,
+                message,
+                "Background Mode Removed",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+        }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
     }
 
     /// <summary>
@@ -603,9 +624,6 @@ public partial class App : Application
 
         // Dispose Game Profile manager
         Services.GameProfileMgr?.Dispose();
-
-        // Stop Background Mode services
-        Services.BackgroundMode?.Dispose();
 
         // Dispose optimization engine
         Services.Engine?.Dispose();

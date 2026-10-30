@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Threading.Tasks;
 using GameShift.Core.BackgroundMode;
 using GameShift.Core.Config;
@@ -56,7 +57,9 @@ public static class ServiceFactory
         // Separate instance from the one owned by OptimizationEngine; safe because
         // JournalManager serializes through a static lock and writes atomically.
         services.Journal = new JournalManager();
-        services.Journal.LoadJournal();
+        var journal = services.Journal.LoadJournal();
+
+        RetireBackgroundMode(services, settings, journal?.SessionActive == true, writeDiag);
 
         // Create DPC latency monitor (passive, not an IOptimization)
         services.DpcMon = new DpcLatencyMonitor();
@@ -124,11 +127,6 @@ public static class ServiceFactory
         services.SessionStore.Load();
         services.SessionTrk = new SessionTracker(services.Detector!, services.DpcMon, services.Engine!, services.SessionStore);
 
-        // Background Mode service - constructed here, but .Start() is deferred until
-        // after GameProfileManager is wired so ProcessPriorityPersistence never sees
-        // a game process before the GameProfile conflict-resolution hook is attached.
-        services.BackgroundMode = new BackgroundModeService();
-
         // Temperature monitor
         services.TempMon = new TemperatureMonitor();
 
@@ -151,23 +149,42 @@ public static class ServiceFactory
 
         // Game Profile manager
         services.GameProfileMgr = new GameProfileManager();
-
-        // Wire conflict resolution: GameProfiles -> ProcessPriorityPersistence.
-        // MUST happen before BackgroundMode.Start() - otherwise a game launching in
-        // the startup window could be clobbered by ProcessPriorityPersistence because
-        // the hook that marks the process as game-protected isn't attached yet.
-        if (services.BackgroundMode?.ProcessPriority != null && services.GameProfileMgr != null)
-        {
-            services.BackgroundMode.ProcessPriority.GameProfileActiveProcesses = services.GameProfileMgr.IsActiveGameProcess;
-        }
         writeDiag($"GameProfileManager initialized (profiles={services.GameProfileMgr?.GetAllProfiles().Count})");
-
-        // Start BackgroundMode now that the GameProfile hook is wired.
-        services.BackgroundMode!.Start(services.Detector);
-        writeDiag($"BackgroundMode initialized (enabled={services.BackgroundMode.IsEnabled})");
 
         writeDiag("Core services wired OK");
 
         return settings;
+    }
+
+    /// <summary>
+    /// Runs the one-time Background Mode cleanup. It runs before any optimization session can
+    /// start, so nothing GameShift applies this run can be mistaken for a leftover.
+    /// </summary>
+    private static void RetireBackgroundMode(ServiceRegistry services, AppSettings settings, bool journalSessionActive, Action<string> writeDiag)
+    {
+        try
+        {
+            var settingsFile = Path.Combine(SettingsManager.GetAppDataPath(), "settings.json");
+            var result = BackgroundModeRetirement.Run(
+                settings.BackgroundModeRetired,
+                settings.BackgroundMode,
+                journalSessionActive,
+                new WindowsPowerPlanStore(),
+                new WindowsScheduledTaskStore(),
+                () =>
+                {
+                    // On a fresh install, creating settings.json here would skip the first-run
+                    // wizard; with nothing of Background Mode's to find, the step just runs again.
+                    if (File.Exists(settingsFile))
+                        SettingsManager.Update(s => s.BackgroundModeRetired = true);
+                },
+                Log.Logger);
+            services.BackgroundModeRetirementMessage = result.Message;
+            writeDiag($"Background Mode cleanup: completed={result.Completed}, message={result.Message != null}");
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Background Mode cleanup failed");
+        }
     }
 }

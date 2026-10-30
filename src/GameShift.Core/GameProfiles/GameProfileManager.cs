@@ -8,7 +8,7 @@ namespace GameShift.Core.GameProfiles;
 /// <summary>
 /// Manages per-game optimization profiles. Applies session-specific process priority,
 /// affinity, and launcher demotion when a game starts; reverts when it exits.
-/// Runs parallel to the IOptimization pipeline and BackgroundMode.
+/// Runs parallel to the IOptimization pipeline.
 /// </summary>
 public class GameProfileManager : IDisposable
 {
@@ -28,8 +28,8 @@ public class GameProfileManager : IDisposable
 
     /// <summary>
     /// Set of process names currently managed by an active game profile session.
-    /// Mutated on the detector event thread (game start/stop) and read from the WMI
-    /// process-spawn thread via <see cref="ProcessPriorityPersistence"/>. All access
+    /// Mutated on the detector event thread (game start/stop) and read through
+    /// <see cref="IsActiveGameProcess"/>, possibly from another thread. All access
     /// must go through <see cref="IsActiveGameProcess"/> or be serialized via
     /// <see cref="_processNamesLock"/>.
     /// </summary>

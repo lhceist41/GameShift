@@ -1,4 +1,3 @@
-using GameShift.Core.BackgroundMode;
 using GameShift.Core.Config;
 using GameShift.Core.Detection;
 using GameShift.Core.GameProfiles;
@@ -26,7 +25,10 @@ public class ServiceRegistry
     public TemperatureMonitor? TempMon { get; set; }
     public HardwareScanResult? HardwareScan { get; set; }
     public KnownDriverDatabase? DriverDb { get; set; }
-    public BackgroundModeService? BackgroundMode { get; set; }
+
+    /// <summary>What the one-time Background Mode cleanup did, to show once after startup; null when nothing.</summary>
+    public string? BackgroundModeRetirementMessage { get; set; }
+
     public DpcTraceEngine? DpcTrace { get; set; }
     public DpcFixEngine? DpcFix { get; set; }
     public SystemTweaksManager? TweaksMgr { get; set; }

@@ -195,10 +195,14 @@ public class AppSettings
     // -- Background Mode ------------------------------------------------
 
     /// <summary>
-    /// Background Mode settings for always-on system optimizations.
-    /// Null means Background Mode has never been configured (defaults used on first enable).
+    /// Background Mode settings as earlier versions saved them. Background Mode is gone; these are
+    /// kept only so the one-time cleanup can tell whether it was on.
+    /// Null means Background Mode was never configured.
     /// </summary>
     public BackgroundModeSettings? BackgroundMode { get; set; }
+
+    /// <summary>Set once the one-time Background Mode cleanup has run.</summary>
+    public bool BackgroundModeRetired { get; set; }
 
     // -- System Tweaks ------------------------------------------------
 
@@ -276,7 +280,8 @@ public class AppliedDpcFix
 }
 
 /// <summary>
-/// Settings for Background Mode - always-on system optimizations that run 24/7.
+/// Settings saved by earlier versions for Background Mode, which has been removed. Kept so
+/// files from those versions keep loading and the one-time cleanup can read them.
 /// </summary>
 public class BackgroundModeSettings
 {
@@ -289,7 +294,7 @@ public class BackgroundModeSettings
     /// <summary>
     /// Standby list size threshold in MB. Purge is triggered only when standby exceeds this
     /// AND free memory drops below StandbyListFreeMemoryMinMB simultaneously.
-    /// 0 = auto-scale based on total RAM (see StandbyListCleaner.ComputeDefaults).
+    /// 0 = auto-scale based on total RAM.
     /// </summary>
     public int StandbyListStandbyThresholdMB { get; set; } = 0;
     /// <summary>
