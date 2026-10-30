@@ -52,6 +52,10 @@ public class NetworkOptimizer : IOptimization, IJournaledOptimization
     /// </summary>
     private string? _originalRscState;
 
+    /// <summary>Runs netsh with the given arguments. A seam so the RSC path can be tested without netsh.</summary>
+    internal Func<string, (int exitCode, string output)> Netsh { get; init; } =
+        arguments => RunProcess(NativeInterop.SystemExePath("netsh.exe"), arguments);
+
     /// <summary>
     /// Full original-state snapshot accumulated during Apply(). Populated by the per-action
     /// helpers and serialised into the OptimizationResult for journal-driven recovery.
@@ -610,18 +614,24 @@ public class NetworkOptimizer : IOptimization, IJournaledOptimization
     /// Disables Receive Segment Coalescing system-wide via netsh.
     /// Captures current RSC state for revert.
     /// </summary>
-    private void DisableRscGlobal()
+    internal void DisableRscGlobal()
     {
+        _originalRscState = null;
+
         try
         {
             // Capture current RSC state
-            var (queryExitCode, queryOutput) = RunProcess(NativeInterop.SystemExePath("netsh.exe"), "int tcp show global");
+            var (queryExitCode, queryOutput) = Netsh("int tcp show global");
             if (queryExitCode == 0)
             {
-                _originalRscState = ParseRscState(queryOutput);
-                _originalState[RscNetshKey] = _originalRscState;
+                var state = ParseRscState(queryOutput);
+                if (state is "enabled" or "disabled")
+                {
+                    _originalRscState = state;
+                    _originalState[RscNetshKey] = state;
+                }
                 _logger.Information(
-                    "[NetworkOptimizer] Current RSC state: {State}", _originalRscState ?? "unknown");
+                    "[NetworkOptimizer] Current RSC state: {State}", state ?? "unknown");
             }
             else
             {
@@ -629,8 +639,16 @@ public class NetworkOptimizer : IOptimization, IJournaledOptimization
                     "[NetworkOptimizer] Failed to query RSC state (exit code {ExitCode})", queryExitCode);
             }
 
+            // Without the original state the revert has nothing to restore, so RSC would stay
+            // disabled for good.
+            if (_originalRscState == null)
+            {
+                _logger.Warning("[NetworkOptimizer] RSC state could not be read, leaving RSC unchanged");
+                return;
+            }
+
             // Disable RSC
-            var (disableExitCode, _) = RunProcess(NativeInterop.SystemExePath("netsh.exe"), "int tcp set global rsc=disabled");
+            var (disableExitCode, _) = Netsh("int tcp set global rsc=disabled");
             if (disableExitCode == 0)
             {
                 _logger.Information("[NetworkOptimizer] Disabled RSC globally via netsh");
@@ -650,7 +668,7 @@ public class NetworkOptimizer : IOptimization, IJournaledOptimization
     /// <summary>
     /// Restores RSC to its original state via netsh.
     /// </summary>
-    private void RestoreRscGlobal()
+    internal void RestoreRscGlobal()
     {
         if (_originalRscState == null) return;
 
@@ -672,8 +690,7 @@ public class NetworkOptimizer : IOptimization, IJournaledOptimization
     /// </summary>
     private void ApplyNetshRscSetting(string state)
     {
-        var (exitCode, _) = RunProcess(
-            NativeInterop.SystemExePath("netsh.exe"), $"int tcp set global rsc={state}");
+        var (exitCode, _) = Netsh($"int tcp set global rsc={state}");
         if (exitCode == 0)
         {
             _logger.Information(

@@ -144,6 +144,7 @@ public class DetectionOrchestrator
         _logger = SettingsManager.Logger;
         _semaphore = new SemaphoreSlim(1, 1);
         _isOptimizing = false;
+        _engine.ProtectSessionGames(() => _detector.GetActiveGames().Keys);
 
         // Subscribe to DPC spike events for CSV logging
         if (_dpcMonitor != null)

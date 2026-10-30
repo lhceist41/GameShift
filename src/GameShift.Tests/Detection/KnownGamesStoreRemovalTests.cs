@@ -1,6 +1,7 @@
 using System.Text.Json;
 using GameShift.Core.Config;
 using GameShift.Core.Detection;
+using GameShift.Core.Journal;
 using GameShift.Core.Optimization;
 using GameShift.Core.Profiles;
 using GameShift.Tests.TestHelpers;
@@ -111,7 +112,8 @@ public sealed class KnownGamesStoreRemovalTests : IDisposable
         File.WriteAllText(_temp.GetFile("ignored_games.json"), "[]");
         using var detector = new GameDetector(Array.Empty<ILibraryScanner>());
         detector.AddKnownGame(game);
-        using var engine = new OptimizationEngine(Array.Empty<IOptimization>());
+        using var engine = new OptimizationEngine(
+            Array.Empty<IOptimization>(), new JournalManager(_temp.GetFile("state.json")));
         var orchestrator = new DetectionOrchestrator(
             detector, engine, store, Array.Empty<ILibraryScanner>(), new ProfileManager());
         try

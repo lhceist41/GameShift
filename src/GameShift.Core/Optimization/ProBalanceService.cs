@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using GameShift.Core.Config;
+using GameShift.Core.System;
 using Serilog;
 
 namespace GameShift.Core.Optimization;
@@ -56,19 +57,57 @@ public sealed class ProBalanceService : IDisposable
 
     private readonly Dictionary<int, ProcessCpuTracker> _trackers = new();
     private readonly object _lock = new();
-    private Timer? _timer;
+    private IDisposable? _timer;
     private string[] _gameProcessNames = Array.Empty<string>();
     private int _gamePid;
     // volatile: read in the timer callback (OnSample) without the lock, written from Start/Stop.
     private volatile bool _running;
 
+    private readonly Func<IReadOnlyList<ProcessCpuSample>> _sampleProcesses;
+    private readonly IProcessPriorityAccess _priorities;
+    private readonly Func<DateTime> _utcNow;
+    private readonly Func<Action, IDisposable> _startTimer;
+    private volatile Func<IEnumerable<int>>? _sessionGamePids;
+
+    /// <summary>One process in a sample: CPU time is null when it cannot be read.</summary>
+    internal readonly record struct ProcessCpuSample(int Pid, string Name, TimeSpan? CpuTime);
+
+    public ProBalanceService()
+        : this(SampleSystemProcesses, SystemProcessPriorityAccess.Instance, () => DateTime.UtcNow,
+            callback => new Timer(_ => callback(), null, SampleIntervalMs, SampleIntervalMs))
+    {
+    }
+
+    internal ProBalanceService(
+        Func<IReadOnlyList<ProcessCpuSample>> sampleProcesses,
+        IProcessPriorityAccess priorities,
+        Func<DateTime> utcNow,
+        Func<Action, IDisposable> startTimer)
+    {
+        _sampleProcesses = sampleProcesses;
+        _priorities = priorities;
+        _utcNow = utcNow;
+        _startTimer = startTimer;
+    }
+
     // ── Public API ────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Supplies the PIDs of every game the session tracks, read at each sample, so a second game
+    /// running alongside the first is never restrained.
+    /// </summary>
+    internal void ProtectSessionGames(Func<IEnumerable<int>> sessionGamePids) =>
+        _sessionGamePids = sessionGamePids;
 
     /// <summary>
     /// Starts the ProBalance sampling loop. Call after all optimizations are applied.
     /// </summary>
     public void Start(int gamePid, string executableName)
     {
+        // A second activation (Quick Optimize, then a game) must not drop the trackers of
+        // processes it already restrained, or they stay BelowNormal for good.
+        Stop();
+
         _gamePid = gamePid;
         _gameProcessNames = !string.IsNullOrEmpty(executableName)
             ? new[] { Path.GetFileNameWithoutExtension(executableName) }
@@ -80,7 +119,7 @@ public sealed class ProBalanceService : IDisposable
             _running = true;
         }
 
-        _timer = new Timer(_ => OnSample(), null, SampleIntervalMs, SampleIntervalMs);
+        _timer = _startTimer(OnSample);
         _logger.Information(
             "[ProBalance] Started - monitoring background CPU usage (threshold: {Pct}%, restrain after {R} samples)",
             CpuThresholdPercent, SustainedSamplesToRestrain);
@@ -107,8 +146,9 @@ public sealed class ProBalanceService : IDisposable
 
                 try
                 {
-                    using var proc = Process.GetProcessById(pid);
-                    proc.PriorityClass = tracker.OriginalPriority;
+                    if (!_priorities.RestoreIfSameProcess(pid, tracker.ProcessName, tracker.OriginalPriority))
+                        continue; // PID reused by another process
+
                     restoredCount++;
                     _logger.Information(
                         "[ProBalance] Restored {Name} (PID {Pid}) to {Priority} on session end",
@@ -139,98 +179,108 @@ public sealed class ProBalanceService : IDisposable
 
     // ── Sampling loop ─────────────────────────────────────────────────────────
 
-    private void OnSample()
+    private void OnSample() => SampleOnce();
+
+    /// <summary>One sampling pass. Internal so tests can drive it without the timer.</summary>
+    internal void SampleOnce()
     {
         if (!_running) return;
 
         try
         {
+            if (!TryReadSessionGamePids(out var sessionGames))
+                return;
+
             var liveProcesses = new HashSet<int>();
             int processorCount = Environment.ProcessorCount;
+            var now = _utcNow();
 
-            foreach (var proc in Process.GetProcesses())
+            foreach (var sample in _sampleProcesses())
             {
-                try
+                int pid = sample.Pid;
+                string name = sample.Name;
+
+                liveProcesses.Add(pid);
+
+                // Skip: game processes, protected processes, GameShift, idle
+                if (pid == _gamePid || sessionGames.Contains(pid))
                 {
-                    int pid = proc.Id;
-                    string name = proc.ProcessName;
+                    ReleaseGame(pid, name);
+                    continue;
+                }
+                if (pid <= 4) continue; // System/Idle
+                if (IsProtected(name)) continue;
+                if (sample.CpuTime is not { } cpuTime) continue; // access denied
 
-                    liveProcesses.Add(pid);
-
-                    // Skip: game process, protected processes, GameShift, idle
-                    if (pid == _gamePid) continue;
-                    if (pid <= 4) continue; // System/Idle
-                    if (IsProtected(name)) continue;
-
-                    lock (_lock)
+                lock (_lock)
+                {
+                    // A PID now held by a process of another name is a new process: its CPU baseline
+                    // and recorded priority belong to the one that exited.
+                    if (!_trackers.TryGetValue(pid, out var tracker) ||
+                        !string.Equals(tracker.ProcessName, name, StringComparison.OrdinalIgnoreCase))
                     {
-                        if (!_trackers.TryGetValue(pid, out var tracker))
+                        tracker = new ProcessCpuTracker(name, cpuTime, now);
+                        _trackers[pid] = tracker;
+                        continue; // First sample - need a baseline, skip comparison
+                    }
+
+                    double cpu = tracker.Sample(cpuTime, processorCount, now);
+
+                    if (cpu > CpuThresholdPercent)
+                    {
+                        tracker.OverCount++;
+                        tracker.UnderCount = 0;
+
+                        if (tracker.OverCount >= SustainedSamplesToRestrain && !tracker.IsRestrained)
                         {
-                            tracker = new ProcessCpuTracker(name, proc.TotalProcessorTime);
-                            _trackers[pid] = tracker;
-                            continue; // First sample - need a baseline, skip comparison
-                        }
-
-                        double cpu = tracker.Sample(proc.TotalProcessorTime, processorCount);
-
-                        if (cpu > CpuThresholdPercent)
-                        {
-                            tracker.OverCount++;
-                            tracker.UnderCount = 0;
-
-                            if (tracker.OverCount >= SustainedSamplesToRestrain && !tracker.IsRestrained)
+                            try
                             {
-                                try
-                                {
-                                    tracker.OriginalPriority = proc.PriorityClass;
-                                    proc.PriorityClass = ProcessPriorityClass.BelowNormal;
-                                    tracker.IsRestrained = true;
+                                var current = _priorities.GetPriority(pid);
+                                // Already lowered by another writer (a launcher demotion, the user):
+                                // restraining it would make Stop() write BelowNormal over their restore.
+                                if (ProcessPriorityOrder.NeedsNoChange(current, ProcessPriorityClass.BelowNormal))
+                                    continue;
 
-                                    _logger.Information(
-                                        "[ProBalance] Restrained {Name} (PID {Pid}) - CPU: {Cpu:F1}% for {N} consecutive samples, demoted to BelowNormal",
-                                        name, pid, cpu, tracker.OverCount);
-                                }
-                                catch (Exception ex)
-                                {
-                                    _logger.Debug(
-                                        "[ProBalance] Cannot restrain {Name} (PID {Pid}): {Error}",
-                                        name, pid, ex.Message);
-                                }
+                                tracker.OriginalPriority = current;
+                                _priorities.SetPriority(pid, ProcessPriorityClass.BelowNormal);
+                                tracker.IsRestrained = true;
+
+                                _logger.Information(
+                                    "[ProBalance] Restrained {Name} (PID {Pid}) - CPU: {Cpu:F1}% for {N} consecutive samples, demoted to BelowNormal",
+                                    name, pid, cpu, tracker.OverCount);
                             }
-                        }
-                        else
-                        {
-                            tracker.UnderCount++;
-                            tracker.OverCount = 0;
-
-                            if (tracker.IsRestrained && tracker.UnderCount >= SustainedSamplesToRestore)
+                            catch (Exception ex)
                             {
-                                try
-                                {
-                                    proc.PriorityClass = tracker.OriginalPriority;
-                                    tracker.IsRestrained = false;
-
-                                    _logger.Information(
-                                        "[ProBalance] Restored {Name} (PID {Pid}) - CPU: {Cpu:F1}%, below threshold for {N} samples, priority → {Priority}",
-                                        name, pid, cpu, tracker.UnderCount, tracker.OriginalPriority);
-                                }
-                                catch (Exception ex)
-                                {
-                                    _logger.Debug(
-                                        "[ProBalance] Cannot restore {Name} (PID {Pid}): {Error}",
-                                        name, pid, ex.Message);
-                                }
+                                _logger.Debug(
+                                    "[ProBalance] Cannot restrain {Name} (PID {Pid}): {Error}",
+                                    name, pid, ex.Message);
                             }
                         }
                     }
-                }
-                catch
-                {
-                    // Access denied or process exited during enumeration - expected
-                }
-                finally
-                {
-                    proc.Dispose();
+                    else
+                    {
+                        tracker.UnderCount++;
+                        tracker.OverCount = 0;
+
+                        if (tracker.IsRestrained && tracker.UnderCount >= SustainedSamplesToRestore)
+                        {
+                            try
+                            {
+                                _priorities.SetPriority(pid, tracker.OriginalPriority);
+                                tracker.IsRestrained = false;
+
+                                _logger.Information(
+                                    "[ProBalance] Restored {Name} (PID {Pid}) - CPU: {Cpu:F1}%, below threshold for {N} samples, priority → {Priority}",
+                                    name, pid, cpu, tracker.UnderCount, tracker.OriginalPriority);
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.Debug(
+                                    "[ProBalance] Cannot restore {Name} (PID {Pid}): {Error}",
+                                    name, pid, ex.Message);
+                            }
+                        }
+                    }
                 }
             }
 
@@ -246,6 +296,81 @@ public sealed class ProBalanceService : IDisposable
         {
             _logger.Warning(ex, "[ProBalance] Sampling error");
         }
+    }
+
+    /// <summary>
+    /// Reads the tracked game PIDs. When they cannot be read the sample is skipped: restraining
+    /// without knowing which processes are games could demote one.
+    /// </summary>
+    private bool TryReadSessionGamePids(out HashSet<int> pids)
+    {
+        pids = new HashSet<int>();
+        var provider = _sessionGamePids;
+        if (provider == null)
+            return true;
+
+        try
+        {
+            pids.UnionWith(provider());
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.Debug("[ProBalance] Cannot read the session's games, skipping this sample: {Error}", ex.Message);
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// A process that became a tracked game after it was restrained gets its priority back at once.
+    /// </summary>
+    private void ReleaseGame(int pid, string name)
+    {
+        lock (_lock)
+        {
+            if (!_trackers.Remove(pid, out var tracker) || !tracker.IsRestrained ||
+                !string.Equals(tracker.ProcessName, name, StringComparison.OrdinalIgnoreCase))
+                return;
+
+            try
+            {
+                _priorities.SetPriority(pid, tracker.OriginalPriority);
+                _logger.Information(
+                    "[ProBalance] Restored game {Name} (PID {Pid}) to {Priority}",
+                    name, pid, tracker.OriginalPriority);
+            }
+            catch (Exception ex)
+            {
+                _logger.Debug(
+                    "[ProBalance] Cannot restore game {Name} (PID {Pid}): {Error}",
+                    name, pid, ex.Message);
+            }
+        }
+    }
+
+    private static IReadOnlyList<ProcessCpuSample> SampleSystemProcesses()
+    {
+        var samples = new List<ProcessCpuSample>();
+        foreach (var proc in Process.GetProcesses())
+        {
+            try
+            {
+                TimeSpan? cpuTime;
+                try { cpuTime = proc.TotalProcessorTime; }
+                catch { cpuTime = null; }
+
+                samples.Add(new ProcessCpuSample(proc.Id, proc.ProcessName, cpuTime));
+            }
+            catch
+            {
+                // Process exited during enumeration - expected
+            }
+            finally
+            {
+                proc.Dispose();
+            }
+        }
+        return samples;
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -278,20 +403,19 @@ public sealed class ProBalanceService : IDisposable
         private TimeSpan _lastCpuTime;
         private DateTime _lastSampleTime;
 
-        public ProcessCpuTracker(string name, TimeSpan initialCpuTime)
+        public ProcessCpuTracker(string name, TimeSpan initialCpuTime, DateTime now)
         {
             ProcessName = name;
             _lastCpuTime = initialCpuTime;
-            _lastSampleTime = DateTime.UtcNow;
+            _lastSampleTime = now;
         }
 
         /// <summary>
         /// Computes per-process CPU percentage since the last sample.
         /// Formula: (cpuDelta / (timeDelta * processorCount)) * 100
         /// </summary>
-        public double Sample(TimeSpan currentCpuTime, int processorCount)
+        public double Sample(TimeSpan currentCpuTime, int processorCount, DateTime now)
         {
-            var now = DateTime.UtcNow;
             var cpuDelta = (currentCpuTime - _lastCpuTime).TotalMilliseconds;
             var timeDelta = (now - _lastSampleTime).TotalMilliseconds;
 

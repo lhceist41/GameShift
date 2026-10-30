@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using GameShift.Core.Config;
 using GameShift.Core.Detection;
+using GameShift.Core.System;
 
 namespace GameShift.Core.GameProfiles;
 
@@ -15,7 +16,7 @@ public class GameProfileManager : IDisposable
     private GameSessionConfig? _activeProfile;
 
     // Session state for revert
-    private readonly Dictionary<int, ProcessPriorityClass> _originalPriorities = new();
+    private readonly Dictionary<int, (string ProcessName, ProcessPriorityClass Priority)> _originalPriorities = new();
     private readonly Dictionary<int, IntPtr> _originalAffinities = new();
     private readonly List<(string ProcessName, int Pid, ProcessPriorityClass OriginalPriority)> _launcherOriginals = new();
 
@@ -173,7 +174,7 @@ public class GameProfileManager : IDisposable
                     ? customPri : profile.GamePriority;
 
                 using var proc = Process.GetProcessById(e.ProcessId);
-                _originalPriorities[e.ProcessId] = proc.PriorityClass;
+                _originalPriorities[e.ProcessId] = (proc.ProcessName, proc.PriorityClass);
                 proc.PriorityClass = targetPriority;
                 SettingsManager.Logger.Information(
                     "[GameProfiles] Set {Exe} (PID {Pid}) priority to {Priority}",
@@ -217,7 +218,11 @@ public class GameProfileManager : IDisposable
                     {
                         try
                         {
-                            _launcherOriginals.Add((launcherName, proc.Id, proc.PriorityClass));
+                            var current = proc.PriorityClass;
+                            if (ProcessPriorityOrder.NeedsNoChange(current, profile.LauncherPriority.Value))
+                                continue;
+
+                            _launcherOriginals.Add((launcherName, proc.Id, current));
                             proc.PriorityClass = profile.LauncherPriority.Value;
                             SettingsManager.Logger.Debug(
                                 "[GameProfiles] Set launcher {Launcher} (PID {Pid}) to {Priority}",
@@ -253,12 +258,11 @@ public class GameProfileManager : IDisposable
             "[GameProfiles] Deactivating profile '{Profile}'", _activeProfile.DisplayName);
 
         // 1. Restore game process priorities
-        foreach (var (pid, originalPriority) in _originalPriorities)
+        foreach (var (pid, (processName, originalPriority)) in _originalPriorities)
         {
             try
             {
-                using var proc = Process.GetProcessById(pid);
-                proc.PriorityClass = originalPriority;
+                SystemProcessPriorityAccess.Instance.RestoreIfSameProcess(pid, processName, originalPriority);
             }
             catch { } // Process may have exited
         }
@@ -281,8 +285,8 @@ public class GameProfileManager : IDisposable
         {
             try
             {
-                using var proc = Process.GetProcessById(pid);
-                proc.PriorityClass = originalPriority;
+                SystemProcessPriorityAccess.Instance.RestoreIfSameProcess(
+                    pid, Path.GetFileNameWithoutExtension(name), originalPriority);
             }
             catch { }
         }

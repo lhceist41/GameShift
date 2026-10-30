@@ -386,6 +386,13 @@ public class OptimizationEngine : IDisposable
         }
     }
 
+    /// <summary>
+    /// Supplies the PIDs of every game the detector tracks, so ProBalance never restrains a game
+    /// that runs alongside the one the session started for.
+    /// </summary>
+    internal void ProtectSessionGames(Func<IEnumerable<int>> sessionGamePids) =>
+        _proBalance.ProtectSessionGames(sessionGamePids);
+
     public void Dispose()
     {
         _proBalance.Dispose();

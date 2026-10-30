@@ -154,6 +154,11 @@ public class ServiceSuppressor : IOptimization, IJournaledOptimization
     private SystemContext? _context;
     private readonly List<string> _stoppedServices = new();
 
+    internal IServiceControl Services { get; init; } = WindowsServiceControl.Instance;
+
+    /// <summary>Replaces the tier lists when set, so tests never evaluate the Tier 3 conditions.</summary>
+    internal Func<GameProfile, IReadOnlyList<ServiceInfo>>? Targets { get; init; }
+
     /// <summary>
     /// Stops services across all applicable tiers.
     /// Tier 1: always stopped.
@@ -197,41 +202,7 @@ public class ServiceSuppressor : IOptimization, IJournaledOptimization
         int skippedCount = 0;
         int errorCount = 0;
 
-        // Build the combined list of services to suppress
-        var servicesToSuppress = new List<ServiceInfo>();
-
-        // Always add Tier 1
-        servicesToSuppress.AddRange(Tier1Services);
-
-        // Add Tier 2 if profile allows (default: yes)
-        if (profile.SuppressTier2Services)
-        {
-            servicesToSuppress.AddRange(Tier2Services);
-        }
-
-        // Add Tier 3 where conditions are met
-        foreach (var svc in Tier3Services)
-        {
-            try
-            {
-                if (svc.Condition == null || svc.Condition())
-                {
-                    servicesToSuppress.Add(svc);
-                }
-                else
-                {
-                    SettingsManager.Logger.Debug(
-                        "[ServiceSuppressor] Tier 3 service {ServiceName} skipped - condition not met",
-                        svc.ServiceName);
-                }
-            }
-            catch (Exception ex)
-            {
-                SettingsManager.Logger.Debug(
-                    "[ServiceSuppressor] Tier 3 condition check failed for {ServiceName}: {Message}",
-                    svc.ServiceName, ex.Message);
-            }
-        }
+        var servicesToSuppress = Targets?.Invoke(profile) ?? BuildServiceTargets(profile);
 
         foreach (var svcInfo in servicesToSuppress)
         {
@@ -247,17 +218,17 @@ public class ServiceSuppressor : IOptimization, IJournaledOptimization
 
             try
             {
-                using var sc = new ServiceController(svcInfo.ServiceName);
+                var status = Services.GetStatus(svcInfo.ServiceName);
 
                 // Only stop if currently running
-                if (sc.Status == ServiceControllerStatus.Running)
+                if (status == ServiceControllerStatus.Running)
                 {
                     // ServiceController.Stop() also stops every RUNNING dependent service.
                     // Enumerate them first so (a) we refuse to cascade into a never-stop
                     // service, and (b) every cascade-stopped dependent is recorded and
                     // restarted on revert. Found by the revert-symmetry harness: stopping a
                     // tier service left its dependent WdiSystemHost stopped after the session.
-                    var runningDependents = CollectRunningDependents(sc, svcInfo.ServiceName);
+                    var runningDependents = Services.GetRunningDependents(svcInfo.ServiceName);
 
                     var protectedDependent = runningDependents
                         .FirstOrDefault(d => NeverStopServices.Contains(d));
@@ -271,36 +242,25 @@ public class ServiceSuppressor : IOptimization, IJournaledOptimization
                     }
 
                     // Record original state before making changes (parent and dependents)
-                    snapshot.RecordServiceState(svcInfo.ServiceName, sc.Status);
+                    snapshot.RecordServiceState(svcInfo.ServiceName, status);
                     foreach (var dependent in runningDependents)
                         snapshot.RecordServiceState(dependent, ServiceControllerStatus.Running);
+
+                    // Recorded before Stop(): a stop that times out or fails part-way can still
+                    // leave the service or a dependent stopped, and revert must restart them.
+                    // Restarting a service that is still running is a no-op.
+                    RecordForRestart(svcInfo.ServiceName, runningDependents);
 
                     SettingsManager.Logger.Debug(
                         "[ServiceSuppressor] Stopping service {ServiceName} ({DisplayName})",
                         svcInfo.ServiceName,
                         svcInfo.DisplayName);
 
-                    sc.Stop();
-                    sc.WaitForStatus(ServiceControllerStatus.Stopped, TimeSpan.FromSeconds(10));
+                    Services.StopAndWait(svcInfo.ServiceName, TimeSpan.FromSeconds(10));
 
                     SettingsManager.Logger.Information(
                         "[ServiceSuppressor] Successfully stopped service {ServiceName}",
                         svcInfo.ServiceName);
-
-                    // Parent first so revert starts it before its dependents; a dependent's
-                    // Start() also pulls required services up, so order is belt and suspenders.
-                    if (!_stoppedServices.Contains(svcInfo.ServiceName, StringComparer.OrdinalIgnoreCase))
-                        _stoppedServices.Add(svcInfo.ServiceName);
-                    foreach (var dependent in runningDependents)
-                    {
-                        if (!_stoppedServices.Contains(dependent, StringComparer.OrdinalIgnoreCase))
-                        {
-                            _stoppedServices.Add(dependent);
-                            SettingsManager.Logger.Information(
-                                "[ServiceSuppressor] Dependent service {Dependent} was cascade-stopped with {ServiceName} and will be restarted on revert",
-                                dependent, svcInfo.ServiceName);
-                        }
-                    }
                     stoppedCount++;
                 }
                 else
@@ -308,7 +268,7 @@ public class ServiceSuppressor : IOptimization, IJournaledOptimization
                     SettingsManager.Logger.Debug(
                         "[ServiceSuppressor] Skipping service {ServiceName} (status: {Status})",
                         svcInfo.ServiceName,
-                        sc.Status);
+                        status);
                     skippedCount++;
                 }
             }
@@ -351,6 +311,67 @@ public class ServiceSuppressor : IOptimization, IJournaledOptimization
     }
 
     /// <summary>
+    /// Parent first so revert starts it before its dependents; a dependent's Start() also pulls
+    /// required services up, so order is belt and suspenders.
+    /// </summary>
+    private void RecordForRestart(string serviceName, IReadOnlyList<string> runningDependents)
+    {
+        if (!_stoppedServices.Contains(serviceName, StringComparer.OrdinalIgnoreCase))
+            _stoppedServices.Add(serviceName);
+        foreach (var dependent in runningDependents)
+        {
+            if (!_stoppedServices.Contains(dependent, StringComparer.OrdinalIgnoreCase))
+            {
+                _stoppedServices.Add(dependent);
+                SettingsManager.Logger.Information(
+                    "[ServiceSuppressor] Dependent service {Dependent} stops with {ServiceName} and will be restarted on revert",
+                    dependent, serviceName);
+            }
+        }
+    }
+
+    private static List<ServiceInfo> BuildServiceTargets(GameProfile profile)
+    {
+        // Build the combined list of services to suppress
+        var servicesToSuppress = new List<ServiceInfo>();
+
+        // Always add Tier 1
+        servicesToSuppress.AddRange(Tier1Services);
+
+        // Add Tier 2 if profile allows (default: yes)
+        if (profile.SuppressTier2Services)
+        {
+            servicesToSuppress.AddRange(Tier2Services);
+        }
+
+        // Add Tier 3 where conditions are met
+        foreach (var svc in Tier3Services)
+        {
+            try
+            {
+                if (svc.Condition == null || svc.Condition())
+                {
+                    servicesToSuppress.Add(svc);
+                }
+                else
+                {
+                    SettingsManager.Logger.Debug(
+                        "[ServiceSuppressor] Tier 3 service {ServiceName} skipped - condition not met",
+                        svc.ServiceName);
+                }
+            }
+            catch (Exception ex)
+            {
+                SettingsManager.Logger.Debug(
+                    "[ServiceSuppressor] Tier 3 condition check failed for {ServiceName}: {Message}",
+                    svc.ServiceName, ex.Message);
+            }
+        }
+
+        return servicesToSuppress;
+    }
+
+    /// <summary>
     /// Restarts all services that were stopped during ApplyAsync.
     /// Uses snapshot to determine which services to restart.
     /// </summary>
@@ -364,10 +385,16 @@ public class ServiceSuppressor : IOptimization, IJournaledOptimization
 
     public OptimizationResult Revert()
     {
-        RestartServices(_stoppedServices);
+        var notRestarted = RestartServices(_stoppedServices);
+
+        // Services that could not be restarted stay listed, as the evidence of what is still stopped.
         _stoppedServices.Clear();
+        _stoppedServices.AddRange(notRestarted);
         IsApplied = false;
-        return new OptimizationResult(OptimizationId, string.Empty, string.Empty, OptimizationState.Reverted);
+
+        return notRestarted.Count == 0
+            ? new OptimizationResult(OptimizationId, string.Empty, string.Empty, OptimizationState.Reverted)
+            : RestartFailed(notRestarted);
     }
 
     /// <summary>
@@ -388,8 +415,10 @@ public class ServiceSuppressor : IOptimization, IJournaledOptimization
                     "Corrupt journal record (null payload)");
             }
 
-            RestartServices(payload.Services ?? new List<string>());
-            return new OptimizationResult(OptimizationId, string.Empty, string.Empty, OptimizationState.Reverted);
+            var notRestarted = RestartServices(payload.Services ?? new List<string>());
+            return notRestarted.Count == 0
+                ? new OptimizationResult(OptimizationId, string.Empty, string.Empty, OptimizationState.Reverted)
+                : RestartFailed(notRestarted);
         }
         catch (Exception ex)
         {
@@ -486,23 +515,29 @@ public class ServiceSuppressor : IOptimization, IJournaledOptimization
     private static readonly TimeSpan RestartWaitPerAttempt = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan RestartRetryDelay = TimeSpan.FromSeconds(2);
 
-    private static void RestartServices(IReadOnlyList<string> serviceNames)
+    /// <summary>Restarts the services in order and returns those that could not be restarted.</summary>
+    private List<string> RestartServices(IReadOnlyList<string> serviceNames)
     {
         int restartedCount = 0;
-        int errorCount = 0;
+        var notRestarted = new List<string>();
 
         foreach (var name in serviceNames)
         {
-            if (TryRestartService(name))
+            if (Services.TryRestart(name))
                 restartedCount++;
             else
-                errorCount++;
+                notRestarted.Add(name);
         }
 
         SettingsManager.Logger.Information(
             "[ServiceSuppressor] Revert completed - {RestartedCount} restarted, {ErrorCount} errors",
-            restartedCount, errorCount);
+            restartedCount, notRestarted.Count);
+        return notRestarted;
     }
+
+    private static OptimizationResult RestartFailed(IReadOnlyList<string> notRestarted) =>
+        new(OptimizationId, string.Empty, string.Empty, OptimizationState.Failed,
+            $"Could not restart: {string.Join(", ", notRestarted)}");
 
     /// <summary>
     /// Restarts a single stopped service, retrying so a slow or SCM-aborted start (SysMain in
@@ -576,6 +611,49 @@ public class ServiceSuppressor : IOptimization, IJournaledOptimization
     private sealed class ServiceRevertPayload
     {
         public List<string> Services { get; set; } = new();
+    }
+
+    /// <summary>
+    /// Service Control Manager operations. A seam so apply and revert can be tested without
+    /// touching real services.
+    /// </summary>
+    internal interface IServiceControl
+    {
+        /// <summary>Throws <see cref="InvalidOperationException"/> when the service does not exist.</summary>
+        ServiceControllerStatus GetStatus(string serviceName);
+
+        List<string> GetRunningDependents(string serviceName);
+
+        /// <summary>Stops the service (and its running dependents) and waits until it is stopped.</summary>
+        void StopAndWait(string serviceName, TimeSpan timeout);
+
+        bool TryRestart(string serviceName);
+    }
+
+    private sealed class WindowsServiceControl : IServiceControl
+    {
+        public static readonly WindowsServiceControl Instance = new();
+
+        public ServiceControllerStatus GetStatus(string serviceName)
+        {
+            using var sc = new ServiceController(serviceName);
+            return sc.Status;
+        }
+
+        public List<string> GetRunningDependents(string serviceName)
+        {
+            using var sc = new ServiceController(serviceName);
+            return CollectRunningDependents(sc, serviceName);
+        }
+
+        public void StopAndWait(string serviceName, TimeSpan timeout)
+        {
+            using var sc = new ServiceController(serviceName);
+            sc.Stop();
+            sc.WaitForStatus(ServiceControllerStatus.Stopped, timeout);
+        }
+
+        public bool TryRestart(string serviceName) => TryRestartService(serviceName);
     }
 
     // ── Tier 3 condition helpers ──────────────────────────────────────

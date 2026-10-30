@@ -41,8 +41,16 @@ public class PowerPlanSwitcher : IOptimization, IJournaledOptimization
     // Original plan GUID captured at apply time (used by in-process Revert()).
     private Guid _originalPlanGuid = Guid.Empty;
 
+    // The plan the session overrides were captured from and written to. Capture, apply and revert
+    // address it by GUID, so a plan switch during the session cannot redirect the restore.
+    private Guid _targetPlanGuid = Guid.Empty;
+
     // Context stored by CanApply() for use by Apply().
     private SystemContext? _context;
+
+    // Seams so apply and revert can be tested without powercfg or the real power scheme.
+    internal Func<string, (bool success, string output)> Powercfg { get; init; } = RunPowercfgSync;
+    internal Func<Guid, uint> SetActiveScheme { get; init; } = SetActiveSchemeNative;
 
     // ── Session sub-setting definitions (single source of truth) ──────────────
 
@@ -53,7 +61,7 @@ public class PowerPlanSwitcher : IOptimization, IJournaledOptimization
 
     /// <summary>
     /// The seven session power sub-settings GameShift overrides during a gaming session.
-    /// Each entry is applied to SCHEME_CURRENT via powercfg after switching plans.
+    /// Each entry is applied to the performance plan via powercfg after switching plans.
     ///
     /// PCIe ASPM is deliberately NOT in this list: it is owned solely by the always-on
     /// SessionSystemTweaksOptimizer. This module is toggleable (SwitchPowerPlan) and runs first, so
@@ -125,14 +133,15 @@ public class PowerPlanSwitcher : IOptimization, IJournaledOptimization
     }
 
     /// <summary>
-    /// Captures the original plan GUID and every session sub-setting's AC/DC values,
-    /// then activates a high-performance plan and applies the session overrides.
+    /// Captures the original plan GUID, activates a high-performance plan, then captures each
+    /// session sub-setting's AC/DC values on that plan and applies the session overrides.
     /// Returns an OptimizationResult carrying serialized original state for deterministic revert.
     /// </summary>
     public OptimizationResult Apply()
     {
         var snapshot = _context?.Snapshot;
         _appliedOverrides.Clear();
+        _targetPlanGuid = Guid.Empty;
 
         try
         {
@@ -150,22 +159,6 @@ public class PowerPlanSwitcher : IOptimization, IJournaledOptimization
             _logger.Information(
                 "[PowerPlanSwitcher] Original power plan GUID: {OriginalPlan}", _originalPlanGuid);
 
-            // Capture AC/DC originals for every session override BEFORE making any changes.
-            foreach (var (subGroup, setting, _, desc) in SessionOverrides)
-            {
-                try
-                {
-                    var (ac, dc) = ReadSubSettingValues(subGroup, setting);
-                    _appliedOverrides.Add(new SubSettingState(subGroup, setting, ac, dc));
-                }
-                catch (Exception ex)
-                {
-                    _logger.Warning(ex,
-                        "[PowerPlanSwitcher] Failed to read current values for sub-setting {Desc}; " +
-                        "will skip revert for this entry", desc);
-                }
-            }
-
             // Find or create a high-performance plan and activate it.
             var targetGuidNullable = FindOrCreatePerformancePlanSync();
             if (targetGuidNullable == null)
@@ -176,7 +169,7 @@ public class PowerPlanSwitcher : IOptimization, IJournaledOptimization
             }
 
             var targetGuid = targetGuidNullable.Value;
-            uint result = NativeInterop.PowerSetActiveScheme(IntPtr.Zero, ref targetGuid);
+            uint result = SetActiveScheme(targetGuid);
             if (result != 0)
             {
                 _logger.Error(
@@ -187,9 +180,37 @@ public class PowerPlanSwitcher : IOptimization, IJournaledOptimization
 
             _logger.Information(
                 "[PowerPlanSwitcher] Activated performance plan {Plan}", targetGuid);
+            _targetPlanGuid = targetGuid;
 
-            // Apply session sub-settings to the now-active plan (SCHEME_CURRENT).
-            ApplySessionOverrides();
+            // Capture from the plan the overrides are written to: revert writes these values back
+            // onto it. A value that cannot be read is not overridden, since it could not be restored.
+            var overridesToApply = new List<(string SubGroup, string Setting, int Value, string Description)>();
+            foreach (var entry in SessionOverrides)
+            {
+                try
+                {
+                    var (ac, dc) = ReadSubSettingValues(_targetPlanGuid, entry.SubGroup, entry.Setting);
+                    if (ac is null || dc is null)
+                    {
+                        _logger.Warning(
+                            "[PowerPlanSwitcher] Could not read the current values of sub-setting {Desc}; leaving it unchanged",
+                            entry.Description);
+                        continue;
+                    }
+
+                    _appliedOverrides.Add(new SubSettingState(entry.SubGroup, entry.Setting, ac.Value, dc.Value));
+                    overridesToApply.Add(entry);
+                }
+                catch (Exception ex)
+                {
+                    _logger.Warning(ex,
+                        "[PowerPlanSwitcher] Failed to read current values for sub-setting {Desc}; leaving it unchanged",
+                        entry.Description);
+                }
+            }
+
+            // Apply session sub-settings to the performance plan.
+            ApplySessionOverrides(overridesToApply);
 
             IsApplied = true;
 
@@ -197,6 +218,7 @@ public class PowerPlanSwitcher : IOptimization, IJournaledOptimization
             var serialized = JsonSerializer.Serialize(new
             {
                 originalPlanGuid = _originalPlanGuid.ToString(),
+                targetPlanGuid = targetGuid.ToString(),
                 subSettings = _appliedOverrides.Select(s => new
                 {
                     subGroup = s.SubGroup,
@@ -233,7 +255,7 @@ public class PowerPlanSwitcher : IOptimization, IJournaledOptimization
     {
         try
         {
-            // Restore each captured sub-setting's AC/DC values on SCHEME_CURRENT.
+            // Restore each captured sub-setting's AC/DC values on the plan they came from.
             RevertSessionOverrides();
 
             if (_originalPlanGuid == Guid.Empty)
@@ -245,8 +267,7 @@ public class PowerPlanSwitcher : IOptimization, IJournaledOptimization
                     OptimizationId, string.Empty, string.Empty, OptimizationState.Reverted);
             }
 
-            var originalGuid = _originalPlanGuid;
-            uint result = NativeInterop.PowerSetActiveScheme(IntPtr.Zero, ref originalGuid);
+            uint result = SetActiveScheme(_originalPlanGuid);
 
             if (result == 0)
             {
@@ -263,8 +284,7 @@ public class PowerPlanSwitcher : IOptimization, IJournaledOptimization
                 "[PowerPlanSwitcher] Original plan {OriginalPlan} no longer exists (error {ErrorCode}), falling back to Balanced",
                 _originalPlanGuid, result);
 
-            var balanced = BalancedGuid;
-            result = NativeInterop.PowerSetActiveScheme(IntPtr.Zero, ref balanced);
+            result = SetActiveScheme(BalancedGuid);
 
             IsApplied = false;
             if (result == 0)
@@ -327,7 +347,13 @@ public class PowerPlanSwitcher : IOptimization, IJournaledOptimization
 
             var state = JsonSerializer.Deserialize<JsonElement>(originalValueJson);
 
-            // Restore each sub-setting's AC/DC values on SCHEME_CURRENT.
+            // Restore each sub-setting's AC/DC values on the plan they came from. Records written
+            // before the target plan was journaled fall back to the active plan.
+            var scheme = state.TryGetProperty("targetPlanGuid", out var targetElement) &&
+                targetElement.ValueKind == JsonValueKind.String &&
+                Guid.TryParse(targetElement.GetString(), out var targetPlan)
+                    ? SchemeArgument(targetPlan)
+                    : SchemeArgument(Guid.Empty);
             if (state.TryGetProperty("subSettings", out var subSettingsElement) &&
                 subSettingsElement.ValueKind == JsonValueKind.Array)
             {
@@ -343,10 +369,10 @@ public class PowerPlanSwitcher : IOptimization, IJournaledOptimization
                         if (string.IsNullOrEmpty(subGroup) || string.IsNullOrEmpty(setting))
                             continue;
 
-                        RunPowercfgSync(
-                            $"/setacvalueindex SCHEME_CURRENT {subGroup} {setting} {ac}");
-                        RunPowercfgSync(
-                            $"/setdcvalueindex SCHEME_CURRENT {subGroup} {setting} {dc}");
+                        Powercfg(
+                            $"/setacvalueindex {scheme} {subGroup} {setting} {ac}");
+                        Powercfg(
+                            $"/setdcvalueindex {scheme} {subGroup} {setting} {dc}");
                     }
                     catch (Exception ex)
                     {
@@ -356,7 +382,7 @@ public class PowerPlanSwitcher : IOptimization, IJournaledOptimization
                 }
 
                 // Activate the restored sub-setting changes.
-                RunPowercfgSync("/setactive SCHEME_CURRENT");
+                Powercfg("/setactive SCHEME_CURRENT");
             }
 
             // Switch back to the original plan GUID.
@@ -365,8 +391,7 @@ public class PowerPlanSwitcher : IOptimization, IJournaledOptimization
                 Guid.TryParse(guidElement.GetString(), out var originalGuid) &&
                 originalGuid != Guid.Empty)
             {
-                var target = originalGuid;
-                uint result = NativeInterop.PowerSetActiveScheme(IntPtr.Zero, ref target);
+                uint result = SetActiveScheme(originalGuid);
                 if (result == 0)
                 {
                     _logger.Information(
@@ -377,8 +402,7 @@ public class PowerPlanSwitcher : IOptimization, IJournaledOptimization
                     _logger.Warning(
                         "[PowerPlanSwitcher] Original plan {Plan} missing during watchdog revert (error {Code}), falling back to Balanced",
                         originalGuid, result);
-                    var balanced = BalancedGuid;
-                    NativeInterop.PowerSetActiveScheme(IntPtr.Zero, ref balanced);
+                    SetActiveScheme(BalancedGuid);
                 }
             }
             else
@@ -423,7 +447,7 @@ public class PowerPlanSwitcher : IOptimization, IJournaledOptimization
         }
 
         // Step 3: Scan for any existing performance plan
-        var (listOk, listOutput) = RunPowercfgSync("-list");
+        var (listOk, listOutput) = Powercfg("-list");
         if (listOk)
         {
             foreach (var line in listOutput.Split('\n'))
@@ -443,7 +467,7 @@ public class PowerPlanSwitcher : IOptimization, IJournaledOptimization
         }
 
         // Step 4: Duplicate from Ultimate Performance template
-        var (dupOk, dupOutput) = RunPowercfgSync(
+        var (dupOk, dupOutput) = Powercfg(
             $"-duplicatescheme {UltimatePerformanceGuid:D}");
         if (dupOk)
         {
@@ -457,7 +481,7 @@ public class PowerPlanSwitcher : IOptimization, IJournaledOptimization
         }
 
         // Step 5: Duplicate from High Performance template
-        var (dup2Ok, dup2Output) = RunPowercfgSync(
+        var (dup2Ok, dup2Output) = Powercfg(
             $"-duplicatescheme {HighPerformanceGuid:D}");
         if (dup2Ok)
         {
@@ -476,22 +500,23 @@ public class PowerPlanSwitcher : IOptimization, IJournaledOptimization
     // ── Session sub-setting overrides ─────────────────────────────────
 
     /// <summary>
-    /// Applies each session sub-setting's target value to the currently active plan.
-    /// Assumes _appliedOverrides already contains the captured AC/DC original values.
+    /// Applies each given session sub-setting's target value to the performance plan.
+    /// Assumes _appliedOverrides already contains their captured AC/DC original values.
     /// </summary>
-    private void ApplySessionOverrides()
+    private void ApplySessionOverrides(
+        IReadOnlyList<(string SubGroup, string Setting, int Value, string Description)> overrides)
     {
         int applied = 0;
 
         // AC slots only - DC (battery) values are deliberately left at the user's settings so gaming
         // overrides never degrade battery life on a laptop running unplugged. Revert therefore only
         // needs to restore AC, which it does.
-        foreach (var (subGroup, setting, value, desc) in SessionOverrides)
+        foreach (var (subGroup, setting, value, desc) in overrides)
         {
             try
             {
-                var (sOk, _) = RunPowercfgSync(
-                    $"/setacvalueindex SCHEME_CURRENT {subGroup} {setting} {value}");
+                var (sOk, _) = Powercfg(
+                    $"/setacvalueindex {SchemeArgument(_targetPlanGuid)} {subGroup} {setting} {value}");
                 if (sOk)
                     applied++;
                 else
@@ -506,27 +531,29 @@ public class PowerPlanSwitcher : IOptimization, IJournaledOptimization
         }
 
         // Activate the changes
-        RunPowercfgSync("/setactive SCHEME_CURRENT");
+        Powercfg("/setactive SCHEME_CURRENT");
 
         _logger.Information(
             "[PowerPlanSwitcher] Applied {Count} session power sub-settings", applied);
     }
 
     /// <summary>
-    /// Restores every captured sub-setting to its pre-apply AC and DC values on SCHEME_CURRENT.
+    /// Restores every captured sub-setting to its pre-apply AC and DC values on the plan they
+    /// were captured from.
     /// </summary>
     private void RevertSessionOverrides()
     {
         if (_appliedOverrides.Count == 0) return;
 
+        var scheme = SchemeArgument(_targetPlanGuid);
         foreach (var entry in _appliedOverrides)
         {
             try
             {
-                RunPowercfgSync(
-                    $"/setacvalueindex SCHEME_CURRENT {entry.SubGroup} {entry.Setting} {entry.AcValue}");
-                RunPowercfgSync(
-                    $"/setdcvalueindex SCHEME_CURRENT {entry.SubGroup} {entry.Setting} {entry.DcValue}");
+                Powercfg(
+                    $"/setacvalueindex {scheme} {entry.SubGroup} {entry.Setting} {entry.AcValue}");
+                Powercfg(
+                    $"/setdcvalueindex {scheme} {entry.SubGroup} {entry.Setting} {entry.DcValue}");
             }
             catch (Exception ex)
             {
@@ -536,23 +563,24 @@ public class PowerPlanSwitcher : IOptimization, IJournaledOptimization
             }
         }
 
-        RunPowercfgSync("/setactive SCHEME_CURRENT");
+        Powercfg("/setactive SCHEME_CURRENT");
         _logger.Information(
             "[PowerPlanSwitcher] Reverted {Count} session power sub-settings", _appliedOverrides.Count);
         _appliedOverrides.Clear();
     }
 
     /// <summary>
-    /// Reads the current AC and DC power setting indexes for a sub-setting on the active plan.
-    /// Parses the 'powercfg /query SCHEME_CURRENT subGroup setting' output, which contains
+    /// Reads the current AC and DC power setting indexes for a sub-setting on <paramref name="plan"/>.
+    /// Parses the 'powercfg /query plan subGroup setting' output, which contains
     /// both 'Current AC Power Setting Index' and 'Current DC Power Setting Index' lines.
+    /// A value is null when its line is missing or cannot be parsed.
     /// </summary>
-    private static (int acValue, int dcValue) ReadSubSettingValues(string subGroup, string setting)
+    private (int? acValue, int? dcValue) ReadSubSettingValues(Guid plan, string subGroup, string setting)
     {
-        int ac = 0;
-        int dc = 0;
+        int? ac = null;
+        int? dc = null;
 
-        var (ok, output) = RunPowercfgSync($"/query SCHEME_CURRENT {subGroup} {setting}");
+        var (ok, output) = Powercfg($"/query {SchemeArgument(plan)} {subGroup} {setting}");
         if (!ok)
             return (ac, dc);
 
@@ -589,9 +617,9 @@ public class PowerPlanSwitcher : IOptimization, IJournaledOptimization
     /// Returns Guid.Empty on failure. Used when a SystemStateSnapshot is not available (e.g.,
     /// tests or watchdog paths that construct a fresh PowerPlanSwitcher).
     /// </summary>
-    private static Guid GetActivePowerPlanGuid()
+    private Guid GetActivePowerPlanGuid()
     {
-        var (ok, output) = RunPowercfgSync("/getactivescheme");
+        var (ok, output) = Powercfg("/getactivescheme");
         if (!ok) return Guid.Empty;
 
         var parsed = ExtractGuidFromLine(output);
@@ -625,11 +653,17 @@ public class PowerPlanSwitcher : IOptimization, IJournaledOptimization
     /// Checks if a power plan GUID exists without activating it.
     /// Uses 'powercfg /query {GUID}' which returns exit code 0 if the plan exists.
     /// </summary>
-    private static bool PlanExistsSync(Guid planGuid)
+    private bool PlanExistsSync(Guid planGuid)
     {
-        var (ok, _) = RunPowercfgSync($"/query {planGuid:D}");
+        var (ok, _) = Powercfg($"/query {planGuid:D}");
         return ok;
     }
+
+    private static string SchemeArgument(Guid plan) =>
+        plan == Guid.Empty ? "SCHEME_CURRENT" : plan.ToString("D");
+
+    private static uint SetActiveSchemeNative(Guid scheme) =>
+        NativeInterop.PowerSetActiveScheme(IntPtr.Zero, ref scheme);
 
     private static Guid? ExtractGuidFromLine(string line)
     {

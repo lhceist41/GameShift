@@ -20,7 +20,8 @@ public class EfficiencyModeController : IOptimization
     /// <summary>
     /// Records whether Efficiency Mode was already enabled before GameShift applied it.
     /// </summary>
-    private readonly record struct EfficiencyOriginalState(int ProcessId, string ProcessName, bool WasEfficiencyEnabled);
+    private readonly record struct EfficiencyOriginalState(
+        int ProcessId, string ProcessName, bool WasEfficiencyEnabled, uint ControlMask, uint StateMask);
 
     private readonly List<EfficiencyOriginalState> _modifiedProcesses = new();
     private readonly HashSet<int> _modifiedPids = new();
@@ -160,7 +161,7 @@ public class EfficiencyModeController : IOptimization
 
                         try
                         {
-                            if (DisableEfficiencyMode(hProc))
+                            if (RestoreThrottlingState(hProc, state.ControlMask, state.StateMask))
                             {
                                 restoredCount++;
                                 SettingsManager.Logger.Debug(
@@ -243,7 +244,8 @@ public class EfficiencyModeController : IOptimization
                     try
                     {
                         // Query current Efficiency Mode state
-                        bool wasAlreadyEfficient = IsEfficiencyModeEnabled(hProcess);
+                        var (originalControl, originalState) = ReadThrottlingState(hProcess);
+                        bool wasAlreadyEfficient = (originalState & NativeInterop.PROCESS_POWER_THROTTLING_EXECUTION_SPEED) != 0;
 
                         // Apply Efficiency Mode
                         if (EnableEfficiencyMode(hProcess))
@@ -251,7 +253,7 @@ public class EfficiencyModeController : IOptimization
                             lock (_lock)
                             {
                                 _modifiedProcesses.Add(new EfficiencyOriginalState(
-                                    process.Id, name, wasAlreadyEfficient));
+                                    process.Id, name, wasAlreadyEfficient, originalControl, originalState));
                                 _modifiedPids.Add(process.Id);
                             }
 
@@ -326,16 +328,17 @@ public class EfficiencyModeController : IOptimization
     }
 
     /// <summary>
-    /// Disables Efficiency Mode on a process (restores normal scheduling).
-    /// Sets ControlMask with StateMask = 0 to indicate the feature should be disabled.
+    /// Puts a process's power throttling masks back to the values read before Apply. ControlMask = 0
+    /// hands throttling back to the OS; ControlMask = EXECUTION_SPEED with StateMask = 0 is an
+    /// explicit opt-out the process may have set itself, so both masks are restored as they were.
     /// </summary>
-    private static bool DisableEfficiencyMode(IntPtr processHandle)
+    private static bool RestoreThrottlingState(IntPtr processHandle, uint controlMask, uint stateMask)
     {
         var state = new NativeInterop.PROCESS_POWER_THROTTLING_STATE
         {
             Version = NativeInterop.PROCESS_POWER_THROTTLING_CURRENT_VERSION,
-            ControlMask = NativeInterop.PROCESS_POWER_THROTTLING_EXECUTION_SPEED,
-            StateMask = 0 // 0 = disabled
+            ControlMask = controlMask,
+            StateMask = stateMask
         };
 
         int size = Marshal.SizeOf<NativeInterop.PROCESS_POWER_THROTTLING_STATE>();
@@ -356,9 +359,10 @@ public class EfficiencyModeController : IOptimization
     }
 
     /// <summary>
-    /// Queries whether Efficiency Mode is currently enabled on a process.
+    /// Reads a process's power throttling masks. A failed read returns (0, 0), the system-managed
+    /// default.
     /// </summary>
-    private static bool IsEfficiencyModeEnabled(IntPtr processHandle)
+    private static (uint ControlMask, uint StateMask) ReadThrottlingState(IntPtr processHandle)
     {
         var state = new NativeInterop.PROCESS_POWER_THROTTLING_STATE
         {
@@ -378,10 +382,10 @@ public class EfficiencyModeController : IOptimization
                 ptr,
                 size);
 
-            if (!success) return false;
+            if (!success) return (0, 0);
 
             state = Marshal.PtrToStructure<NativeInterop.PROCESS_POWER_THROTTLING_STATE>(ptr);
-            return (state.StateMask & NativeInterop.PROCESS_POWER_THROTTLING_EXECUTION_SPEED) != 0;
+            return (state.ControlMask, state.StateMask);
         }
         finally
         {

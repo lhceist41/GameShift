@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Text.Json;
 using GameShift.Core.Profiles;
@@ -36,6 +37,10 @@ public class ProcessPriorityBooster : IOptimization, IJournaledOptimization
 
     // Context stored by CanApply() for use by Apply().
     private SystemContext? _context;
+
+    internal IProcessPriorityAccess Processes { get; init; } = SystemProcessPriorityAccess.Instance;
+
+    internal IPrioritySeparationStore PrioritySeparation { get; init; } = RegistryPrioritySeparationStore.Instance;
 
     private const string IfeoBasePath = @"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options";
 
@@ -150,41 +155,56 @@ public class ProcessPriorityBooster : IOptimization, IJournaledOptimization
                 return Fail("Failed to apply priority boost");
 
             IsApplied = true;
-
-            // Build journaled state. Only IFEO changes persist across reboots and
-            // therefore need watchdog recovery; the live-API path is ephemeral.
-            var ifeoKeys = new List<object>();
-            if (_usedIfeo && !string.IsNullOrEmpty(_ifeoSubKeyPath))
-            {
-                string? originalValuesJson = _ifeoPerfOptionsPreviouslyExisted && _ifeoOriginalValues != null
-                    ? JsonSerializer.Serialize(_ifeoOriginalValues)
-                    : null;
-
-                ifeoKeys.Add(new
-                {
-                    keyPath = _ifeoSubKeyPath,
-                    originalValuesJson
-                });
-            }
-
-            var originalState = JsonSerializer.Serialize(new { ifeoKeys });
-            var appliedState = JsonSerializer.Serialize(new
-            {
-                usedIfeo = _usedIfeo,
-                ifeoKeyCount = ifeoKeys.Count
-            });
-
-            return new OptimizationResult(
-                Name: OptimizationId,
-                OriginalValue: originalState,
-                AppliedValue: appliedState,
-                State: OptimizationState.Applied);
+            return BuildAppliedResult();
         }
         catch (Exception ex)
         {
             _logger.Error(ex, "[ProcessPriorityBooster] Failed to apply priority boost");
+
+            // Whatever failed, a system-wide change already made must stay tracked so the engine
+            // reverts it; the engine only reverts optimizations that report Applied.
+            if (_prioritySeparationApplied || _usedIfeo)
+            {
+                IsApplied = true;
+                return BuildAppliedResult();
+            }
+
             return Fail(ex.Message);
         }
+    }
+
+    /// <summary>
+    /// Builds the Applied result. Only IFEO changes persist across reboots and therefore need
+    /// watchdog recovery; the live-API path is ephemeral.
+    /// </summary>
+    private OptimizationResult BuildAppliedResult()
+    {
+        var ifeoKeys = new List<object>();
+        if (_usedIfeo && !string.IsNullOrEmpty(_ifeoSubKeyPath))
+        {
+            string? originalValuesJson = _ifeoPerfOptionsPreviouslyExisted && _ifeoOriginalValues != null
+                ? JsonSerializer.Serialize(_ifeoOriginalValues)
+                : null;
+
+            ifeoKeys.Add(new
+            {
+                keyPath = _ifeoSubKeyPath,
+                originalValuesJson
+            });
+        }
+
+        var originalState = JsonSerializer.Serialize(new { ifeoKeys });
+        var appliedState = JsonSerializer.Serialize(new
+        {
+            usedIfeo = _usedIfeo,
+            ifeoKeyCount = ifeoKeys.Count
+        });
+
+        return new OptimizationResult(
+            Name: OptimizationId,
+            OriginalValue: originalState,
+            AppliedValue: appliedState,
+            State: OptimizationState.Applied);
     }
 
     /// <summary>
@@ -201,30 +221,30 @@ public class ProcessPriorityBooster : IOptimization, IJournaledOptimization
 
         try
         {
-            using var process = Process.GetProcessById(profile.ProcessId);
+            var processName = Processes.GetName(profile.ProcessId);
 
             // Guard against PID reuse: if the PID no longer belongs to the detected game (it exited
             // and Windows recycled the PID), don't boost an unrelated process.
             var expectedName = Path.GetFileNameWithoutExtension(profile.ExecutableName);
             if (!string.IsNullOrEmpty(expectedName) &&
-                !string.Equals(process.ProcessName, expectedName, StringComparison.OrdinalIgnoreCase))
+                !string.Equals(processName, expectedName, StringComparison.OrdinalIgnoreCase))
             {
                 _logger.Warning(
                     "[ProcessPriorityBooster] PID {ProcessId} is now {Actual}, expected {Expected} - skipping priority boost",
-                    profile.ProcessId, process.ProcessName, expectedName);
+                    profile.ProcessId, processName, expectedName);
                 return false;
             }
 
             // Record original priority before changing
-            var originalPriority = process.PriorityClass;
+            var originalPriority = Processes.GetPriority(profile.ProcessId);
             snapshot.RecordProcessPriority(profile.ProcessId, originalPriority);
 
             // Set to High priority (NOT Realtime - per PRD decision)
-            process.PriorityClass = ProcessPriorityClass.High;
+            Processes.SetPriority(profile.ProcessId, ProcessPriorityClass.High);
 
             _logger.Information(
                 "[ProcessPriorityBooster] Set process {ProcessName} (PID: {ProcessId}) priority from {Original} to High via runtime API",
-                process.ProcessName,
+                processName,
                 profile.ProcessId,
                 originalPriority);
 
@@ -239,6 +259,14 @@ public class ProcessPriorityBooster : IOptimization, IJournaledOptimization
             _logger.Warning(
                 "[ProcessPriorityBooster] Game process {ProcessId} not found - may have exited",
                 profile.ProcessId);
+            return false;
+        }
+        catch (Win32Exception ex)
+        {
+            // Access denied, typically an anti-cheat protecting the game process.
+            _logger.Warning(
+                "[ProcessPriorityBooster] Cannot change the priority of game process {ProcessId}: {Message}",
+                profile.ProcessId, ex.Message);
             return false;
         }
     }
@@ -307,7 +335,17 @@ public class ProcessPriorityBooster : IOptimization, IJournaledOptimization
             }
 
             // Set CpuPriorityClass = 3 (High priority)
-            perfOptionsKey.SetValue("CpuPriorityClass", 3, RegistryValueKind.DWord);
+            try
+            {
+                perfOptionsKey.SetValue("CpuPriorityClass", 3, RegistryValueKind.DWord);
+            }
+            catch when (!_ifeoPerfOptionsPreviouslyExisted)
+            {
+                // Nothing tracks the key yet, so a key created only for this value would stay behind.
+                perfOptionsKey.Dispose();
+                DeleteCreatedPerfOptions(ifeoExeKey, exeName);
+                throw;
+            }
 
             // Record in snapshot for crash recovery (parallel to the journal path).
             string? originalJson = _ifeoOriginalValues != null
@@ -335,6 +373,20 @@ public class ProcessPriorityBooster : IOptimization, IJournaledOptimization
         }
     }
 
+    private void DeleteCreatedPerfOptions(RegistryKey ifeoExeKey, string exeName)
+    {
+        try
+        {
+            ifeoExeKey.DeleteSubKey("PerfOptions", throwOnMissingSubKey: false);
+        }
+        catch (Exception ex)
+        {
+            _logger.Warning(ex,
+                "[ProcessPriorityBooster] Could not delete the PerfOptions subkey created for {ExeName}",
+                exeName);
+        }
+    }
+
     /// <summary>
     /// Reverts process priority to original value.
     /// Handles both runtime API and IFEO registry paths.
@@ -346,7 +398,7 @@ public class ProcessPriorityBooster : IOptimization, IJournaledOptimization
         try
         {
             // Revert session-scoped Win32PrioritySeparation
-            RevertPrioritySeparation();
+            bool separationRestored = RevertPrioritySeparation();
 
             bool pathSuccess;
             if (_usedIfeo)
@@ -359,6 +411,9 @@ public class ProcessPriorityBooster : IOptimization, IJournaledOptimization
             }
 
             IsApplied = false;
+
+            if (!separationRestored)
+                return RevertFail("Failed to restore Win32PrioritySeparation");
 
             if (!pathSuccess)
                 return RevertFail("Failed to revert priority boost");
@@ -395,14 +450,12 @@ public class ProcessPriorityBooster : IOptimization, IJournaledOptimization
 
         try
         {
-            using var process = Process.GetProcessById(_boostedProcessId);
-
             // Restore original priority
-            process.PriorityClass = originalPriority;
+            Processes.SetPriority(_boostedProcessId, originalPriority);
 
             _logger.Information(
-                "[ProcessPriorityBooster] Reverted process {ProcessName} priority to {Original} via runtime API",
-                process.ProcessName,
+                "[ProcessPriorityBooster] Reverted process {ProcessId} priority to {Original} via runtime API",
+                _boostedProcessId,
                 originalPriority);
 
             return true;
@@ -625,17 +678,13 @@ public class ProcessPriorityBooster : IOptimization, IJournaledOptimization
     {
         try
         {
-            using var key = Registry.LocalMachine.OpenSubKey(
-                @"SYSTEM\CurrentControlSet\Control\PriorityControl", writable: true);
-
-            if (key == null)
+            if (!PrioritySeparation.TryRead(out var currentValue))
             {
                 _logger.Warning(
                     "[ProcessPriorityBooster] Cannot open PriorityControl registry key");
                 return;
             }
 
-            var currentValue = key.GetValue("Win32PrioritySeparation") as int?;
             _originalPrioritySeparation = currentValue;
 
             // Record in snapshot for crash recovery
@@ -654,7 +703,7 @@ public class ProcessPriorityBooster : IOptimization, IJournaledOptimization
                 return;
             }
 
-            key.SetValue("Win32PrioritySeparation", GamingPrioritySeparation, RegistryValueKind.DWord);
+            PrioritySeparation.Write(GamingPrioritySeparation);
             _prioritySeparationApplied = true;
 
             _logger.Information(
@@ -671,28 +720,19 @@ public class ProcessPriorityBooster : IOptimization, IJournaledOptimization
     }
 
     /// <summary>
-    /// Restores the original Win32PrioritySeparation value.
+    /// Restores the original Win32PrioritySeparation value. Returns false when the restore failed;
+    /// the captured original is then kept.
     /// </summary>
-    private void RevertPrioritySeparation()
+    private bool RevertPrioritySeparation()
     {
         if (!_prioritySeparationApplied)
-            return;
+            return true;
 
         try
         {
-            using var key = Registry.LocalMachine.OpenSubKey(
-                @"SYSTEM\CurrentControlSet\Control\PriorityControl", writable: true);
-
-            if (key == null)
-            {
-                _logger.Warning(
-                    "[ProcessPriorityBooster] Cannot open PriorityControl registry key for revert");
-                return;
-            }
-
             if (_originalPrioritySeparation.HasValue)
             {
-                key.SetValue("Win32PrioritySeparation", _originalPrioritySeparation.Value, RegistryValueKind.DWord);
+                PrioritySeparation.Write(_originalPrioritySeparation.Value);
                 _logger.Information(
                     "[ProcessPriorityBooster] Win32PrioritySeparation restored to 0x{Original:X2}",
                     _originalPrioritySeparation.Value);
@@ -700,18 +740,20 @@ public class ProcessPriorityBooster : IOptimization, IJournaledOptimization
             else
             {
                 // Value did not exist before Apply - delete the one we created (don't leave a default).
-                key.DeleteValue("Win32PrioritySeparation", throwOnMissingValue: false);
+                PrioritySeparation.Delete();
                 _logger.Information(
                     "[ProcessPriorityBooster] Win32PrioritySeparation deleted (was absent before apply)");
             }
 
             _prioritySeparationApplied = false;
+            return true;
         }
         catch (Exception ex)
         {
             _logger.Warning(
                 ex,
                 "[ProcessPriorityBooster] Failed to restore Win32PrioritySeparation");
+            return false;
         }
     }
 
@@ -742,6 +784,51 @@ public class ProcessPriorityBooster : IOptimization, IJournaledOptimization
                 ex,
                 "[ProcessPriorityBooster] Crash recovery - failed to restore Win32PrioritySeparation");
         }
+    }
+
+    /// <summary>
+    /// Reads and writes HKLM PriorityControl\Win32PrioritySeparation. A seam so the apply and
+    /// revert paths can be tested without the registry.
+    /// </summary>
+    internal interface IPrioritySeparationStore
+    {
+        /// <summary>False when the PriorityControl key cannot be opened.</summary>
+        bool TryRead(out int? value);
+
+        void Write(int value);
+
+        void Delete();
+    }
+
+    private sealed class RegistryPrioritySeparationStore : IPrioritySeparationStore
+    {
+        public static readonly RegistryPrioritySeparationStore Instance = new();
+
+        private const string KeyPath = @"SYSTEM\CurrentControlSet\Control\PriorityControl";
+        private const string ValueName = "Win32PrioritySeparation";
+
+        public bool TryRead(out int? value)
+        {
+            using var key = Registry.LocalMachine.OpenSubKey(KeyPath);
+            value = key?.GetValue(ValueName) as int?;
+            return key != null;
+        }
+
+        public void Write(int value)
+        {
+            using var key = OpenWritable();
+            key.SetValue(ValueName, value, RegistryValueKind.DWord);
+        }
+
+        public void Delete()
+        {
+            using var key = OpenWritable();
+            key.DeleteValue(ValueName, throwOnMissingValue: false);
+        }
+
+        private static RegistryKey OpenWritable() =>
+            Registry.LocalMachine.OpenSubKey(KeyPath, writable: true)
+            ?? throw new InvalidOperationException("Cannot open the PriorityControl registry key");
     }
 
     // ── Result helpers ────────────────────────────────────────────────────────

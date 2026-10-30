@@ -1,5 +1,8 @@
+using GameShift.Core.Config;
+using GameShift.Core.Journal;
 using GameShift.Core.Optimization;
 using GameShift.Core.Profiles;
+using GameShift.Tests.TestHelpers;
 using Xunit;
 
 namespace GameShift.Tests.Optimization;
@@ -13,14 +16,45 @@ namespace GameShift.Tests.Optimization;
 /// 4. Unavailable optimizations skipped
 /// 5. Thread safety for concurrent activate/deactivate
 /// </summary>
-public class OptimizationEngineTests
+[Collection("ConfigState")]
+public sealed class OptimizationEngineTests : IDisposable
 {
+    private readonly TempPath _temp = new();
+    private readonly string? _previousSettingsPath = SettingsManager.SettingsFilePathOverride;
+    private readonly List<OptimizationEngine> _engines = new();
+
+    public OptimizationEngineTests()
+    {
+        SettingsManager.SettingsFilePathOverride = _temp.GetFile("settings.json");
+
+        // Activation would otherwise start ProBalance, on a timer that lowers the priority of
+        // real processes.
+        SettingsManager.Update(s => s.BackgroundMode = new BackgroundModeSettings { ProBalanceEnabled = false });
+    }
+
+    // Every engine records into a temp journal so a test run never rewrites the real
+    // %ProgramData% session journal that crash recovery reads.
+    private OptimizationEngine NewEngine(IEnumerable<IOptimization> optimizations)
+    {
+        var engine = new OptimizationEngine(optimizations, new JournalManager(_temp.GetFile("state.json")));
+        _engines.Add(engine);
+        return engine;
+    }
+
+    public void Dispose()
+    {
+        foreach (var engine in _engines)
+            engine.Dispose();
+        SettingsManager.SettingsFilePathOverride = _previousSettingsPath;
+        _temp.Dispose();
+    }
+
     [Fact]
     public async Task ActivateProfile_CapturesSnapshot_BeforeApplyingOptimizations()
     {
         // Arrange
         var mock = new MockOptimizationSuccess();
-        var engine = new OptimizationEngine(new[] { mock });
+        var engine = NewEngine(new[] { mock });
         var profile = new GameProfile { Id = "test", GameName = "TestGame", ProcessId = 1234 };
 
         // Act
@@ -39,7 +73,7 @@ public class OptimizationEngineTests
         var mock1 = new MockOptimizationSuccess { Name = "First" };
         var mock2 = new MockOptimizationSuccess { Name = "Second" };
         var mock3 = new MockOptimizationSuccess { Name = "Third" };
-        var engine = new OptimizationEngine(new[] { mock1, mock2, mock3 });
+        var engine = NewEngine(new[] { mock1, mock2, mock3 });
         var profile = new GameProfile { Id = "test", GameName = "TestGame", ProcessId = 1234 };
 
         // Track revert order
@@ -66,7 +100,7 @@ public class OptimizationEngineTests
         var mock1 = new MockOptimizationSuccess { Name = "Success1" };
         var mock2 = new MockOptimizationFailure { Name = "Failure" };
         var mock3 = new MockOptimizationSuccess { Name = "Success2" };
-        var engine = new OptimizationEngine(new IOptimization[] { mock1, mock2, mock3 });
+        var engine = NewEngine(new IOptimization[] { mock1, mock2, mock3 });
         var profile = new GameProfile { Id = "test", GameName = "TestGame", ProcessId = 1234 };
 
         // Act
@@ -86,7 +120,7 @@ public class OptimizationEngineTests
         // Arrange
         var available = new MockOptimizationSuccess { Name = "Available" };
         var unavailable = new MockOptimizationUnavailable { Name = "Unavailable" };
-        var engine = new OptimizationEngine(new IOptimization[] { available, unavailable });
+        var engine = NewEngine(new IOptimization[] { available, unavailable });
         var profile = new GameProfile { Id = "test", GameName = "TestGame", ProcessId = 1234 };
 
         // Act
@@ -103,7 +137,7 @@ public class OptimizationEngineTests
     {
         // Arrange
         var mock = new MockOptimizationWithInterleaveDetection { Name = "Test" };
-        var engine = new OptimizationEngine(new[] { mock });
+        var engine = NewEngine(new[] { mock });
         var profile = new GameProfile { Id = "test", GameName = "TestGame", ProcessId = 1234 };
 
         // Act - fire 10 Activate/Deactivate pairs concurrently
@@ -127,7 +161,7 @@ public class OptimizationEngineTests
     {
         // Arrange
         var mock = new MockOptimizationSuccess { Name = "TestOpt" };
-        var engine = new OptimizationEngine(new[] { mock });
+        var engine = NewEngine(new[] { mock });
         var profile = new GameProfile { Id = "test", GameName = "TestGame", ProcessId = 1234 };
 
         OptimizationAppliedEventArgs? eventArgs = null;
@@ -146,7 +180,7 @@ public class OptimizationEngineTests
     {
         // Arrange
         var mock = new MockOptimizationSuccess { Name = "TestOpt" };
-        var engine = new OptimizationEngine(new[] { mock });
+        var engine = NewEngine(new[] { mock });
         var profile = new GameProfile { Id = "test", GameName = "TestGame", ProcessId = 1234 };
 
         OptimizationRevertedEventArgs? eventArgs = null;
@@ -166,7 +200,7 @@ public class OptimizationEngineTests
     {
         // Arrange
         var mock = new MockOptimizationSuccess();
-        var engine = new OptimizationEngine(new[] { mock });
+        var engine = NewEngine(new[] { mock });
 
         // Act - deactivate without activating first
         await engine.DeactivateProfileAsync();
@@ -181,7 +215,7 @@ public class OptimizationEngineTests
         // Arrange - use real OptimizationId values so IsOptimizationEnabled matches
         var memOpt = new MockOptimizationSuccess { Name = MemoryOptimizer.OptimizationId };
         var netOpt = new MockOptimizationSuccess { Name = NetworkOptimizer.OptimizationId };
-        var engine = new OptimizationEngine(new IOptimization[] { memOpt, netOpt });
+        var engine = NewEngine(new IOptimization[] { memOpt, netOpt });
         var profile = new GameProfile
         {
             Id = "test",
@@ -207,7 +241,7 @@ public class OptimizationEngineTests
         var opt1 = new MockOptimizationSuccess { Name = ServiceSuppressor.OptimizationId };
         var opt2 = new MockOptimizationSuccess { Name = PowerPlanSwitcher.OptimizationId };
         var opt3 = new MockOptimizationSuccess { Name = ProcessPriorityBooster.OptimizationId };
-        var engine = new OptimizationEngine(new IOptimization[] { opt1, opt2, opt3 });
+        var engine = NewEngine(new IOptimization[] { opt1, opt2, opt3 });
         var profile = new GameProfile
         {
             Id = "test",
@@ -233,7 +267,7 @@ public class OptimizationEngineTests
     {
         // Arrange - IsOptimizationEnabled returns true for unrecognized names
         var unknownOpt = new MockOptimizationSuccess { Name = "SomeNewOptimization" };
-        var engine = new OptimizationEngine(new[] { unknownOpt });
+        var engine = NewEngine(new[] { unknownOpt });
         var profile = new GameProfile { Id = "test", GameName = "TestGame", ProcessId = 1234 };
 
         // Act

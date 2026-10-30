@@ -17,6 +17,8 @@ public class ProcessPrioritySetAction : GameAction
     private readonly ProcessPriorityClass _targetPriority;
     private readonly Dictionary<int, ProcessPriorityClass> _originalPriorities = new();
 
+    internal IProcessPriorityAccess Processes { get; init; } = SystemProcessPriorityAccess.Instance;
+
     /// <param name="name">Display name, e.g. "LoL Client Priority Reduction".</param>
     /// <param name="processName">Process name (with or without .exe).</param>
     /// <param name="targetPriority">Target priority class to set during gameplay.</param>
@@ -54,29 +56,38 @@ public class ProcessPrioritySetAction : GameAction
 
         try
         {
-            var processes = Process.GetProcessesByName(bareProcessName);
+            var pids = Processes.FindByName(bareProcessName);
 
-            foreach (var process in processes)
+            foreach (var pid in pids)
             {
                 try
                 {
-                    // Record original priority before changing
-                    _originalPriorities[process.Id] = process.PriorityClass;
+                    var current = Processes.GetPriority(pid);
+                    if (ProcessPriorityOrder.NeedsNoChange(current, _targetPriority))
+                    {
+                        Log.Debug(
+                            "ProcessPrioritySetAction: {ProcessName} (PID {Pid}) is already at {Current}, leaving it untouched",
+                            _processName, pid, current);
+                        continue;
+                    }
 
-                    process.PriorityClass = _targetPriority;
+                    // Record original priority before changing
+                    _originalPriorities[pid] = current;
+
+                    Processes.SetPriority(pid, _targetPriority);
                     Log.Information(
                         "ProcessPrioritySetAction: Set {ProcessName} (PID {Pid}) priority to {Priority}",
-                        _processName, process.Id, _targetPriority);
+                        _processName, pid, _targetPriority);
                 }
                 catch (Exception ex)
                 {
                     Log.Warning(ex,
                         "ProcessPrioritySetAction: Failed to set priority for {ProcessName} (PID {Pid})",
-                        _processName, process.Id);
+                        _processName, pid);
                 }
             }
 
-            if (processes.Length == 0)
+            if (pids.Count == 0)
             {
                 Log.Debug(
                     "ProcessPrioritySetAction: No running processes found for {ProcessName}",
@@ -94,13 +105,20 @@ public class ProcessPrioritySetAction : GameAction
     /// <inheritdoc/>
     public override void Revert(SystemStateSnapshot snapshot)
     {
+        var bareProcessName = Path.GetFileNameWithoutExtension(_processName);
+
         foreach (var (pid, originalPriority) in _originalPriorities)
         {
             try
             {
-                // Verify process still exists
-                var process = Process.GetProcessById(pid);
-                process.PriorityClass = originalPriority;
+                if (!Processes.RestoreIfSameProcess(pid, bareProcessName, originalPriority))
+                {
+                    Log.Debug(
+                        "ProcessPrioritySetAction: PID {Pid} now belongs to another process, skipping restore",
+                        pid);
+                    continue;
+                }
+
                 Log.Information(
                     "ProcessPrioritySetAction: Restored {ProcessName} (PID {Pid}) priority to {Priority}",
                     _processName, pid, originalPriority);

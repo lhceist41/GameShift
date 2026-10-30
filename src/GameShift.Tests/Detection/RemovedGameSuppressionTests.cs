@@ -1,6 +1,7 @@
 using GameShift.Core.Config;
 using GameShift.Core.Detection;
 using GameShift.Core.GameProfiles;
+using GameShift.Core.Journal;
 using GameShift.Core.Optimization;
 using GameShift.Core.Profiles;
 using GameShift.Tests.TestHelpers;
@@ -56,13 +57,14 @@ public sealed class RemovedGameSuppressionTests : IDisposable
     /// Starts a library the way the app does (store loaded from disk, launcher scanned, detector
     /// synced) without starting process monitoring, then runs <paramref name="test"/>.
     /// </summary>
-    private static void WithLibrary(
+    private void WithLibrary(
         GameInfo[] scannedGames,
         Action<DetectionOrchestrator, GameDetector, List<GameDetectedEventArgs>> test)
     {
         var scanners = new ILibraryScanner[] { new FakeLibraryScanner("Steam", true, scannedGames) };
         using var detector = new GameDetector(scanners);
-        using var engine = new OptimizationEngine(Array.Empty<IOptimization>());
+        using var engine = new OptimizationEngine(
+            Array.Empty<IOptimization>(), new JournalManager(_temp.GetFile("state.json")));
         var orchestrator = new DetectionOrchestrator(
             detector, engine, new KnownGamesStore(), scanners, new ProfileManager());
         var started = new List<GameDetectedEventArgs>();
