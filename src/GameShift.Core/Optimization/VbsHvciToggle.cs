@@ -334,7 +334,7 @@ public class VbsHvciToggle
     /// and restoring the hypervisor launch type to auto.
     /// Changes take effect after reboot. Caller handles the reboot prompt.
     /// </summary>
-    /// <returns>True if registry writes succeeded, false on failure.</returns>
+    /// <returns>True only when every value was restored; on false the tracking is kept for a retry.</returns>
     public bool ReEnableVbsHvci()
     {
         try
@@ -358,12 +358,13 @@ public class VbsHvciToggle
             }
 
             // Restore hypervisor launch type
-            SetHypervisorLaunchType(off: false);
+            bool hypervisorResult = SetHypervisorLaunchType(off: false);
 
             // Restore RequirePlatformSecurityFeatures to its captured original: if it existed before
             // GameShift cleared it, write the captured DWORD back so platform-security enforcement is
             // restored exactly as it was; otherwise delete it (the consumer-default absent state).
             var settings = SettingsManager.Load();
+            bool rpsfResult;
             try
             {
                 using var dgKey = Registry.LocalMachine.OpenSubKey(DeviceGuardPath, writable: true);
@@ -374,10 +375,22 @@ public class VbsHvciToggle
                     else
                         dgKey.DeleteValue("RequirePlatformSecurityFeatures", throwOnMissingValue: false);
                 }
+                rpsfResult = dgKey != null || !settings.VbsHvciOriginalRpsfExisted;
             }
             catch (Exception ex)
             {
                 _logger.Warning(ex, "VbsHvciToggle: Failed to restore RequirePlatformSecurityFeatures");
+                rpsfResult = false;
+            }
+
+            // A partial re-enable keeps the tracking and the captured original, so a retry (which
+            // rewrites the same values) can finish it instead of losing the original.
+            if (!hypervisorResult || !rpsfResult)
+            {
+                _logger.Error(
+                    "VbsHvciToggle: Re-enable incomplete (hypervisor launch type restored: {Hypervisor}, RequirePlatformSecurityFeatures restored: {Rpsf})",
+                    hypervisorResult, rpsfResult);
+                return false;
             }
 
             // Update tracking (clear the captured original now that it has been restored)
@@ -407,7 +420,8 @@ public class VbsHvciToggle
     /// UEFI-level VBS enforcement or Group Policy).
     /// </summary>
     /// <param name="off">True to set hypervisorlaunchtype=off, false to restore auto.</param>
-    private void SetHypervisorLaunchType(bool off)
+    /// <returns>True when bcdedit ran and exited with 0.</returns>
+    private bool SetHypervisorLaunchType(bool off)
     {
         try
         {
@@ -423,7 +437,7 @@ public class VbsHvciToggle
             };
 
             using var process = Process.Start(psi);
-            if (process == null) return;
+            if (process == null) return false;
 
             // Read stdout and stderr concurrently to avoid pipe deadlock
             string stderr = "";
@@ -435,7 +449,7 @@ public class VbsHvciToggle
             {
                 _logger.Warning("VbsHvciToggle: bcdedit timed out after 10 seconds");
                 try { process.Kill(); } catch { }
-                return;
+                return false;
             }
 
             if (process.ExitCode == 0)
@@ -443,18 +457,19 @@ public class VbsHvciToggle
                 _logger.Information(
                     "VbsHvciToggle: Set hypervisorlaunchtype={LaunchType}",
                     launchType);
+                return true;
             }
-            else
-            {
-                _logger.Warning(
-                    "VbsHvciToggle: bcdedit exited with code {ExitCode}: {StdOut} {StdErr}",
-                    process.ExitCode, stdout.Trim(), stderr.Trim());
-            }
+
+            _logger.Warning(
+                "VbsHvciToggle: bcdedit exited with code {ExitCode}: {StdOut} {StdErr}",
+                process.ExitCode, stdout.Trim(), stderr.Trim());
+            return false;
         }
         catch (Exception ex)
         {
             _logger.Warning(ex,
                 "VbsHvciToggle: Failed to set hypervisor launch type");
+            return false;
         }
     }
 

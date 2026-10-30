@@ -203,6 +203,16 @@ public class CoreIsolationManager
     }
 
     /// <summary>
+    /// True when a ReservedCpuSets value reserves at least one processor, whoever wrote it.
+    /// Reads the raw mask, so it does not depend on the topology lookup.
+    /// </summary>
+    public static bool IsReservationPresent()
+    {
+        using var key = Registry.LocalMachine.OpenSubKey(KernelKeyPath);
+        return key?.GetValue(ValueName) is byte[] mask && mask.Any(b => b != 0);
+    }
+
+    /// <summary>
     /// Reads the current ReservedCpuSets bitmask from the registry.
     /// Returns the set of reserved CPU Set IDs. Empty if no reservation is active.
     /// Used by <see cref="CpuSchedulingOptimizer"/> to detect reserved cores.

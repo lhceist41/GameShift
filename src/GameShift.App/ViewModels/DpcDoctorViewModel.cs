@@ -793,6 +793,7 @@ public class DpcDoctorViewModel : INotifyPropertyChanged
                 item.CurrentValue = "<not set>";
                 ShowRebootPrompt = true;
                 RebootFixName = item.Setting.DisplayName;
+                SettingsManager.Update(s => KernelTuningManager.RemoveLedgerEntries(s, item.Setting));
             }
         }
         else
@@ -809,7 +810,7 @@ public class DpcDoctorViewModel : INotifyPropertyChanged
 
                 // Persist in AppSettings for reboot tracking - transactional (no clobber) and
                 // idempotent (guards mirror the engine's ApplyFix dedup).
-                var fixId = $"bcd_{item.Setting.Id}";
+                var fixId = KernelTuningManager.LedgerFixId(item.Setting);
                 SettingsManager.Update(s =>
                 {
                     if (!s.PendingRebootFixes.Contains(fixId))

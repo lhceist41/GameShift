@@ -3,6 +3,8 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using GameShift.App.ViewModels;
+using GameShift.Core.Config;
+using GameShift.Core.Monitoring;
 using GameShift.Core.Optimization;
 using GameShift.Core.SystemTweaks;
 using GameShift.Core.GameProfiles;
@@ -357,24 +359,83 @@ public partial class SettingsPage : Page
         }
     }
 
-    private void OnRestoreAllTweaksClicked(object sender, RoutedEventArgs e)
+    private async void OnRestoreAllTweaksClicked(object sender, RoutedEventArgs e)
     {
         var mgr = App.Services.TweaksMgr;
         if (mgr == null) return;
 
-        var confirm = MessageBox.Show(
-            "Restore all system tweaks GameShift applied back to their original values? " +
-            "Some changes require a reboot to fully take effect.",
-            "Restore All Tweaks",
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Question);
-        if (confirm != MessageBoxResult.Yes) return;
+        var inventory = LastingChangesInventory.CreateForThisMachine(
+            mgr, App.Services.DpcFix ?? new DpcFixEngine(), App.Services.VbsToggle ?? new VbsHvciToggle());
+        var button = sender as Button;
+        if (button != null) button.IsEnabled = false;
+        try
+        {
+            var list = await Task.Run(inventory.List);
+            var warnings = list.Warnings.Count > 0 ? "\n\n" + string.Join("\n", list.Warnings) : "";
 
-        int count = mgr.RevertAllTweaks();
-        PopulateTweaksList();
-        (DataContext as SettingsViewModel)!.StatusMessage = count > 0
-            ? $"{count} tweaks restored to their original values."
-            : "No GameShift-applied tweaks to restore.";
+            if (list.Items.Count == 0)
+            {
+                MessageBox.Show("GameShift found no lasting changes to undo." + warnings,
+                    "Restore All", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            var toUndo = new List<LastingChange>();
+            var separatelyConfirmed = new List<LastingChange>();
+
+            if (list.Recorded.Count > 0 && MessageBox.Show(
+                    "GameShift will undo these changes it recorded:\n\n" +
+                    LastingChangesInventory.DescribeItems(list.Recorded) +
+                    "\nGameShift does not restart your PC; changes that need a restart finish after you restart." +
+                    warnings + "\n\nUndo these changes?",
+                    "Restore All", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
+            {
+                toUndo.AddRange(list.Recorded);
+            }
+
+            foreach (var group in list.NeedingOwnConfirmation.GroupBy(i => i.Kind))
+            {
+                var intro = group.Key == LastingChangeKind.CpuCoreReservation
+                    ? "A CPU core reservation is set on this PC. GameShift's DPC Doctor can set one, " +
+                      "but so can other tools, and GameShift does not record who set it.\n\n"
+                    : "These startup apps are turned off by a \"~\" in front of their name. GameShift turns " +
+                      "startup apps off this way, but other tools can too, and GameShift does not record " +
+                      "which ones it turned off.\n\n";
+                var question = group.Key == LastingChangeKind.CpuCoreReservation
+                    ? "Remove the reservation?"
+                    : "Turn these startup apps back on?";
+
+                if (MessageBox.Show(intro + LastingChangesInventory.DescribeItems(group) + "\n" + question,
+                        "Restore All", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
+                {
+                    toUndo.AddRange(group);
+                    separatelyConfirmed.AddRange(group);
+                }
+            }
+
+            if (toUndo.Count == 0) return;
+
+            var results = await Task.Run(() => inventory.Undo(toUndo, separatelyConfirmed));
+            PopulateTweaksList();
+
+            int undone = results.Count(r => r.Outcome == LastingChangeOutcome.Undone);
+            int failed = results.Count(r => r.Outcome == LastingChangeOutcome.Failed);
+            MessageBox.Show(LastingChangesInventory.DescribeResults(results), "Restore All",
+                MessageBoxButton.OK, failed > 0 ? MessageBoxImage.Warning : MessageBoxImage.Information);
+            (DataContext as SettingsViewModel)!.StatusMessage = failed > 0
+                ? $"{undone} lasting changes undone, {failed} failed."
+                : $"{undone} lasting changes undone.";
+        }
+        catch (Exception ex)
+        {
+            SettingsManager.Logger.Error(ex, "[Settings] Restore All failed");
+            MessageBox.Show($"Restore All stopped with an error: {ex.Message}", "Restore All",
+                MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        finally
+        {
+            if (button != null) button.IsEnabled = true;
+        }
     }
 
     private void PopulateProfilesList()

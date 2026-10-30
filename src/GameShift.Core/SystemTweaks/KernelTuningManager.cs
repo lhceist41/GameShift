@@ -173,7 +173,17 @@ public class KernelTuningManager
     /// </summary>
     public Dictionary<string, string?> ReadCurrentValues()
     {
-        var values = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+        TryReadCurrentValues(out var values);
+        return values;
+    }
+
+    /// <summary>
+    /// Like <see cref="ReadCurrentValues"/>, but returns false when bcdedit could not be read, so
+    /// a caller can tell "not set" apart from "unknown".
+    /// </summary>
+    public bool TryReadCurrentValues(out Dictionary<string, string?> values)
+    {
+        values = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
 
         // Initialize all known keys to null (not set)
         foreach (var s in AllSettings)
@@ -183,7 +193,7 @@ public class KernelTuningManager
         {
             var (success, output) = RunBcdedit("/enum {current}");
             if (!success || string.IsNullOrEmpty(output))
-                return values;
+                return false;
 
             foreach (var line in output.Split('\n'))
             {
@@ -204,9 +214,10 @@ public class KernelTuningManager
         catch (Exception ex)
         {
             _logger.Warning(ex, "[KernelTuning] Failed to read BCD values");
+            return false;
         }
 
-        return values;
+        return true;
     }
 
     // ── Apply / Revert ────────────────────────────────────────────────────────
@@ -281,6 +292,19 @@ public class KernelTuningManager
 
         _logger.Information("[KernelTuning] Reverted: {Name}. Reboot required.", setting.DisplayName);
         return (true, $"{setting.DisplayName} reverted to default. Reboot required.");
+    }
+
+    /// <summary>The DPC Doctor ledger id (<c>AppliedDpcFixes</c>, <c>PendingRebootFixes</c>) for a setting.</summary>
+    public static string LedgerFixId(KernelTuningSetting setting) => $"bcd_{setting.Id}";
+
+    /// <summary>
+    /// Drops a setting's ledger and pending-reboot entries. Call only after its revert succeeded.
+    /// </summary>
+    public static void RemoveLedgerEntries(AppSettings settings, KernelTuningSetting setting)
+    {
+        var fixId = LedgerFixId(setting);
+        settings.AppliedDpcFixes.RemoveAll(f => f.FixId == fixId);
+        settings.PendingRebootFixes.RemoveAll(id => id == fixId);
     }
 
     // ── Hypervisor dependency check ───────────────────────────────────────────
