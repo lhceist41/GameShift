@@ -1,4 +1,3 @@
-using System.Text;
 using GameShift.Core.Config;
 using Microsoft.Win32;
 using Serilog;
@@ -69,8 +68,8 @@ public static class StartupManager
     /// <summary>
     /// Startup-time reconciliation of the Windows startup registration.
     ///
-    /// Unlike <see cref="SetStartWithWindows"/> (which always shells out to schtasks.exe and is
-    /// meant for explicit user toggles), this runs on every launch and avoids spawning a process
+    /// Unlike <see cref="SetStartWithWindows"/> (which always goes to the Task Scheduler and is
+    /// meant for explicit user toggles), this runs on every launch and avoids that work
     /// unless something actually needs to change. It reads the Task Scheduler's on-disk task
     /// definition directly and only (re)registers when the task is missing or points at a
     /// different executable path (e.g. after the app was moved or updated).
@@ -124,7 +123,7 @@ public static class StartupManager
     /// <summary>
     /// Reads the &lt;Command&gt; element of the GameShift\Startup task directly from the Task
     /// Scheduler's on-disk definition (%windir%\System32\Tasks\GameShift\Startup), avoiding a
-    /// schtasks.exe spawn. The file is the XML that schtasks itself writes when the task is created.
+    /// schtasks.exe spawn. The file is the XML the Task Scheduler writes when the task is registered.
     /// </summary>
     /// <param name="command">The decoded executable path the task launches, or null if it could not be parsed.</param>
     /// <returns>True if the task definition file exists (even if the command did not parse), false otherwise.</returns>
@@ -193,37 +192,40 @@ public static class StartupManager
 
     // ── Scheduled task registration ──────────────────────────────────
 
+    // Task Scheduler 2.0 constants (taskschd.h).
+    internal const int TaskCreateOrUpdate = 6;
+    internal const int TaskLogonInteractiveToken = 3;
+
     private static void RegisterScheduledTask()
     {
-        var exePath = GetExePath();
+        RegisterScheduledTask(
+            new TaskSchedulerRegistrar(),
+            GetExePath(),
+            Environment.UserDomainName + "\\" + Environment.UserName);
+    }
+
+    /// <summary>
+    /// Registers the startup task from the XML string directly, so no task file is written to a
+    /// user-writable folder for the elevated process to import and delete.
+    /// </summary>
+    internal static bool RegisterScheduledTask(ITaskRegistrar registrar, string exePath, string userId)
+    {
         if (!File.Exists(exePath))
         {
             Log.Warning("[StartupManager] GameShift executable not found at '{Path}', skipping startup registration", exePath);
-            return;
+            return false;
         }
-
-        var userId = Environment.UserDomainName + "\\" + Environment.UserName;
-        var xml = BuildTaskXml(exePath, userId);
-        var tempFile = Path.Combine(Path.GetTempPath(), $"GameShift_StartupTask_{Guid.NewGuid():N}.xml");
 
         try
         {
-            // schtasks expects UTF-16 LE with BOM
-            File.WriteAllText(tempFile, xml, Encoding.Unicode);
-
-            var (success, output) = RunSchtasks($"/Create /TN \"{FullTaskName}\" /XML \"{tempFile}\" /F");
-            if (success)
-                Log.Information("[StartupManager] Registered GameShift for Windows startup via scheduled task");
-            else
-                Log.Warning("[StartupManager] Failed to register startup task: {Output}", output);
+            registrar.RegisterTask(FullTaskName, BuildTaskXml(exePath, userId), TaskCreateOrUpdate, TaskLogonInteractiveToken);
+            Log.Information("[StartupManager] Registered GameShift for Windows startup via scheduled task");
+            return true;
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "[StartupManager] Failed to register startup task");
-        }
-        finally
-        {
-            try { File.Delete(tempFile); } catch { }
+            Log.Error(ex, "[StartupManager] Failed to register startup task (0x{HResult:X8})", ex.HResult);
+            return false;
         }
     }
 
@@ -243,7 +245,7 @@ public static class StartupManager
         }
     }
 
-    private static string BuildTaskXml(string exePath, string userId)
+    internal static string BuildTaskXml(string exePath, string userId)
     {
         var escapedPath = global::System.Security.SecurityElement.Escape(exePath);
         var escapedUser = global::System.Security.SecurityElement.Escape(userId);
@@ -313,6 +315,25 @@ public static class StartupManager
         catch (Exception ex)
         {
             return (false, ex.Message);
+        }
+    }
+
+    /// <summary>Registers a task definition given as XML.</summary>
+    internal interface ITaskRegistrar
+    {
+        /// <summary>Throws on failure, with the Task Scheduler HRESULT in <see cref="Exception.HResult"/>.</summary>
+        void RegisterTask(string path, string xml, int flags, int logonType);
+    }
+
+    private sealed class TaskSchedulerRegistrar : ITaskRegistrar
+    {
+        public void RegisterTask(string path, string xml, int flags, int logonType)
+        {
+            var type = Type.GetTypeFromProgID("Schedule.Service", throwOnError: true)!;
+            dynamic service = Activator.CreateInstance(type)!;
+            service.Connect();
+            // Null user, password and SDDL go out as VT_EMPTY, so the principal comes from the XML.
+            service.GetFolder(@"\").RegisterTask(path, xml, flags, null, null, logonType, null);
         }
     }
 
