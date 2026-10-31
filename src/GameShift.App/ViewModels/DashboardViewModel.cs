@@ -14,7 +14,6 @@ using GameShift.Core.Detection;
 using GameShift.Core.Monitoring;
 using GameShift.Core.Optimization;
 using GameShift.Core.Profiles;
-using GameShift.Core.GameProfiles;
 using GameShift.Core.Updates;
 
 namespace GameShift.App.ViewModels;
@@ -43,8 +42,6 @@ public class DashboardViewModel : INotifyPropertyChanged
     private string _gpuInfo = "Unknown";
 
     // Game Profile status
-    private string _activeProfileName = "No Profile";
-    private string _activeProfileDetails = "";
 
     // Session history state
     private readonly SessionHistoryStore? _sessionStore;
@@ -170,19 +167,6 @@ public class DashboardViewModel : INotifyPropertyChanged
 
     // ── Session History properties ────────────────────────────────────────
     public ObservableCollection<GameSession> RecentSessions { get; } = new();
-
-    // ── Game Profile properties ──────────────────────────────────────
-    public string ActiveProfileName
-    {
-        get => _activeProfileName;
-        private set { _activeProfileName = value; OnPropertyChanged(); }
-    }
-
-    public string ActiveProfileDetails
-    {
-        get => _activeProfileDetails;
-        private set { _activeProfileDetails = value; OnPropertyChanged(); }
-    }
 
     /// <summary>
     /// Creates the dashboard ViewModel.
@@ -373,26 +357,6 @@ public class DashboardViewModel : INotifyPropertyChanged
 
             // Update DPC indicator visibility via sub-VM
             Dpc.RefreshIndicatorVisibility();
-
-            // Game Profile status
-            var gpm = App.Services.GameProfileMgr;
-            if (gpm != null && gpm.HasActiveProfile)
-            {
-                var prof = gpm.ActiveProfile!;
-                ActiveProfileName = prof.DisplayName;
-                var details = new List<string>();
-                details.Add($"Priority: {prof.GamePriority}");
-                if (prof.IntelHybridPCoreOnly && IntelHybridDetector.IsHybridCpu)
-                    details.Add("P-Core Only");
-                if (prof.LauncherPriority != null)
-                    details.Add($"Launcher: {prof.LauncherPriority}");
-                ActiveProfileDetails = string.Join(" \u00b7 ", details);
-            }
-            else
-            {
-                ActiveProfileName = "No Profile";
-                ActiveProfileDetails = "";
-            }
         });
     }
 

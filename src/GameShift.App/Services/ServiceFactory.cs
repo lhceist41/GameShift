@@ -4,7 +4,6 @@ using System.Threading.Tasks;
 using GameShift.Core.BackgroundMode;
 using GameShift.Core.Config;
 using GameShift.Core.Detection;
-using GameShift.Core.GameProfiles;
 using GameShift.Core.Journal;
 using GameShift.Core.Monitoring;
 using GameShift.Core.Optimization;
@@ -130,10 +129,6 @@ public static class ServiceFactory
         // System Tweaks manager
         services.TweaksMgr = new SystemTweaksManager();
         writeDiag("SystemTweaksManager initialized");
-
-        // Game Profile manager
-        services.GameProfileMgr = new GameProfileManager();
-        writeDiag($"GameProfileManager initialized (profiles={services.GameProfileMgr?.GetAllProfiles().Count})");
 
         writeDiag("Core services wired OK");
 

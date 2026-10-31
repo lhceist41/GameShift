@@ -622,9 +622,6 @@ public partial class App : Application
         // Dispose session tracker (unsubscribes from Detector events)
         Services.SessionTrk?.Dispose();
 
-        // Dispose Game Profile manager
-        Services.GameProfileMgr?.Dispose();
-
         // Dispose optimization engine
         Services.Engine?.Dispose();
 

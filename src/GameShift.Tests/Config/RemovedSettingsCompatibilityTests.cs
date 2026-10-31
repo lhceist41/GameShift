@@ -5,8 +5,8 @@ using Xunit;
 namespace GameShift.Tests.Config;
 
 /// <summary>
-/// Settings files that still carry the removed timer resolution, GPU vendor, memory threshold and
-/// quick-switch values keep loading, and a save keeps every field that is still in use. Uses the
+/// Settings files that still carry the removed timer resolution, GPU vendor, memory threshold,
+/// quick-switch and game profile values keep loading, and a save keeps every field that is still in use. Uses the
 /// serializer options <see cref="SettingsManager"/> uses (defaults to read, indented to write)
 /// without touching it.
 /// </summary>
@@ -58,13 +58,6 @@ public class RemovedSettingsCompatibilityTests
         Assert.True(settings.AdvancedMode);
         Assert.True(settings.BackgroundModeRetired);
         Assert.Equal("3.8.8", settings.SkippedUpdateVersion);
-
-        Assert.False(settings.GameProfiles!.Enabled);
-        var profile = Assert.Single(settings.GameProfiles.CustomProfiles);
-        Assert.Equal("custom_example", profile.Id);
-        Assert.Equal(new[] { "example.exe" }, profile.ProcessNames);
-        Assert.Equal(1024, profile.GamingStandbyThresholdMB);
-        Assert.Equal(new[] { "kept" }, profile.Notes);
     }
 
     [Fact]
@@ -84,7 +77,7 @@ public class RemovedSettingsCompatibilityTests
         AssertKeptFields(JsonSerializer.Deserialize<AppSettings>(saved)!);
 
         using var doc = JsonDocument.Parse(saved);
-        foreach (var removed in new[] { "MemoryThresholdMB", "TimerResolution100ns", "GpuVendorOverride", "QuickSwitchProfileId" })
+        foreach (var removed in new[] { "MemoryThresholdMB", "TimerResolution100ns", "GpuVendorOverride", "QuickSwitchProfileId", "GameProfiles" })
             Assert.False(doc.RootElement.TryGetProperty(removed, out _), removed);
     }
 }

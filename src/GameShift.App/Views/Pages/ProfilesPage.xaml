@@ -208,8 +208,8 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- ═══ GAME-SPECIFIC OPTIMIZATIONS ═══ -->
-                        <TextBlock Text="GAME-SPECIFIC OPTIMIZATIONS" FontSize="11" FontWeight="Bold"
+                        <!-- ═══ GAME TIPS ═══ -->
+                        <TextBlock Text="GAME TIPS" FontSize="11" FontWeight="Bold"
                                    Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,20,0,8"
                                    Visibility="{Binding IsPresetGame, Converter={StaticResource BoolToVisibility}}"/>
 
@@ -233,17 +233,6 @@
                                            Foreground="{DynamicResource GS.Text.Secondary}" TextWrapping="Wrap"/>
                             </StackPanel>
                         </Border>
-
-                        <!-- Action summary -->
-                        <TextBlock FontSize="11" Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,0,0,6"
-                                   Visibility="{Binding HasGameActions, Converter={StaticResource BoolToVisibility}}">
-                            <TextBlock.Text>
-                                <MultiBinding StringFormat="{}{0} auto-applied of {1} total actions">
-                                    <Binding Path="ActiveActionCount"/>
-                                    <Binding Path="TotalActionCount"/>
-                                </MultiBinding>
-                            </TextBlock.Text>
-                        </TextBlock>
 
                         <!-- Action cards list -->
                         <ItemsControl ItemsSource="{Binding GameActions}" Margin="0,0,0,8"

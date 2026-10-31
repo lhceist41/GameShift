@@ -1,14 +1,60 @@
-using System.Diagnostics;
+using GameShift.Core.Detection;
 using GameShift.Core.Optimization;
+using GameShift.Core.Profiles;
+using GameShift.Core.Profiles.GameActions;
 
 namespace GameShift.Core.GameProfiles;
 
 /// <summary>
-/// Static class returning the 19 hardcoded built-in game profiles.
+/// GameShift's one table of per-game knowledge: the 19 built-in games, five of them with a preset.
+/// Detection takes the first entry whose process names match, so the order is part of identity.
 /// </summary>
 public static class BuiltInProfiles
 {
-    public static IReadOnlyList<GameSessionConfig> GetAll() => new[]
+    /// <summary>
+    /// Returns the game whose preset is selected by <paramref name="executableName"/>
+    /// (case-insensitive), or null if none is.
+    /// </summary>
+    public static BuiltInGame? FindPresetGame(string executableName) =>
+        GetAll().FirstOrDefault(game =>
+            game.Preset != null &&
+            string.Equals(game.Preset.ExecutableName, executableName, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// Returns the profile a preset creates on first detection, or null if
+    /// <paramref name="executableName"/> selects no preset. The returned profile does NOT have Id,
+    /// ExecutablePath, or LauncherSource set - the caller fills those in from the detected game.
+    /// </summary>
+    public static GameProfile? GetPresetProfile(string executableName)
+    {
+        var game = FindPresetGame(executableName);
+        if (game?.Preset == null)
+            return null;
+
+        return new GameProfile
+        {
+            GameName = game.DisplayName,
+            ExecutableName = game.Preset.ExecutableName,
+            AntiCheat = game.AntiCheat,
+            SuppressServices = true,
+            SwitchPowerPlan = true,
+            BoostProcessPriority = game.Preset.BoostProcessPriority,
+            EnableEfficiencyMode = true
+        };
+    }
+
+    /// <summary>
+    /// Returns the tips for the preset selected by <paramref name="executableName"/>, or an empty
+    /// list if it selects none.
+    /// </summary>
+    public static List<GameAction> GetPresetTips(string executableName) =>
+        new(FindPresetGame(executableName)?.Preset?.Tips ?? Array.Empty<OneTimeTipAction>());
+
+    /// <summary>Every firewall rule earlier versions created, for the startup leftover sweep.</summary>
+    internal static IReadOnlyList<FirewallLeftoverRule> GetFirewallLeftovers() =>
+        GetAll().SelectMany(game => game.Preset?.FirewallLeftovers ?? Array.Empty<FirewallLeftoverRule>()).ToList();
+
+    public static IReadOnlyList<BuiltInGame> GetAll() => new[]
     {
         Overwatch2(),
         Valorant(),
@@ -31,43 +77,70 @@ public static class BuiltInProfiles
         FinalFantasyXiv()
     };
 
-    public static GameSessionConfig Overwatch2() => new()
+    public static BuiltInGame Overwatch2() => new()
     {
         Id = "overwatch2",
         DisplayName = "Overwatch 2",
         ProcessNames = new[] { "Overwatch.exe" },
-        LauncherProcessNames = new[] { "Battle.net.exe", "Agent.exe" },
-        GamePriority = ProcessPriorityClass.High,
-        LauncherPriority = ProcessPriorityClass.BelowNormal,
-        IntelHybridPCoreOnly = true,
-        AffinityMask = null,
-        GamingStandbyThresholdMB = 512,
-        GamingFreeMemoryThresholdMB = 3072,
         AntiCheat = AntiCheatType.None, // Server-side ML detection only (RICOCHET)
         RecommendedTweaks = new[] { "DisableGameDvr", "DisableHags", "DisableMpo", "OptimizeMmcss", "OptimizeWin32PrioritySeparation", "DisablePowerThrottling" },
         Notes = new[]
         {
             "OW2 has a documented memory leak - RAM usage climbs from ~3GB to 7-8GB over extended sessions.",
-            "Battle.net launcher consumes significant CPU. Profile sets it to Below Normal priority during gameplay.",
-            "On Intel hybrid CPUs (12th-14th gen), E-cores hurt OW2 performance. Profile auto-pins to P-cores only.",
+            "Battle.net launcher consumes significant CPU.",
+            "On Intel hybrid CPUs (12th-14th gen), E-cores hurt OW2 performance.",
             "NVIDIA users: Enable Reflex (On + Boost) in OW2 settings. Use Fullscreen (not Borderless). Set Shader Cache to 10GB in NVIDIA Control Panel.",
             "Known bug: Alt-tabbing breaks Reduce Buffering - toggle it OFF then ON after returning to game.",
             "Mouse polling rate: Use 1000Hz. OW2 drops from 600 to 60 FPS at 8000Hz polling."
+        },
+        Preset = new()
+        {
+            ExecutableName = "Overwatch.exe",
+            FirewallLeftovers = new FirewallLeftoverRule[]
+            {
+                new("GameShift_OW2_In", "Inbound", @"C:\Program Files (x86)\Overwatch\_retail_\Overwatch.exe")
+            },
+            Tips = new OneTimeTipAction[]
+            {
+                new("ow2_reflex",
+                    "OW2 TIP: Enable NVIDIA Reflex in Video settings. Set to 'On + Boost' for up to 50% lower system latency.",
+                    hw => hw.GpuVendor == GpuVendor.Nvidia,
+                    "NVIDIA GPU only"),
+                new("ow2_antilag",
+                    "OW2 WARNING: AMD Anti-Lag+ causes instability and crashes in Overwatch 2 (especially in Stadium mode). Use the in-game 'Reduce Buffering' setting instead for latency reduction.",
+                    hw => hw.GpuVendor == GpuVendor.Amd,
+                    "AMD GPU only"),
+                new("ow2_fullscreen",
+                    "OW2 TIP: Use Fullscreen (not Borderless). Borderless adds 20+ ms input lag through Windows DWM forced triple buffering. Enable 'Reduce Buffering' in Video settings."),
+                new("ow2_render_scale",
+                    "OW2 TIP: Set Render Scale to 100% (not Automatic). The 'Automatic' setting can supersample above 100%, wasting GPU headroom that could be used for higher FPS."),
+                new("ow2_memory_leak",
+                    "OW2 TIP: Overwatch 2 has a known memory leak - RAM usage climbs over extended sessions. Restart the game every 1-2 hours during long play sessions to avoid performance degradation."),
+                new("ow2_polling_rate",
+                    "OW2 TIP: Mouse polling rates above 4000 Hz cause severe FPS drops in OW2 (8000 Hz can drop FPS from 600 to 60). Use 1000 Hz for maximum stability."),
+                new("ow2_hags",
+                    "OW2 TIP: HAGS results are mixed in OW2. Some configs see slightly better FPS and input latency, but HAGS + NVIDIA Reflex together can cause frame drops. Test both on and off for your hardware.",
+                    hw => hw.IsHagsEnabled,
+                    "HAGS enabled"),
+                new("ow2_hybrid_cpu",
+                    "OW2 TIP: Intel 13th/14th gen users: ensure you have the latest BIOS/microcode update installed - these CPUs had documented instability issues.",
+                    hw => hw.IsHybridCpu,
+                    "Intel hybrid CPU detected"),
+                new("ow2_alt_tab",
+                    "OW2 TIP: Alt-tabbing can cause hard freezes. Overlays commonly trigger this: turn off the Discord, Steam and NVIDIA overlays for Overwatch 2. If freezes persist, close MSI Afterburner and similar monitoring tools."),
+                new("ow2_nvidia_filters",
+                    "OW2 TIP: If you do not use them, turn off Game Filters and Photo Mode in the NVIDIA app; with them on, some games lose frame rate.",
+                    hw => hw.GpuVendor == GpuVendor.Nvidia,
+                    "NVIDIA GPU only")
+            }
         }
     };
 
-    public static GameSessionConfig Valorant() => new()
+    public static BuiltInGame Valorant() => new()
     {
         Id = "valorant",
         DisplayName = "Valorant",
         ProcessNames = new[] { "VALORANT-Win64-Shipping.exe" },
-        LauncherProcessNames = new[] { "RiotClientServices.exe" },
-        GamePriority = ProcessPriorityClass.High,
-        LauncherPriority = ProcessPriorityClass.BelowNormal,
-        IntelHybridPCoreOnly = true,
-        AffinityMask = null,
-        GamingStandbyThresholdMB = null,
-        GamingFreeMemoryThresholdMB = null,
         AntiCheat = AntiCheatType.RiotVanguard,
         RecommendedTweaks = new[] { "DisableGameDvr", "OptimizeMmcss", "OptimizeWin32PrioritySeparation", "DisablePowerThrottling" },
         Notes = new[]
@@ -78,44 +151,90 @@ public static class BuiltInProfiles
             "CPU-bound game favoring single-core performance. Timer resolution and priority boost have measurable impact.",
             "Mouse polling rates above 2000Hz cause engine stuttering - use 1000Hz.",
             "HAGS recommendation: Community split. Not included in recommended tweaks - test individually."
+        },
+        Preset = new()
+        {
+            ExecutableName = "VALORANT-Win64-Shipping.exe",
+            AntiCheatName = "Riot Vanguard",
+            VbsSafeToDisable = false,
+            VbsSafetyReason = "Riot Vanguard enforces VBS/HVCI (Memory Integrity) as a hard requirement. Disabling it causes VAN:RESTRICTION errors and prevents Valorant from launching.",
+            FirewallLeftovers = new FirewallLeftoverRule[]
+            {
+                new("GameShift_Valorant_In", "Inbound", @"C:\Riot Games\VALORANT\live\ShooterGame\Binaries\Win64\VALORANT-Win64-Shipping.exe")
+            },
+            Tips = new OneTimeTipAction[]
+            {
+                new("valorant_xmp",
+                    "VALORANT TIP: Enable XMP/EXPO in your BIOS for optimal memory performance. Check your motherboard manual for instructions."),
+                new("valorant_sharpening",
+                    "VALORANT TIP: Try enabling Experimental Sharpening in Video settings for clearer visuals without GPU cost."),
+                new("valorant_reflex",
+                    "VALORANT TIP: Enable NVIDIA Reflex in settings for lower input latency. Set to 'On + Boost' for best results.",
+                    hw => hw.GpuVendor == GpuVendor.Nvidia,
+                    "NVIDIA GPU only"),
+                new("valorant_hags",
+                    "VALORANT TIP: If experiencing microstutter, consider disabling Hardware Accelerated GPU Scheduling (HAGS) in Windows Display settings.",
+                    hw => hw.IsHagsEnabled,
+                    "HAGS enabled"),
+                new("valorant_multithread",
+                    "VALORANT TIP: Enable Multithreaded Rendering in Video settings for better CPU utilization and higher FPS."),
+                new("valorant_vbs",
+                    "VALORANT SAFETY: Never disable VBS/HVCI, Secure Boot, or TPM. Riot Vanguard requires these security features to run."),
+                new("valorant_nvidia_filters",
+                    "VALORANT TIP: If you do not use them, turn off Game Filters and Photo Mode in the NVIDIA app; with them on, some games lose frame rate.",
+                    hw => hw.GpuVendor == GpuVendor.Nvidia,
+                    "NVIDIA GPU only"),
+                new("valorant_antilag2",
+                    "VALORANT TIP: If your AMD driver and the game offer Anti-Lag 2, turn it on in the game's settings for lower input latency.",
+                    hw => hw.GpuVendor == GpuVendor.Amd,
+                    "AMD GPU only")
+            }
         }
     };
 
-    public static GameSessionConfig LeagueOfLegends() => new()
+    public static BuiltInGame LeagueOfLegends() => new()
     {
         Id = "leagueoflegends",
         DisplayName = "League of Legends",
         ProcessNames = new[] { "League of Legends.exe" },
-        LauncherProcessNames = new[] { "RiotClientServices.exe", "LeagueClient.exe", "LeagueClientUx.exe" },
-        GamePriority = ProcessPriorityClass.High,
-        LauncherPriority = ProcessPriorityClass.BelowNormal,
-        IntelHybridPCoreOnly = false,
-        AffinityMask = null,
-        GamingStandbyThresholdMB = null,
-        GamingFreeMemoryThresholdMB = null,
         AntiCheat = AntiCheatType.RiotVanguard,
         RecommendedTweaks = new[] { "DisableGameDvr", "OptimizeMmcss", "DisablePowerThrottling" },
         Notes = new[]
         {
             "LoL's gameplay loop runs primarily on a single thread. Single-core CPU performance matters most.",
             "LoL now uses Vanguard anti-cheat (same as Valorant). Priority/affinity changes are safe.",
-            "The League Client (Electron-based) is a significant resource hog. Profile demotes all client processes to Below Normal.",
+            "The League Client (Electron-based) is a significant resource hog.",
             "Lightweight game - if you're not hitting 144+ FPS, background processes are likely the bottleneck, not hardware."
+        },
+        Preset = new()
+        {
+            ExecutableName = "League of Legends.exe",
+            AntiCheatName = "Riot Vanguard",
+            VbsSafeToDisable = false,
+            VbsSafetyReason = "Riot Vanguard enforces VBS/HVCI (Memory Integrity) as a hard requirement. Disabling it causes VAN:RESTRICTION errors and prevents League of Legends from launching.",
+            FirewallLeftovers = new FirewallLeftoverRule[]
+            {
+                new("GameShift_LoL_In", "Inbound", @"C:\Riot Games\League of Legends\Game\League of Legends.exe")
+            },
+            Tips = new OneTimeTipAction[]
+            {
+                new("lol_dx11",
+                    "LEAGUE TIP: League defaults to DX11. If you experience issues, check Video settings for the renderer option."),
+                new("lol_vbs",
+                    "LEAGUE SAFETY: VBS/HVCI must stay enabled for Riot Vanguard. GameShift will not disable VBS when League is installed."),
+                new("lol_nvidia_filters",
+                    "LEAGUE TIP: If you do not use them, turn off Game Filters and Photo Mode in the NVIDIA app; with them on, some games lose frame rate.",
+                    hw => hw.GpuVendor == GpuVendor.Nvidia,
+                    "NVIDIA GPU only")
+            }
         }
     };
 
-    public static GameSessionConfig Deadlock() => new()
+    public static BuiltInGame Deadlock() => new()
     {
         Id = "deadlock",
         DisplayName = "Deadlock",
         ProcessNames = new[] { "project8.exe", "deadlock.exe" },
-        LauncherProcessNames = Array.Empty<string>(),
-        GamePriority = ProcessPriorityClass.High,
-        LauncherPriority = null,
-        IntelHybridPCoreOnly = true,
-        AffinityMask = null,
-        GamingStandbyThresholdMB = 1024,
-        GamingFreeMemoryThresholdMB = 2048,
         AntiCheat = AntiCheatType.ValveAntiCheat,
         RecommendedTweaks = new[] { "DisableGameDvr", "DisableMpo", "OptimizeMmcss", "OptimizeWin32PrioritySeparation", "DisablePowerThrottling" },
         Notes = new[]
@@ -125,21 +244,54 @@ public static class BuiltInProfiles
             "DX11 is more consistent than Vulkan on most setups. Vulkan may help on CPU-limited configs.",
             "Uses VAC (not kernel-level) - all optimization tools are safe.",
             "DLSS/FSR2 support available for GPU-bound scenarios. Heavy VRAM usage: 6-9GB at higher settings."
+        },
+        Preset = new()
+        {
+            ExecutableName = "project8.exe",
+            AntiCheatName = "VAC",
+            FirewallLeftovers = new FirewallLeftoverRule[]
+            {
+                new("GameShift_Deadlock_In", "Inbound", @"C:\Program Files (x86)\Steam\steamapps\common\Deadlock\game\bin\win64\project8.exe")
+            },
+            Tips = new OneTimeTipAction[]
+            {
+                new("deadlock_reflex",
+                    "DEADLOCK TIP: Enable NVIDIA Reflex in Deadlock's video settings if you have an NVIDIA GPU for lower input latency."),
+                new("deadlock_ssao",
+                    "DEADLOCK TIP: Disable SSAO in Deadlock's video settings for a significant FPS boost with minimal visual impact."),
+                new("deadlock_launch",
+                    "DEADLOCK TIP: Add '-high -novid' to Steam launch options for Deadlock to skip intro video and set high process priority."),
+                new("deadlock_pcores",
+                    "DEADLOCK TIP: Consider enabling 'Use Performance Cores Only' in your Deadlock profile for better frame consistency on Intel hybrid CPUs.",
+                    hw => hw.IsHybridCpu,
+                    "Hybrid CPU detected"),
+                new("deadlock_vram",
+                    "DEADLOCK TIP: Your GPU has less than 6 GB VRAM. Consider lowering texture quality and disabling shadow details for stable frame rates.",
+                    hw => !hw.HasSufficientVram(6.0),
+                    "Less than 6 GB VRAM"),
+                new("deadlock_vulkan",
+                    "DEADLOCK TIP: Try switching to the Vulkan renderer in Deadlock's video settings. AMD GPUs often perform better with Vulkan than DX11.",
+                    hw => hw.GpuVendor == GpuVendor.Amd,
+                    "AMD GPU only"),
+                new("deadlock_autoexec",
+                    "DEADLOCK TIP: Create an autoexec.cfg in the game's cfg folder with 'cl_forcepreload 1' and 'mat_queue_mode 2' for better loading and multi-threaded rendering."),
+                new("deadlock_nvidia_filters",
+                    "DEADLOCK TIP: If you do not use them, turn off Game Filters and Photo Mode in the NVIDIA app; with them on, some games lose frame rate.",
+                    hw => hw.GpuVendor == GpuVendor.Nvidia,
+                    "NVIDIA GPU only"),
+                new("deadlock_antilag2",
+                    "DEADLOCK TIP: If your AMD driver and the game offer Anti-Lag 2, turn it on in the game's settings for lower input latency.",
+                    hw => hw.GpuVendor == GpuVendor.Amd,
+                    "AMD GPU only")
+            }
         }
     };
 
-    public static GameSessionConfig Osu() => new()
+    public static BuiltInGame Osu() => new()
     {
         Id = "osu",
         DisplayName = "osu!",
         ProcessNames = new[] { "osu!.exe" },
-        LauncherProcessNames = Array.Empty<string>(),
-        GamePriority = ProcessPriorityClass.High,
-        LauncherPriority = null,
-        IntelHybridPCoreOnly = false,
-        AffinityMask = null,
-        GamingStandbyThresholdMB = null,
-        GamingFreeMemoryThresholdMB = null,
         AntiCheat = AntiCheatType.None,
         RecommendedTweaks = new[] { "DisableGameDvr", "OptimizeWin32PrioritySeparation", "DisablePowerThrottling" },
         Notes = new[]
@@ -151,21 +303,36 @@ public static class BuiltInProfiles
             "Raw Input: ON. This is critical for consistent aim.",
             "NVIDIA users: Set Low Latency Mode to Ultra and Max Pre-Rendered Frames to 1 in NVIDIA Control Panel.",
             "On laptops with hybrid GPU (Optimus): osu! often runs better on integrated graphics. Test both."
+        },
+        Preset = new()
+        {
+            ExecutableName = "osu!.exe",
+            BoostProcessPriority = false, // osu! sets its own High priority internally
+            Tips = new OneTimeTipAction[]
+            {
+                new("osu_raw_input",
+                    "OSU! TIP: Enable Raw Input in osu! settings (Options > Input) for the most accurate and lowest-latency mouse/tablet input."),
+                new("osu_tablet",
+                    "OSU! TIP: If using a drawing tablet, install OpenTabletDriver for lower latency than manufacturer drivers. See github.com/OpenTabletDriver."),
+                new("osu_timer",
+                    "OSU! TIP: GameShift can request a 1 ms system timer resolution while osu! runs. It is off by default: turn on System Timer Resolution under Advanced in the osu! profile."),
+                new("osu_amd_opengl",
+                    "OSU! TIP: AMD drivers 22.5.2+ may have issues with OpenGL fullscreen in osu!. If you experience problems, try Borderless or use the DirectX/Compatibility renderer.",
+                    hw => hw.GpuVendor == GpuVendor.Amd,
+                    "AMD GPU only"),
+                new("osu_optimus",
+                    "OSU! TIP: NVIDIA Optimus laptops may run osu! on the integrated GPU by default. Open NVIDIA Control Panel and set osu!.exe to use the dedicated GPU.",
+                    hw => hw.IsLaptop && hw.GpuVendor == GpuVendor.Nvidia,
+                    "NVIDIA laptop only")
+            }
         }
     };
 
-    public static GameSessionConfig ArknightsEndfield() => new()
+    public static BuiltInGame ArknightsEndfield() => new()
     {
         Id = "arknights-endfield",
         DisplayName = "Arknights: Endfield",
         ProcessNames = new[] { "Endfield.exe" },
-        LauncherProcessNames = new[] { "Launcher.exe", "PlatformProcess.exe", "QtWebEngineProcess.exe", "CefViewWing.exe" },
-        GamePriority = ProcessPriorityClass.High,
-        LauncherPriority = ProcessPriorityClass.BelowNormal,
-        IntelHybridPCoreOnly = true,
-        AffinityMask = null,
-        GamingStandbyThresholdMB = 1024,
-        GamingFreeMemoryThresholdMB = 3072,
         AntiCheat = AntiCheatType.BattlEye, // Uses ACE (Tencent) in a BattlEye-like variant
         RecommendedTweaks = new[] { "DisableGameDvr", "DisablePowerThrottling", "OptimizeMmcss" },
         Notes = new[]
@@ -183,18 +350,11 @@ public static class BuiltInProfiles
         }
     };
 
-    public static GameSessionConfig WutheringWaves() => new()
+    public static BuiltInGame WutheringWaves() => new()
     {
         Id = "wuthering-waves",
         DisplayName = "Wuthering Waves",
         ProcessNames = new[] { "Client-Win64-Shipping.exe" },
-        LauncherProcessNames = new[] { "launcher.exe", "launcher_epic.exe", "KRLauncherEpic" },
-        GamePriority = ProcessPriorityClass.High,
-        LauncherPriority = ProcessPriorityClass.BelowNormal,
-        IntelHybridPCoreOnly = true,
-        AffinityMask = null,
-        GamingStandbyThresholdMB = 1024,
-        GamingFreeMemoryThresholdMB = 3072,
         AntiCheat = AntiCheatType.TencentACE,
         RecommendedTweaks = new[] { "DisableGameDvr", "DisablePowerThrottling", "OptimizeMmcss", "OptimizeWin32PrioritySeparation" },
         Notes = new[]
@@ -216,18 +376,11 @@ public static class BuiltInProfiles
         }
     };
 
-    public static GameSessionConfig GenshinImpact() => new()
+    public static BuiltInGame GenshinImpact() => new()
     {
         Id = "genshin-impact",
         DisplayName = "Genshin Impact",
         ProcessNames = new[] { "GenshinImpact.exe", "YuanShen.exe" },
-        LauncherProcessNames = new[] { "launcher.exe", "HoYoPlay.exe" },
-        GamePriority = ProcessPriorityClass.High,
-        LauncherPriority = ProcessPriorityClass.BelowNormal,
-        IntelHybridPCoreOnly = false,
-        AffinityMask = null,
-        GamingStandbyThresholdMB = 1024,
-        GamingFreeMemoryThresholdMB = 3072,
         AntiCheat = AntiCheatType.Proprietary, // mHYProtect/HoYoKProtect
         RecommendedTweaks = new[] { "DisableGameDvr", "DisablePowerThrottling", "OptimizeMmcss" },
         Notes = new[]
@@ -248,18 +401,11 @@ public static class BuiltInProfiles
         }
     };
 
-    public static GameSessionConfig Soulframe() => new()
+    public static BuiltInGame Soulframe() => new()
     {
         Id = "soulframe",
         DisplayName = "Soulframe (Placeholder)",
         ProcessNames = new[] { "Soulframe.x64.exe", "Soulframe.exe" },
-        LauncherProcessNames = new[] { "Launcher.exe" },
-        GamePriority = ProcessPriorityClass.High,
-        LauncherPriority = ProcessPriorityClass.BelowNormal,
-        IntelHybridPCoreOnly = false,
-        AffinityMask = null,
-        GamingStandbyThresholdMB = 1024,
-        GamingFreeMemoryThresholdMB = 2048,
         AntiCheat = AntiCheatType.None, // Custom user-mode anti-cheat (same as Warframe)
         RecommendedTweaks = new[] { "DisableGameDvr", "DisablePowerThrottling", "OptimizeMmcss" },
         Notes = new[]
@@ -278,18 +424,11 @@ public static class BuiltInProfiles
         }
     };
 
-    public static GameSessionConfig CounterStrike2() => new()
+    public static BuiltInGame CounterStrike2() => new()
     {
         Id = "counter-strike-2",
         DisplayName = "Counter-Strike 2",
         ProcessNames = new[] { "cs2.exe" },
-        LauncherProcessNames = new[] { "steamwebhelper.exe" },
-        GamePriority = ProcessPriorityClass.High,
-        LauncherPriority = ProcessPriorityClass.BelowNormal,
-        IntelHybridPCoreOnly = true,
-        AffinityMask = null,
-        GamingStandbyThresholdMB = 1024,
-        GamingFreeMemoryThresholdMB = 8192,
         AntiCheat = AntiCheatType.ValveAntiCheat,
         RecommendedTweaks = new[] { "DisableGameDvr", "DisablePowerThrottling", "OptimizeMmcss", "OptimizeWin32PrioritySeparation", "DisableHags", "DisableMpo" },
         Notes = new[]
@@ -306,30 +445,22 @@ public static class BuiltInProfiles
             "Sub-tick system: 64Hz servers with high-precision timestamps per input. Physics/recoil behave like 128-tick CSGO. Sub-tick uses engine's own QueryPerformanceCounter timers, NOT the OS multimedia timer -- OS timer resolution does not affect sub-tick accuracy, but DOES affect frame scheduling/pacing.",
             "Config location: Steam\\steamapps\\common\\Counter-Strike Global Offensive\\game\\csgo\\cfg\\. Shader cache: steamapps\\shadercache\\730\\. Set NVIDIA Shader Cache Size to 10GB or Unlimited.",
             "Confirmed launch options: -novid -console -high -fullscreen -nojoy +fps_max 0 +exec autoexec.cfg. Non-functional in CS2: -d3d9ex -tickrate 128 -processheap +mat_queue_mode 2 -freq.",
-            "steamwebhelper.exe is Steam's Chromium browser -- spawns 3-8 instances consuming 200MB-1.8GB RAM combined. On older CPUs, 10-30% CPU usage. Profile demotes it to Below Normal during gameplay.",
+            "steamwebhelper.exe is Steam's Chromium browser -- spawns 3-8 instances consuming 200MB-1.8GB RAM combined. On older CPUs, 10-30% CPU usage.",
             "FACEIT Anti-Cheat is KERNEL-LEVEL (Ring 0) -- boots with OS, blocks Hyper-V and Memory Integrity. FACEIT AC may conflict with some optimization tools. This profile is for Valve matchmaking -- FACEIT users should be aware of the additional anti-cheat layer."
         }
     };
 
-    public static GameSessionConfig Fortnite() => new()
+    public static BuiltInGame Fortnite() => new()
     {
         Id = "fortnite",
         DisplayName = "Fortnite",
         ProcessNames = new[] { "FortniteClient-Win64-Shipping.exe" },
-        LauncherProcessNames = new[] { "EpicGamesLauncher.exe", "EpicWebHelper.exe" },
-        GamePriority = ProcessPriorityClass.High,
-        LauncherPriority = ProcessPriorityClass.BelowNormal,
-        IntelHybridPCoreOnly = true,
-        AffinityMask = null,
-        GamingStandbyThresholdMB = 1024,
-        GamingFreeMemoryThresholdMB = 2048,
         AntiCheat = AntiCheatType.EasyAntiCheat,
         RecommendedTweaks = new[] { "DisableGameDvr", "DisablePowerThrottling", "OptimizeMmcss", "OptimizeWin32PrioritySeparation", "DisableMpo" },
         Notes = new[]
         {
             "Unreal Engine 5 -- Game Thread is the primary bottleneck during competitive play. Building triggers game thread spikes (object spawning, collision, network replication). Endgame with 30+ players is the worst case.",
             "Uses Easy Anti-Cheat (EAC) -- KERNEL-LEVEL (Ring 0) driver. EasyAntiCheat_EOS.sys loads when Fortnite launches and sometimes FAILS TO UNLOAD after game exit (persists until reboot). EAC BLOCKS direct SetProcessAffinityMask() and SetPriorityClass() on the game process.",
-            "EAC LIMITATION: GameShift uses direct Win32 API calls for priority and affinity. EAC blocks cross-process handle access on the game executable, so priority and affinity settings from this profile may not apply to the game process itself. Launcher demotion and system tweaks still work normally.",
             "Priority workaround: set via registry at HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\FortniteClient-Win64-Shipping.exe\\PerfOptions with DWORD CpuPriorityClass = 3. This is applied at process creation before EAC protection activates.",
             "Affinity workaround: set affinity on EpicGamesLauncher.exe before Fortnite spawns -- child processes inherit affinity. Direct affinity changes on the game process will be blocked by EAC.",
             "ISLC, timer resolution tools, and MSI Afterburner are confirmed safe with EAC. Process Lasso has one isolated EAC ban report (different game, later reversed). RTSS overlays are blocked but never cause bans.",
@@ -341,7 +472,7 @@ public static class BuiltInProfiles
             "DLSS 2 Super Resolution supported (use Quality for competitive). DLSS 3/4 Frame Generation supported but adds latency. FSR is NOT natively supported -- UE5 TSR is the cross-platform upscaler. XeSS added Sept 2024.",
             "Server tick rate is 30 Hz for Battle Royale. For context: CS2 runs at 64 Hz, Valorant at 128 Hz.",
             "Nagle's algorithm tweaks (TcpNoDelay, TcpAckFrequency) are PLACEBO for Fortnite -- gameplay uses UDP, not TCP. These only affect matchmaking/chat TCP connections.",
-            "EpicWebHelper.exe is Chromium-based, spawns 3-8 instances using 50-200MB RAM each with documented spikes to 26GB (memory leak). Epic launcher sends 14x more telemetry than Steam when idle. Profile demotes all launcher processes to Below Normal.",
+            "EpicWebHelper.exe is Chromium-based, spawns 3-8 instances using 50-200MB RAM each with documented spikes to 26GB (memory leak). Epic launcher sends 14x more telemetry than Steam when idle.",
             "PSO shader compilation causes first-match stuttering after driver updates (~30,000 PSOs compiled per match). Clear corrupted cache: delete %LOCALAPPDATA%\\NVIDIA\\DXCache (NVIDIA) or reset via AMD Software.",
             "Config: GameUserSettings.ini at %LOCALAPPDATA%\\FortniteGame\\Saved\\Config\\WindowsClient\\. Engine.ini tweaks are mostly blocked by Epic. Set GameUserSettings.ini to Read-Only after editing.",
             "Launch args: -USEALLAVAILABLECORES -NOSPLASH -LANPLAY -dx12 -high -fullscreen. Force Performance Mode: -FeatureLevelES31. Set in Epic Launcher > Settings > Fortnite > Additional Command Line Arguments.",
@@ -349,29 +480,21 @@ public static class BuiltInProfiles
         }
     };
 
-    public static GameSessionConfig ApexLegends() => new()
+    public static BuiltInGame ApexLegends() => new()
     {
         Id = "apex-legends",
         DisplayName = "Apex Legends",
         ProcessNames = new[] { "r5apex_dx12.exe", "r5apex.exe" },
-        LauncherProcessNames = new[] { "EABackgroundService.exe" },
         // EAC keeps the image path unreadable on the game process, so a live Apex start can arrive
         // with liveness proven but no path. Both process names are Apex-exclusive, which is what
         // makes the name-only fallback safe here and nowhere else so far.
         AllowNameOnlyFallback = true,
-        GamePriority = ProcessPriorityClass.High,
-        LauncherPriority = ProcessPriorityClass.BelowNormal,
-        IntelHybridPCoreOnly = true,
-        AffinityMask = null,
-        GamingStandbyThresholdMB = 1024,
-        GamingFreeMemoryThresholdMB = 2048,
         AntiCheat = AntiCheatType.EasyAntiCheat,
         RecommendedTweaks = new[] { "DisableGameDvr", "DisablePowerThrottling", "OptimizeMmcss", "OptimizeWin32PrioritySeparation", "DisableHags", "DisableMpo" },
         Notes = new[]
         {
             "Modified Source engine (Titanfall 2 fork) -- heavily main-thread-bound. Two threads carry most load while others are lightly utilized. CPU bottlenecks hard in endgame with many squads.",
             "Uses Easy Anti-Cheat (EAC) -- KERNEL-LEVEL (Ring 0). EAC blocks direct SetProcessAffinityMask() and SetPriorityClass() on r5apex_dx12.exe. Priority set via IFEO registry. Affinity via parent process inheritance.",
-            "EAC LIMITATION: GameShift uses direct Win32 API calls for priority and affinity. EAC blocks cross-process handle access on the game executable, so priority and affinity settings from this profile may not apply to the game process itself. Launcher demotion and system tweaks still work normally.",
             "Priority workaround: set via registry at HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\r5apex_dx12.exe\\PerfOptions with DWORD CpuPriorityClass = 3. This is applied at process creation before EAC protection activates.",
             "CRITICAL: r5apex_dx12.exe frequently fails to terminate after game exit, leaving a zombie process consuming 40%+ system memory. If you notice high RAM usage after closing Apex, check Task Manager and manually end the process.",
             "VRAM memory leak tied to texture streaming budget. VRAM usage climbs continuously regardless of configured cap. Setting texture budget to 'None' caps VRAM at ~2GB and prevents the leak.",
@@ -386,25 +509,17 @@ public static class BuiltInProfiles
         }
     };
 
-    public static GameSessionConfig Rust() => new()
+    public static BuiltInGame Rust() => new()
     {
         Id = "rust",
         DisplayName = "Rust",
         ProcessNames = new[] { "RustClient.exe" },
-        LauncherProcessNames = new[] { "Rust.exe" },
-        GamePriority = ProcessPriorityClass.High,
-        LauncherPriority = ProcessPriorityClass.BelowNormal,
-        IntelHybridPCoreOnly = true,
-        AffinityMask = null,
-        GamingStandbyThresholdMB = 1024,
-        GamingFreeMemoryThresholdMB = 2048,
         AntiCheat = AntiCheatType.EasyAntiCheat,
         RecommendedTweaks = new[] { "DisableGameDvr", "DisablePowerThrottling", "OptimizeMmcss", "OptimizeWin32PrioritySeparation", "DisableMpo" },
         Notes = new[]
         {
             "Unity engine -- aggressively main-thread-bound (4-6 effective threads). Single-core IPC is the dominant performance factor. Large L3 cache CPUs (5800X3D, 7800X3D) excel due to Unity's cache-sensitive memory access patterns.",
             "Uses Easy Anti-Cheat (EAC) -- KERNEL-LEVEL (Ring 0). Same process manipulation restrictions as other EAC titles. Priority via IFEO registry, affinity via parent process inheritance.",
-            "EAC LIMITATION: GameShift uses direct Win32 API calls for priority and affinity. EAC blocks cross-process handle access on the game executable, so priority and affinity settings from this profile may not apply to the game process itself. Launcher demotion and system tweaks still work normally.",
             "Priority workaround: set via registry at HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\RustClient.exe\\PerfOptions with DWORD CpuPriorityClass = 3. This is applied at process creation before EAC protection activates.",
             "MOST RAM-DEMANDING game in GameShift's profile set. 16GB is genuinely insufficient for high-pop servers. Typical usage: 8-10GB fresh wipe, 13-16GB+ late wipe (200+ players). Memory grows continuously with no plateau.",
             "gc.buffer is the SINGLE MOST IMPACTFUL optimization for Rust. Controls Unity's incremental garbage collector buffer. Without it, GC runs cause micro-stutters every few seconds. Recommended: 2048 for 16GB systems, 4096 for 32GB. Set via launch option: -gc.buffer 2048",
@@ -420,25 +535,17 @@ public static class BuiltInProfiles
         }
     };
 
-    public static GameSessionConfig EldenRing() => new()
+    public static BuiltInGame EldenRing() => new()
     {
         Id = "elden-ring",
         DisplayName = "Elden Ring",
         ProcessNames = new[] { "eldenring.exe" },
-        LauncherProcessNames = new[] { "start_protected_game.exe" },
-        GamePriority = ProcessPriorityClass.High,
-        LauncherPriority = ProcessPriorityClass.BelowNormal,
-        IntelHybridPCoreOnly = true,
-        AffinityMask = null,
-        GamingStandbyThresholdMB = 1024,
-        GamingFreeMemoryThresholdMB = 1024,
         AntiCheat = AntiCheatType.EasyAntiCheat,
         RecommendedTweaks = new[] { "DisableGameDvr", "DisablePowerThrottling", "OptimizeMmcss", "OptimizeWin32PrioritySeparation", "DisableMpo" },
         Notes = new[]
         {
             "Custom FromSoftware engine -- 1 main rendering thread + 7 worker threads. GPU is massively underutilized; CPU command list processing time exceeds GPU processing time in most frames. The primary stutter is the buffer swap/present instruction stalling for 60ms+ on the CPU.",
             "Uses Easy Anti-Cheat (EAC) -- KERNEL-LEVEL (Ring 0). EAC blocks direct SetProcessAffinityMask() and SetPriorityClass() on eldenring.exe. Priority via IFEO registry. Affinity via parent process inheritance through start_protected_game.exe.",
-            "EAC LIMITATION: GameShift uses direct Win32 API calls for priority and affinity. EAC blocks cross-process handle access on the game executable, so priority and affinity settings from this profile may not apply to the game process itself. Launcher demotion and system tweaks still work normally.",
             "Priority workaround: set via registry at HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\eldenring.exe\\PerfOptions with DWORD CpuPriorityClass = 3. This is applied at process creation before EAC protection activates.",
             "REMOVING CPU 0 FROM AFFINITY is the single most impactful optimization. Windows uses Core 0 for USB/HID interrupts, input polling, and kernel DPCs. When the main thread lands on CPU 0, interrupt contention causes severe frametime spikes. Requires ~25 second delay after launch (game needs CPU 0 during initialization). GameShift's affinity system applies immediately at detection -- for Elden Ring, manually removing CPU 0 after 25 seconds via Task Manager provides additional benefit.",
             "On Intel 12th-14th gen hybrid CPUs, Elden Ring shows the WORST stutter of any platform. PC Gamer Nsight analysis: 100ms+ spikes on i7-14700KF from E-core scheduling. P-core-only affinity + CPU 0 removal is critical.",
@@ -454,25 +561,17 @@ public static class BuiltInProfiles
         }
     };
 
-    public static GameSessionConfig EldenRingNightreign() => new()
+    public static BuiltInGame EldenRingNightreign() => new()
     {
         Id = "elden-ring-nightreign",
         DisplayName = "Elden Ring: Nightreign",
         ProcessNames = new[] { "nightreign.exe" },
-        LauncherProcessNames = new[] { "start_protected_game.exe" },
-        GamePriority = ProcessPriorityClass.High,
-        LauncherPriority = ProcessPriorityClass.BelowNormal,
-        IntelHybridPCoreOnly = true,
-        AffinityMask = null,
-        GamingStandbyThresholdMB = 1024,
-        GamingFreeMemoryThresholdMB = 1024,
         AntiCheat = AntiCheatType.EasyAntiCheat,
         RecommendedTweaks = new[] { "DisableGameDvr", "DisablePowerThrottling", "OptimizeMmcss", "OptimizeWin32PrioritySeparation", "DisableMpo" },
         Notes = new[]
         {
             "Identical FromSoftware engine to base Elden Ring -- all Elden Ring optimizations apply directly. Same threading model (1 main + 7 workers), same DX12 renderer, same frame pacing characteristics.",
             "Uses Easy Anti-Cheat (EAC) -- KERNEL-LEVEL (Ring 0). Same restrictions as Elden Ring. Unlike base ER, EAC bypass is NOT viable since Nightreign is always-online multiplayer.",
-            "EAC LIMITATION: GameShift uses direct Win32 API calls for priority and affinity. EAC blocks cross-process handle access on the game executable, so priority and affinity settings from this profile may not apply to the game process itself. Launcher demotion and system tweaks still work normally.",
             "Priority workaround: set via registry at HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\nightreign.exe\\PerfOptions with DWORD CpuPriorityClass = 3. This is applied at process creation before EAC protection activates.",
             "HARD 60 FPS CAP persists (pre-rendered cutscenes are 30 FPS). No native V-sync toggle -- causes tearing on some configs. AMD users may be locked to 30fps; fix by forcing V-sync off in Adrenalin (introduces tearing).",
             "CPU 0 removal + P-core affinity applies identically to base Elden Ring. Same 25-second post-launch delay required. GameShift's affinity system applies immediately -- for best results, manually remove CPU 0 after 25 seconds via Task Manager.",
@@ -487,18 +586,11 @@ public static class BuiltInProfiles
         }
     };
 
-    public static GameSessionConfig CallOfDuty() => new()
+    public static BuiltInGame CallOfDuty() => new()
     {
         Id = "call-of-duty",
         DisplayName = "Call of Duty",
         ProcessNames = new[] { "cod.exe" },
-        LauncherProcessNames = new[] { "steamwebhelper.exe", "Agent.exe" },
-        GamePriority = ProcessPriorityClass.High,
-        LauncherPriority = ProcessPriorityClass.BelowNormal,
-        IntelHybridPCoreOnly = true,
-        AffinityMask = null,
-        GamingStandbyThresholdMB = 1024,
-        GamingFreeMemoryThresholdMB = 8192,
         AntiCheat = AntiCheatType.Ricochet,
         RecommendedTweaks = new[] { "DisableGameDvr", "DisablePowerThrottling", "OptimizeMmcss", "OptimizeWin32PrioritySeparation", "DisableMpo" },
         Notes = new[]
@@ -522,23 +614,16 @@ public static class BuiltInProfiles
             "Network: UDP port 3074 (primary gameplay). MP 6v6: ~62Hz tick rate. Warzone BR: ~20-24Hz. Ground War: ~62Hz. Nagle tweaks irrelevant (UDP). Set NetworkThrottlingIndex=0xFFFFFFFF and SystemResponsiveness=0 at HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile.",
             "Config files: %USERPROFILE%\\Documents\\Call of Duty\\players\\. BO6: s.1.0.cod24.txt (files: s.1.0.cod24.txt0 and s.1.0.cod24.txt1). MWIII/WZ: options.4.cod23.cst. Set to Read-Only after editing -- game overwrites on every launch.",
             "Crash logs: %LOCALAPPDATA%\\Activision\\Call of Duty\\Crash_reports\\. Sort by date, open with 7-Zip, check dxdiag_oncrash.txt for diagnostics.",
-            "Agent.exe (Blizzard Update Agent) can consume 81-90% CPU during background updates and spawn 100+ instances on connection failure. Profile demotes it to Below Normal. Critical for Battle.net users.",
+            "Agent.exe (Blizzard Update Agent) can consume 81-90% CPU during background updates and spawn 100+ instances on connection failure.",
             "CoD launches itself at High priority by default. Some competitive players intentionally DEMOTE to Normal to reduce Discord audio lag and system contention. A GitHub tool (launchandfixcod) automates this."
         }
     };
 
-    public static GameSessionConfig Cyberpunk2077() => new()
+    public static BuiltInGame Cyberpunk2077() => new()
     {
         Id = "cyberpunk-2077",
         DisplayName = "Cyberpunk 2077",
         ProcessNames = new[] { "Cyberpunk2077.exe" },
-        LauncherProcessNames = Array.Empty<string>(),
-        GamePriority = ProcessPriorityClass.High,
-        LauncherPriority = null,
-        IntelHybridPCoreOnly = false,
-        AffinityMask = null,
-        GamingStandbyThresholdMB = 1024,
-        GamingFreeMemoryThresholdMB = 4096,
         AntiCheat = AntiCheatType.None, // No anti-cheat, no DRM in retail
         RecommendedTweaks = new[] { "DisableGameDvr", "DisablePowerThrottling", "OptimizeMmcss", "OptimizeWin32PrioritySeparation" },
         Notes = new[]
@@ -562,18 +647,11 @@ public static class BuiltInProfiles
         }
     };
 
-    public static GameSessionConfig MinecraftJava() => new()
+    public static BuiltInGame MinecraftJava() => new()
     {
         Id = "minecraft-java",
         DisplayName = "Minecraft: Java Edition",
         ProcessNames = new[] { "javaw.exe" },
-        LauncherProcessNames = new[] { "MinecraftLauncher.exe" },
-        GamePriority = ProcessPriorityClass.High,
-        LauncherPriority = ProcessPriorityClass.BelowNormal,
-        IntelHybridPCoreOnly = true,
-        AffinityMask = null,
-        GamingStandbyThresholdMB = 512,
-        GamingFreeMemoryThresholdMB = 1024,
         AntiCheat = AntiCheatType.None, // Server-side only (NoCheatPlus, GrimAC)
         RecommendedTweaks = new[] { "DisableGameDvr", "DisablePowerThrottling", "OptimizeMmcss", "OptimizeWin32PrioritySeparation" },
         Notes = new[]
@@ -597,18 +675,11 @@ public static class BuiltInProfiles
         }
     };
 
-    public static GameSessionConfig FinalFantasyXiv() => new()
+    public static BuiltInGame FinalFantasyXiv() => new()
     {
         Id = "final-fantasy-xiv",
         DisplayName = "Final Fantasy XIV",
         ProcessNames = new[] { "ffxiv_dx11.exe" },
-        LauncherProcessNames = new[] { "ffxivlauncher64.exe", "ffxivboot64.exe" },
-        GamePriority = ProcessPriorityClass.High,
-        LauncherPriority = ProcessPriorityClass.BelowNormal,
-        IntelHybridPCoreOnly = true,
-        AffinityMask = null,
-        GamingStandbyThresholdMB = 1024,
-        GamingFreeMemoryThresholdMB = 8192,
         AntiCheat = AntiCheatType.None, // No client-side anti-cheat
         RecommendedTweaks = new[] { "DisableGameDvr", "DisablePowerThrottling", "OptimizeMmcss", "OptimizeWin32PrioritySeparation", "DisableHags", "DisableMpo" },
         Notes = new[]

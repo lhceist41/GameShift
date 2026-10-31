@@ -46,9 +46,6 @@ public class SettingsViewModel : INotifyPropertyChanged
     // App mode
     private bool _advancedMode;
 
-    // Game Profiles fields
-    private bool _gameProfilesEnabled;
-
     private bool _isDirty;
     private string _statusMessage = "";
 
@@ -138,13 +135,6 @@ public class SettingsViewModel : INotifyPropertyChanged
     {
         get => _pingTarget;
         set { if (_pingTarget != value) { _pingTarget = value; IsDirty = true; OnPropertyChanged(); } }
-    }
-
-    // ── Game Profiles properties ────────────────────────────────────
-    public bool GameProfilesEnabled
-    {
-        get => _gameProfilesEnabled;
-        set { if (_gameProfilesEnabled != value) { _gameProfilesEnabled = value; IsDirty = true; OnPropertyChanged(); } }
     }
 
     public bool EnableLogging
@@ -245,10 +235,6 @@ public class SettingsViewModel : INotifyPropertyChanged
         // App mode
         _advancedMode = settings.AdvancedMode;
 
-        // Game Profiles
-        var gp = settings.GameProfiles ?? new GameProfileSettings();
-        _gameProfilesEnabled = gp.Enabled;
-
         IsDirty = false;
         StatusMessage = "";
 
@@ -268,7 +254,6 @@ public class SettingsViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(PingTarget));
         OnPropertyChanged(nameof(AdvancedMode));
         OnPropertyChanged(nameof(IsEasyMode));
-        OnPropertyChanged(nameof(GameProfilesEnabled));
     }
 
     /// <summary>
@@ -293,10 +278,6 @@ public class SettingsViewModel : INotifyPropertyChanged
         settings.SuppressNotificationsDuringGaming = SuppressNotificationsDuringGaming;
         settings.GlobalHotkeyBinding = GlobalHotkeyBinding;
         settings.PingTarget = PingTarget;
-
-        // Game Profiles
-        settings.GameProfiles ??= new GameProfileSettings();
-        settings.GameProfiles.Enabled = GameProfilesEnabled;
 
         SettingsManager.Save(settings);
 

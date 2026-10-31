@@ -1,4 +1,5 @@
 using System.Text.Json;
+using GameShift.Core.GameProfiles;
 using GameShift.Core.Optimization;
 using GameShift.Core.Profiles;
 using Xunit;
@@ -141,11 +142,10 @@ public class GameProfileTests
     {
         foreach (var exe in new[]
                  {
-                     CompetitivePresets.Overwatch2Exe, CompetitivePresets.ValorantExe, CompetitivePresets.LeagueExe,
-                     CompetitivePresets.DeadlockExe, CompetitivePresets.OsuExe,
+                     "Overwatch.exe", "VALORANT-Win64-Shipping.exe", "League of Legends.exe", "project8.exe", "osu!.exe",
                  })
         {
-            var preset = CompetitivePresets.GetPresetProfile(exe)!;
+            var preset = BuiltInProfiles.GetPresetProfile(exe)!;
 
             Assert.Equal(GameProfile.CurrentSchemaVersion, preset.SchemaVersion);
             Assert.False(preset.SetTimerResolution, exe);

@@ -185,14 +185,6 @@ public class AppSettings
     /// </summary>
     public SystemTweaksSettings? SystemTweaks { get; set; }
 
-    // -- Game Profiles ------------------------------------------------
-
-    /// <summary>
-    /// Game Profiles settings for per-game optimizations.
-    /// Null means never configured.
-    /// </summary>
-    public GameProfileSettings? GameProfiles { get; set; }
-
     // -- Window Position Persistence ----------------------------------------
 
     /// <summary>Window left position in device-independent pixels.</summary>
@@ -333,37 +325,4 @@ public class TweakState
 
     /// <summary>When the tweak was applied.</summary>
     public DateTime AppliedAt { get; set; }
-}
-
-/// <summary>
-/// Settings for the Game Profiles system - per-game optimization profiles.
-/// </summary>
-public class GameProfileSettings
-{
-    /// <summary>Master toggle for the Game Profiles system.</summary>
-    public bool Enabled { get; set; } = true;
-
-    /// <summary>
-    /// Per-profile user customizations (overrides built-in defaults).
-    /// Key = profile ID (e.g., "overwatch2").
-    /// </summary>
-    public Dictionary<string, GameProfileOverrides> ProfileOverrides { get; set; } = new();
-
-    /// <summary>User-created custom profiles.</summary>
-    public List<GameProfiles.GameSessionConfig> CustomProfiles { get; set; } = new();
-}
-
-/// <summary>
-/// User overrides for a built-in or custom game profile.
-/// </summary>
-public class GameProfileOverrides
-{
-    /// <summary>Whether this profile is enabled.</summary>
-    public bool Enabled { get; set; } = true;
-
-    /// <summary>Custom CPU affinity mask override. Null = use profile default.</summary>
-    public long? CustomAffinityMask { get; set; }
-
-    /// <summary>Custom process priority override. Null = use profile default.</summary>
-    public string? CustomPriority { get; set; }
 }

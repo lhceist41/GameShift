@@ -774,12 +774,11 @@ public class GameDetector : IDisposable
     ///
     /// The gate is deliberately closed by default: a non-empty name that is not a known helper, not
     /// ambiguous, and matched by EXACTLY ONE built-in profile that has opted in via
-    /// <see cref="GameSessionConfig.AllowNameOnlyFallback"/>. Zero or multiple matches fail closed.
+    /// <see cref="BuiltInGame.AllowNameOnlyFallback"/>. Zero or multiple matches fail closed.
     ///
-    /// Eligibility is read from <see cref="BuiltInProfiles"/> directly and never from
-    /// <c>GameProfileManager</c>: that list includes persisted user-editable profiles, and the flag
-    /// is a security decision, not a preference. Known games are not scanned by filename either -
-    /// a filename is not an identity.
+    /// Eligibility is read from <see cref="BuiltInProfiles"/> only and never from a user-editable
+    /// profile: the flag is a security decision, not a preference. Known games are not scanned by
+    /// filename either - a filename is not an identity.
     /// </summary>
     private GameInfo? MatchProcessByNameOnly(int processId, string processName)
     {
@@ -793,7 +792,7 @@ public class GameDetector : IDisposable
             return null;
 
         // Single materialization of the built-in list per attempt.
-        GameSessionConfig? eligible = null;
+        BuiltInGame? eligible = null;
         foreach (var builtIn in BuiltInProfiles.GetAll())
         {
             if (!builtIn.AllowNameOnlyFallback)
@@ -860,7 +859,7 @@ public class GameDetector : IDisposable
     /// and a later readable observation may fill an empty one but never replace one already known.
     /// This record is session/runtime state and is deliberately not written to KnownGamesStore.
     /// </summary>
-    private GameInfo ResolveBuiltInRecord(GameSessionConfig builtIn, string? observedRootedPath)
+    private GameInfo ResolveBuiltInRecord(BuiltInGame builtIn, string? observedRootedPath)
     {
         var builtInId = GameInfo.GenerateId("builtin", builtIn.Id);
 

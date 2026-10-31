@@ -1,4 +1,5 @@
 using GameShift.Core.Config;
+using GameShift.Core.GameProfiles;
 using GameShift.Core.Monitoring;
 using GameShift.Core.Optimization;
 using GameShift.Core.Profiles;
@@ -106,8 +107,8 @@ public class DetectionOrchestrator
         DpcLatencyMonitor? dpcMonitor = null,
         HardwareScanResult? hardwareScan = null)
         : this(detector, engine, store, scanners, profileManager, dpcMonitor, hardwareScan,
-            CompetitivePresets.GetGameActions, detector.StartMonitoring, detector.StopMonitoring,
-            () => FirewallRuleAction.RemoveLeftovers(CompetitivePresets.GetFirewallRules()))
+            BuiltInProfiles.GetPresetTips, detector.StartMonitoring, detector.StopMonitoring,
+            () => FirewallRuleAction.RemoveLeftovers(BuiltInProfiles.GetFirewallLeftovers()))
     {
     }
 
@@ -297,7 +298,7 @@ public class DetectionOrchestrator
 
         GameProfile profile;
 
-        if (CompetitivePresets.IsPresetGame(executableName))
+        if (BuiltInProfiles.FindPresetGame(executableName) != null)
         {
             // Preset game - check for existing custom profile
             profile = _profileManager.GetProfileForGame(e.GameId);
@@ -305,7 +306,7 @@ public class DetectionOrchestrator
             if (profile.Id == "default")
             {
                 // No custom profile on disk - auto-create from preset
-                var presetProfile = CompetitivePresets.GetPresetProfile(executableName);
+                var presetProfile = BuiltInProfiles.GetPresetProfile(executableName);
                 if (presetProfile != null)
                 {
                     presetProfile.Id = e.GameId;
@@ -317,14 +318,14 @@ public class DetectionOrchestrator
                 }
                 else
                 {
-                    // Preset returned null (shouldn't happen if IsPresetGame is true) - fall back to default
-                    _logger.Warning("IsPresetGame returned true but GetPresetProfile returned null for {ExecutableName}", executableName);
+                    // Preset returned null (shouldn't happen once FindPresetGame found it) - fall back to default
+                    _logger.Warning("FindPresetGame found a preset but GetPresetProfile returned null for {ExecutableName}", executableName);
                 }
             }
             else
             {
                 // Custom profile already exists - preserve it unchanged
-                _logger.Information("Using existing custom profile for {GameName}, preset actions will still apply", e.GameName);
+                _logger.Information("Using existing custom profile for {GameName}, preset tips will still apply", e.GameName);
             }
 
             // Populate GameActions at runtime regardless of auto-creation or existing profile
@@ -351,7 +352,7 @@ public class DetectionOrchestrator
         // path instead of a direct priority/affinity write the anti-cheat would just block.
         if (profile.AntiCheat == AntiCheatType.None)
         {
-            var builtIn = GameShift.Core.GameProfiles.BuiltInProfiles.GetAll().FirstOrDefault(b =>
+            var builtIn = BuiltInProfiles.GetAll().FirstOrDefault(b =>
                 b.ProcessNames.Any(pn => string.Equals(pn, executableName, StringComparison.OrdinalIgnoreCase)));
             if (builtIn != null && builtIn.AntiCheat != AntiCheatType.None)
             {

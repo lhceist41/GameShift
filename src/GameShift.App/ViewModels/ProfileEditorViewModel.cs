@@ -5,9 +5,9 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using GameShift.Core.Config;
 using GameShift.Core.Detection;
+using GameShift.Core.GameProfiles;
 using GameShift.Core.Monitoring;
 using GameShift.Core.Profiles;
-using GameShift.Core.Profiles.GameActions;
 
 namespace GameShift.App.ViewModels;
 
@@ -199,14 +199,6 @@ public class ProfileEditorViewModel : INotifyPropertyChanged
     /// <summary>Whether there are any game-specific actions to display.</summary>
     public bool HasGameActions { get => _hasGameActions; set { _hasGameActions = value; OnPropertyChanged(); } }
 
-    private int _activeActionCount;
-    /// <summary>Number of Tier 1 hardware-matched actions (auto-applied).</summary>
-    public int ActiveActionCount { get => _activeActionCount; set { _activeActionCount = value; OnPropertyChanged(); } }
-
-    private int _totalActionCount;
-    /// <summary>Total number of game actions across all tiers.</summary>
-    public int TotalActionCount { get => _totalActionCount; set { _totalActionCount = value; OnPropertyChanged(); } }
-
     /// <summary>
     /// Creates the profile editor ViewModel.
     /// </summary>
@@ -336,20 +328,17 @@ public class ProfileEditorViewModel : INotifyPropertyChanged
         if (game == null) return;
 
         var exeName = Path.GetFileName(game.ExecutablePath);
-        if (string.IsNullOrEmpty(exeName) || !CompetitivePresets.IsPresetGame(exeName)) return;
+        var preset = string.IsNullOrEmpty(exeName) ? null : BuiltInProfiles.FindPresetGame(exeName)?.Preset;
+        if (preset == null) return;
 
         IsPresetGame = true;
 
-        var metadata = CompetitivePresets.GetMetadata(exeName);
-        if (metadata != null)
-        {
-            HasAntiCheat = metadata.HasAntiCheat;
-            AntiCheatBadge = metadata.AntiCheatName;
-            VbsSafetyActive = !metadata.VbsSafeToDisable;
-            VbsSafetyReason = metadata.VbsSafetyReason;
-        }
+        HasAntiCheat = preset.HasAntiCheat;
+        AntiCheatBadge = preset.AntiCheatName;
+        VbsSafetyActive = !preset.VbsSafeToDisable;
+        VbsSafetyReason = preset.VbsSafetyReason;
 
-        var actions = CompetitivePresets.GetGameActions(exeName);
+        var actions = BuiltInProfiles.GetPresetTips(exeName!);
         var hw = App.Services.HardwareScan;
 
         foreach (var action in actions)
@@ -366,8 +355,6 @@ public class ProfileEditorViewModel : INotifyPropertyChanged
         }
 
         HasGameActions = GameActions.Count > 0;
-        ActiveActionCount = GameActions.Count(a => a.Tier == 1 && a.IsHardwareMatched);
-        TotalActionCount = GameActions.Count;
     }
 
     /// <summary>

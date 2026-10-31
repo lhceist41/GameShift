@@ -78,16 +78,15 @@ Changes that persist across reboots and can be reverted at any time.
 |:------|:-------------|
 | **GPU Scheduling (HAGS)** | Turns hardware-accelerated GPU scheduling on or off as recommended for your graphics card, and warns before turning it off where Frame Generation needs it. Requires a reboot. |
 | **Memory Integrity (VBS/HVCI)** | The Dashboard banner can turn Memory Integrity off, which can cost a few percent of FPS on average when it is on. Not offered while FACEIT Anti-Cheat or Riot Vanguard is installed: FACEIT and Vanguard's On-Demand mode require it. Windows does not turn it back on for you; use Windows Security > Device security > Core isolation, or Restore All. Requires a reboot. |
-| **Full-Screen Optimizations** | Per-game disable via GameConfigStore registry. |
 
 Earlier versions also offered Game DVR, NTFS, kernel memory, page file, power throttling, memory compression, large pages, multimedia scheduler, kernel boot (BCDEdit) and CPU core reservation tweaks. They can no longer be applied: we found no measurement that shows a benefit on current Windows, or Microsoft documents the boot settings as debugging options. The multi-plane overlay, USB selective suspend and MSI mode fixes moved to DPC Doctor. Anything you applied with an earlier version can still be undone with **Restore All GameShift Tweaks** in Settings.
 
 ### Game Library & Profiles
 
 - **Auto-detection** from Steam, Epic Games, GOG Galaxy, and Xbox/Game Pass install directories, plus a built-in database of 80+ popular game executables as fallback
-- **19 built-in game profiles** with hardware-specific tuning and anti-cheat metadata for titles including Overwatch 2, Valorant, CS2, Fortnite, Apex Legends, Deadlock, osu!, Elden Ring, Arknights: Endfield, Wuthering Waves, and more
+- **19 built-in games** with anti-cheat metadata, notes and recommended tweaks for titles including Overwatch 2, Valorant, CS2, Fortnite, Apex Legends, Deadlock, osu!, Elden Ring, Arknights: Endfield, Wuthering Waves, and more
 - **Per-game toggle control** for every optimization
-- **Game-specific tips** shown as toast notifications on first launch (38 built-in tips covering performance settings, anti-cheat quirks, and common pitfalls)
+- **Game-specific tips** for Overwatch 2, Valorant, League of Legends, Deadlock and osu!, each shown once as a toast notification (performance settings, anti-cheat quirks, and common pitfalls)
 - **Manual game adding** for any executable not in a scanned library
 
 ---
@@ -174,9 +173,10 @@ dotnet run --project src/GameShift.App
 ### What GameShift changes (and how it reverts)
 
 - **Services**  - Temporarily pauses non-essential services. Original start types recorded in journal, restored on session end.
-- **Registry keys**  - Writes IFEO entries and a few per-game values for built-in games. All original values captured before any write and verified after revert.
+- **Registry keys**  - Writes IFEO entries. All original values captured before any write and verified after revert.
 - **Power plans**  - Switches from Balanced to High Performance during a game. Your original plan GUID is saved and restored.
 - **Process priority & scheduling**  - Elevates game priority and assigns CPU sets. All released on game exit.
+- **Firewall**  - GameShift adds no firewall rules. At startup it removes the allow rules earlier versions added for Overwatch 2, Valorant, League of Legends and Deadlock.
 - **BCD settings**  - Only turning Memory Integrity off changes a boot setting (`hypervisorlaunchtype`), and turning it back on restores it. Kernel tuning values an earlier version set are undone by Restore All while they still have the value GameShift set.
 - **Interrupt settings**  - DPC Doctor can switch the GPU to MSI mode, with rollback. Interrupt changes an earlier version made are undone by Restore All.
 

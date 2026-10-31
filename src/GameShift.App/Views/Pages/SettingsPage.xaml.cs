@@ -318,12 +318,9 @@ public partial class SettingsPage : Page
 
     private void PopulateProfilesList()
     {
-        var mgr = App.Services.GameProfileMgr;
-        if (mgr == null) return;
-
         ProfilesList.Items.Clear();
 
-        foreach (var profile in mgr.GetAllProfiles())
+        foreach (var profile in BuiltInProfiles.GetAll())
         {
             var card = new Border
             {
@@ -337,26 +334,14 @@ public partial class SettingsPage : Page
 
             var mainStack = new StackPanel();
 
-            // Header with name and priority
-            var headerPanel = new DockPanel { Margin = new Thickness(0, 0, 0, 4) };
-            headerPanel.Children.Add(new TextBlock
+            mainStack.Children.Add(new TextBlock
             {
                 Text = profile.DisplayName,
                 FontWeight = FontWeights.SemiBold,
                 FontSize = 14,
-                Foreground = (Brush)FindResource("GS.Text.Primary")
+                Foreground = (Brush)FindResource("GS.Text.Primary"),
+                Margin = new Thickness(0, 0, 0, 4)
             });
-            var priorityText = new TextBlock
-            {
-                Text = $"Priority: {profile.GamePriority}",
-                FontSize = 11,
-                Foreground = (Brush)FindResource("GS.Text.Secondary"),
-                HorizontalAlignment = HorizontalAlignment.Right,
-                VerticalAlignment = VerticalAlignment.Center
-            };
-            DockPanel.SetDock(priorityText, Dock.Right);
-            headerPanel.Children.Add(priorityText);
-            mainStack.Children.Add(headerPanel);
 
             // Process names
             mainStack.Children.Add(new TextBlock
@@ -366,21 +351,6 @@ public partial class SettingsPage : Page
                 Foreground = (Brush)FindResource("GS.Text.Secondary"),
                 Margin = new Thickness(0, 0, 0, 2)
             });
-
-            // Features summary
-            var features = new List<string>();
-            if (profile.IntelHybridPCoreOnly) features.Add("P-Core Only");
-            if (profile.LauncherPriority != null) features.Add($"Launcher \u2192 {profile.LauncherPriority}");
-            if (features.Count > 0)
-            {
-                mainStack.Children.Add(new TextBlock
-                {
-                    Text = string.Join(" \u00B7 ", features),
-                    FontSize = 11,
-                    Foreground = (Brush)FindResource("GS.Accent.Primary"),
-                    Margin = new Thickness(0, 2, 0, 0)
-                });
-            }
 
             // Notes (collapsible via Expander)
             if (profile.Notes.Length > 0)

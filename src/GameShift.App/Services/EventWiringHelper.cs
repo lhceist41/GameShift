@@ -48,13 +48,6 @@ public static class EventWiringHelper
             services.Detector.AllGamesStopped += monitorResumeAllGamesStopped;
         }
 
-        // Wire Game Profile manager events
-        if (services.Detector != null && services.GameProfileMgr != null)
-        {
-            services.Detector.GameStarted += services.GameProfileMgr.OnGameStarted;
-            services.Detector.AllGamesStopped += services.GameProfileMgr.OnAllGamesStopped;
-        }
-
         return new EventSubscriptions
         {
             MonitorPauseGameStarted = monitorPauseGameStarted,
@@ -76,12 +69,6 @@ public static class EventWiringHelper
             if (subs.MonitorPauseGameStarted != null) services.Detector.GameStarted -= subs.MonitorPauseGameStarted;
             if (subs.MonitorResumeAllGamesStopped != null) services.Detector.AllGamesStopped -= subs.MonitorResumeAllGamesStopped;
             if (subs.MarkDirtyHandler != null) services.Detector.ProcessSpawned -= subs.MarkDirtyHandler;
-        }
-
-        if (services.GameProfileMgr != null)
-        {
-            services.Detector.GameStarted -= services.GameProfileMgr.OnGameStarted;
-            services.Detector.AllGamesStopped -= services.GameProfileMgr.OnAllGamesStopped;
         }
     }
 }

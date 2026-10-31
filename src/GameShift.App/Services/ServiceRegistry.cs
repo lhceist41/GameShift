@@ -1,6 +1,5 @@
 using GameShift.Core.Config;
 using GameShift.Core.Detection;
-using GameShift.Core.GameProfiles;
 using GameShift.Core.Journal;
 using GameShift.Core.Monitoring;
 using GameShift.Core.Optimization;
@@ -31,7 +30,6 @@ public class ServiceRegistry
     public DpcTraceEngine? DpcTrace { get; set; }
     public DpcFixEngine? DpcFix { get; set; }
     public SystemTweaksManager? TweaksMgr { get; set; }
-    public GameProfileManager? GameProfileMgr { get; set; }
 
     /// <summary>
     /// Read-only journal reader used by the App layer to surface boot-recovery warnings

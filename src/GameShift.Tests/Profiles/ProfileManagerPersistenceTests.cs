@@ -30,7 +30,6 @@ public class ProfileManagerPersistenceTests
             // Competitive is the non-default tier (the default profile is Casual), so this proves
             // the value actually round-tripped rather than matching the default.
             Intensity = OptimizationIntensity.Competitive,
-            MemoryThresholdMB = 4096,
             AntiCheat = AntiCheatType.BattlEye,
             ExecutableName = "test.exe"
         };
@@ -41,7 +40,6 @@ public class ProfileManagerPersistenceTests
         Assert.Equal("steam_12345", loaded.Id);
         Assert.Equal("Test Game", loaded.GameName);
         Assert.Equal(OptimizationIntensity.Competitive, loaded.Intensity);
-        Assert.Equal(4096, loaded.MemoryThresholdMB);
         Assert.Equal(AntiCheatType.BattlEye, loaded.AntiCheat);
         Assert.Equal("test.exe", loaded.ExecutableName);
     }
@@ -115,7 +113,10 @@ public class ProfileManagerPersistenceTests
         Assert.True(resaved.EnableCompetitiveMode);
         Assert.False(resaved.EnableGpuOptimization);
         Assert.False(resaved.UnparkCpuCores);
-        Assert.Equal(3072, resaved.MemoryThresholdMB);
+
+        // The memory threshold had no reader; it loads, and the save drops it.
+        using var saved = JsonDocument.Parse(File.ReadAllText(Path.Combine(temp.Path, "steam_777.json")));
+        Assert.False(saved.RootElement.TryGetProperty("MemoryThresholdMB", out _));
     }
 
     [Fact]
@@ -236,6 +237,8 @@ public class ProfileManagerPersistenceTests
     private static readonly string[] MigratedKeys =
         { "SetTimerResolution", "UsePerformanceCoresOnly", "PinToVCacheCcd", "SchemaVersion" };
 
+    private static readonly string[] RemovedKeys = { "MemoryThresholdMB" };
+
     [Fact]
     public void Version0Profile_LoadsWithTimerAndPinningOff_AndIsSavedAtVersion1()
     {
@@ -271,6 +274,11 @@ public class ProfileManagerPersistenceTests
         {
             if (MigratedKeys.Contains(property.Name))
                 continue;
+            if (RemovedKeys.Contains(property.Name))
+            {
+                Assert.False(saved.RootElement.TryGetProperty(property.Name, out _), property.Name);
+                continue;
+            }
             Assert.True(saved.RootElement.TryGetProperty(property.Name, out var value), property.Name);
             Assert.True(JsonElement.DeepEquals(property.Value, value), property.Name);
         }

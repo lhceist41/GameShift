@@ -23,7 +23,7 @@ namespace GameShift.Tests.Detection;
 public sealed class DetectionOrchestratorSessionTests : IAsyncLifetime
 {
     private static readonly string PresetPath =
-        Path.Combine(@"C:\Games\Overwatch\_retail_", CompetitivePresets.Overwatch2Exe);
+        Path.Combine(@"C:\Games\Overwatch\_retail_", "Overwatch.exe");
     private const string OtherPath = @"C:\Games\Other\other.exe";
 
     private static readonly string[] SessionApplied =

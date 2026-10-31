@@ -157,7 +157,7 @@ public class GameProfile : IJsonOnDeserializing
     // ── v2 Game-Specific Actions ───────────────────────────────────
 
     /// <summary>
-    /// Runtime-only game-specific actions populated by CompetitivePresets.
+    /// Runtime-only game-specific actions (the preset tips) populated from BuiltInProfiles.
     /// NOT serialized to profile JSON - actions are determined at runtime from executable name.
     /// This avoids polymorphic serialization complexity and keeps profile JSON backwards-compatible.
     /// </summary>
@@ -220,7 +220,6 @@ public class GameProfile : IJsonOnDeserializing
     public bool ForceMaxPerformancePowerMode { get; set; } = true;
     public bool OptimizeShaderCache { get; set; } = true;
     public bool EnableLowLatencyMode { get; set; } = true;
-    public int MemoryThresholdMB { get; set; } = 0;
 
     // ── Factory methods ───────────────────────────────────────────────
 
