@@ -219,6 +219,11 @@ public class GameDetectorMatchingTests
     [InlineData("setup.exe")]
     [InlineData("crashpad_handler.exe")]
     [InlineData("UECrashReporter.exe")]
+    [InlineData("EAAntiCheat.GameServiceLauncher.exe")]
+    [InlineData("EAAntiCheat.GameService.exe")]
+    [InlineData("EAAntiCheat.Installer.exe")]
+    [InlineData("SGuard64.exe")]
+    [InlineData("SGuardSvc64.exe")]
     public void OnProcessStarted_NonGameHelperUnderInstallDirectory_IsRejected(string helperExeName)
     {
         const string installDir = @"C:\SteamLibrary\steamapps\common\HelperHost";

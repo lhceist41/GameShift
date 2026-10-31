@@ -1,5 +1,6 @@
 using GameShift.Core.Journal;
 using GameShift.Core.Optimization;
+using GameShift.Core.Profiles;
 using Serilog.Core;
 using Xunit;
 
@@ -21,9 +22,21 @@ public class AntiCheatAndSuspendRecoveryTests
     [InlineData(AntiCheatType.Ricochet, true)]
     [InlineData(AntiCheatType.TencentACE, true)]
     [InlineData(AntiCheatType.Proprietary, true)]
+    [InlineData(AntiCheatType.EaJavelin, true)]
     public void IsKernelLevel_ClassifiesAntiCheats(AntiCheatType type, bool expected)
     {
         Assert.Equal(expected, AntiCheatDetector.IsKernelLevel(type));
+    }
+
+    [Fact]
+    public void EaJavelin_IsHandledLikeEasyAntiCheat()
+    {
+        var javelin = new GameProfile { AntiCheat = AntiCheatType.EaJavelin };
+        var eac = new GameProfile { AntiCheat = AntiCheatType.EasyAntiCheat };
+
+        Assert.Equal(AntiCheatDetector.IsKernelLevel(AntiCheatType.EasyAntiCheat), AntiCheatDetector.IsKernelLevel(AntiCheatType.EaJavelin));
+        Assert.True(eac.RequiresIfeoFallback);
+        Assert.Equal(eac.RequiresIfeoFallback, javelin.RequiresIfeoFallback);
     }
 
     [Theory]

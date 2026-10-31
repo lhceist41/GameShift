@@ -596,6 +596,8 @@ public class GameDetector : IDisposable
         "start_protected_game.exe",
         "easyanticheat.exe", "easyanticheat_eos.exe", "easyanticheat_setup.exe",
         "beservice.exe", "belauncher.exe", "battleye.exe",
+        "eaanticheat.gameservicelauncher.exe", "eaanticheat.gameservice.exe", "eaanticheat.installer.exe",
+        "sguard64.exe", "sguardsvc64.exe",
         "unrealcefsubprocess.exe", "unrealversionselector.exe",
         "vc_redist.x64.exe", "vc_redist.x86.exe", "vcredist_x64.exe", "vcredist_x86.exe",
         "dxsetup.exe", "setup.exe", "uninstall.exe",

@@ -84,9 +84,9 @@ Earlier versions also offered Game DVR, NTFS, kernel memory, page file, power th
 ### Game Library & Profiles
 
 - **Auto-detection** from Steam, Epic Games, GOG Galaxy, and Xbox/Game Pass install directories, plus a built-in database of 80+ popular game executables as fallback
-- **19 built-in games** with anti-cheat metadata, notes and recommended tweaks for titles including Overwatch 2, Valorant, CS2, Fortnite, Apex Legends, Deadlock, osu!, Elden Ring, Arknights: Endfield, Wuthering Waves, and more
+- **19 built-in games** with anti-cheat metadata, notes and recommended tweaks for titles including Overwatch, Valorant, CS2, Fortnite, Apex Legends, Deadlock, osu!, Elden Ring, Arknights: Endfield, Wuthering Waves, and more
 - **Per-game toggle control** for every optimization
-- **Game-specific tips** for Overwatch 2, Valorant, League of Legends, Deadlock and osu!, each shown once as a toast notification (performance settings, anti-cheat quirks, and common pitfalls)
+- **Game-specific tips** for Overwatch, Valorant, League of Legends, Deadlock and osu!, each shown once as a toast notification (performance settings, anti-cheat quirks, and common pitfalls)
 - **Manual game adding** for any executable not in a scanned library
 
 ---
@@ -110,7 +110,7 @@ The journal is written to `%ProgramData%\GameShift\state.json` with atomic write
 
 Registry changes are monitored in real time via `RegNotifyChangeKeyValue`. If an external process (Windows Update, group policy, another tool) modifies a managed setting during a gaming session, GameShift detects and re-applies it automatically.
 
-For games with kernel-level anti-cheat (EAC, BattlEye, RICOCHET, TencentACE), GameShift automatically falls back to IFEO (Image File Execution Options) registry-based settings instead of runtime API calls that the anti-cheat would block.
+For games with kernel-level anti-cheat (EAC, EA Javelin, BattlEye, RICOCHET, TencentACE), GameShift automatically falls back to IFEO (Image File Execution Options) registry-based settings instead of runtime API calls that the anti-cheat would block.
 
 ---
 
@@ -198,10 +198,11 @@ GameShift includes built-in anti-cheat detection and automatic compatibility adj
 | Anti-Cheat | Status | Approach |
 |:-----------|:-------|:---------|
 | **Riot Vanguard** (Valorant, LoL) | ✅ Fully compatible | GameShift does not turn off Memory Integrity (VBS/HVCI) while Vanguard is installed, because Vanguard's On-Demand mode requires it. |
-| **Easy Anti-Cheat** (Fortnite, Apex, Rust, Elden Ring) | ✅ Fully compatible | IFEO registry fallback for priority. |
-| **BattlEye** (Arknights: Endfield, PUBG) | ✅ Fully compatible | IFEO registry fallback. |
+| **Easy Anti-Cheat** (Fortnite, Rust, Elden Ring) | ✅ Fully compatible | IFEO registry fallback for priority. |
+| **EA Javelin** (Apex Legends) | ✅ Handled like Easy Anti-Cheat | IFEO registry fallback for priority. |
+| **BattlEye** (PUBG) | ✅ Fully compatible | IFEO registry fallback. |
 | **RICOCHET** (Call of Duty) | ✅ Fully compatible | IFEO registry fallback. |
-| **TencentACE** (Wuthering Waves) | ✅ Fully compatible | IFEO registry fallback. |
+| **TencentACE** (Wuthering Waves, Arknights: Endfield) | ✅ Fully compatible | IFEO registry fallback. |
 | **Valve Anti-Cheat** (CS2, Deadlock) | ✅ Fully compatible | User-mode only; no restrictions on system-level tools. |
 | **FACEIT AC** | ✅ Fully compatible | GameShift does not turn off Memory Integrity (VBS/HVCI) while FACEIT Anti-Cheat is installed, because FACEIT requires it. |
 

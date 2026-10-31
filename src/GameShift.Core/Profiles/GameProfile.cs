@@ -145,11 +145,12 @@ public class GameProfile : IJsonOnDeserializing
     /// <summary>
     /// Whether this game's anti-cheat blocks runtime SetPriorityClass/SetProcessAffinityMask calls,
     /// requiring IFEO registry-based fallback for priority and affinity.
-    /// True for EAC, BattlEye, RICOCHET, and TencentACE titles.
+    /// True for EAC, EA Javelin, BattlEye, RICOCHET, and TencentACE titles.
     /// </summary>
     [JsonIgnore]
     public bool RequiresIfeoFallback => AntiCheat is
         AntiCheatType.EasyAntiCheat or
+        AntiCheatType.EaJavelin or
         AntiCheatType.BattlEye or
         AntiCheatType.Ricochet or
         AntiCheatType.TencentACE;

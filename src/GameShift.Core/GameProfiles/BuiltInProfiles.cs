@@ -16,9 +16,7 @@ public static class BuiltInProfiles
     /// (case-insensitive), or null if none is.
     /// </summary>
     public static BuiltInGame? FindPresetGame(string executableName) =>
-        GetAll().FirstOrDefault(game =>
-            game.Preset != null &&
-            string.Equals(game.Preset.ExecutableName, executableName, StringComparison.OrdinalIgnoreCase));
+        GetAll().FirstOrDefault(game => game.Preset != null && game.Preset.IsSelectedBy(executableName));
 
     /// <summary>
     /// Returns the profile a preset creates on first detection, or null if
@@ -31,10 +29,15 @@ public static class BuiltInProfiles
         if (game?.Preset == null)
             return null;
 
+        // The apply modules check the running process against this name, so it is the name that
+        // selected the preset, in the table's spelling.
+        var selectedBy = new[] { game.Preset.ExecutableName }.Concat(game.Preset.OtherExecutableNames)
+            .First(name => string.Equals(name, executableName, StringComparison.OrdinalIgnoreCase));
+
         return new GameProfile
         {
             GameName = game.DisplayName,
-            ExecutableName = game.Preset.ExecutableName,
+            ExecutableName = selectedBy,
             AntiCheat = game.AntiCheat,
             SuppressServices = true,
             SwitchPowerPlan = true,
@@ -80,18 +83,18 @@ public static class BuiltInProfiles
     public static BuiltInGame Overwatch2() => new()
     {
         Id = "overwatch2",
-        DisplayName = "Overwatch 2",
+        DisplayName = "Overwatch",
         ProcessNames = new[] { "Overwatch.exe" },
         AntiCheat = AntiCheatType.None, // Server-side ML detection only (RICOCHET)
         RecommendedTweaks = new[] { "DisableGameDvr", "DisableHags", "DisableMpo", "OptimizeMmcss", "OptimizeWin32PrioritySeparation", "DisablePowerThrottling" },
         Notes = new[]
         {
-            "OW2 has a documented memory leak - RAM usage climbs from ~3GB to 7-8GB over extended sessions.",
+            "Overwatch has a documented memory leak - RAM usage climbs from ~3GB to 7-8GB over extended sessions.",
             "Battle.net launcher consumes significant CPU.",
-            "On Intel hybrid CPUs (12th-14th gen), E-cores hurt OW2 performance.",
-            "NVIDIA users: Enable Reflex (On + Boost) in OW2 settings. Use Fullscreen (not Borderless). Set Shader Cache to 10GB in NVIDIA Control Panel.",
+            "On Intel hybrid CPUs (12th-14th gen), E-cores hurt Overwatch performance.",
+            "NVIDIA users: Enable Reflex (On + Boost) in Overwatch settings. Use Fullscreen (not Borderless). Set Shader Cache to 10GB in NVIDIA Control Panel.",
             "Known bug: Alt-tabbing breaks Reduce Buffering - toggle it OFF then ON after returning to game.",
-            "Mouse polling rate: Use 1000Hz. OW2 drops from 600 to 60 FPS at 8000Hz polling."
+            "Mouse polling rate: Use 1000Hz. Overwatch drops from 600 to 60 FPS at 8000Hz polling."
         },
         Preset = new()
         {
@@ -103,33 +106,33 @@ public static class BuiltInProfiles
             Tips = new OneTimeTipAction[]
             {
                 new("ow2_reflex",
-                    "OW2 TIP: Enable NVIDIA Reflex in Video settings. Set to 'On + Boost' for up to 50% lower system latency.",
+                    "OVERWATCH TIP: Enable NVIDIA Reflex in Video settings. Set to 'On + Boost' for up to 50% lower system latency.",
                     hw => hw.GpuVendor == GpuVendor.Nvidia,
                     "NVIDIA GPU only"),
                 new("ow2_antilag",
-                    "OW2 WARNING: AMD Anti-Lag+ causes instability and crashes in Overwatch 2 (especially in Stadium mode). Use the in-game 'Reduce Buffering' setting instead for latency reduction.",
+                    "OVERWATCH WARNING: AMD Anti-Lag+ causes instability and crashes in Overwatch (especially in Stadium mode). Use the in-game 'Reduce Buffering' setting instead for latency reduction.",
                     hw => hw.GpuVendor == GpuVendor.Amd,
                     "AMD GPU only"),
                 new("ow2_fullscreen",
-                    "OW2 TIP: Use Fullscreen (not Borderless). Borderless adds 20+ ms input lag through Windows DWM forced triple buffering. Enable 'Reduce Buffering' in Video settings."),
+                    "OVERWATCH TIP: Use Fullscreen (not Borderless). Borderless adds 20+ ms input lag through Windows DWM forced triple buffering. Enable 'Reduce Buffering' in Video settings."),
                 new("ow2_render_scale",
-                    "OW2 TIP: Set Render Scale to 100% (not Automatic). The 'Automatic' setting can supersample above 100%, wasting GPU headroom that could be used for higher FPS."),
+                    "OVERWATCH TIP: Set Render Scale to 100% (not Automatic). The 'Automatic' setting can supersample above 100%, wasting GPU headroom that could be used for higher FPS."),
                 new("ow2_memory_leak",
-                    "OW2 TIP: Overwatch 2 has a known memory leak - RAM usage climbs over extended sessions. Restart the game every 1-2 hours during long play sessions to avoid performance degradation."),
+                    "OVERWATCH TIP: Overwatch has a known memory leak - RAM usage climbs over extended sessions. Restart the game every 1-2 hours during long play sessions to avoid performance degradation."),
                 new("ow2_polling_rate",
-                    "OW2 TIP: Mouse polling rates above 4000 Hz cause severe FPS drops in OW2 (8000 Hz can drop FPS from 600 to 60). Use 1000 Hz for maximum stability."),
+                    "OVERWATCH TIP: Mouse polling rates above 4000 Hz cause severe FPS drops in Overwatch (8000 Hz can drop FPS from 600 to 60). Use 1000 Hz for maximum stability."),
                 new("ow2_hags",
-                    "OW2 TIP: HAGS results are mixed in OW2. Some configs see slightly better FPS and input latency, but HAGS + NVIDIA Reflex together can cause frame drops. Test both on and off for your hardware.",
+                    "OVERWATCH TIP: HAGS results are mixed in Overwatch. Some configs see slightly better FPS and input latency, but HAGS + NVIDIA Reflex together can cause frame drops. Test both on and off for your hardware.",
                     hw => hw.IsHagsEnabled,
                     "HAGS enabled"),
                 new("ow2_hybrid_cpu",
-                    "OW2 TIP: Intel 13th/14th gen users: ensure you have the latest BIOS/microcode update installed - these CPUs had documented instability issues.",
+                    "OVERWATCH TIP: Intel 13th/14th gen users: ensure you have the latest BIOS/microcode update installed - these CPUs had documented instability issues.",
                     hw => hw.IsHybridCpu,
                     "Intel hybrid CPU detected"),
                 new("ow2_alt_tab",
-                    "OW2 TIP: Alt-tabbing can cause hard freezes. Overlays commonly trigger this: turn off the Discord, Steam and NVIDIA overlays for Overwatch 2. If freezes persist, close MSI Afterburner and similar monitoring tools."),
+                    "OVERWATCH TIP: Alt-tabbing can cause hard freezes. Overlays commonly trigger this: turn off the Discord, Steam and NVIDIA overlays for Overwatch. If freezes persist, close MSI Afterburner and similar monitoring tools."),
                 new("ow2_nvidia_filters",
-                    "OW2 TIP: If you do not use them, turn off Game Filters and Photo Mode in the NVIDIA app; with them on, some games lose frame rate.",
+                    "OVERWATCH TIP: If you do not use them, turn off Game Filters and Photo Mode in the NVIDIA app; with them on, some games lose frame rate.",
                     hw => hw.GpuVendor == GpuVendor.Nvidia,
                     "NVIDIA GPU only")
             }
@@ -248,6 +251,7 @@ public static class BuiltInProfiles
         Preset = new()
         {
             ExecutableName = "project8.exe",
+            OtherExecutableNames = new[] { "deadlock.exe" },
             AntiCheatName = "VAC",
             FirewallLeftovers = new FirewallLeftoverRule[]
             {
@@ -262,7 +266,7 @@ public static class BuiltInProfiles
                 new("deadlock_launch",
                     "DEADLOCK TIP: Add '-high -novid' to Steam launch options for Deadlock to skip intro video and set high process priority."),
                 new("deadlock_pcores",
-                    "DEADLOCK TIP: Consider enabling 'Use Performance Cores Only' in your Deadlock profile for better frame consistency on Intel hybrid CPUs.",
+                    "DEADLOCK TIP: Consider turning on 'Pin the game to P-cores or the V-Cache CCD' in your Deadlock profile for better frame consistency on Intel hybrid CPUs.",
                     hw => hw.IsHybridCpu,
                     "Hybrid CPU detected"),
                 new("deadlock_vram",
@@ -333,7 +337,7 @@ public static class BuiltInProfiles
         Id = "arknights-endfield",
         DisplayName = "Arknights: Endfield",
         ProcessNames = new[] { "Endfield.exe" },
-        AntiCheat = AntiCheatType.BattlEye, // Uses ACE (Tencent) in a BattlEye-like variant
+        AntiCheat = AntiCheatType.TencentACE,
         RecommendedTweaks = new[] { "DisableGameDvr", "DisablePowerThrottling", "OptimizeMmcss" },
         Notes = new[]
         {
@@ -485,23 +489,23 @@ public static class BuiltInProfiles
         Id = "apex-legends",
         DisplayName = "Apex Legends",
         ProcessNames = new[] { "r5apex_dx12.exe", "r5apex.exe" },
-        // EAC keeps the image path unreadable on the game process, so a live Apex start can arrive
-        // with liveness proven but no path. Both process names are Apex-exclusive, which is what
-        // makes the name-only fallback safe here and nowhere else so far.
+        // The kernel anti-cheat keeps the image path unreadable on the game process, so a live Apex
+        // start can arrive with liveness proven but no path. Both process names are Apex-exclusive,
+        // which is what makes the name-only fallback safe here and nowhere else so far.
         AllowNameOnlyFallback = true,
-        AntiCheat = AntiCheatType.EasyAntiCheat,
+        AntiCheat = AntiCheatType.EaJavelin,
         RecommendedTweaks = new[] { "DisableGameDvr", "DisablePowerThrottling", "OptimizeMmcss", "OptimizeWin32PrioritySeparation", "DisableHags", "DisableMpo" },
         Notes = new[]
         {
             "Modified Source engine (Titanfall 2 fork) -- heavily main-thread-bound. Two threads carry most load while others are lightly utilized. CPU bottlenecks hard in endgame with many squads.",
-            "Uses Easy Anti-Cheat (EAC) -- KERNEL-LEVEL (Ring 0). EAC blocks direct SetProcessAffinityMask() and SetPriorityClass() on r5apex_dx12.exe. Priority set via IFEO registry. Affinity via parent process inheritance.",
-            "Priority workaround: set via registry at HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\r5apex_dx12.exe\\PerfOptions with DWORD CpuPriorityClass = 3. This is applied at process creation before EAC protection activates.",
+            "Uses EA Javelin Anticheat since September 2026 (it replaced Easy Anti-Cheat) -- KERNEL-LEVEL (Ring 0). Secure Boot is not required for Apex. GameShift treats it like Easy Anti-Cheat. Priority set via IFEO registry. Affinity via parent process inheritance.",
+            "Priority workaround: set via registry at HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\r5apex_dx12.exe\\PerfOptions with DWORD CpuPriorityClass = 3. This is applied at process creation before the anti-cheat protection activates.",
             "CRITICAL: r5apex_dx12.exe frequently fails to terminate after game exit, leaving a zombie process consuming 40%+ system memory. If you notice high RAM usage after closing Apex, check Task Manager and manually end the process.",
             "VRAM memory leak tied to texture streaming budget. VRAM usage climbs continuously regardless of configured cap. Setting texture budget to 'None' caps VRAM at ~2GB and prevents the leak.",
             "On AMD multi-CCD CPUs (5900X, 5950X, 7900X, 7950X), Apex has a documented visual jitter bug even when FPS/frametimes appear normal. Workaround: restrict affinity to a single CCD.",
             "DX12 only (DX11 removed late 2024). No DLSS, FSR, or XeSS support -- only Adaptive Resolution Scaling.",
             "NVIDIA Reflex natively supported (Off/On/On+Boost) since Season 16.",
-            "HAGS (Hardware Accelerated GPU Scheduling) causes severe stuttering in Apex, especially on AMD GPUs. Disabled by this profile.",
+            "HAGS (Hardware Accelerated GPU Scheduling) causes severe stuttering in Apex, especially on AMD GPUs. Turning it off is one of the recommended tweaks for this game.",
             "Server tick rate is 20Hz (confirmed by Respawn's April 2021 deep-dive, unchanged since). Nagle tweaks irrelevant -- gameplay uses UDP on ports 37000-40000.",
             "Config: videoconfig.txt at %USERPROFILE%\\Saved Games\\Respawn\\Apex\\local\\videoconfig.txt. Set to Read-Only after editing. autoexec.cfg at <Install Dir>\\cfg\\autoexec.cfg.",
             "Launch options: -novid +fps_max 0 -high -fullscreen. REMOVE -threads if present -- incorrect values hurt performance. FPS hard cap: 300.",
@@ -547,7 +551,7 @@ public static class BuiltInProfiles
             "Custom FromSoftware engine -- 1 main rendering thread + 7 worker threads. GPU is massively underutilized; CPU command list processing time exceeds GPU processing time in most frames. The primary stutter is the buffer swap/present instruction stalling for 60ms+ on the CPU.",
             "Uses Easy Anti-Cheat (EAC) -- KERNEL-LEVEL (Ring 0). EAC blocks direct SetProcessAffinityMask() and SetPriorityClass() on eldenring.exe. Priority via IFEO registry. Affinity via parent process inheritance through start_protected_game.exe.",
             "Priority workaround: set via registry at HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\eldenring.exe\\PerfOptions with DWORD CpuPriorityClass = 3. This is applied at process creation before EAC protection activates.",
-            "REMOVING CPU 0 FROM AFFINITY is the single most impactful optimization. Windows uses Core 0 for USB/HID interrupts, input polling, and kernel DPCs. When the main thread lands on CPU 0, interrupt contention causes severe frametime spikes. Requires ~25 second delay after launch (game needs CPU 0 during initialization). GameShift's affinity system applies immediately at detection -- for Elden Ring, manually removing CPU 0 after 25 seconds via Task Manager provides additional benefit.",
+            "REMOVING CPU 0 FROM AFFINITY is the single most impactful optimization. Windows uses Core 0 for USB/HID interrupts, input polling, and kernel DPCs. When the main thread lands on CPU 0, interrupt contention causes severe frametime spikes. Requires ~25 second delay after launch (game needs CPU 0 during initialization). GameShift's core pinning (the profile switch 'Pin the game to P-cores or the V-Cache CCD', off by default) applies at detection with no such delay -- for Elden Ring, manually removing CPU 0 after 25 seconds via Task Manager provides additional benefit.",
             "On Intel 12th-14th gen hybrid CPUs, Elden Ring shows the WORST stutter of any platform. PC Gamer Nsight analysis: 100ms+ spikes on i7-14700KF from E-core scheduling. P-core-only affinity + CPU 0 removal is critical.",
             "HARD 60 FPS CAP with game logic tied to framerate (inherited from Dark Souls 2 engine). Expected frame time: 16.67ms. Actual: regularly spikes to 30ms, severe stutters reach 60-100ms+.",
             "Fullscreen mode forces monitor to 60Hz even on higher-refresh panels. BORDERLESS WINDOWED is recommended -- allows native refresh rate, enables HAGS benefits, better alt-tab.",
@@ -557,7 +561,7 @@ public static class BuiltInProfiles
             "Multiplayer uses P2P (Peer-to-Peer). Steam P2P ports: TCP 27015, 27036; UDP 27015, 27031-27036. Open NAT recommended. Disabling IPv6 improves P2P stability.",
             "Config: C:\\Users\\<User>\\AppData\\Roaming\\EldenRing\\<SteamID>\\GraphicsConfig.xml (UTF-16 XML).",
             "EAC bypass (launching eldenring.exe directly) forces offline-only mode but gives 10-15 FPS improvement -- confirms EAC overhead is significant for this title.",
-            "Community CPU 0 affinity fix available on Nexus Mods. GameShift automates P-core affinity without requiring mods."
+            "Community CPU 0 affinity fix available on Nexus Mods. GameShift pins the game to P-cores without mods when 'Pin the game to P-cores or the V-Cache CCD' is turned on in the profile (off by default)."
         }
     };
 
@@ -574,7 +578,7 @@ public static class BuiltInProfiles
             "Uses Easy Anti-Cheat (EAC) -- KERNEL-LEVEL (Ring 0). Same restrictions as Elden Ring. Unlike base ER, EAC bypass is NOT viable since Nightreign is always-online multiplayer.",
             "Priority workaround: set via registry at HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\nightreign.exe\\PerfOptions with DWORD CpuPriorityClass = 3. This is applied at process creation before EAC protection activates.",
             "HARD 60 FPS CAP persists (pre-rendered cutscenes are 30 FPS). No native V-sync toggle -- causes tearing on some configs. AMD users may be locked to 30fps; fix by forcing V-sync off in Adrenalin (introduces tearing).",
-            "CPU 0 removal + P-core affinity applies identically to base Elden Ring. Same 25-second post-launch delay required. GameShift's affinity system applies immediately -- for best results, manually remove CPU 0 after 25 seconds via Task Manager.",
+            "CPU 0 removal + P-core affinity applies identically to base Elden Ring. Same 25-second post-launch delay required. GameShift's core pinning (the profile switch 'Pin the game to P-cores or the V-Cache CCD', off by default) applies at detection with no such delay -- for best results, manually remove CPU 0 after 25 seconds via Task Manager.",
             "Stutter is 'nowhere near as bad' as base Elden Ring but still present. Same GPU underutilization pattern.",
             "Always-online 3-player co-op roguelike -- network quality directly impacts core gameplay. P2P networking via Steam ports (TCP 27015, 27036; UDP 27015, 27031-27036). Open NAT critical.",
             "No native DLSS, FSR, XeSS, or NVIDIA Reflex. Third-party NRSS mod adds these but requires EAC disabled (not viable for online play).",
@@ -656,8 +660,8 @@ public static class BuiltInProfiles
         RecommendedTweaks = new[] { "DisableGameDvr", "DisablePowerThrottling", "OptimizeMmcss", "OptimizeWin32PrioritySeparation" },
         Notes = new[]
         {
-            "Java-based game - runs as javaw.exe. GameShift identifies Minecraft by checking the command line of javaw.exe processes for 'MojangTricksIntelDriversForPerformance' or Minecraft class names (net.minecraft.client.main.Main, net.fabricmc, cpw.mods).",
-            "PROCESS DETECTION LIMITATION: javaw.exe is shared by ALL Java applications. Process-name-only detection will false-positive on IntelliJ, Jenkins, etc. Correct detection requires command-line inspection. Detection strings: PRIMARY 'MojangTricksIntelDriversForPerformance' (all official launches), FALLBACK 'net.minecraft.client.main.Main' (vanilla), 'net.fabricmc' (Fabric), 'cpw.mods' (Forge/NeoForge 1.17+), 'net.minecraft.launchwrapper.Launch' (Forge legacy ≤1.12.2). Bedrock Edition (Minecraft.Windows.exe) is a completely separate game - excluded from this profile.",
+            "Java-based game - runs as javaw.exe. GameShift does not detect Minecraft by process name: add it as a manual game to have it optimized.",
+            "PROCESS DETECTION LIMITATION: javaw.exe is shared by ALL Java applications. Process-name-only detection would false-positive on IntelliJ, Jenkins, etc., so GameShift never treats javaw.exe as Minecraft by name alone. Bedrock Edition (Minecraft.Windows.exe) is a completely separate game - excluded from this profile.",
             "NO ANTI-CHEAT. All anti-cheat is server-side (NoCheatPlus, GrimAC, Watchdog). Full freedom for process priority, CPU affinity, and all system optimization tools.",
             "SINGLE-THREAD-BOUND where it matters most. Despite 30-60 JVM threads, performance is dominated by the Server Thread (20 TPS tick loop) and Render Thread (OpenGL draw calls). Both are extremely IPC-sensitive.",
             "P-core affinity on Intel hybrid CPUs is HIGH IMPACT - eliminates Thread Director scheduling critical game threads onto E-cores, which causes frametime spikes.",
@@ -671,7 +675,7 @@ public static class BuiltInProfiles
             "Vanilla uses OpenGL 3.3 - no DLSS, FSR, NVIDIA Reflex, or any modern GPU features. Sodium requires OpenGL 4.5. VulkanMod replaces renderer with Vulkan 1.2+ but has limited mod compatibility.",
             "Fabric mod loader is preferred over Forge for performance - 30-45 second startup vs Forge's 2-3 minutes, and Fabric mods use 15-25% less RAM.",
             "Common mistake: allocating too much RAM. With proper GC flags (-XX:G1HeapRegionSize=16M prevents chunk data from becoming 'humongous' allocations), 4-6 GB is sufficient for most modded play. Excess heap means longer GC pauses.",
-            "Third-party launchers (Prism Launcher, MultiMC, CurseForge) all produce the same javaw.exe game process with Minecraft classes on the classpath. The launcher can be safely demoted regardless of which launcher is used."
+            "Third-party launchers (Prism Launcher, MultiMC, CurseForge) all produce the same javaw.exe game process with Minecraft classes on the classpath."
         }
     };
 
@@ -697,7 +701,7 @@ public static class BuiltInProfiles
             "Config: %USERPROFILE%\\Documents\\My Games\\FINAL FANTASY XIV - A Realm Reborn\\FFXIV.cfg. Key tunables: ScreenMode (0=Windowed, 1=Fullscreen, 2=Borderless), Fps, FPSInActive, DisplayObjectLimitType, OcclusionCulling.",
             "For extended sessions (4-12+ hours): monitor ffxiv_dx11.exe memory usage. Recommend restart if process exceeds 6-8 GB. Dalamud plugin users should restart every 6-8 hours.",
             "Third-party tools: XIVLauncher (Dalamud plugin framework) is widely used. GShade/ReShade for visual enhancement. ACT for DPS parsing. TexTools for texture modding. None affect GameShift's optimization - all inject into the same ffxiv_dx11.exe process.",
-            "XIVLauncher uses XIVLauncher.exe but still launches the same ffxiv_dx11.exe game process. Both official launcher processes (ffxivboot64.exe, ffxivlauncher64.exe) can be safely demoted during gameplay."
+            "XIVLauncher uses XIVLauncher.exe but still launches the same ffxiv_dx11.exe game process, as do the official launcher processes (ffxivboot64.exe, ffxivlauncher64.exe)."
         }
     };
 }

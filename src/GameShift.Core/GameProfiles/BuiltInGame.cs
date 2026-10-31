@@ -53,10 +53,18 @@ public sealed class BuiltInGame
 public sealed class BuiltInPreset
 {
     /// <summary>
-    /// The one executable name that selects the preset. Other process names of the same game
-    /// (for example Deadlock's "deadlock.exe") detect the game but do not select the preset.
+    /// The executable name earlier versions selected the preset by. Process names of the same game
+    /// that are in neither this nor <see cref="OtherExecutableNames"/> detect the game but do not
+    /// select the preset.
     /// </summary>
     public string ExecutableName { get; init; } = "";
+
+    /// <summary>Further executable names that select the preset (e.g., Deadlock's "deadlock.exe").</summary>
+    public string[] OtherExecutableNames { get; init; } = Array.Empty<string>();
+
+    internal bool IsSelectedBy(string executableName) =>
+        string.Equals(ExecutableName, executableName, StringComparison.OrdinalIgnoreCase) ||
+        OtherExecutableNames.Any(name => string.Equals(name, executableName, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>Anti-cheat system name for the badge (e.g., "Riot Vanguard", "VAC"). Empty if none.</summary>
     public string AntiCheatName { get; init; } = "";

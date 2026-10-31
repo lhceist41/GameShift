@@ -14,7 +14,9 @@ namespace GameShift.Tests.GameProfiles;
 /// Detection identity must not move with it: every process name either table knew resolves to the
 /// same built-in ID, anti-cheat and name-only fallback flag, selects a preset exactly when it did,
 /// and the presets keep their profiles, tips and firewall leftover names. The expected values were
-/// captured from the build before the merge, not read from the new table.
+/// captured from the build before the merge, not read from the new table. Entries marked "Since
+/// captured" are later intended changes: Apex now uses EA Javelin, Endfield Tencent ACE, Overwatch
+/// is no longer called Overwatch 2, and deadlock.exe selects the Deadlock preset.
 /// </summary>
 public class BuiltInTableIdentityTests
 {
@@ -26,13 +28,13 @@ public class BuiltInTableIdentityTests
         ("leagueoflegends", new[] { "League of Legends.exe" }, AntiCheatType.RiotVanguard, false),
         ("deadlock", new[] { "project8.exe", "deadlock.exe" }, AntiCheatType.ValveAntiCheat, false),
         ("osu", new[] { "osu!.exe" }, AntiCheatType.None, false),
-        ("arknights-endfield", new[] { "Endfield.exe" }, AntiCheatType.BattlEye, false),
+        ("arknights-endfield", new[] { "Endfield.exe" }, AntiCheatType.TencentACE, false), // Since captured: was BattlEye.
         ("wuthering-waves", new[] { "Client-Win64-Shipping.exe" }, AntiCheatType.TencentACE, false),
         ("genshin-impact", new[] { "GenshinImpact.exe", "YuanShen.exe" }, AntiCheatType.Proprietary, false),
         ("soulframe", new[] { "Soulframe.x64.exe", "Soulframe.exe" }, AntiCheatType.None, false),
         ("counter-strike-2", new[] { "cs2.exe" }, AntiCheatType.ValveAntiCheat, false),
         ("fortnite", new[] { "FortniteClient-Win64-Shipping.exe" }, AntiCheatType.EasyAntiCheat, false),
-        ("apex-legends", new[] { "r5apex_dx12.exe", "r5apex.exe" }, AntiCheatType.EasyAntiCheat, true),
+        ("apex-legends", new[] { "r5apex_dx12.exe", "r5apex.exe" }, AntiCheatType.EaJavelin, true), // Since captured: was EasyAntiCheat.
         ("rust", new[] { "RustClient.exe" }, AntiCheatType.EasyAntiCheat, false),
         ("elden-ring", new[] { "eldenring.exe" }, AntiCheatType.EasyAntiCheat, false),
         ("elden-ring-nightreign", new[] { "nightreign.exe" }, AntiCheatType.EasyAntiCheat, false),
@@ -50,7 +52,7 @@ public class BuiltInTableIdentityTests
         ("VALORANT-Win64-Shipping.exe", "valorant", true),
         ("League of Legends.exe", "leagueoflegends", true),
         ("project8.exe", "deadlock", true),
-        ("deadlock.exe", "deadlock", false),
+        ("deadlock.exe", "deadlock", true), // Since captured: selected no preset.
         ("osu!.exe", "osu", true),
         ("Endfield.exe", "arknights-endfield", false),
         ("Client-Win64-Shipping.exe", "wuthering-waves", false),
@@ -82,10 +84,10 @@ public class BuiltInTableIdentityTests
     };
 
     // Captured from the build before the merge: the profile each preset created, serialized, with the removed
-    // MemoryThresholdMB field taken out.
+    // MemoryThresholdMB field taken out. Since captured: the Overwatch GameName was "Overwatch 2".
     private static readonly (string Exe, string Json)[] BasePresetProfiles =
     {
-        ("Overwatch.exe", "{\"SchemaVersion\":1,\"Id\":\"\",\"GameName\":\"Overwatch 2\",\"ProcessId\":0,\"SuppressServices\":true,\"SwitchPowerPlan\":true,\"SetTimerResolution\":false,\"BoostProcessPriority\":true,\"UsePerformanceCoresOnly\":false,\"EnableEfficiencyMode\":true,\"PinToVCacheCcd\":false,\"EnableDpcMonitoring\":true,\"DpcThresholdMicroseconds\":0,\"AntiCheat\":0,\"ExecutableName\":\"Overwatch.exe\",\"ExecutablePath\":\"\",\"LauncherSource\":\"\",\"CustomServicesToPause\":null,\"Intensity\":1,\"OptimizeMemory\":true,\"ReduceVisualEffects\":true,\"OptimizeNetwork\":true,\"ManageIoPriority\":true,\"ManageMemoryPriority\":true,\"EmptyWorkingSets\":true,\"HardMinWorkingSetMB\":2048,\"SuppressTier2Services\":true,\"SuppressScheduledTasks\":true,\"SuppressDefenderScheduledScan\":false,\"UnparkCpuCores\":true,\"DisableProcessorIdle\":false,\"DisableMpo\":false,\"EnableCompetitiveMode\":false,\"SuspendDiscordOverlay\":true,\"SuspendSteamOverlay\":true,\"SuspendNvidiaOverlay\":true,\"KillWidgets\":true,\"EnableGpuOptimization\":true,\"ForceMaxPerformancePowerMode\":true,\"OptimizeShaderCache\":true,\"EnableLowLatencyMode\":true}"),
+        ("Overwatch.exe", "{\"SchemaVersion\":1,\"Id\":\"\",\"GameName\":\"Overwatch\",\"ProcessId\":0,\"SuppressServices\":true,\"SwitchPowerPlan\":true,\"SetTimerResolution\":false,\"BoostProcessPriority\":true,\"UsePerformanceCoresOnly\":false,\"EnableEfficiencyMode\":true,\"PinToVCacheCcd\":false,\"EnableDpcMonitoring\":true,\"DpcThresholdMicroseconds\":0,\"AntiCheat\":0,\"ExecutableName\":\"Overwatch.exe\",\"ExecutablePath\":\"\",\"LauncherSource\":\"\",\"CustomServicesToPause\":null,\"Intensity\":1,\"OptimizeMemory\":true,\"ReduceVisualEffects\":true,\"OptimizeNetwork\":true,\"ManageIoPriority\":true,\"ManageMemoryPriority\":true,\"EmptyWorkingSets\":true,\"HardMinWorkingSetMB\":2048,\"SuppressTier2Services\":true,\"SuppressScheduledTasks\":true,\"SuppressDefenderScheduledScan\":false,\"UnparkCpuCores\":true,\"DisableProcessorIdle\":false,\"DisableMpo\":false,\"EnableCompetitiveMode\":false,\"SuspendDiscordOverlay\":true,\"SuspendSteamOverlay\":true,\"SuspendNvidiaOverlay\":true,\"KillWidgets\":true,\"EnableGpuOptimization\":true,\"ForceMaxPerformancePowerMode\":true,\"OptimizeShaderCache\":true,\"EnableLowLatencyMode\":true}"),
         ("VALORANT-Win64-Shipping.exe", "{\"SchemaVersion\":1,\"Id\":\"\",\"GameName\":\"Valorant\",\"ProcessId\":0,\"SuppressServices\":true,\"SwitchPowerPlan\":true,\"SetTimerResolution\":false,\"BoostProcessPriority\":true,\"UsePerformanceCoresOnly\":false,\"EnableEfficiencyMode\":true,\"PinToVCacheCcd\":false,\"EnableDpcMonitoring\":true,\"DpcThresholdMicroseconds\":0,\"AntiCheat\":1,\"ExecutableName\":\"VALORANT-Win64-Shipping.exe\",\"ExecutablePath\":\"\",\"LauncherSource\":\"\",\"CustomServicesToPause\":null,\"Intensity\":1,\"OptimizeMemory\":true,\"ReduceVisualEffects\":true,\"OptimizeNetwork\":true,\"ManageIoPriority\":true,\"ManageMemoryPriority\":true,\"EmptyWorkingSets\":true,\"HardMinWorkingSetMB\":2048,\"SuppressTier2Services\":true,\"SuppressScheduledTasks\":true,\"SuppressDefenderScheduledScan\":false,\"UnparkCpuCores\":true,\"DisableProcessorIdle\":false,\"DisableMpo\":false,\"EnableCompetitiveMode\":false,\"SuspendDiscordOverlay\":true,\"SuspendSteamOverlay\":true,\"SuspendNvidiaOverlay\":true,\"KillWidgets\":true,\"EnableGpuOptimization\":true,\"ForceMaxPerformancePowerMode\":true,\"OptimizeShaderCache\":true,\"EnableLowLatencyMode\":true}"),
         ("League of Legends.exe", "{\"SchemaVersion\":1,\"Id\":\"\",\"GameName\":\"League of Legends\",\"ProcessId\":0,\"SuppressServices\":true,\"SwitchPowerPlan\":true,\"SetTimerResolution\":false,\"BoostProcessPriority\":true,\"UsePerformanceCoresOnly\":false,\"EnableEfficiencyMode\":true,\"PinToVCacheCcd\":false,\"EnableDpcMonitoring\":true,\"DpcThresholdMicroseconds\":0,\"AntiCheat\":1,\"ExecutableName\":\"League of Legends.exe\",\"ExecutablePath\":\"\",\"LauncherSource\":\"\",\"CustomServicesToPause\":null,\"Intensity\":1,\"OptimizeMemory\":true,\"ReduceVisualEffects\":true,\"OptimizeNetwork\":true,\"ManageIoPriority\":true,\"ManageMemoryPriority\":true,\"EmptyWorkingSets\":true,\"HardMinWorkingSetMB\":2048,\"SuppressTier2Services\":true,\"SuppressScheduledTasks\":true,\"SuppressDefenderScheduledScan\":false,\"UnparkCpuCores\":true,\"DisableProcessorIdle\":false,\"DisableMpo\":false,\"EnableCompetitiveMode\":false,\"SuspendDiscordOverlay\":true,\"SuspendSteamOverlay\":true,\"SuspendNvidiaOverlay\":true,\"KillWidgets\":true,\"EnableGpuOptimization\":true,\"ForceMaxPerformancePowerMode\":true,\"OptimizeShaderCache\":true,\"EnableLowLatencyMode\":true}"),
         ("project8.exe", "{\"SchemaVersion\":1,\"Id\":\"\",\"GameName\":\"Deadlock\",\"ProcessId\":0,\"SuppressServices\":true,\"SwitchPowerPlan\":true,\"SetTimerResolution\":false,\"BoostProcessPriority\":true,\"UsePerformanceCoresOnly\":false,\"EnableEfficiencyMode\":true,\"PinToVCacheCcd\":false,\"EnableDpcMonitoring\":true,\"DpcThresholdMicroseconds\":0,\"AntiCheat\":5,\"ExecutableName\":\"project8.exe\",\"ExecutablePath\":\"\",\"LauncherSource\":\"\",\"CustomServicesToPause\":null,\"Intensity\":1,\"OptimizeMemory\":true,\"ReduceVisualEffects\":true,\"OptimizeNetwork\":true,\"ManageIoPriority\":true,\"ManageMemoryPriority\":true,\"EmptyWorkingSets\":true,\"HardMinWorkingSetMB\":2048,\"SuppressTier2Services\":true,\"SuppressScheduledTasks\":true,\"SuppressDefenderScheduledScan\":false,\"UnparkCpuCores\":true,\"DisableProcessorIdle\":false,\"DisableMpo\":false,\"EnableCompetitiveMode\":false,\"SuspendDiscordOverlay\":true,\"SuspendSteamOverlay\":true,\"SuspendNvidiaOverlay\":true,\"KillWidgets\":true,\"EnableGpuOptimization\":true,\"ForceMaxPerformancePowerMode\":true,\"OptimizeShaderCache\":true,\"EnableLowLatencyMode\":true}"),
@@ -204,7 +206,6 @@ public class BuiltInTableIdentityTests
         foreach (var (exe, json) in BasePresetProfiles)
             Assert.Equal(json, JsonSerializer.Serialize(BuiltInProfiles.GetPresetProfile(exe)));
 
-        Assert.Null(BuiltInProfiles.GetPresetProfile("deadlock.exe"));
         Assert.Null(BuiltInProfiles.GetPresetProfile("cs2.exe"));
     }
 
@@ -214,13 +215,37 @@ public class BuiltInTableIdentityTests
         // That tip described the League client priority change GameShift no longer makes.
         var expected = BaseTips.Where(t => t.TipName != "Tip: lol_client_priority").ToList();
 
-        var actual = BaseNames.Where(n => n.SelectsPreset)
-            .SelectMany(n => BuiltInProfiles.GetPresetTips(n.ProcessName).Select(tip => (n.ProcessName, tip.Name, tip.Condition, tip.Tier)))
+        var actual = BasePresetMetadata
+            .SelectMany(p => BuiltInProfiles.GetPresetTips(p.Exe).Select(tip => (p.Exe, tip.Name, tip.Condition, tip.Tier)))
             .ToList();
 
         Assert.Equal(expected.Select(t => (t.Exe, t.TipName, t.Condition, 3)), actual);
         Assert.All(BuiltInProfiles.GetAll().Where(g => g.Preset != null), g => Assert.All(g.Preset!.Tips, tip => Assert.IsType<OneTimeTipAction>(tip)));
         Assert.Empty(BuiltInProfiles.GetPresetTips("cs2.exe"));
+    }
+
+    [Fact]
+    public void DeadlockExe_SelectsTheDeadlockPreset_AsProject8Does_ButKeepsItsOwnName()
+    {
+        var project8Json = BasePresetProfiles.Single(p => p.Exe == "project8.exe").Json;
+        var project8Tips = BaseTips.Where(t => t.Exe == "project8.exe").Select(t => (t.TipName, t.Condition)).ToList();
+
+        foreach (var spelling in new[] { "deadlock.exe", "DEADLOCK.EXE", "Deadlock.exe" })
+        {
+            var game = BuiltInProfiles.FindPresetGame(spelling);
+            Assert.NotNull(game);
+            Assert.Equal("deadlock", game!.Id);
+            Assert.Equal("VAC", game.Preset!.AntiCheatName);
+            Assert.True(game.Preset.VbsSafeToDisable);
+
+            // The apply modules check the running process against the profile's executable name,
+            // so the profile names deadlock.exe; everything else is the project8 profile.
+            Assert.Equal(
+                project8Json.Replace("\"ExecutableName\":\"project8.exe\"", "\"ExecutableName\":\"deadlock.exe\""),
+                JsonSerializer.Serialize(BuiltInProfiles.GetPresetProfile(spelling)));
+
+            Assert.Equal(project8Tips, BuiltInProfiles.GetPresetTips(spelling).Select(tip => (tip.Name, tip.Condition)));
+        }
     }
 
     [Fact]
