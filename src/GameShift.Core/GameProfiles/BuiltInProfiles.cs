@@ -53,6 +53,15 @@ public static class BuiltInProfiles
     public static List<GameAction> GetPresetTips(string executableName) =>
         new(FindPresetGame(executableName)?.Preset?.Tips ?? Array.Empty<OneTimeTipAction>());
 
+    /// <summary>
+    /// Whether both names are process names of the same built-in game (case-insensitive), for
+    /// example Deadlock's "project8.exe" and "deadlock.exe".
+    /// </summary>
+    internal static bool AreProcessNamesOfOneGame(string first, string second) =>
+        GetAll().Any(game =>
+            game.ProcessNames.Contains(first, StringComparer.OrdinalIgnoreCase) &&
+            game.ProcessNames.Contains(second, StringComparer.OrdinalIgnoreCase));
+
     /// <summary>Every firewall rule earlier versions created, for the startup leftover sweep.</summary>
     internal static IReadOnlyList<FirewallLeftoverRule> GetFirewallLeftovers() =>
         GetAll().SelectMany(game => game.Preset?.FirewallLeftovers ?? Array.Empty<FirewallLeftoverRule>()).ToList();
@@ -551,7 +560,7 @@ public static class BuiltInProfiles
             "Custom FromSoftware engine -- 1 main rendering thread + 7 worker threads. GPU is massively underutilized; CPU command list processing time exceeds GPU processing time in most frames. The primary stutter is the buffer swap/present instruction stalling for 60ms+ on the CPU.",
             "Uses Easy Anti-Cheat (EAC) -- KERNEL-LEVEL (Ring 0). EAC blocks direct SetProcessAffinityMask() and SetPriorityClass() on eldenring.exe. Priority via IFEO registry. Affinity via parent process inheritance through start_protected_game.exe.",
             "Priority workaround: set via registry at HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\eldenring.exe\\PerfOptions with DWORD CpuPriorityClass = 3. This is applied at process creation before EAC protection activates.",
-            "REMOVING CPU 0 FROM AFFINITY is the single most impactful optimization. Windows uses Core 0 for USB/HID interrupts, input polling, and kernel DPCs. When the main thread lands on CPU 0, interrupt contention causes severe frametime spikes. Requires ~25 second delay after launch (game needs CPU 0 during initialization). GameShift's core pinning (the profile switch 'Pin the game to P-cores or the V-Cache CCD', off by default) applies at detection with no such delay -- for Elden Ring, manually removing CPU 0 after 25 seconds via Task Manager provides additional benefit.",
+            "REMOVING CPU 0 FROM AFFINITY is the single most impactful optimization. Windows uses Core 0 for USB/HID interrupts, input polling, and kernel DPCs. When the main thread lands on CPU 0, interrupt contention causes severe frametime spikes. Requires ~25 second delay after launch (game needs CPU 0 during initialization). GameShift's core pinning (the profile switch 'Pin the game to P-cores or the V-Cache CCD', off by default) applies at detection when Windows allows it, otherwise at the next launch, and does not wait 25 seconds -- for Elden Ring, manually removing CPU 0 after 25 seconds via Task Manager provides additional benefit.",
             "On Intel 12th-14th gen hybrid CPUs, Elden Ring shows the WORST stutter of any platform. PC Gamer Nsight analysis: 100ms+ spikes on i7-14700KF from E-core scheduling. P-core-only affinity + CPU 0 removal is critical.",
             "HARD 60 FPS CAP with game logic tied to framerate (inherited from Dark Souls 2 engine). Expected frame time: 16.67ms. Actual: regularly spikes to 30ms, severe stutters reach 60-100ms+.",
             "Fullscreen mode forces monitor to 60Hz even on higher-refresh panels. BORDERLESS WINDOWED is recommended -- allows native refresh rate, enables HAGS benefits, better alt-tab.",
@@ -578,7 +587,7 @@ public static class BuiltInProfiles
             "Uses Easy Anti-Cheat (EAC) -- KERNEL-LEVEL (Ring 0). Same restrictions as Elden Ring. Unlike base ER, EAC bypass is NOT viable since Nightreign is always-online multiplayer.",
             "Priority workaround: set via registry at HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\nightreign.exe\\PerfOptions with DWORD CpuPriorityClass = 3. This is applied at process creation before EAC protection activates.",
             "HARD 60 FPS CAP persists (pre-rendered cutscenes are 30 FPS). No native V-sync toggle -- causes tearing on some configs. AMD users may be locked to 30fps; fix by forcing V-sync off in Adrenalin (introduces tearing).",
-            "CPU 0 removal + P-core affinity applies identically to base Elden Ring. Same 25-second post-launch delay required. GameShift's core pinning (the profile switch 'Pin the game to P-cores or the V-Cache CCD', off by default) applies at detection with no such delay -- for best results, manually remove CPU 0 after 25 seconds via Task Manager.",
+            "CPU 0 removal + P-core affinity applies identically to base Elden Ring. Same 25-second post-launch delay required. GameShift's core pinning (the profile switch 'Pin the game to P-cores or the V-Cache CCD', off by default) applies at detection when Windows allows it, otherwise at the next launch, and does not wait 25 seconds -- for best results, manually remove CPU 0 after 25 seconds via Task Manager.",
             "Stutter is 'nowhere near as bad' as base Elden Ring but still present. Same GPU underutilization pattern.",
             "Always-online 3-player co-op roguelike -- network quality directly impacts core gameplay. P2P networking via Steam ports (TCP 27015, 27036; UDP 27015, 27031-27036). Open NAT critical.",
             "No native DLSS, FSR, XeSS, or NVIDIA Reflex. Third-party NRSS mod adds these but requires EAC disabled (not viable for online play).",

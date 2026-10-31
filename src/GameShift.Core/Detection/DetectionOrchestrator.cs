@@ -342,7 +342,20 @@ public class DetectionOrchestrator
         // Ensure the profile carries the detected executable so the IFEO fallback can
         // target the image and the apply modules can verify process identity.
         if (string.IsNullOrEmpty(profile.ExecutableName))
+        {
             profile.ExecutableName = executableName;
+        }
+        else if (!string.Equals(profile.ExecutableName, executableName, StringComparison.OrdinalIgnoreCase) &&
+                 BuiltInProfiles.AreProcessNamesOfOneGame(profile.ExecutableName, executableName))
+        {
+            // A saved profile can hold another process name of the same game (Deadlock's
+            // project8.exe), and the apply modules would then skip the running game. Only names from
+            // the built-in table qualify, and this copy is not saved.
+            _logger.Information(
+                "Using observed executable {Observed} instead of saved {Saved} for {GameName}",
+                executableName, profile.ExecutableName, e.GameName);
+            profile.ExecutableName = executableName;
+        }
         if (string.IsNullOrEmpty(profile.ExecutablePath))
             profile.ExecutablePath = e.ExecutablePath;
 
