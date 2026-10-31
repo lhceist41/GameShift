@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Windows;
+using GameShift.Core.Config;
 
 namespace GameShift.App;
 
@@ -73,9 +74,9 @@ public static class Program
     }
 
     /// <summary>
-    /// Writes a diagnostic line to both stderr and a per-user diag file under
-    /// %AppData%/GameShift. Avoids the working/install directory, which may be read-only
-    /// (Program Files) and where a pre-created/symlinked log file would be an injection target.
+    /// Writes a diagnostic line to both stderr and a diag file in the admin-only logs folder.
+    /// Avoids the working/install directory and %AppData%, where a pre-created/symlinked log file
+    /// would be an injection target.
     /// </summary>
     private static void WriteDiag(string message)
     {
@@ -83,26 +84,23 @@ public static class Program
         Console.Error.WriteLine(line);
         try
         {
-            var dir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "GameShift");
-            Directory.CreateDirectory(dir);
-            File.AppendAllText(Path.Combine(dir, "gameshift-diag.log"), line + Environment.NewLine);
+            if (SettingsManager.IsLogsFolderReady())
+                File.AppendAllText(Path.Combine(SettingsManager.GetLogsPath(), "gameshift-diag.log"), line + Environment.NewLine);
         }
         catch { }
     }
 
     /// <summary>
-    /// Writes full exception to crash.log in AppData/GameShift/.
+    /// Writes full exception to crash.log in the logs folder.
     /// </summary>
     private static void WriteCrash(string type, Exception ex)
     {
         try
         {
-            var dir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "GameShift");
-            Directory.CreateDirectory(dir);
+            if (!SettingsManager.IsLogsFolderReady())
+                return;
             File.WriteAllText(
-                Path.Combine(dir, "crash.log"),
+                Path.Combine(SettingsManager.GetLogsPath(), "crash.log"),
                 $"[{DateTime.Now}] {type} EXCEPTION:\n{ex}");
         }
         catch { }

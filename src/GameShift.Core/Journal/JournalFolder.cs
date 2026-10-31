@@ -28,7 +28,6 @@ internal sealed class JournalFolder : IDisposable
     private const uint ShareAll = NativeInterop.FILE_SHARE_READ | NativeInterop.FILE_SHARE_WRITE | NativeInterop.FILE_SHARE_DELETE;
     private const uint FileOptions =
         NativeInterop.FILE_NON_DIRECTORY_FILE | NativeInterop.FILE_SYNCHRONOUS_IO_NONALERT | NativeInterop.FILE_OPEN_REPARSE_POINT;
-    private const int ReplaceAttempts = 5;
 
     private readonly SafeFileHandle _handle;
 
@@ -126,64 +125,12 @@ internal sealed class JournalFolder : IDisposable
         return ownerSet;
     }
 
-    private int Replace(SafeFileHandle file, string name)
-    {
-        for (int attempt = 1; ; attempt++)
-        {
-            var status = WindowsJournalSecurity.ReplaceRelative(file, _handle, name);
-            // A handle without delete sharing, typically a scanner or backup tool, blocks even the
-            // POSIX replace but is usually closed again within milliseconds.
-            if (attempt == ReplaceAttempts ||
-                status is not (NativeInterop.STATUS_SHARING_VIOLATION or NativeInterop.STATUS_ACCESS_DENIED))
-                return status;
-            WaitBeforeReplaceRetry(attempt);
-        }
-    }
+    private int Replace(SafeFileHandle file, string name) =>
+        HandleRelative.Replace(file, _handle, name, WaitBeforeReplaceRetry);
 
     private SafeFileHandle? OpenRelative(
-        string name, uint access, uint shareAccess, uint disposition, uint extraOptions, out int status)
-    {
-        if (name.Length == 0 || name.IndexOfAny(new[] { '\\', '/', ':' }) >= 0)
-            throw new ArgumentException("A plain file name is required", nameof(name));
-
-        var buffer = Marshal.StringToHGlobalUni(name);
-        var objectName = Marshal.AllocHGlobal(Marshal.SizeOf<NativeInterop.UNICODE_STRING>());
-        bool addedRef = false;
-        try
-        {
-            _handle.DangerousAddRef(ref addedRef);
-            Marshal.StructureToPtr(new NativeInterop.UNICODE_STRING
-            {
-                Length = (ushort)(name.Length * sizeof(char)),
-                MaximumLength = (ushort)((name.Length + 1) * sizeof(char)),
-                Buffer = buffer,
-            }, objectName, fDeleteOld: false);
-
-            var attributes = new NativeInterop.OBJECT_ATTRIBUTES
-            {
-                Length = (uint)Marshal.SizeOf<NativeInterop.OBJECT_ATTRIBUTES>(),
-                RootDirectory = _handle.DangerousGetHandle(),
-                ObjectName = objectName,
-                Attributes = NativeInterop.OBJ_CASE_INSENSITIVE,
-            };
-
-            status = NativeInterop.NtCreateFile(
-                out var file, access, ref attributes, out _, IntPtr.Zero, NativeInterop.FILE_ATTRIBUTE_NORMAL,
-                shareAccess, disposition, FileOptions | extraOptions, IntPtr.Zero, 0);
-            if (status == 0)
-                return file;
-
-            file.Dispose();
-            return null;
-        }
-        finally
-        {
-            if (addedRef)
-                _handle.DangerousRelease();
-            Marshal.FreeHGlobal(objectName);
-            Marshal.FreeHGlobal(buffer);
-        }
-    }
+        string name, uint access, uint shareAccess, uint disposition, uint extraOptions, out int status) =>
+        HandleRelative.Open(_handle, name, access, shareAccess, disposition, FileOptions | extraOptions, out status);
 
     public void Dispose() => _handle.Dispose();
 }

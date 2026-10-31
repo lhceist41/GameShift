@@ -60,13 +60,7 @@ public class ProfileManager
     {
         _profilesDirectory = Path.Combine(SettingsManager.GetAppDataPath(), "profiles");
         _logger = SettingsManager.Logger;
-
-        // Ensure profiles directory exists
-        if (!Directory.Exists(_profilesDirectory))
-        {
-            Directory.CreateDirectory(_profilesDirectory);
-            _logger.Information("Created profiles directory at {Path}", _profilesDirectory);
-        }
+        GetFolder();
     }
 
     /// <summary>
@@ -77,8 +71,16 @@ public class ProfileManager
     {
         _profilesDirectory = profilesDirectory;
         _logger = SettingsManager.Logger;
-        if (!Directory.Exists(_profilesDirectory))
-            Directory.CreateDirectory(_profilesDirectory);
+        GetFolder();
+    }
+
+    /// <summary>The profiles folder, created when missing; null, with a logged warning, when it was refused.</summary>
+    private UserDataFolder? GetFolder()
+    {
+        var folder = UserDataFolder.Get(_profilesDirectory, out var refusal);
+        if (folder == null)
+            _logger.Warning("Profiles in {Path} are not used: {Reason}", _profilesDirectory, refusal);
+        return folder;
     }
 
     /// <summary>
@@ -97,9 +99,9 @@ public class ProfileManager
 
                 try
                 {
-                    if (File.Exists(defaultPath))
+                    if (GetFolder() is { } folder && folder.FileExists("default.json"))
                     {
-                        var profile = ReadProfile(defaultPath);
+                        var profile = ReadProfile(folder, "default.json");
 
                         if (profile != null)
                         {
@@ -139,13 +141,13 @@ public class ProfileManager
         lock (_lock)
         {
             var safeId = SanitizeGameId(gameId);
-            var profilePath = Path.Combine(_profilesDirectory, $"{safeId}.json");
+            var fileName = $"{safeId}.json";
 
             try
             {
-                if (File.Exists(profilePath))
+                if (GetFolder() is { } folder && folder.FileExists(fileName))
                 {
-                    var profile = ReadProfile(profilePath);
+                    var profile = ReadProfile(folder, fileName);
 
                     if (profile != null)
                     {
@@ -180,9 +182,15 @@ public class ProfileManager
         {
             try
             {
+                var folder = GetFolder();
+                if (folder == null)
+                {
+                    _logger.Warning("Profile {ProfileId} was not saved: the profiles folder was refused", profile.Id);
+                    return;
+                }
+
                 var safeId = SanitizeGameId(profile.Id);
-                var profilePath = Path.Combine(_profilesDirectory, $"{safeId}.json");
-                WriteProfileFile(profilePath, profile);
+                WriteProfileFile(folder, $"{safeId}.json", profile);
 
                 // Invalidate cached default if saving the default profile
                 if (profile.Id == "default")
@@ -204,21 +212,22 @@ public class ProfileManager
     /// Reads a profile file. A profile saved by an earlier version is brought to the current format
     /// and written back to the same file, so the migration runs once.
     /// </summary>
-    private GameProfile? ReadProfile(string path)
+    private GameProfile? ReadProfile(UserDataFolder folder, string fileName)
     {
-        var profile = JsonSerializer.Deserialize<GameProfile>(File.ReadAllText(path));
+        var json = folder.ReadAllText(fileName) ?? throw new FileNotFoundException($"{fileName} is gone");
+        var profile = JsonSerializer.Deserialize<GameProfile>(json);
         if (profile == null || !profile.UpgradeSchema())
             return profile;
 
         try
         {
-            WriteProfileFile(path, profile);
+            WriteProfileFile(folder, fileName, profile);
             _logger.Information("Migrated profile {ProfileId} to format {Version}", profile.Id, profile.SchemaVersion);
         }
         catch (Exception ex)
         {
             // The migrated profile is still used; the file is migrated again on the next load.
-            _logger.Warning(ex, "Failed to save migrated profile {Path}", path);
+            _logger.Warning(ex, "Failed to save migrated profile {Path}", Path.Combine(folder.Path, fileName));
         }
 
         return profile;
@@ -230,13 +239,8 @@ public class ProfileManager
     /// deserialize and GetProfileForGame would silently fall back to default, losing the
     /// user's tuned settings without warning. Mirrors SettingsManager/SessionHistoryStore.
     /// </summary>
-    private static void WriteProfileFile(string profilePath, GameProfile profile)
-    {
-        var json = JsonSerializer.Serialize(profile, WriteOptions);
-        var tmpPath = profilePath + ".tmp";
-        File.WriteAllText(tmpPath, json);
-        File.Move(tmpPath, profilePath, overwrite: true);
-    }
+    private static void WriteProfileFile(UserDataFolder folder, string fileName, GameProfile profile) =>
+        folder.WriteAllText(fileName, JsonSerializer.Serialize(profile, WriteOptions));
 
     /// <summary>
     /// Deletes a game profile by its ID.
@@ -254,22 +258,23 @@ public class ProfileManager
                 return false;
             }
 
-            var safeId = SanitizeGameId(gameId);
-            var profilePath = Path.Combine(_profilesDirectory, $"{safeId}.json");
+            var folder = GetFolder();
+            if (folder == null)
+                return false;
 
-            if (File.Exists(profilePath))
+            var safeId = SanitizeGameId(gameId);
+            try
             {
-                try
+                if (folder.DeleteFile($"{safeId}.json"))
                 {
-                    File.Delete(profilePath);
                     _logger.Information("Deleted profile for game {GameId}", gameId);
                     return true;
                 }
-                catch (Exception ex)
-                {
-                    _logger.Error(ex, "Failed to delete profile for game {GameId}", gameId);
-                    return false;
-                }
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex, "Failed to delete profile for game {GameId}", gameId);
+                return false;
             }
 
             _logger.Debug("Profile not found for game {GameId}, nothing to delete", gameId);
@@ -290,13 +295,18 @@ public class ProfileManager
 
             try
             {
-                var files = Directory.GetFiles(_profilesDirectory, "*.json");
+                // The listing goes by path, but each name is then read relative to the verified
+                // folder, so a swapped path can at most hide profiles, never feed in other files.
+                var folder = GetFolder();
+                var files = folder == null
+                    ? Array.Empty<string>()
+                    : Directory.GetFiles(folder.Path, "*.json").Select(Path.GetFileName).OfType<string>().ToArray();
 
                 foreach (var file in files)
                 {
                     try
                     {
-                        var profile = ReadProfile(file);
+                        var profile = ReadProfile(folder!, file);
 
                         if (profile != null)
                         {

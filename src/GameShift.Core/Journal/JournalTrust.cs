@@ -85,14 +85,26 @@ public static class JournalTrust
         // An inheritable CREATOR OWNER or OWNER RIGHTS entry on the folder applies to whoever owns
         // a child, so it resolves to the file's owner as well as the folder's.
         EvaluateObject("folder", descriptor.Folder, expectDirectory: true,
-            new[] { descriptor.Folder.OwnerSid, descriptor.File.OwnerSid }, reasons);
+            new[] { descriptor.Folder.OwnerSid, descriptor.File.OwnerSid }, alsoTrustedSid: null, reasons);
         EvaluateObject("file", descriptor.File, expectDirectory: false,
-            new[] { descriptor.File.OwnerSid }, reasons);
+            new[] { descriptor.File.OwnerSid }, alsoTrustedSid: null, reasons);
         return new JournalTrustResult(reasons.Count == 0, reasons);
     }
 
+    /// <summary>
+    /// Why a folder is not admin-only by the same rules, with <paramref name="ownerSid"/> (the owner
+    /// GameShift creates such folders with) trusted besides SYSTEM and Administrators. Empty when it is.
+    /// </summary>
+    internal static IReadOnlyList<string> EvaluateFolder(JournalObjectSecurity folder, string ownerSid)
+    {
+        var reasons = new List<string>();
+        EvaluateObject("folder", folder, expectDirectory: true, new[] { folder.OwnerSid }, ownerSid, reasons);
+        return reasons;
+    }
+
     private static void EvaluateObject(
-        string what, JournalObjectSecurity security, bool expectDirectory, string?[] owners, List<string> reasons)
+        string what, JournalObjectSecurity security, bool expectDirectory, string?[] owners, string? alsoTrustedSid,
+        List<string> reasons)
     {
         if (security.IsReparsePoint)
             reasons.Add($"the {what} is a reparse point");
@@ -100,7 +112,7 @@ public static class JournalTrust
             reasons.Add($"the {what} is {(security.IsDirectory ? "a directory" : "not a directory")}");
         if (!expectDirectory && security.LinkCount != 1)
             reasons.Add($"the {what} has {security.LinkCount} links");
-        if (!IsTrustedSid(security.OwnerSid))
+        if (!IsTrustedSid(security.OwnerSid, alsoTrustedSid))
             reasons.Add($"the {what} is owned by {security.OwnerSid ?? "nobody"}");
 
         if (security.Dacl == null)
@@ -120,7 +132,7 @@ public static class JournalTrust
 
             foreach (var principal in ResolvePrincipals(ace.Sid, owners))
             {
-                if (!IsTrustedSid(principal))
+                if (!IsTrustedSid(principal, alsoTrustedSid))
                 {
                     var resolved = principal == ace.Sid ? string.Empty : $" (resolved to {principal ?? "nobody"})";
                     reasons.Add($"the {what} grants write rights 0x{rights:X} to {ace.Sid ?? "an unreadable entry"}{resolved}");
@@ -132,7 +144,8 @@ public static class JournalTrust
     private static IEnumerable<string?> ResolvePrincipals(string? sid, string?[] owners) =>
         sid is CreatorOwnerSid or OwnerRightsSid ? owners : new[] { sid };
 
-    private static bool IsTrustedSid(string? sid) => sid is SystemSid or AdministratorsSid;
+    private static bool IsTrustedSid(string? sid, string? alsoTrustedSid) =>
+        sid is SystemSid or AdministratorsSid || (sid != null && sid == alsoTrustedSid);
 
     private static uint MapGenericRights(uint mask)
     {

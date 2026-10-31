@@ -168,7 +168,6 @@ public static class ServiceFactory
     {
         try
         {
-            var settingsFile = Path.Combine(SettingsManager.GetAppDataPath(), "settings.json");
             var result = BackgroundModeRetirement.Run(
                 settings.BackgroundModeRetired,
                 settings.BackgroundMode,
@@ -179,7 +178,7 @@ public static class ServiceFactory
                 {
                     // On a fresh install, creating settings.json here would skip the first-run
                     // wizard; with nothing of Background Mode's to find, the step just runs again.
-                    if (File.Exists(settingsFile))
+                    if (!SettingsManager.IsFirstRun())
                         SettingsManager.Update(s => s.BackgroundModeRetired = true);
                 },
                 Log.Logger);

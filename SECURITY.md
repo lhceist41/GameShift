@@ -51,8 +51,9 @@ The source also contains **GameShift.Watchdog** (a Windows service that would ru
 - GameShift's only network activity is checking GitHub Releases for updates (and downloading one when you accept it) and the dashboard's latency monitor, which pings a configurable host (`8.8.8.8` by default)
 - No telemetry is collected or transmitted
 - Use the installer, which puts GameShift in `C:\Program Files\GameShift`. If you run the portable `GameShift.App.exe`, keep it in a folder only administrators can change. GameShift runs elevated, so a folder standard users can write to (Downloads, the Desktop, or a folder created directly under `C:\`) lets them influence what runs with admin rights
-- Application data is stored locally in `%AppData%\GameShift\` (user settings and profiles)
+- Application data is stored locally in `%AppData%\GameShift\` (user settings and profiles). If that folder or a folder inside your user profile on the way to it has been redirected through a link, or it is on a network path, GameShift does not use it and saves nothing for that run
 - System recovery data is stored in `%ProgramData%\GameShift\` (state journal), and GameShift sets that folder's permissions so standard users can only read it
+- Logs are stored in `%ProgramData%\GameShift\logs\`, which only administrators can change and every local user can read
 - All system modifications are recorded in an atomic state journal with original values for deterministic rollback
 - Every change is reverted, with verification, when your game exits. Automatic recovery after an app crash or blue screen (the watchdog service and boot-recovery task) is still in development and not enabled in releases
 - Registry changes are monitored via `RegNotifyChangeKeyValue` to detect external tampering during sessions

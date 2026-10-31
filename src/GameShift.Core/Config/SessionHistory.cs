@@ -84,10 +84,15 @@ public class SessionHistoryStore
         _filePath = filePath;
     }
 
-    private static string GetDefaultFilePath()
+    private static string GetDefaultFilePath() =>
+        Path.Combine(SettingsManager.GetAppDataPath(), "session-history.json");
+
+    private UserDataFolder? GetFolder()
     {
-        var appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        return Path.Combine(appDataPath, "GameShift", "session-history.json");
+        var folder = UserDataFolder.Get(Path.GetDirectoryName(_filePath)!, out var refusal);
+        if (folder == null)
+            Log.Warning("Session history at {Path} is not used: {Reason}", _filePath, refusal);
+        return folder;
     }
 
     /// <summary>Load session history from disk.</summary>
@@ -97,11 +102,9 @@ public class SessionHistoryStore
         {
             try
             {
-                if (File.Exists(_filePath))
-                {
-                    var json = File.ReadAllText(_filePath);
+                var json = GetFolder()?.ReadAllText(Path.GetFileName(_filePath));
+                if (json != null)
                     _sessions = JsonSerializer.Deserialize<List<GameSession>>(json, _jsonOptions) ?? new();
-                }
             }
             catch (Exception ex)
             {
@@ -122,14 +125,12 @@ public class SessionHistoryStore
                 while (_sessions.Count > MaxSessions)
                     _sessions.RemoveAt(0);
 
-                var dir = Path.GetDirectoryName(_filePath);
-                if (dir != null && !Directory.Exists(dir))
-                    Directory.CreateDirectory(dir);
+                var folder = GetFolder();
+                if (folder == null)
+                    return;
 
                 var json = JsonSerializer.Serialize(_sessions, _jsonOptions);
-                var tmpPath = _filePath + ".tmp";
-                File.WriteAllText(tmpPath, json);
-                File.Move(tmpPath, _filePath, overwrite: true);
+                folder.WriteAllText(Path.GetFileName(_filePath), json);
             }
             catch (Exception ex)
             {

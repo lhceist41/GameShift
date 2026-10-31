@@ -27,6 +27,8 @@ public static partial class NativeInterop
     // NtCreateFile dispositions, options and object attributes.
     internal const uint FILE_OPEN = 1;
     internal const uint FILE_CREATE = 2;
+    internal const uint FILE_OPEN_IF = 3;
+    internal const uint FILE_DIRECTORY_FILE = 0x1;
     internal const uint FILE_SYNCHRONOUS_IO_NONALERT = 0x20;
     internal const uint FILE_NON_DIRECTORY_FILE = 0x40;
     internal const uint FILE_DELETE_ON_CLOSE = 0x1000;
@@ -153,6 +155,13 @@ public static partial class NativeInterop
         uint createOptions,
         IntPtr eaBuffer,
         uint eaLength);
+
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode, EntryPoint = "GetFinalPathNameByHandleW")]
+    internal static extern uint GetFinalPathNameByHandle(
+        SafeFileHandle file, global::System.Text.StringBuilder path, uint length, uint flags);
+
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode, EntryPoint = "GetLongPathNameW")]
+    internal static extern uint GetLongPathName(string shortPath, global::System.Text.StringBuilder longPath, uint length);
 
     [StructLayout(LayoutKind.Sequential)]
     internal struct SECURITY_ATTRIBUTES

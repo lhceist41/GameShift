@@ -143,9 +143,7 @@ public partial class App : Application
 
             // Step b: Crash recovery check
             WriteDiag("Step b: Crash recovery check...");
-            var appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-            var gameshiftPath = Path.Combine(appDataPath, "GameShift");
-            CrashRecoveryHandler.RecoverIfNeeded(gameshiftPath);
+            CrashRecoveryHandler.RecoverIfNeeded();
 
             // Step c: Show the window IMMEDIATELY with a loading overlay, before the heavy
             // service initialization. The user sees GameShift within a fraction of a second
@@ -209,8 +207,7 @@ public partial class App : Application
             // Step e2: First-run wizard check
             // Shown AFTER services and tray are wired (wizard's Scan button needs App.Services.Detector),
             // BEFORE navigating to the dashboard. The loading overlay sits behind the modal wizard.
-            var settingsFilePath = Path.Combine(SettingsManager.GetAppDataPath(), "settings.json");
-            if (!File.Exists(settingsFilePath))
+            if (SettingsManager.IsFirstRun())
             {
                 WriteDiag("Step e2: First launch detected - showing setup wizard...");
                 var wizard = new FirstRunWizardWindow { Owner = _mainWindow };
@@ -317,7 +314,7 @@ public partial class App : Application
             Log.Fatal(ex, "GameShift failed to start");
             WriteCrashLog("STARTUP", ex);
             MessageBox.Show(
-                $"GameShift failed to start:\n\n{ex.Message}\n\nSee crash.log in %AppData%\\GameShift\\",
+                $"GameShift failed to start:\n\n{ex.Message}\n\nSee crash.log in %ProgramData%\\GameShift\\logs\\",
                 "Startup Error",
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
@@ -692,8 +689,8 @@ public partial class App : Application
 
     /// <summary>
     /// Writes a diagnostic line to stderr and gameshift-diag.log.
-    /// Uses the same format and file as Program.WriteDiag for consistent tracing: %AppData%\GameShift,
-    /// never the working directory, which is the install folder (Program Files) for the installed copy.
+    /// Uses the same format and file as Program.WriteDiag for consistent tracing: the admin-only logs
+    /// folder, never the working directory or the user-writable %AppData%\GameShift.
     /// This traces OnStartup step-by-step - critical for diagnosing invisible-app issues
     /// where the app runs but produces no visible UI (e.g., tray icon fails on Win10).
     /// </summary>
@@ -703,10 +700,8 @@ public partial class App : Application
         Console.Error.WriteLine(line);
         try
         {
-            var dir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "GameShift");
-            Directory.CreateDirectory(dir);
-            File.AppendAllText(Path.Combine(dir, "gameshift-diag.log"), line + Environment.NewLine);
+            if (SettingsManager.IsLogsFolderReady())
+                File.AppendAllText(Path.Combine(SettingsManager.GetLogsPath(), "gameshift-diag.log"), line + Environment.NewLine);
         }
         catch { }
     }
@@ -715,13 +710,12 @@ public partial class App : Application
     {
         try
         {
-            var dir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "GameShift");
-            Directory.CreateDirectory(dir);
+            if (!SettingsManager.IsLogsFolderReady())
+                return;
             var separator = "\n\n" + new string('=', 80) + "\n";
             var content = $"[{DateTime.Now}] {type} EXCEPTION:\n{ex}";
             File.AppendAllText(
-                Path.Combine(dir, "crash.log"),
+                Path.Combine(SettingsManager.GetLogsPath(), "crash.log"),
                 separator + content);
         }
         catch { }

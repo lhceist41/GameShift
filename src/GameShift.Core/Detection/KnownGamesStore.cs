@@ -40,13 +40,13 @@ public class KnownGamesStore
         {
             try
             {
-                if (!File.Exists(_filePath))
+                var json = ReadStoreFile(_filePath);
+                if (json == null)
                 {
                     _logger.Information("Known games file not found, starting with empty list");
                 }
                 else
                 {
-                    var json = File.ReadAllText(_filePath);
                     var games = JsonSerializer.Deserialize<List<GameInfo>>(json);
 
                     if (games != null)
@@ -273,13 +273,13 @@ public class KnownGamesStore
     {
         try
         {
-            if (!File.Exists(_ignoredGamesFilePath))
+            var json = ReadStoreFile(_ignoredGamesFilePath);
+            if (json == null)
             {
                 _logger.Debug("Ignored games file not found, keeping current ignore state");
                 return;
             }
 
-            var json = File.ReadAllText(_ignoredGamesFilePath);
             var ignoredGameIds = JsonSerializer.Deserialize<List<string>>(json);
 
             if (ignoredGameIds == null)
@@ -330,32 +330,13 @@ public class KnownGamesStore
 
     private bool TryWriteFileAtomically(string destinationPath, string contents)
     {
-        string? temporaryFilePath = null;
-
         try
         {
-            var directory = Path.GetDirectoryName(destinationPath);
-            if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
-            {
-                Directory.CreateDirectory(directory);
-            }
+            var folder = GetFolder(destinationPath);
+            if (folder == null)
+                return false;
 
-            temporaryFilePath = Path.Combine(
-                directory ?? string.Empty,
-                $"{Path.GetFileName(destinationPath)}.{Guid.NewGuid():N}.tmp");
-
-            File.WriteAllText(temporaryFilePath, contents);
-
-            if (File.Exists(destinationPath))
-            {
-                File.Replace(temporaryFilePath, destinationPath, null);
-            }
-            else
-            {
-                File.Move(temporaryFilePath, destinationPath);
-            }
-
-            temporaryFilePath = null;
+            folder.WriteAllText(Path.GetFileName(destinationPath), contents);
             return true;
         }
         catch (Exception ex)
@@ -363,19 +344,16 @@ public class KnownGamesStore
             _logger.Error(ex, "Failed to atomically write file to {Path}", destinationPath);
             return false;
         }
-        finally
-        {
-            if (temporaryFilePath != null && File.Exists(temporaryFilePath))
-            {
-                try
-                {
-                    File.Delete(temporaryFilePath);
-                }
-                catch (Exception ex)
-                {
-                    _logger.Warning(ex, "Failed to clean up temporary file {Path}", temporaryFilePath);
-                }
-            }
-        }
+    }
+
+    /// <summary>Reads a store file; null when there is none or the folder was refused.</summary>
+    private string? ReadStoreFile(string path) => GetFolder(path)?.ReadAllText(Path.GetFileName(path));
+
+    private UserDataFolder? GetFolder(string filePath)
+    {
+        var folder = UserDataFolder.Get(Path.GetDirectoryName(filePath)!, out var refusal);
+        if (folder == null)
+            _logger.Warning("Known games at {Path} are not used: {Reason}", filePath, refusal);
+        return folder;
     }
 }

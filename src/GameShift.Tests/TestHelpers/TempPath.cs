@@ -24,6 +24,7 @@ public sealed class TempPath : IDisposable
 
     public void Dispose()
     {
+        GameShift.Core.Config.UserDataFolder.TestHooks.ReleaseAtOrBelow(Path);
         try
         {
             if (Directory.Exists(Path))

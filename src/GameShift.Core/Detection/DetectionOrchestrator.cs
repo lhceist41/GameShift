@@ -746,11 +746,10 @@ public class DetectionOrchestrator
     {
         try
         {
-            var logsDir = SettingsManager.GetLogsPath();
-            if (!Directory.Exists(logsDir))
-                Directory.CreateDirectory(logsDir);
+            if (!SettingsManager.IsLogsFolderReady())
+                return;
 
-            var csvPath = Path.Combine(logsDir, "dpc_log.csv");
+            var csvPath = Path.Combine(SettingsManager.GetLogsPath(), "dpc_log.csv");
             bool writeHeader = !File.Exists(csvPath);
 
             using var writer = new StreamWriter(csvPath, append: true);

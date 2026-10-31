@@ -10,7 +10,7 @@ namespace GameShift.App.ViewModels;
 
 /// <summary>
 /// ViewModel for the Log Viewer page. Reads Serilog rolling log files from
-/// %AppData%\GameShift\logs\ and displays them with search filtering
+/// %ProgramData%\GameShift\logs\ and displays them with search filtering
 /// and auto-refresh via DispatcherTimer (3-second polling interval).
 /// </summary>
 public class LogViewerViewModel : INotifyPropertyChanged

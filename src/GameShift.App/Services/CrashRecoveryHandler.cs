@@ -19,22 +19,11 @@ namespace GameShift.App.Services;
 public static class CrashRecoveryHandler
 {
     /// <summary>
-    /// Ensures the per-user data directory exists, stops any orphaned GameShift ETW DPC-trace
-    /// session left by a previous crash, and removes leftover update artifacts.
+    /// Stops any orphaned GameShift ETW DPC-trace session left by a previous crash and removes
+    /// leftover update artifacts.
     /// </summary>
-    public static void RecoverIfNeeded(string gameshiftPath)
+    public static void RecoverIfNeeded()
     {
-        // Ensure the GameShift AppData directory exists (used for the startup diagnostic log).
-        try
-        {
-            if (!Directory.Exists(gameshiftPath))
-                Directory.CreateDirectory(gameshiftPath);
-        }
-        catch (Exception ex)
-        {
-            Log.Warning(ex, "Could not create GameShift data directory at {Path}", gameshiftPath);
-        }
-
         // Clean up an orphaned ETW DPC trace session from a previous crash.
         try
         {
