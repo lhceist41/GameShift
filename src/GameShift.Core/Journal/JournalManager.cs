@@ -1,5 +1,3 @@
-using System.Security.AccessControl;
-using System.Security.Principal;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using GameShift.Core.Config;
@@ -112,6 +110,12 @@ public class SessionJournalData
     /// Used by OptimizationEngine to detect whether a recovery happened during the session.
     /// </summary>
     public DateTime? SessionStartTime { get; set; }
+
+    /// <summary>
+    /// How often a start of the app began replaying this session after it did not end normally.
+    /// Persisted before each replay, so a replay that takes the process down is not retried forever.
+    /// </summary>
+    public int RecoveryAttempts { get; set; }
 }
 
 // ── JournalManager ────────────────────────────────────────────────────────────
@@ -171,7 +175,7 @@ public class JournalManager
             {
                 // Latch the flag only on success so a transient failure (AV/sharing lock) doesn't
                 // permanently disable hardening for the process - a later construction can retry.
-                if (TryHardenJournalDirectory(dir))
+                if (TryHardenJournalDirectory(dir, _logger))
                     _dirHardened = true;
             }
         }
@@ -182,43 +186,34 @@ public class JournalManager
     /// Administrators get full control, BUILTIN\Users get read and execute only. This prevents a
     /// standard user from creating or modifying state.json (which is consumed elevated and by the
     /// SYSTEM boot-recovery task). Best-effort: logs and continues if the ACL cannot be changed
-    /// (e.g. the app is running non-elevated in a dev build).
+    /// (e.g. the app is running non-elevated in a dev build). Set through a handle on the folder
+    /// itself, so a junction a user put in its place is refused rather than followed.
     /// </summary>
-    private bool TryHardenJournalDirectory(string dir)
+    internal static bool TryHardenJournalDirectory(string dir, ILogger logger)
     {
         if (!OperatingSystem.IsWindows())
             return true; // nothing to do off-Windows; treat as done so we don't retry forever
 
         try
         {
-            var info = new DirectoryInfo(dir);
-            var security = new DirectorySecurity();
+            if (!WindowsJournalSecurity.TryHardenFolderDacl(dir, out var refusal))
+            {
+                logger.Warning("[JournalManager] Did not harden ACL on {Dir}: {Reason} (continuing)", dir, refusal);
+                return false;
+            }
 
-            // Break inheritance and drop inherited ACEs (the permissive ProgramData ones).
-            security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
-
-            var system = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
-            var admins = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
-            var users = new SecurityIdentifier(WellKnownSidType.BuiltinUsersSid, null);
-            const InheritanceFlags inherit = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit;
-
-            security.AddAccessRule(new FileSystemAccessRule(
-                system, FileSystemRights.FullControl, inherit, PropagationFlags.None, AccessControlType.Allow));
-            security.AddAccessRule(new FileSystemAccessRule(
-                admins, FileSystemRights.FullControl, inherit, PropagationFlags.None, AccessControlType.Allow));
-            security.AddAccessRule(new FileSystemAccessRule(
-                users, FileSystemRights.ReadAndExecute, inherit, PropagationFlags.None, AccessControlType.Allow));
-
-            info.SetAccessControl(security);
-            _logger.Information("[JournalManager] Hardened ACL on {Dir} (SYSTEM/Admins full, Users read-only)", dir);
+            logger.Information("[JournalManager] Hardened ACL on {Dir} (SYSTEM/Admins full, Users read-only)", dir);
             return true;
         }
         catch (Exception ex)
         {
-            _logger.Warning(ex, "[JournalManager] Could not harden ACL on {Dir} (continuing)", dir);
+            logger.Warning(ex, "[JournalManager] Could not harden ACL on {Dir} (continuing)", dir);
             return false;
         }
     }
+
+    /// <summary>The journal file this instance reads and writes.</summary>
+    public string JournalPath => _journalPath;
 
     private static string GetDefaultJournalPath()
     {
@@ -247,6 +242,7 @@ public class JournalManager
                 SessionActive = true,
                 SessionStartTime = DateTime.UtcNow,
                 LastRecoveryTimestamp = null, // Fresh session - clear any stale recovery marker
+                RecoveryAttempts = 0,
                 ActiveGame = new ActiveGameInfo
                 {
                     Name = profile.GameName,
@@ -458,6 +454,61 @@ public class JournalManager
     }
 
     /// <summary>
+    /// Counts one more replay attempt of the loaded session and persists it. Returns false when the
+    /// new count could not be read back from disk.
+    /// </summary>
+    public bool RecordRecoveryAttempt()
+    {
+        lock (_lock)
+        {
+            _current.RecoveryAttempts++;
+            Save(SaveScope.SessionState);
+            return ReadFromDisk()?.RecoveryAttempts == _current.RecoveryAttempts;
+        }
+    }
+
+    /// <summary>
+    /// Copies the journal file to <c>state.{suffix}.json</c> in the same folder, so the records
+    /// survive the next session start. Atomic like <see cref="Save"/>. Returns the copy's path, or
+    /// null when there was nothing to copy or the copy failed.
+    /// </summary>
+    public string? SaveEvidenceCopy(string suffix)
+    {
+        lock (_lock)
+        {
+            try
+            {
+                if (!File.Exists(_journalPath))
+                    return null;
+
+                var evidencePath = Path.Combine(Path.GetDirectoryName(_journalPath) ?? string.Empty, $"state.{suffix}.json");
+                var tempPath = evidencePath + ".tmp";
+                File.Copy(_journalPath, tempPath, overwrite: true);
+                SetAdministratorsOwner(tempPath);
+                File.Move(tempPath, evidencePath, overwrite: true);
+                return evidencePath;
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning(ex, "[JournalManager] Could not save a copy of {Path} as {Suffix}", _journalPath, suffix);
+                return null;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Reads the journal file without making it this instance's state, so a caller can look at a
+    /// file before deciding to trust it. Null when it is missing or cannot be parsed.
+    /// </summary>
+    public SessionJournalData? PeekJournal()
+    {
+        lock (_lock)
+        {
+            return ReadFromDisk();
+        }
+    }
+
+    /// <summary>
     /// Records the UTC timestamp of a watchdog-initiated recovery.
     /// Called by <see cref="WatchdogRevertEngine"/> after successfully reverting
     /// optimizations from the journal so the main app can skip its own redundant
@@ -601,11 +652,34 @@ public class JournalManager
             var json = JsonSerializer.Serialize(toWrite, _writeOptions);
             var tempPath = _journalPath + ".tmp";
             File.WriteAllText(tempPath, json);
+            SetAdministratorsOwner(tempPath);
             File.Move(tempPath, _journalPath, overwrite: true); // Atomic on NTFS
         }
         catch (Exception ex)
         {
             _logger.Warning(ex, "[JournalManager] Failed to save state journal to {Path}", _journalPath);
+        }
+    }
+
+    /// <summary>
+    /// Every save writes a new file, which gets the default owner for the elevated token. Where
+    /// policy makes that the admin user rather than Administrators, the trust check would refuse
+    /// every journal, so the owner is set here. On failure the save still completes; the next start
+    /// then reports the journal as not trusted.
+    /// </summary>
+    private void SetAdministratorsOwner(string path)
+    {
+        if (!OperatingSystem.IsWindows())
+            return;
+
+        try
+        {
+            if (!WindowsJournalSecurity.TrySetAdministratorsOwner(path))
+                _logger.Debug("[JournalManager] Could not make Administrators the owner of {Path}", path);
+        }
+        catch (Exception ex)
+        {
+            _logger.Debug(ex, "[JournalManager] Could not make Administrators the owner of {Path}", path);
         }
     }
 

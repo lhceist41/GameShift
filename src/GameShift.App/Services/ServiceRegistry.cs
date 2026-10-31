@@ -27,6 +27,9 @@ public class ServiceRegistry
     /// <summary>What the one-time Background Mode cleanup did, to show once after startup; null when nothing.</summary>
     public string? BackgroundModeRetirementMessage { get; set; }
 
+    /// <summary>What startup recovery did with a session that did not end normally; its notice is shown once after startup.</summary>
+    public StartupRecoveryResult? StartupRecovery { get; set; }
+
     public DpcTraceEngine? DpcTrace { get; set; }
     public DpcFixEngine? DpcFix { get; set; }
     public SystemTweaksManager? TweaksMgr { get; set; }

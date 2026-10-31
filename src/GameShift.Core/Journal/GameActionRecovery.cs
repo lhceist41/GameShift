@@ -115,6 +115,13 @@ public static class GameActionRecovery
 
         // Restore with the original value's type - never coerce DWORD/QWORD/BINARY to REG_SZ.
         var valueKind = Enum.Parse<RegistryValueKind>(kind!);
+        if (valueKind == RegistryValueKind.MultiString)
+        {
+            // Earlier versions recorded a multi-string as its .NET type name, not its text.
+            logger.Warning("[GameActionRecovery] The original of {Hive}\\{Path}\\{Name} was not recorded; left unchanged", hive, path, name);
+            return notRestored;
+        }
+
         object value = valueKind switch
         {
             RegistryValueKind.DWord => v.GetInt32(),

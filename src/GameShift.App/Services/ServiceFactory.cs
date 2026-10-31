@@ -56,9 +56,13 @@ public static class ServiceFactory
         // Separate instance from the one owned by OptimizationEngine; safe because
         // JournalManager serializes through a static lock and writes atomically.
         services.Journal = new JournalManager();
-        var journal = services.Journal.LoadJournal();
 
-        RetireBackgroundMode(services, settings, journal?.SessionActive == true, writeDiag);
+        // Before Background Mode retirement and before the engine exists, so nothing can start a
+        // session over the one that did not end. Recovery loads the journal into services.Journal.
+        writeDiag("Step c2: Startup recovery...");
+        bool wasSessionActive = RecoverLastSession(services, writeDiag);
+
+        RetireBackgroundMode(services, settings, wasSessionActive, writeDiag);
 
         // Create DPC latency monitor (passive, not an IOptimization)
         services.DpcMon = new DpcLatencyMonitor();
@@ -133,6 +137,27 @@ public static class ServiceFactory
         writeDiag("Core services wired OK");
 
         return settings;
+    }
+
+    /// <summary>
+    /// Undoes the changes of a session that did not end normally. Returns whether the journal still
+    /// marked a session active before recovery ended it.
+    /// </summary>
+    private static bool RecoverLastSession(ServiceRegistry services, Action<string> writeDiag)
+    {
+        try
+        {
+            var result = StartupRecovery.Run(
+                services.Journal!, JournalTrust.Check, new WatchdogRevertEngine(Log.Logger), Log.Logger);
+            services.StartupRecovery = result;
+            writeDiag($"Startup recovery: outcome={result.Outcome}, wasActive={result.WasSessionActive}");
+            return result.WasSessionActive;
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Startup recovery failed");
+            return false;
+        }
     }
 
     /// <summary>

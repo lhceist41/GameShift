@@ -266,6 +266,9 @@ public class RecoveryInputRulesTests
     [InlineData("HKLM", DisplayClass + @"\0000\UMD", "AntiLag_DevMode", "String", true)]
     [InlineData("HKLM", DisplayClass + @"\0000\UMD", "AntiLag_DevMode", "DWord", true)]
     [InlineData("HKLM", DisplayClass + @"\0002", "AntiLag_DevMode", "String", false)]
+    // The driver override recorded the kind the value already had.
+    [InlineData("HKLM", DisplayClass + @"\0000\UMD", "AntiLag_DevMode", "ExpandString", true)]
+    [InlineData("HKLM", DisplayClass + @"\0000\UMD", "AntiLag_DevMode", "MultiString", true)]
     public void LegacyRegistryAction_AcceptsTheShapesTheRemovedActionsWrote(
         string hive, string path, string name, string kind, bool existed)
     {
@@ -281,7 +284,9 @@ public class RecoveryInputRulesTests
     [InlineData("HKU", @"SOFTWARE\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers", @"C:\Games\game.exe", "String", false)]
     [InlineData(null, DisplayClass + @"\0000\UMD", "AntiLag_DevMode", "String", true)]
     [InlineData("HKLM", DisplayClass + @"\0000\UMD", "Chill_Enabled", "String", true)]
-    [InlineData("HKLM", DisplayClass + @"\0000\UMD", "AntiLag_DevMode", "ExpandString", true)]
+    [InlineData("HKLM", DisplayClass + @"\0000\UMD", "AntiLag_DevMode", "Unknown", true)]
+    [InlineData("HKLM", DisplayClass + @"\0000\UMD", "AntiLag_DevMode", "None", true)]
+    [InlineData("HKLM", DisplayClass + @"\0000\UMD", "Chill_Enabled", "ExpandString", true)]
     [InlineData("HKLM", DisplayClass + @"\0000\UMD\Sub", "AntiLag_DevMode", "String", true)]
     [InlineData("HKLM", @"SYSTEM\CurrentControlSet\Control\Class\{4d36e972-e325-11ce-bfc1-08002be10318}\0000", "AntiLag_DevMode", "String", true)]
     public void LegacyRegistryAction_RefusesAnythingElse(

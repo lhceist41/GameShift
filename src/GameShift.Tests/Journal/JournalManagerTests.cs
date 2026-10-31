@@ -559,4 +559,115 @@ public class JournalManagerTests
         Assert.Null(loaded);
         Assert.False(journal.HasPendingRebootFixes());
     }
+
+    // ── Recovery attempt counter and evidence copies ──────────────────────────
+
+    // The shape 3.9.0 wrote: no RecoveryAttempts field.
+    private const string Journal390 = """
+        {
+          "Version": 2,
+          "WindowsBuild": "26100.4652",
+          "GameShiftVersion": "1.0.0",
+          "Timestamp": "2026-10-20T18:03:11.123+00:00",
+          "SessionActive": true,
+          "ActiveGame": { "Name": "Overwatch", "Executable": "Overwatch.exe", "Pid": 4242, "StartTime": "2026-10-20T18:03:11.100+00:00" },
+          "Optimizations": [
+            { "Name": "Ultimate Performance Power Plan", "State": "Applied", "OriginalValue": "{}", "AppliedValue": "{}", "AppliedAt": "2026-10-20T18:03:12+00:00" }
+          ],
+          "GameActions": [],
+          "HasPendingRebootFixes": true,
+          "PendingRebootFixDescriptions": [ "MSI mode" ],
+          "SessionStartTime": "2026-10-20T18:03:11.1Z"
+        }
+        """;
+
+    [Fact]
+    public void JournalFrom390_LoadsWithNoRecoveryAttempts()
+    {
+        using var temp = new TempPath();
+        var path = temp.GetFile("state.json");
+        File.WriteAllText(path, Journal390);
+
+        var loaded = new JournalManager(path).LoadJournal();
+
+        Assert.NotNull(loaded);
+        Assert.True(loaded!.SessionActive);
+        Assert.Equal(0, loaded.RecoveryAttempts);
+        Assert.Single(loaded.Optimizations);
+    }
+
+    [Fact]
+    public void RecordRecoveryAttempt_PersistsTheCountAndKeepsTheRest()
+    {
+        using var temp = new TempPath();
+        var path = temp.GetFile("state.json");
+        File.WriteAllText(path, Journal390);
+        var journal = new JournalManager(path);
+        journal.LoadJournal();
+
+        Assert.True(journal.RecordRecoveryAttempt());
+        Assert.True(journal.RecordRecoveryAttempt());
+
+        var onDisk = new JournalManager(path).PeekJournal();
+        Assert.Equal(2, onDisk!.RecoveryAttempts);
+        Assert.True(onDisk.SessionActive);
+        Assert.Equal("Overwatch", onDisk.ActiveGame!.Name);
+        Assert.Single(onDisk.Optimizations);
+        Assert.Equal(new[] { "MSI mode" }, onDisk.PendingRebootFixDescriptions);
+    }
+
+    [Fact]
+    public void StartSession_ResetsRecoveryAttempts()
+    {
+        using var temp = new TempPath();
+        var path = temp.GetFile("state.json");
+        File.WriteAllText(path, Journal390);
+        var journal = new JournalManager(path);
+        journal.LoadJournal();
+        journal.RecordRecoveryAttempt();
+        journal.EndSession();
+
+        journal.StartSession(NewTestProfile());
+
+        Assert.Equal(0, new JournalManager(path).PeekJournal()!.RecoveryAttempts);
+    }
+
+    [Fact]
+    public void PeekJournal_DoesNotAdoptTheFile()
+    {
+        using var temp = new TempPath();
+        var path = temp.GetFile("state.json");
+        File.WriteAllText(path, Journal390);
+        var journal = new JournalManager(path);
+
+        var peeked = journal.PeekJournal();
+
+        Assert.True(peeked!.SessionActive);
+        Assert.False(journal.HasPendingRebootFixes());
+    }
+
+    [Fact]
+    public void SaveEvidenceCopy_CopiesTheFileBesideItAndLeavesTheJournal()
+    {
+        using var temp = new TempPath();
+        var path = temp.GetFile("state.json");
+        File.WriteAllText(path, Journal390);
+        var journal = new JournalManager(path);
+
+        var copy = journal.SaveEvidenceCopy("unrecovered-test");
+
+        Assert.Equal(temp.GetFile("state.unrecovered-test.json"), copy);
+        Assert.Equal(Journal390, File.ReadAllText(copy!));
+        Assert.Equal(Journal390, File.ReadAllText(path));
+        Assert.False(File.Exists(copy + ".tmp"));
+    }
+
+    [Fact]
+    public void SaveEvidenceCopy_WithoutAJournal_ReturnsNull()
+    {
+        using var temp = new TempPath();
+
+        Assert.Null(new JournalManager(temp.GetFile("state.json")).SaveEvidenceCopy("unrecovered-test"));
+        Assert.Empty(Directory.GetFiles(temp.Path));
+    }
 }

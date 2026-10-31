@@ -278,22 +278,16 @@ public class HybridCpuDetector : IOptimization, IJournaledOptimization
             SettingsManager.Logger.Information(
                 "[HybridCpuDetector] Reverting from journal record (watchdog recovery)");
 
+            // Apply always records the list, empty when only the volatile CPU-set path was used.
             if (string.IsNullOrWhiteSpace(originalValueJson))
-            {
-                IsApplied = false;
-                return new OptimizationResult(
-                    OptimizationId, string.Empty, string.Empty, OptimizationState.Reverted);
-            }
+                return RevertFail("Not a record GameShift wrote: empty record");
 
             var root = JsonSerializer.Deserialize<JsonElement>(originalValueJson);
 
             if (!root.TryGetProperty("ifeoKeys", out var ifeoKeysElement) ||
                 ifeoKeysElement.ValueKind != JsonValueKind.Array)
             {
-                // Empty/missing - nothing persistent to revert
-                IsApplied = false;
-                return new OptimizationResult(
-                    OptimizationId, string.Empty, string.Empty, OptimizationState.Reverted);
+                return RevertFail("Not a record GameShift wrote: no ifeoKeys list");
             }
 
             var notRestored = RecoveryRegistry.RevertIfeoRecords(

@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Windows;
 using GameShift.Core.Config;
+using GameShift.Core.Journal;
 using GameShift.Core.Monitoring;
 using GameShift.Core.Profiles.GameActions;
 using GameShift.Core.System;
@@ -75,7 +76,7 @@ public partial class App : Application
         WriteDiag("OnStartup entered");
 
         // Single-instance guard: only one GameShift process allowed
-        _singleInstanceMutex = new Mutex(true, "Global\\GameShift_SingleInstance", out bool createdNew);
+        _singleInstanceMutex = new Mutex(true, GameShift.Core.Verification.RevertVerificationRunner.SingleInstanceMutexName, out bool createdNew);
         _ownsMutex = createdNew; // we own the mutex only if we created it
         if (!createdNew)
         {
@@ -237,6 +238,7 @@ public partial class App : Application
             // Step f1: Surface any boot-recovery warnings recorded by the watchdog.
             // Deferred to ApplicationIdle so the MessageBoxes appear after MainWindow renders.
             CheckJournalWarnings();
+            ShowStartupRecoveryNotice();
             ShowBackgroundModeRetirementNotice();
 
             // Step f2: Register global hotkey
@@ -409,6 +411,25 @@ public partial class App : Application
     /// Tells the user once what the Background Mode cleanup changed or could not change.
     /// Deferred like <see cref="CheckJournalWarnings"/> so the MainWindow can own the MessageBox.
     /// </summary>
+    private void ShowStartupRecoveryNotice()
+    {
+        var recovery = Services.StartupRecovery;
+        var message = recovery?.Notice;
+        if (recovery == null || string.IsNullOrEmpty(message)) return;
+
+        var (title, icon) = recovery.Outcome switch
+        {
+            StartupRecoveryOutcome.Recovered => ("Changes Undone", MessageBoxImage.Information),
+            StartupRecoveryOutcome.Untrusted => ("Session Record Ignored", MessageBoxImage.Warning),
+            _ => ("Changes Not Fully Undone", MessageBoxImage.Warning),
+        };
+
+        Dispatcher.BeginInvoke(() =>
+        {
+            MessageBox.Show(_mainWindow!, message, title, MessageBoxButton.OK, icon);
+        }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+    }
+
     private void ShowBackgroundModeRetirementNotice()
     {
         var message = Services.BackgroundModeRetirementMessage;

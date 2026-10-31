@@ -188,4 +188,40 @@ public class RevertSymmetryVerificationTests
         Assert.True(result.Failures.Count == 0,
             "persistent residue after revert:" + Environment.NewLine + result.FormatReport());
     }
+
+    // ── Single-instance mutex ────────────────────────────────────────────────
+
+    // The harness writes the real journal; while it runs, the app must not start and replay the
+    // probe session, and while the app runs, the harness must not start. A local name keeps the
+    // test away from the real app's mutex.
+    [Fact]
+    public void InstanceMutex_IsTakenOnceAndFreedOnDispose()
+    {
+        var name = $"Local\\GameShiftTests_{Guid.NewGuid():N}";
+
+        using (var first = RevertVerificationRunner.TryTakeInstanceMutex(name))
+        {
+            Assert.NotNull(first);
+            Assert.Null(RevertVerificationRunner.TryTakeInstanceMutex(name));
+        }
+
+        using var again = RevertVerificationRunner.TryTakeInstanceMutex(name);
+        Assert.NotNull(again);
+    }
+
+    // The mutex is held first, so the run refuses before it probes or changes anything.
+    [Fact]
+    public async Task RunAsync_WhileTheAppHoldsTheMutex_RefusesWithoutRunning()
+    {
+        var name = $"Local\\GameShiftTests_{Guid.NewGuid():N}";
+        using var app = new Mutex(initiallyOwned: true, name, out bool created);
+        Assert.True(created);
+
+        var result = await RevertVerificationRunner.RunAsync(Logger.None, name);
+
+        Assert.False(result.Passed);
+        Assert.NotNull(result.Error);
+        Assert.Equal(0, result.BeforeItemCount);
+        Assert.Empty(result.AppliedChanges);
+    }
 }

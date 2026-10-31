@@ -92,4 +92,16 @@ public class ProcessPriorityBoosterTests
 
         Assert.Equal(OptimizationState.Reverted, result.State);
     }
+
+    // Every version that journaled this module wrote an ifeoKeys list, so anything else is not its record.
+    [Theory]
+    [InlineData("{}")]
+    [InlineData("""{"ifeoKeys":"PerfOptions"}""")]
+    [InlineData("[]")]
+    public void RecordWithoutAnIfeoList_IsNotClaimedReverted(string record)
+    {
+        var result = new ProcessPriorityBooster().RevertFromRecord(record);
+
+        Assert.Equal(OptimizationState.Failed, result.State);
+    }
 }

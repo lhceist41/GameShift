@@ -42,9 +42,12 @@ public class WatchdogRevertEngine
         };
 
     private readonly Func<string, string, ILogger, GameActionRevertResult> _revertGameAction;
+    private readonly Action<ILogger> _cleanupStaleTraceSession;
+    private readonly Action _resetBackgroundProcesses;
 
     public WatchdogRevertEngine(ILogger logger)
-        : this(logger, factories: null)
+        : this(logger, factories: null, gameActionReverter: null,
+            EtwProcessMonitor.CleanupStaleSession, () => BackgroundProcessTargets.ResetDemotedProcessesToDefaults())
     {
     }
 
@@ -53,15 +56,21 @@ public class WatchdogRevertEngine
     /// revert-from-record can be routed to mock implementations of
     /// <see cref="IJournaledOptimization"/> rather than the real ones (which touch
     /// the registry, services, processes, etc.), and the game-action reverter likewise.
+    /// The trace-session cleanup and the background process reset do nothing unless passed,
+    /// so no test reaches real processes or ETW sessions.
     /// </summary>
     internal WatchdogRevertEngine(
         ILogger logger,
         Dictionary<string, Func<IJournaledOptimization>>? factories,
-        Func<string, string, ILogger, GameActionRevertResult>? gameActionReverter = null)
+        Func<string, string, ILogger, GameActionRevertResult>? gameActionReverter = null,
+        Action<ILogger>? cleanupStaleTraceSession = null,
+        Action? resetBackgroundProcesses = null)
     {
         _logger = logger.ForContext<WatchdogRevertEngine>();
         _factories = factories ?? DefaultFactories;
         _revertGameAction = gameActionReverter ?? GameActionRecovery.Revert;
+        _cleanupStaleTraceSession = cleanupStaleTraceSession ?? (_ => { });
+        _resetBackgroundProcesses = resetBackgroundProcesses ?? (() => { });
     }
 
     /// <summary>
@@ -71,10 +80,12 @@ public class WatchdogRevertEngine
     /// that fails or throws does not stop the rest. After reverting, marks the journal session as
     /// inactive via <paramref name="journal"/>.
     /// </summary>
-    public JournalRevertResult RevertFromJournal(SessionJournalData journalData, JournalManager journal)
+    /// <param name="beforeEndSession">Runs with the result while the session is still marked active.</param>
+    public JournalRevertResult RevertFromJournal(
+        SessionJournalData journalData, JournalManager journal, Action<JournalRevertResult>? beforeEndSession = null)
     {
         // Clean up any orphaned ETW session from the crashed GameShift instance
-        EtwProcessMonitor.CleanupStaleSession(_logger);
+        _cleanupStaleTraceSession(_logger);
 
         var items = new List<JournalRevertItem>();
 
@@ -151,17 +162,20 @@ public class WatchdogRevertEngine
         // Reset any background processes left demoted by the crashed session. These tweaks (memory/IO
         // priority, EcoQoS, CPU-set) are volatile and have no per-PID journal, but a long-lived process
         // can stay demoted until it restarts - re-resolve by name and write OS defaults.
-        BackgroundProcessTargets.ResetDemotedProcessesToDefaults();
+        _resetBackgroundProcesses();
 
         // Stamp the journal with the recovery time so the main app's
         // DeactivateProfileAsync can detect that the watchdog has already
         // reverted and skip its own redundant LIFO revert.
         journal.RecordRecoveryTimestamp(DateTime.UtcNow);
 
+        var revertResult = new JournalRevertResult(items);
+        beforeEndSession?.Invoke(revertResult);
+
         // Mark session inactive so boot recovery won't trigger again
         journal.EndSession();
 
         _logger.Information("[WatchdogRevertEngine] Recovery complete - session marked inactive");
-        return new JournalRevertResult(items);
+        return revertResult;
     }
 }

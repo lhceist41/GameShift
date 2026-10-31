@@ -18,6 +18,9 @@ public class ScheduledTaskSuppressor : IOptimization, IJournaledOptimization
     public const string OptimizationId = "Scheduled Task Suppression";
 
     public string Name => OptimizationId;
+
+    internal const string ReEnabledPrefix = "Re-enabled scheduled tasks: ";
+    internal const string NotReEnabledPrefix = "Could not re-enable scheduled tasks: ";
     public string Description => "Revert-only: re-enables scheduled tasks recorded by earlier versions";
     public bool IsApplied => _isApplied;
     public bool IsAvailable => false;
@@ -104,9 +107,9 @@ public class ScheduledTaskSuppressor : IOptimization, IJournaledOptimization
 
             var parts = new List<string>();
             if (reEnabled.Count > 0)
-                parts.Add($"Re-enabled scheduled tasks: {string.Join(", ", reEnabled)}");
+                parts.Add(ReEnabledPrefix + string.Join(", ", reEnabled));
             if (notReEnabled.Count > 0)
-                parts.Add($"Could not re-enable scheduled tasks: {string.Join(", ", notReEnabled)}");
+                parts.Add(NotReEnabledPrefix + string.Join(", ", notReEnabled));
             if (refused > 0)
                 parts.Add($"Refused {refused} journal entr{(refused == 1 ? "y" : "ies")} that GameShift did not write");
             var message = parts.Count > 0 ? string.Join(". ", parts) : null;

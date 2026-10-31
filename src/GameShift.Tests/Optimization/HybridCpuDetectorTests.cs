@@ -41,4 +41,18 @@ public class HybridCpuDetectorTests
 
         Assert.Equal(OptimizationState.Reverted, result.State);
     }
+
+    // Every version that journaled this module wrote an ifeoKeys list, so anything else is not its record.
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("{}")]
+    [InlineData("""{"ifeoKeys":{}}""")]
+    [InlineData("[]")]
+    public void RecordWithoutAnIfeoList_IsNotClaimedReverted(string record)
+    {
+        var result = new HybridCpuDetector().RevertFromRecord(record);
+
+        Assert.Equal(OptimizationState.Failed, result.State);
+    }
 }

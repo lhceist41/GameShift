@@ -105,13 +105,11 @@ public class JournaledOptimizationContractTests
             + string.Join("; ", violations));
     }
 
-    // The empty string is deliberately NOT in this theory: HybridCpuDetector documents
-    // empty/whitespace OriginalValue as "applied via the volatile CPU-Sets path, nothing
-    // persistent to revert", for which Reverted is the honest answer. Invalid JSON and a
-    // literal JSON null can never come from a healthy Apply (every module journals at
-    // minimum "{}" or "[]"), so claiming Reverted on them is a false success.
+    // Invalid JSON, an empty string and a literal JSON null can never come from a healthy Apply
+    // (every module journals at minimum "{}" or "[]"), so claiming Reverted on them is a false success.
     [Theory]
     [InlineData("{ this is not valid json")]
+    [InlineData("")]
     [InlineData("null")]
     public void RevertFromRecord_OnUndecodableJournalData_NeverClaimsSuccess(string corruptJson)
     {

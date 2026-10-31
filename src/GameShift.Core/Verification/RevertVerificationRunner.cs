@@ -78,12 +78,15 @@ public sealed class RevertVerificationResult
 /// services GameShift touched, every start type, and the whole registry/power surface remain
 /// hard contractual failures.
 ///
-/// The run uses the real journal, so if the harness dies mid-cycle the existing watchdog and
-/// boot recovery revert the session exactly like a crashed game session. Deliberately session-
+/// The run uses the real journal, so if the harness dies mid-cycle the next start of the app
+/// reverts the session exactly like a crashed game session. Deliberately session-
 /// scoped: persistent SystemTweaks have their own apply/revert lifecycle and are out of scope.
 /// </summary>
 public static class RevertVerificationRunner
 {
+    /// <summary>The app's single-instance mutex; while it exists, the app cannot start.</summary>
+    public const string SingleInstanceMutexName = "Global\\GameShift_SingleInstance";
+
     /// <summary>
     /// The engine module set, mirroring ServiceFactory.CreateAll in composition and order.
     /// VbsHvciToggle and CoreIsolationManager are intentionally absent: they are reboot-scoped,
@@ -166,8 +169,30 @@ public static class RevertVerificationRunner
         return (failures, drift);
     }
 
-    public static async Task<RevertVerificationResult> RunAsync(ILogger logger)
+    public static Task<RevertVerificationResult> RunAsync(ILogger logger) =>
+        RunAsync(logger, SingleInstanceMutexName);
+
+    /// <param name="instanceMutexName">Seam for the single-instance mutex name.</param>
+    internal static async Task<RevertVerificationResult> RunAsync(ILogger logger, string instanceMutexName)
     {
+        // Holding the app's mutex keeps GameShift from starting mid-run and replaying the probe
+        // session from the journal underneath the harness.
+        using var instance = TryTakeInstanceMutex(instanceMutexName);
+        if (instance == null)
+        {
+            logger.Warning("[RevertVerification] GameShift is running (or its single-instance mutex is unavailable); not running");
+            return new RevertVerificationResult
+            {
+                BeforeItemCount = 0,
+                AppliedChangeCount = 0,
+                AppliedChanges = new List<StateDifference>(),
+                Failures = new List<StateDifference>(),
+                ExternalDrift = new List<StateDifference>(),
+                Warnings = new List<string>(),
+                Error = "GameShift is running; close it before verifying",
+            };
+        }
+
         var prober = new SystemStateProber();
         var warnings = new List<string>();
         string? error = null;
@@ -230,5 +255,27 @@ public static class RevertVerificationRunner
             Warnings = warnings.Distinct().ToList(),
             Error = error,
         };
+    }
+
+    /// <summary>
+    /// Creates the named mutex, or returns null when it already exists (another instance or the app
+    /// holds it) or cannot be created. The app only checks whether it created the mutex, so holding
+    /// a handle is enough to keep it from starting.
+    /// </summary>
+    internal static Mutex? TryTakeInstanceMutex(string name)
+    {
+        try
+        {
+            var mutex = new Mutex(initiallyOwned: false, name, out bool createdNew);
+            if (createdNew)
+                return mutex;
+
+            mutex.Dispose();
+            return null;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
     }
 }

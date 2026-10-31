@@ -81,6 +81,32 @@ public class GameActionRecoveryTests
             assertRestored: v => Assert.Equal(original, Assert.IsType<byte[]>(v)));
     }
 
+    // The driver override recorded the value's existing kind, so an expandable string comes back as one.
+    [Fact]
+    public void Revert_Registry_RestoresExpandStringValueAndKind() =>
+        RunRegistryRoundTrip(
+            kind: "ExpandString", originalValue: "1", overwrittenValue: "0",
+            expectedKind: RegistryValueKind.ExpandString,
+            assertRestored: v => Assert.Equal("1", Assert.IsType<string>(v)));
+
+    // Earlier versions journaled a multi-string as the text "System.String[]", so there is no
+    // original to write back: the record is reported, and the value is left as the session set it.
+    [Fact]
+    public void Revert_Registry_MultiStringOriginal_IsFailedAndUntouched()
+    {
+        using var registry = new TestRecoveryRegistry();
+        using (var key = registry.CreateKey(RecoveryHive.LocalMachine, AmdUmd))
+            key.SetValue("AntiLag_DevMode", "0");
+
+        var result = RevertRegistry(
+            RegistryPayload("HKLM", AmdUmd, "AntiLag_DevMode", "MultiString", existed: true, value: "System.String[]"), registry);
+
+        Assert.Equal(RevertOutcome.Failed, result.Outcome);
+        Assert.Equal("0", registry.Value(RecoveryHive.LocalMachine, AmdUmd, "AntiLag_DevMode"));
+        using var readKey = registry.Open(RecoveryHive.LocalMachine, AmdUmd);
+        Assert.Equal(RegistryValueKind.String, readKey!.GetValueKind("AntiLag_DevMode"));
+    }
+
     [Fact]
     public void Revert_Registry_DeletesValueThatDidNotExistBeforeApply()
     {

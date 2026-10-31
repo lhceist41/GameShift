@@ -106,7 +106,7 @@ graph LR
 
 GameShift uses ETW (Event Tracing for Windows) kernel process events to detect game launches with sub-millisecond latency. When a game starts, the detection orchestrator matches it against your library, loads the appropriate profile, and applies each enabled optimization in sequence. Every change is recorded in a state journal with original and applied values so every modification can be deterministically reverted and verified when your game exits.
 
-The journal is written to `%ProgramData%\GameShift\state.json` with atomic writes, which is the foundation for automatic recovery after an app crash or blue screen (a watchdog service plus a boot-recovery task). That automatic crash recovery is in active development and is not enabled in the current build; in normal use, GameShift reverts every change when your game exits.
+The journal is written to `%ProgramData%\GameShift\state.json` with atomic writes, and GameShift reverts every change when your game exits. If GameShift did not close normally during a session (an app crash, a blue screen, a power loss or a sign-out that cut it off), it undoes that session's recorded changes the next time it starts, before it can start another session, and tells you what it did. It does this only when the journal file and its folder can be written by administrators alone; a journal a standard user could have changed is set aside and never acted on.
 
 Registry changes are monitored in real time via `RegNotifyChangeKeyValue`. If an external process (Windows Update, group policy, another tool) modifies a managed setting during a gaming session, GameShift detects and re-applies it automatically.
 
@@ -168,11 +168,11 @@ dotnet run --project src/GameShift.App
 ### Reversibility and the state journal
 
 1. **State Journal**  - Every optimization writes its original and applied values to `%ProgramData%\GameShift\state.json` using atomic writes (temp file → rename). Reverts happen in LIFO order with post-revert verification when your game exits.
-2. **Automatic crash recovery (in development)**  - The journal is designed so a watchdog service and a boot-recovery task can restore your system after an app crash, blue screen, or power loss. These components are not enabled in the current build; in normal use, reverts occur when your game exits.
+2. **Recovery at the next start**  - If GameShift did not close normally during a session (an app crash, blue screen, or power loss), it undoes the changes recorded for that session the next time it starts, then shows one notice naming anything it could not undo. It acts only on a journal that administrators alone can write. A watchdog service and a boot-recovery task that would recover without starting GameShift are not part of the current build.
 
 ### What GameShift changes (and how it reverts)
 
-- **Services**  - Temporarily pauses non-essential services. Original start types recorded in journal, restored on session end.
+- **Services**  - Temporarily stops non-essential services. The services it stopped are recorded in the journal and started again on session end; their start types are not changed.
 - **Registry keys**  - Writes IFEO entries. All original values captured before any write and verified after revert.
 - **Power plans**  - Switches from Balanced to High Performance during a game. Your original plan GUID is saved and restored.
 - **Process priority & scheduling**  - Elevates game priority and assigns CPU sets. All released on game exit.
@@ -235,7 +235,7 @@ Yes. GameShift is particularly effective on laptops where Windows aggressively t
 <details>
 <summary><strong>What happens if my PC crashes during optimization?</strong></summary>
 <br/>
-GameShift reverts every change when your game exits, and records all original values in <code>%ProgramData%\GameShift\state.json</code> using atomic writes, so the journal is never corrupted even during a hard shutdown. Automatic recovery after an app crash or blue screen (a watchdog service plus a boot-recovery task) is in active development and is not enabled in the current build. As an extra safety net, create a System Restore point before first use, and the lasting changes GameShift recorded (system tweaks, DPC Doctor fixes, kernel boot settings and Memory Integrity) can be undone any time from Settings via "Restore All GameShift Tweaks".
+GameShift reverts every change when your game exits, and records all original values in <code>%ProgramData%\GameShift\state.json</code> using atomic writes, so the journal is never corrupted even during a hard shutdown. If GameShift itself crashes or the PC loses power mid-session, GameShift undoes that session's recorded changes the next time you start it, and tells you if anything could not be undone. It does not run a separate watchdog service or boot task for this, so the changes stay until GameShift is started again. As an extra safety net, create a System Restore point before first use, and the lasting changes GameShift recorded (system tweaks, DPC Doctor fixes, kernel boot settings and Memory Integrity) can be undone any time from Settings via "Restore All GameShift Tweaks".
 </details>
 
 <details>

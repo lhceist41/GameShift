@@ -576,13 +576,11 @@ public class ProcessPriorityBooster : IOptimization, IJournaledOptimization
                 "[ProcessPriorityBooster] Reverting from journal record (watchdog recovery)");
 
             var state = JsonSerializer.Deserialize<JsonElement>(originalValueJson);
+            // Apply always records the list, empty when nothing persistent was changed.
             if (!state.TryGetProperty("ifeoKeys", out var keys) ||
                 keys.ValueKind != JsonValueKind.Array)
             {
-                // No IFEO changes were journaled - nothing to revert (live-only path or no apply).
-                IsApplied = false;
-                return new OptimizationResult(
-                    OptimizationId, string.Empty, string.Empty, OptimizationState.Reverted);
+                return RevertFail("Not a record GameShift wrote: no ifeoKeys list");
             }
 
             var notRestored = RecoveryRegistry.RevertIfeoRecords(keys, IfeoValueName, OptimizationId, _logger);

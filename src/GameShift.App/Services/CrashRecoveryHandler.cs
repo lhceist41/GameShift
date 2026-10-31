@@ -9,11 +9,12 @@ namespace GameShift.App.Services;
 /// session and leftover auto-update artifacts. Also ensures the per-user GameShift data
 /// directory exists.
 ///
-/// Reverting optimizations after a crash, BSOD, or power loss is handled by the journal-based
-/// recovery path (the boot-recovery task / watchdog reading
-/// <c>%ProgramData%\GameShift\state.json</c> via <see cref="GameShift.Core.Journal.WatchdogRevertEngine"/>),
-/// not here. The earlier snapshot/lockfile recovery (<c>active_session.json</c>) was removed when
-/// the journal became the single source of truth - nothing writes that lockfile anymore.
+/// Undoing a session's changes after a crash, BSOD, or power loss is not done here: it runs later
+/// in <see cref="ServiceFactory.CreateAll"/> through <see cref="GameShift.Core.Journal.StartupRecovery"/>,
+/// from <c>%ProgramData%\GameShift\state.json</c> once its owner and permissions are verified. The
+/// watchdog service and boot-recovery task that could also replay it are not shipped. The earlier
+/// snapshot/lockfile recovery (<c>active_session.json</c>) was removed when the journal became the
+/// single source of truth - nothing writes that lockfile anymore.
 /// </summary>
 public static class CrashRecoveryHandler
 {

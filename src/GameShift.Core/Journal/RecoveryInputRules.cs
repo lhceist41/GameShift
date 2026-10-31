@@ -275,7 +275,8 @@ internal static class RecoveryInputRules
     /// <summary>
     /// The two shapes the removed fullscreen-optimization and AMD driver-override actions wrote: a
     /// compatibility layer string for a game executable, and the AntiLag_DevMode value of a display
-    /// adapter (under UMD, or the adapter key itself when it had no UMD subkey).
+    /// adapter (under UMD, or the adapter key itself when it had no UMD subkey). The driver override
+    /// recorded whatever kind the value already had, so any string or numeric kind is accepted there.
     /// </summary>
     public static bool TryLegacyRegistryAction(
         string? hive, string? path, string? name, string? kind, bool existed, out RecoveryHive target)
@@ -299,7 +300,8 @@ internal static class RecoveryInputRules
         var adapter = path.EndsWith(@"\UMD", StringComparison.OrdinalIgnoreCase) ? path[..^@"\UMD".Length] : path;
         return IsClassInstance(adapter, DisplayClassPath) &&
                string.Equals(name, "AntiLag_DevMode", StringComparison.Ordinal) &&
-               (!existed || kind is nameof(RegistryValueKind.String) or nameof(RegistryValueKind.DWord)
+               (!existed || kind is nameof(RegistryValueKind.String) or nameof(RegistryValueKind.ExpandString)
+                   or nameof(RegistryValueKind.MultiString) or nameof(RegistryValueKind.DWord)
                    or nameof(RegistryValueKind.QWord) or nameof(RegistryValueKind.Binary));
     }
 

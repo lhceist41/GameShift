@@ -405,4 +405,46 @@ public class WatchdogRevertEngineTests
             result.Items.Select(i => i.Outcome));
         Assert.False(new JournalManager(temp.GetFile("state.json")).LoadJournal()!.SessionActive);
     }
+
+    // The trace-session cleanup runs first and the background process reset after every record,
+    // while the session is still active; the production constructor wires the real ones.
+    [Fact]
+    public void RevertFromJournal_RunsCleanupFirstAndTheBackgroundResetBeforeTheSessionEnds()
+    {
+        using var temp = new TempPath();
+        var path = temp.GetFile("state.json");
+        var journal = new JournalManager(path);
+        var sequence = new List<string>();
+        var factories = new Dictionary<string, Func<IJournaledOptimization>>(StringComparer.Ordinal)
+        {
+            ["Opt"] = () => new RecordingMockJournaledOptimization("Opt", sequence),
+        };
+
+        journal.StartSession(NewTestProfile());
+        journal.RecordApplied(new OptimizationResult("Opt", "o", "o", OptimizationState.Applied));
+        journal.RecordGameAction("registry", "r");
+
+        bool? activeDuringReset = null;
+        var engine = new WatchdogRevertEngine(
+            NoOpLogger, factories,
+            (kind, _, _) =>
+            {
+                sequence.Add(kind);
+                return new GameActionRevertResult(RevertOutcome.Reverted);
+            },
+            cleanupStaleTraceSession: _ => sequence.Add("etw-cleanup"),
+            resetBackgroundProcesses: () =>
+            {
+                sequence.Add("background-reset");
+                activeDuringReset = new JournalManager(path).PeekJournal()!.SessionActive;
+            });
+        bool? activeBeforeEnd = null;
+        engine.RevertFromJournal(journal.LoadJournal()!, journal,
+            _ => activeBeforeEnd = new JournalManager(path).PeekJournal()!.SessionActive);
+
+        Assert.Equal(new[] { "etw-cleanup", "registry", "Opt", "background-reset" }, sequence);
+        Assert.True(activeDuringReset);
+        Assert.True(activeBeforeEnd);
+        Assert.False(new JournalManager(path).PeekJournal()!.SessionActive);
+    }
 }
