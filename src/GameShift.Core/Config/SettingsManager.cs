@@ -10,9 +10,20 @@ namespace GameShift.Core.Config;
 /// </summary>
 public static class SettingsManager
 {
-    private static readonly string DefaultAppDataPath = Path.Combine(
+    private static readonly string DefaultAppDataPath = TestHooks.DefaultAppDataPathOverride ?? Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "GameShift");
+
+    /// <summary>
+    /// Internal test hook. Null in production; the test assembly sets it before first use to
+    /// replace the default %AppData%\GameShift folder. Read once when SettingsManager initializes.
+    /// A nested type so setting it does not run SettingsManager's static constructor, which
+    /// already resolves the folder and opens the log.
+    /// </summary>
+    internal static class TestHooks
+    {
+        internal static string? DefaultAppDataPathOverride { get; set; }
+    }
 
     /// <summary>
     /// Internal test hook. Null in production; tests can set this to redirect the settings
