@@ -28,8 +28,12 @@ internal sealed class JournalFolder : IDisposable
     private const uint ShareAll = NativeInterop.FILE_SHARE_READ | NativeInterop.FILE_SHARE_WRITE | NativeInterop.FILE_SHARE_DELETE;
     private const uint FileOptions =
         NativeInterop.FILE_NON_DIRECTORY_FILE | NativeInterop.FILE_SYNCHRONOUS_IO_NONALERT | NativeInterop.FILE_OPEN_REPARSE_POINT;
+    private const int ReplaceAttempts = 5;
 
     private readonly SafeFileHandle _handle;
+
+    /// <summary>Waits before replace attempt <c>n + 1</c>; 20, 40, 80 and 160 ms, 300 ms in all.</summary>
+    internal Action<int> WaitBeforeReplaceRetry { get; set; } = attempt => Thread.Sleep(20 << (attempt - 1));
 
     private JournalFolder(SafeFileHandle handle) => _handle = handle;
 
@@ -86,8 +90,8 @@ internal sealed class JournalFolder : IDisposable
 
     /// <summary>
     /// Writes <paramref name="name"/> atomically: <c>name.tmp</c> is created as a new file, filled,
-    /// given Administrators as owner, then renamed over <paramref name="name"/>. Throws when the
-    /// file cannot be written or renamed.
+    /// given Administrators as owner, then renamed over <paramref name="name"/>, even while another
+    /// process reads it. Throws, leaving no temp file, when the file cannot be written or renamed.
     /// </summary>
     /// <returns>Whether Administrators could be made the owner.</returns>
     public bool WriteFileAtomically(string name, ReadOnlySpan<byte> content)
@@ -112,11 +116,28 @@ internal sealed class JournalFolder : IDisposable
         // reports the journal as not trusted.
         bool ownerSet = WindowsJournalSecurity.TrySetAdministratorsOwner(file);
 
-        status = WindowsJournalSecurity.RenameRelative(file, _handle, name, replaceIfExists: true);
+        status = Replace(file, name);
         if (status != 0)
+        {
+            NativeInterop.NtSetInformationFile(file, out _, new byte[] { 1 }, 1, NativeInterop.FileDispositionInformation);
             throw new IOException($"Could not rename {tempName} to {name} (status 0x{status:X8})");
+        }
 
         return ownerSet;
+    }
+
+    private int Replace(SafeFileHandle file, string name)
+    {
+        for (int attempt = 1; ; attempt++)
+        {
+            var status = WindowsJournalSecurity.ReplaceRelative(file, _handle, name);
+            // A handle without delete sharing, typically a scanner or backup tool, blocks even the
+            // POSIX replace but is usually closed again within milliseconds.
+            if (attempt == ReplaceAttempts ||
+                status is not (NativeInterop.STATUS_SHARING_VIOLATION or NativeInterop.STATUS_ACCESS_DENIED))
+                return status;
+            WaitBeforeReplaceRetry(attempt);
+        }
     }
 
     private SafeFileHandle? OpenRelative(

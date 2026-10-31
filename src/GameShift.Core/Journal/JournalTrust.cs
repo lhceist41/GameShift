@@ -377,26 +377,48 @@ internal sealed class WindowsJournalSecurity : IJournalSecurityStore
     /// Returns the NTSTATUS, 0 on success.
     /// </summary>
     internal static int RenameRelative(SafeFileHandle file, SafeFileHandle folder, string newName, bool replaceIfExists)
+        => SetRenameInformation(file, folder, newName, replaceIfExists ? 1u : 0u, NativeInterop.FileRenameInformation);
+
+    /// <summary>
+    /// Like <see cref="RenameRelative"/> with replace, but with POSIX semantics: a target another
+    /// process holds open with delete sharing leaves the name and stays readable through that
+    /// handle, where the legacy replace refuses any open target. Falls back to the legacy replace
+    /// on a file system without the extended rename.
+    /// </summary>
+    internal static int ReplaceRelative(SafeFileHandle file, SafeFileHandle folder, string newName)
+    {
+        var status = SetRenameInformation(file, folder, newName,
+            NativeInterop.FILE_RENAME_REPLACE_IF_EXISTS | NativeInterop.FILE_RENAME_POSIX_SEMANTICS,
+            NativeInterop.FileRenameInformationEx);
+        return status is NativeInterop.STATUS_INVALID_INFO_CLASS or NativeInterop.STATUS_INVALID_PARAMETER
+            or NativeInterop.STATUS_NOT_SUPPORTED
+            ? RenameRelative(file, folder, newName, replaceIfExists: true)
+            : status;
+    }
+
+    private static int SetRenameInformation(
+        SafeFileHandle file, SafeFileHandle folder, string newName, uint flags, int informationClass)
     {
         bool addedRef = false;
         try
         {
             folder.DangerousAddRef(ref addedRef);
 
-            // FILE_RENAME_INFORMATION: replace if exists, root directory, name length, name.
+            // FILE_RENAME_INFORMATION(_EX): a BOOLEAN ReplaceIfExists or, for the extended class, a
+            // ULONG Flags sharing its offset, then root directory, name length, name. Written as a
+            // little-endian ULONG, flag 1 is the same bytes as ReplaceIfExists = TRUE.
             var name = global::System.Text.Encoding.Unicode.GetBytes(newName);
             int rootOffset = IntPtr.Size;
             int lengthOffset = rootOffset + IntPtr.Size;
             int nameOffset = lengthOffset + sizeof(uint);
             var info = new byte[nameOffset + name.Length + sizeof(char)];
-            info[0] = replaceIfExists ? (byte)1 : (byte)0;
+            BitConverter.GetBytes(flags).CopyTo(info, 0);
             var root = folder.DangerousGetHandle();
             (IntPtr.Size == 8 ? BitConverter.GetBytes(root.ToInt64()) : BitConverter.GetBytes(root.ToInt32())).CopyTo(info, rootOffset);
             BitConverter.GetBytes((uint)name.Length).CopyTo(info, lengthOffset);
             name.CopyTo(info, nameOffset);
 
-            return NativeInterop.NtSetInformationFile(
-                file, out _, info, (uint)info.Length, NativeInterop.FileRenameInformation);
+            return NativeInterop.NtSetInformationFile(file, out _, info, (uint)info.Length, informationClass);
         }
         finally
         {

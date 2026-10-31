@@ -17,6 +17,9 @@ public static partial class NativeInterop
     internal const uint FILE_LIST_DIRECTORY = 0x0001;
     internal const uint FILE_TRAVERSE = 0x0020;
     internal const int FileRenameInformation = 10;
+    internal const int FileRenameInformationEx = 65;
+    internal const uint FILE_RENAME_REPLACE_IF_EXISTS = 0x1;
+    internal const uint FILE_RENAME_POSIX_SEMANTICS = 0x2;
     internal const int FileDispositionInformation = 13;
     internal const uint GENERIC_READ = 0x80000000;
     internal const uint GENERIC_WRITE = 0x40000000;
@@ -31,6 +34,11 @@ public static partial class NativeInterop
     internal const uint OBJ_CASE_INSENSITIVE = 0x40;
     internal const uint FILE_ATTRIBUTE_NORMAL = 0x80;
     internal const int STATUS_OBJECT_NAME_NOT_FOUND = unchecked((int)0xC0000034);
+    internal const int STATUS_INVALID_INFO_CLASS = unchecked((int)0xC0000003);
+    internal const int STATUS_INVALID_PARAMETER = unchecked((int)0xC000000D);
+    internal const int STATUS_NOT_SUPPORTED = unchecked((int)0xC00000BB);
+    internal const int STATUS_ACCESS_DENIED = unchecked((int)0xC0000022);
+    internal const int STATUS_SHARING_VIOLATION = unchecked((int)0xC0000043);
 
     internal const uint FILE_SHARE_READ = 0x1;
     internal const uint FILE_SHARE_WRITE = 0x2;

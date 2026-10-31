@@ -231,6 +231,107 @@ public class JournalFolderTests
         }
     }
 
+    // ── Replacing a file another program has open ─────────────────────────
+
+    private static FileStream OpenReader(string path, FileShare share) =>
+        new(path, FileMode.Open, FileAccess.Read, share);
+
+    private static string ReadAll(FileStream reader) => new StreamReader(reader).ReadToEnd();
+
+    [Fact]
+    public void WriteFileAtomically_WhileAReaderHoldsTheFileWithDeleteSharing_ReplacesIt_AndTheReaderKeepsTheOldContent()
+    {
+        using var temp = new TempPath();
+        using var folder = JournalFolder.Open(temp.Path, out _)!;
+        folder.WriteFileAtomically("state.json", Encoding.UTF8.GetBytes("old"));
+        var waits = new List<int>();
+        folder.WaitBeforeReplaceRetry = waits.Add;
+
+        using var reader = OpenReader(temp.GetFile("state.json"), FileShare.ReadWrite | FileShare.Delete);
+        folder.WriteFileAtomically("state.json", Encoding.UTF8.GetBytes("new"));
+
+        Assert.Empty(waits);
+        Assert.Equal("new", Encoding.UTF8.GetString(folder.ReadFile("state.json")!));
+        Assert.Equal("old", ReadAll(reader));
+        Assert.False(File.Exists(temp.GetFile("state.json.tmp")));
+    }
+
+    [Fact]
+    public void WriteFileAtomically_WhileAReaderHoldsTheFileWithoutDeleteSharing_RetriesFourTimes_ThenFailsCleanly()
+    {
+        using var temp = new TempPath();
+        using var folder = JournalFolder.Open(temp.Path, out _)!;
+        folder.WriteFileAtomically("state.json", Encoding.UTF8.GetBytes("old"));
+        var waits = new List<int>();
+        folder.WaitBeforeReplaceRetry = waits.Add;
+
+        using (OpenReader(temp.GetFile("state.json"), FileShare.ReadWrite))
+            Assert.Throws<IOException>(() => folder.WriteFileAtomically("state.json", Encoding.UTF8.GetBytes("new")));
+
+        Assert.Equal(new[] { 1, 2, 3, 4 }, waits);
+        Assert.Equal("old", File.ReadAllText(temp.GetFile("state.json")));
+        Assert.False(File.Exists(temp.GetFile("state.json.tmp")));
+    }
+
+    [Fact]
+    public void WriteFileAtomically_WhenTheReaderClosesBeforeTheRetry_Succeeds()
+    {
+        using var temp = new TempPath();
+        using var folder = JournalFolder.Open(temp.Path, out _)!;
+        folder.WriteFileAtomically("state.json", Encoding.UTF8.GetBytes("old"));
+        var reader = OpenReader(temp.GetFile("state.json"), FileShare.ReadWrite);
+        var waits = new List<int>();
+        folder.WaitBeforeReplaceRetry = attempt =>
+        {
+            waits.Add(attempt);
+            reader.Dispose();
+        };
+
+        try
+        {
+            folder.WriteFileAtomically("state.json", Encoding.UTF8.GetBytes("new"));
+        }
+        finally
+        {
+            reader.Dispose();
+        }
+
+        Assert.Equal(new[] { 1 }, waits);
+        Assert.Equal("new", File.ReadAllText(temp.GetFile("state.json")));
+        Assert.False(File.Exists(temp.GetFile("state.json.tmp")));
+    }
+
+    // The recovery path: an attempt is counted only when the new count reached the disk.
+    [Fact]
+    public void RecordRecoveryAttempt_WhileAReaderHoldsTheJournalWithDeleteSharing_Succeeds()
+    {
+        using var temp = new TempPath();
+        var path = temp.GetFile("state.json");
+        var journal = new JournalManager(path);
+        journal.StartSession(Profile);
+
+        using var reader = OpenReader(path, FileShare.ReadWrite | FileShare.Delete);
+
+        Assert.True(journal.RecordRecoveryAttempt());
+        Assert.Equal(1, journal.PeekJournal()!.RecoveryAttempts);
+    }
+
+    [Fact]
+    public void RecordRecoveryAttempt_WhileAReaderHoldsTheJournalWithoutDeleteSharing_ReturnsFalse_AndLeavesItUnchanged()
+    {
+        using var temp = new TempPath();
+        var path = temp.GetFile("state.json");
+        var journal = new JournalManager(path);
+        journal.StartSession(Profile);
+        var before = File.ReadAllBytes(path);
+
+        using (OpenReader(path, FileShare.ReadWrite))
+            Assert.False(journal.RecordRecoveryAttempt());
+
+        Assert.Equal(before, File.ReadAllBytes(path));
+        Assert.False(File.Exists(path + ".tmp"));
+    }
+
     // ── Preparing the shared folder ───────────────────────────────────────
 
     [Fact]
