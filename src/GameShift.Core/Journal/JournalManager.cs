@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using GameShift.Core.Config;
@@ -122,7 +123,8 @@ public class SessionJournalData
 
 /// <summary>
 /// Manages the session state journal at %ProgramData%\GameShift\state.json.
-/// All writes are atomic: written to .tmp first, then moved via File.Move(overwrite:true).
+/// All writes are atomic: written to .tmp first, then renamed over the journal, both relative to a
+/// handle on the folder (<see cref="JournalFolder"/>).
 /// Used by OptimizationEngine to persist apply/revert state for crash recovery.
 /// </summary>
 public class JournalManager
@@ -136,6 +138,10 @@ public class JournalManager
     private static readonly object _lock = new();
     // Set once the production journal directory's ACL has been hardened this process.
     private static bool _dirHardened;
+    // Set when the production journal directory could not be made a plain folder; nothing is
+    // written there for the rest of the process.
+    private static string? _sharedFolderRefusal;
+    private readonly string? _writeRefusal;
     private SessionJournalData _current = new();
 
     private static readonly JsonSerializerOptions _writeOptions = new()
@@ -153,32 +159,119 @@ public class JournalManager
     /// Test/explicit-path constructor. Allows overriding the journal file location.
     /// Internal to prevent production callers from depending on it.
     /// </summary>
-    internal JournalManager(string journalPath)
+    internal JournalManager(string journalPath) : this(journalPath, sharedFolderOwnerSid: null, afterReparseRemoved: null) { }
+
+    /// <summary>
+    /// With <paramref name="sharedFolderOwnerSid"/> set, the folder is prepared like the production
+    /// one (<see cref="PrepareJournalDirectory"/>) with that owner, so a test can run it unelevated.
+    /// </summary>
+    internal JournalManager(string journalPath, string? sharedFolderOwnerSid, Action? afterReparseRemoved)
     {
         _logger = SettingsManager.Logger;
         _journalPath = journalPath;
         var dir = Path.GetDirectoryName(_journalPath);
-        if (!string.IsNullOrEmpty(dir))
+        if (string.IsNullOrEmpty(dir))
+            return;
+
+        if (sharedFolderOwnerSid != null)
+        {
+            if (PrepareJournalDirectory(dir, sharedFolderOwnerSid, _logger, out var reason, afterReparseRemoved) == JournalFolderSetup.Unavailable)
+                _writeRefusal = reason;
+            return;
+        }
+
+        var defaultDir = Path.GetDirectoryName(GetDefaultJournalPath());
+        if (string.IsNullOrEmpty(defaultDir) || !string.Equals(dir, defaultDir, StringComparison.OrdinalIgnoreCase))
         {
             if (!Directory.Exists(dir))
                 Directory.CreateDirectory(dir);
-
-            // Harden the shared %ProgramData%\GameShift directory once per process. By default it
-            // inherits ProgramData's ACL, which lets any standard user add files - so a low-priv
-            // user could plant or tamper with state.json, which the elevated app and the SYSTEM
-            // boot-recovery task consume (a privilege-escalation path). Lock it to SYSTEM/Admins
-            // full control and Users read-only. Only the real production directory is touched.
-            var defaultDir = Path.GetDirectoryName(GetDefaultJournalPath());
-            if (!_dirHardened &&
-                !string.IsNullOrEmpty(defaultDir) &&
-                string.Equals(dir, defaultDir, StringComparison.OrdinalIgnoreCase))
-            {
-                // Latch the flag only on success so a transient failure (AV/sharing lock) doesn't
-                // permanently disable hardening for the process - a later construction can retry.
-                if (TryHardenJournalDirectory(dir, _logger))
-                    _dirHardened = true;
-            }
+            return;
         }
+
+        // Harden the shared %ProgramData%\GameShift directory once per process. By default it
+        // inherits ProgramData's ACL, which lets any standard user add files - so a low-priv
+        // user could plant or tamper with state.json, which the elevated app and the SYSTEM
+        // boot-recovery task consume (a privilege-escalation path). Lock it to SYSTEM/Admins
+        // full control and Users read-only. Only the real production directory is touched.
+        lock (_lock)
+        {
+            if (_sharedFolderRefusal == null && !_dirHardened)
+            {
+                switch (PrepareJournalDirectory(dir, JournalTrust.AdministratorsSid, _logger, out var reason))
+                {
+                    // Latch only on success so a transient failure (AV/sharing lock) doesn't
+                    // permanently disable hardening for the process - a later construction can retry.
+                    case JournalFolderSetup.Ready:
+                        _dirHardened = true;
+                        break;
+                    case JournalFolderSetup.Unavailable:
+                        _sharedFolderRefusal = reason;
+                        break;
+                }
+            }
+
+            _writeRefusal = _sharedFolderRefusal;
+        }
+    }
+
+    /// <summary>
+    /// Makes <paramref name="dir"/> a plain folder to journal in. A reparse point in its place
+    /// (which a standard user can plant) is removed, never what it names, and a missing folder is
+    /// created with <paramref name="ownerSid"/> as owner and the hardened DACL in the same call, so
+    /// no user ever owns or can write it. An existing plain folder gets the hardened DACL by handle,
+    /// its owner unchanged.
+    /// </summary>
+    internal static JournalFolderSetup PrepareJournalDirectory(
+        string dir, string ownerSid, ILogger logger, out string? reason, Action? afterReparseRemoved = null)
+    {
+        reason = null;
+        if (!OperatingSystem.IsWindows())
+            return JournalFolderSetup.Ready;
+
+        try
+        {
+            FileAttributes? attributes = null;
+            try
+            {
+                attributes = File.GetAttributes(dir); // the entry itself, not what a reparse point names
+            }
+            catch (FileNotFoundException) { }
+            catch (DirectoryNotFoundException) { }
+
+            if (attributes is { } existing)
+            {
+                if ((existing & FileAttributes.ReparsePoint) == 0)
+                {
+                    if ((existing & FileAttributes.Directory) != 0)
+                        return TryHardenJournalDirectory(dir, logger) ? JournalFolderSetup.Ready : JournalFolderSetup.NotHardened;
+
+                    return Unavailable(dir, "a file is in its place", logger, out reason);
+                }
+
+                if (!WindowsJournalSecurity.TryRemoveReparsePoint(dir, out var removeRefusal))
+                    return Unavailable(dir, $"it is a reparse point that could not be removed: {removeRefusal}", logger, out reason);
+
+                logger.Warning("[JournalManager] Removed a reparse point at {Dir}; its target was not touched", dir);
+                afterReparseRemoved?.Invoke();
+            }
+
+            if (!WindowsJournalSecurity.TryCreateHardenedFolder(dir, ownerSid, out var createRefusal))
+                return Unavailable(dir, $"the folder could not be created: {createRefusal}", logger, out reason);
+
+            logger.Information("[JournalManager] Created {Dir} with the hardened owner and ACL", dir);
+            return JournalFolderSetup.Ready;
+        }
+        catch (Exception ex)
+        {
+            return Unavailable(dir, $"preparing it failed: {ex.Message}", logger, out reason);
+        }
+    }
+
+    private static JournalFolderSetup Unavailable(string dir, string why, ILogger logger, out string reason)
+    {
+        reason = why;
+        logger.Error("[JournalManager] {Dir}: {Reason}; crash recovery is off for this run", dir, why);
+        return JournalFolderSetup.Unavailable;
     }
 
     /// <summary>
@@ -252,13 +345,13 @@ public class JournalManager
                 },
                 Optimizations = new List<JournalEntry>()
             };
-            Save(SaveScope.SessionState);
+            bool saved = Save(SaveScope.SessionState);
 
             // Crash recovery for journaled optimizations depends on this write landing. If it did
             // not persist (disk full, ProgramData not writable, AV lock), the watchdog/boot recovery
             // cannot revert after a crash - surface it loudly instead of failing silently. The
             // in-memory revert path still works for a normal game-close, so we do not abort the apply.
-            if (!VerifySessionPersisted())
+            if (!saved || !VerifySessionPersisted())
             {
                 _logger.Error(
                     "[JournalManager] Session journal did not persist to {Path} - crash recovery is unavailable for this session",
@@ -462,15 +555,15 @@ public class JournalManager
         lock (_lock)
         {
             _current.RecoveryAttempts++;
-            Save(SaveScope.SessionState);
-            return ReadFromDisk()?.RecoveryAttempts == _current.RecoveryAttempts;
+            return Save(SaveScope.SessionState) && ReadFromDisk()?.RecoveryAttempts == _current.RecoveryAttempts;
         }
     }
 
     /// <summary>
     /// Copies the journal file to <c>state.{suffix}.json</c> in the same folder, so the records
-    /// survive the next session start. Atomic like <see cref="Save"/>. Returns the copy's path, or
-    /// null when there was nothing to copy or the copy failed.
+    /// survive the next session start. Atomic like <see cref="Save"/> and, like it, read and written
+    /// only through a handle on the folder. Returns the copy's path, or null when there was nothing
+    /// to copy or the copy failed.
     /// </summary>
     public string? SaveEvidenceCopy(string suffix)
     {
@@ -478,14 +571,15 @@ public class JournalManager
         {
             try
             {
-                if (!File.Exists(_journalPath))
+                using var folder = OpenFolderForWrite();
+                var content = folder?.ReadFile(Path.GetFileName(_journalPath));
+                if (folder == null || content == null)
                     return null;
 
-                var evidencePath = Path.Combine(Path.GetDirectoryName(_journalPath) ?? string.Empty, $"state.{suffix}.json");
-                var tempPath = evidencePath + ".tmp";
-                File.Copy(_journalPath, tempPath, overwrite: true);
-                SetAdministratorsOwner(tempPath);
-                File.Move(tempPath, evidencePath, overwrite: true);
+                var evidenceName = $"state.{suffix}.json";
+                var evidencePath = Path.Combine(Path.GetDirectoryName(_journalPath) ?? string.Empty, evidenceName);
+                if (!folder.WriteFileAtomically(evidenceName, content))
+                    _logger.Debug("[JournalManager] Could not make Administrators the owner of {Path}", evidencePath);
                 return evidencePath;
             }
             catch (Exception ex)
@@ -621,18 +715,59 @@ public class JournalManager
         }
     }
 
+    /// <summary>The same through the folder handle a save writes through.</summary>
+    private SessionJournalData? ReadFromDisk(JournalFolder folder)
+    {
+        try
+        {
+            var content = folder.ReadFile(Path.GetFileName(_journalPath));
+            return content == null
+                ? null
+                : JsonSerializer.Deserialize<SessionJournalData>(Encoding.UTF8.GetString(content).TrimStart('\uFEFF'), _writeOptions);
+        }
+        catch (Exception ex)
+        {
+            _logger.Debug(ex, "[JournalManager] Could not re-read journal for merge at {Path}", _journalPath);
+            return null;
+        }
+    }
+
     /// <summary>
-    /// Persists the journal atomically (write to .tmp, then File.Move overwrite), merging back the
+    /// Opens the journal folder for a write, or logs why nothing is written. A folder that is a
+    /// reparse point is never written through, even when it points somewhere harmless.
+    /// </summary>
+    private JournalFolder? OpenFolderForWrite()
+    {
+        var dir = Path.GetDirectoryName(_journalPath);
+        if (_writeRefusal != null || string.IsNullOrEmpty(dir))
+        {
+            _logger.Warning("[JournalManager] Not writing the state journal: {Reason}", _writeRefusal ?? "it has no folder");
+            return null;
+        }
+
+        var folder = JournalFolder.Open(dir, out var refusal);
+        if (folder == null)
+            _logger.Warning("[JournalManager] Not writing the state journal to {Dir}: {Reason}", dir, refusal);
+        return folder;
+    }
+
+    /// <summary>
+    /// Persists the journal atomically (write to .tmp, then rename over the journal), merging back the
     /// half of the document this write does not own so a concurrent instance's write is not lost.
     /// The caller holds the static <see cref="_lock"/>, which makes this read-modify-write atomic
     /// against the other instances sharing the same file.
     /// </summary>
-    private void Save(SaveScope scope)
+    /// <returns>True when the journal was written.</returns>
+    private bool Save(SaveScope scope)
     {
         try
         {
+            using var folder = OpenFolderForWrite();
+            if (folder == null)
+                return false;
+
             var toWrite = _current;
-            var disk = ReadFromDisk();
+            var disk = ReadFromDisk(folder);
             if (disk != null)
             {
                 if (scope == SaveScope.SessionState)
@@ -650,36 +785,14 @@ public class JournalManager
             }
 
             var json = JsonSerializer.Serialize(toWrite, _writeOptions);
-            var tempPath = _journalPath + ".tmp";
-            File.WriteAllText(tempPath, json);
-            SetAdministratorsOwner(tempPath);
-            File.Move(tempPath, _journalPath, overwrite: true); // Atomic on NTFS
+            if (!folder.WriteFileAtomically(Path.GetFileName(_journalPath), Encoding.UTF8.GetBytes(json)))
+                _logger.Debug("[JournalManager] Could not make Administrators the owner of {Path}", _journalPath);
+            return true;
         }
         catch (Exception ex)
         {
             _logger.Warning(ex, "[JournalManager] Failed to save state journal to {Path}", _journalPath);
-        }
-    }
-
-    /// <summary>
-    /// Every save writes a new file, which gets the default owner for the elevated token. Where
-    /// policy makes that the admin user rather than Administrators, the trust check would refuse
-    /// every journal, so the owner is set here. On failure the save still completes; the next start
-    /// then reports the journal as not trusted.
-    /// </summary>
-    private void SetAdministratorsOwner(string path)
-    {
-        if (!OperatingSystem.IsWindows())
-            return;
-
-        try
-        {
-            if (!WindowsJournalSecurity.TrySetAdministratorsOwner(path))
-                _logger.Debug("[JournalManager] Could not make Administrators the owner of {Path}", path);
-        }
-        catch (Exception ex)
-        {
-            _logger.Debug(ex, "[JournalManager] Could not make Administrators the owner of {Path}", path);
+            return false;
         }
     }
 

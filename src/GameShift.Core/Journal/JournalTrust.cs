@@ -368,30 +368,111 @@ internal sealed class WindowsJournalSecurity : IJournalSecurityStore
         if (handle.IsInvalid)
             return false;
 
+        return RenameRelative(handle, folderHandle, newName, replaceIfExists: false) == 0;
+    }
+
+    /// <summary>
+    /// Renames the entry <paramref name="file"/> was opened on (with DELETE access) to
+    /// <paramref name="newName"/> inside the folder <paramref name="folder"/> was opened on.
+    /// Returns the NTSTATUS, 0 on success.
+    /// </summary>
+    internal static int RenameRelative(SafeFileHandle file, SafeFileHandle folder, string newName, bool replaceIfExists)
+    {
         bool addedRef = false;
         try
         {
-            folderHandle.DangerousAddRef(ref addedRef);
+            folder.DangerousAddRef(ref addedRef);
 
-            // FILE_RENAME_INFORMATION: replace if exists (no), root directory, name length, name.
+            // FILE_RENAME_INFORMATION: replace if exists, root directory, name length, name.
             var name = global::System.Text.Encoding.Unicode.GetBytes(newName);
             int rootOffset = IntPtr.Size;
             int lengthOffset = rootOffset + IntPtr.Size;
             int nameOffset = lengthOffset + sizeof(uint);
             var info = new byte[nameOffset + name.Length + sizeof(char)];
-            var root = folderHandle.DangerousGetHandle();
+            info[0] = replaceIfExists ? (byte)1 : (byte)0;
+            var root = folder.DangerousGetHandle();
             (IntPtr.Size == 8 ? BitConverter.GetBytes(root.ToInt64()) : BitConverter.GetBytes(root.ToInt32())).CopyTo(info, rootOffset);
             BitConverter.GetBytes((uint)name.Length).CopyTo(info, lengthOffset);
             name.CopyTo(info, nameOffset);
 
             return NativeInterop.NtSetInformationFile(
-                handle, out _, info, (uint)info.Length, NativeInterop.FileRenameInformation) == 0;
+                file, out _, info, (uint)info.Length, NativeInterop.FileRenameInformation);
         }
         finally
         {
             if (addedRef)
-                folderHandle.DangerousRelease();
+                folder.DangerousRelease();
         }
+    }
+
+    /// <summary>
+    /// Deletes a reparse point itself (a junction, mount point or symbolic link), never what it
+    /// names. False, with nothing deleted, when the entry is not a reparse point or cannot be
+    /// opened. Runs with the backup and restore privileges, so a DACL on the link cannot keep it.
+    /// </summary>
+    internal static bool TryRemoveReparsePoint(string path, out string? refusal)
+    {
+        refusal = null;
+        using var privileges = PrivilegeScope.Enable(RenamePrivileges);
+        using var handle = NativeInterop.CreateFile(
+            path, NativeInterop.DELETE | NativeInterop.FILE_READ_ATTRIBUTES, ShareAll,
+            IntPtr.Zero, NativeInterop.OPEN_EXISTING, OpenFlags, IntPtr.Zero);
+        if (handle.IsInvalid)
+        {
+            refusal = $"could not open it (error {Marshal.GetLastWin32Error()})";
+            return false;
+        }
+
+        if (!NativeInterop.GetFileInformationByHandle(handle, out var info) ||
+            (info.FileAttributes & NativeInterop.FILE_ATTRIBUTE_REPARSE_POINT) == 0)
+        {
+            refusal = "it is not a reparse point";
+            return false;
+        }
+
+        // FILE_DISPOSITION_INFORMATION { DeleteFile = TRUE }; the entry goes when the handle closes.
+        var status = NativeInterop.NtSetInformationFile(
+            handle, out _, new byte[] { 1 }, 1, NativeInterop.FileDispositionInformation);
+        if (status != 0)
+        {
+            refusal = $"deleting it failed (status 0x{status:X8})";
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Creates a folder that has <paramref name="ownerSid"/> as owner and the hardened, protected
+    /// DACL from the moment it exists. Fails when anything already has that name.
+    /// </summary>
+    internal static bool TryCreateHardenedFolder(string path, string ownerSid, out string? refusal)
+    {
+        refusal = null;
+        var descriptor = HardenedDescriptor(ownerSid, isDirectory: true);
+        var bytes = new byte[descriptor.BinaryLength];
+        descriptor.GetBinaryForm(bytes, 0);
+
+        var pinned = GCHandle.Alloc(bytes, GCHandleType.Pinned);
+        try
+        {
+            var attributes = new NativeInterop.SECURITY_ATTRIBUTES
+            {
+                Length = (uint)Marshal.SizeOf<NativeInterop.SECURITY_ATTRIBUTES>(),
+                SecurityDescriptor = pinned.AddrOfPinnedObject(),
+            };
+            if (!NativeInterop.CreateDirectory(path, ref attributes))
+            {
+                refusal = $"creating it failed (error {Marshal.GetLastWin32Error()})";
+                return false;
+            }
+        }
+        finally
+        {
+            pinned.Free();
+        }
+
+        return true;
     }
 
     /// <summary>Writes the owner and a protected DACL of SYSTEM and Administrators full control and Users read and execute.</summary>
@@ -447,9 +528,12 @@ internal sealed class WindowsJournalSecurity : IJournalSecurityStore
         using var handle = NativeInterop.CreateFile(
             path, NativeInterop.WRITE_OWNER, ShareAll,
             IntPtr.Zero, NativeInterop.OPEN_EXISTING, OpenFlags, IntPtr.Zero);
-        if (handle.IsInvalid)
-            return false;
+        return !handle.IsInvalid && TrySetAdministratorsOwner(handle);
+    }
 
+    /// <summary>The same on a handle opened with WRITE_OWNER.</summary>
+    internal static bool TrySetAdministratorsOwner(SafeFileHandle handle)
+    {
         var descriptor = new RawSecurityDescriptor(
             ControlFlags.None, new SecurityIdentifier(JournalTrust.AdministratorsSid), group: null, systemAcl: null, discretionaryAcl: null);
         return SetSecurity(handle, NativeInterop.OWNER_SECURITY_INFORMATION, descriptor);

@@ -17,6 +17,20 @@ public static partial class NativeInterop
     internal const uint FILE_LIST_DIRECTORY = 0x0001;
     internal const uint FILE_TRAVERSE = 0x0020;
     internal const int FileRenameInformation = 10;
+    internal const int FileDispositionInformation = 13;
+    internal const uint GENERIC_READ = 0x80000000;
+    internal const uint GENERIC_WRITE = 0x40000000;
+
+    // NtCreateFile dispositions, options and object attributes.
+    internal const uint FILE_OPEN = 1;
+    internal const uint FILE_CREATE = 2;
+    internal const uint FILE_SYNCHRONOUS_IO_NONALERT = 0x20;
+    internal const uint FILE_NON_DIRECTORY_FILE = 0x40;
+    internal const uint FILE_DELETE_ON_CLOSE = 0x1000;
+    internal const uint FILE_OPEN_REPARSE_POINT = 0x00200000;
+    internal const uint OBJ_CASE_INSENSITIVE = 0x40;
+    internal const uint FILE_ATTRIBUTE_NORMAL = 0x80;
+    internal const int STATUS_OBJECT_NAME_NOT_FOUND = unchecked((int)0xC0000034);
 
     internal const uint FILE_SHARE_READ = 0x1;
     internal const uint FILE_SHARE_WRITE = 0x2;
@@ -97,6 +111,52 @@ public static partial class NativeInterop
     [DllImport("ntdll.dll")]
     internal static extern int NtSetInformationFile(
         SafeFileHandle file, out IO_STATUS_BLOCK ioStatus, byte[] information, uint length, int informationClass);
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct UNICODE_STRING
+    {
+        public ushort Length;
+        public ushort MaximumLength;
+        public IntPtr Buffer;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct OBJECT_ATTRIBUTES
+    {
+        public uint Length;
+        public IntPtr RootDirectory;
+        public IntPtr ObjectName;
+        public uint Attributes;
+        public IntPtr SecurityDescriptor;
+        public IntPtr SecurityQualityOfService;
+    }
+
+    /// <summary>Opens or creates a name relative to a directory handle, which the Win32 calls cannot.</summary>
+    [DllImport("ntdll.dll")]
+    internal static extern int NtCreateFile(
+        out SafeFileHandle file,
+        uint desiredAccess,
+        ref OBJECT_ATTRIBUTES objectAttributes,
+        out IO_STATUS_BLOCK ioStatus,
+        IntPtr allocationSize,
+        uint fileAttributes,
+        uint shareAccess,
+        uint createDisposition,
+        uint createOptions,
+        IntPtr eaBuffer,
+        uint eaLength);
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct SECURITY_ATTRIBUTES
+    {
+        public uint Length;
+        public IntPtr SecurityDescriptor;
+        public int InheritHandle;
+    }
+
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode, EntryPoint = "CreateDirectoryW")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool CreateDirectory(string pathName, ref SECURITY_ATTRIBUTES securityAttributes);
 
     [DllImport("advapi32.dll")]
     internal static extern uint GetSecurityInfo(
