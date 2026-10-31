@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using GameShift.Core.System;
 
 namespace GameShift.Core.SystemTweaks.Tweaks;
@@ -24,42 +23,47 @@ public class DisableUsbSelectiveSuspend : ISystemTweak
     // Power plan GUIDs for USB selective suspend
     private const string UsbSubGroupGuid = "2a737441-1930-4402-8d77-b2bebba308a3";
     private const string UsbSuspendSettingGuid = "48e6b7a6-50f5-4782-a5d4-53bb8f07e226";
+    private static readonly Guid UsbSubGroup = new(UsbSubGroupGuid);
+    private static readonly Guid UsbSuspendSetting = new(UsbSuspendSettingGuid);
 
-    public bool DetectIsApplied()
-    {
-        try
-        {
-            int acValue = QueryPowerSettingValue("AC");
-            return acValue == 0; // 0 = disabled
-        }
-        catch { return false; }
-    }
+    /// <summary>Reads the active scheme's AC (true) or DC (false) index; tests replace it.</summary>
+    internal Func<bool, uint?> ReadIndex { get; init; } =
+        ac => ActiveSchemePowerSetting.ReadIndex(UsbSubGroup, UsbSuspendSetting, ac);
+
+    /// <summary>Reads Windows' default AC (true) or DC (false) index for the active scheme; tests replace it.</summary>
+    internal Func<bool, uint?> ReadDefaultIndex { get; init; } =
+        ac => ActiveSchemePowerSetting.ReadDefaultIndex(UsbSubGroup, UsbSuspendSetting, ac);
+
+    /// <summary>Runs powercfg and returns its exit code; tests replace it.</summary>
+    internal Func<string, int> RunPowercfg { get; init; } = RunPowercfgProcess;
+
+    public bool DetectIsApplied() => ReadIndex(true) == 0; // 0 = disabled
 
     public string? Apply()
     {
-        // Capture original AC and DC values
-        int originalAc = QueryPowerSettingValue("AC");
-        int originalDc = QueryPowerSettingValue("DC");
+        // Without both originals the change could not be undone, so nothing is changed.
+        var originalAc = ReadIndex(true);
+        var originalDc = ReadIndex(false);
+        if (originalAc == null || originalDc == null)
+            throw new InvalidOperationException("Could not read the USB selective suspend values, so nothing was changed.");
 
         // Set to 0 (disabled) on both AC and DC, checking each powercfg exit code.
-        var (acExit, _) = RunPowercfg($"/setacvalueindex SCHEME_CURRENT {UsbSubGroupGuid} {UsbSuspendSettingGuid} 0");
-        var (dcExit, _) = RunPowercfg($"/setdcvalueindex SCHEME_CURRENT {UsbSubGroupGuid} {UsbSuspendSettingGuid} 0");
-        var (activeExit, _) = RunPowercfg("/setactive SCHEME_CURRENT");
+        int acExit = RunPowercfg($"/setacvalueindex SCHEME_CURRENT {UsbSubGroupGuid} {UsbSuspendSettingGuid} 0");
+        int dcExit = RunPowercfg($"/setdcvalueindex SCHEME_CURRENT {UsbSubGroupGuid} {UsbSuspendSettingGuid} 0");
+        int activeExit = RunPowercfg("/setactive SCHEME_CURRENT");
 
         if (acExit != 0 || dcExit != 0 || activeExit != 0)
         {
             // Roll back any partial change, then throw so the manager records a failure rather than a
-            // stale applied-state. Only restore values we actually captured (>= 0).
-            if (originalAc >= 0)
-                RunPowercfg($"/setacvalueindex SCHEME_CURRENT {UsbSubGroupGuid} {UsbSuspendSettingGuid} {originalAc}");
-            if (originalDc >= 0)
-                RunPowercfg($"/setdcvalueindex SCHEME_CURRENT {UsbSubGroupGuid} {UsbSuspendSettingGuid} {originalDc}");
+            // stale applied-state.
+            RunPowercfg($"/setacvalueindex SCHEME_CURRENT {UsbSubGroupGuid} {UsbSuspendSettingGuid} {originalAc}");
+            RunPowercfg($"/setdcvalueindex SCHEME_CURRENT {UsbSubGroupGuid} {UsbSuspendSettingGuid} {originalDc}");
             RunPowercfg("/setactive SCHEME_CURRENT");
             throw new InvalidOperationException(
                 $"powercfg failed disabling USB selective suspend (ac={acExit}, dc={dcExit}, active={activeExit})");
         }
 
-        return JsonSerializer.Serialize(new { OriginalAc = originalAc, OriginalDc = originalDc });
+        return JsonSerializer.Serialize(new { OriginalAc = originalAc.Value, OriginalDc = originalDc.Value });
     }
 
     public bool Revert(string? originalValuesJson)
@@ -67,48 +71,50 @@ public class DisableUsbSelectiveSuspend : ISystemTweak
         if (string.IsNullOrEmpty(originalValuesJson)) return false;
         try
         {
-            var doc = JsonDocument.Parse(originalValuesJson);
-            int originalAc = doc.RootElement.GetProperty("OriginalAc").GetInt32();
-            int originalDc = doc.RootElement.GetProperty("OriginalDc").GetInt32();
+            using var doc = JsonDocument.Parse(originalValuesJson);
+            var ac = RevertValue(doc.RootElement.GetProperty("OriginalAc").GetInt64(), ac: true);
+            var dc = RevertValue(doc.RootElement.GetProperty("OriginalDc").GetInt64(), ac: false);
+            if (ac == null || dc == null) return false;
 
-            var (acExit, _) = RunPowercfg($"/setacvalueindex SCHEME_CURRENT {UsbSubGroupGuid} {UsbSuspendSettingGuid} {originalAc}");
-            var (dcExit, _) = RunPowercfg($"/setdcvalueindex SCHEME_CURRENT {UsbSubGroupGuid} {UsbSuspendSettingGuid} {originalDc}");
-            RunPowercfg("/setactive SCHEME_CURRENT");
-            return acExit == 0 && dcExit == 0;
+            int acExit = RunPowercfg($"/setacvalueindex SCHEME_CURRENT {UsbSubGroupGuid} {UsbSuspendSettingGuid} {ac}");
+            int dcExit = RunPowercfg($"/setdcvalueindex SCHEME_CURRENT {UsbSubGroupGuid} {UsbSuspendSettingGuid} {dc}");
+            int activeExit = RunPowercfg("/setactive SCHEME_CURRENT");
+            return acExit == 0 && dcExit == 0 && activeExit == 0;
         }
         catch { return false; }
     }
 
     /// <summary>
-    /// Queries the current USB selective suspend power setting value.
+    /// True when an earlier version recorded -1 for AC or DC because it could not read the value;
+    /// a revert sets that one back to Windows' default.
     /// </summary>
-    /// <param name="powerType">"AC" or "DC"</param>
-    /// <returns>Setting value (0 = disabled, 1 = enabled), or -1 on failure</returns>
-    private static int QueryPowerSettingValue(string powerType)
+    internal static bool HasUnrecordedOriginal(string? originalValuesJson)
     {
-        var (exitCode, output) = RunPowercfg($"/query SCHEME_CURRENT {UsbSubGroupGuid} {UsbSuspendSettingGuid}");
-        if (exitCode != 0) return -1;
-
-        // Parse "Current AC Power Setting Index: 0x00000001" or "Current DC Power Setting Index: ..."
-        var pattern = $@"Current {powerType} Power Setting Index:\s*0x([0-9a-fA-F]+)";
-        var match = Regex.Match(output, pattern);
-        return match.Success ? Convert.ToInt32(match.Groups[1].Value, 16) : -1;
+        if (string.IsNullOrEmpty(originalValuesJson)) return false;
+        try
+        {
+            using var doc = JsonDocument.Parse(originalValuesJson);
+            return doc.RootElement.GetProperty("OriginalAc").GetInt64() < 0
+                || doc.RootElement.GetProperty("OriginalDc").GetInt64() < 0;
+        }
+        catch { return false; }
     }
 
-    private static (int exitCode, string output) RunPowercfg(string arguments)
+    private uint? RevertValue(long original, bool ac) =>
+        original < 0 ? ReadDefaultIndex(ac)
+        : original <= uint.MaxValue ? (uint)original
+        : null;
+
+    private static int RunPowercfgProcess(string arguments)
     {
         try
         {
             var result = ProcessRunner.Run(NativeInterop.SystemExePath("powercfg.exe"), arguments, 5000);
-            if (result.TimedOut)
-                return (-1, result.StdOut);
-            if (!result.Exited)
-                return (-1, ""); // failed to start
-            return (result.ExitCode, result.StdOut);
+            return result.Exited && !result.TimedOut ? result.ExitCode : -1;
         }
         catch
         {
-            return (-1, "");
+            return -1;
         }
     }
 }

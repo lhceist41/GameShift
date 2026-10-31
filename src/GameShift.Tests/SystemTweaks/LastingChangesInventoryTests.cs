@@ -498,6 +498,73 @@ public class LastingChangesInventoryTests
         Assert.Equal(["tweak:" + tweakClass, "dpc:" + fixId], tweakLater.Calls);
     }
 
+    private const string UsbPowerTarget = "2a737441-1930-4402-8d77-b2bebba308a3|48e6b7a6-50f5-4782-a5d4-53bb8f07e226";
+
+    [Fact]
+    public void PowerSettingFixWithoutRecordedValue_SaysTheWindowsDefaultIsRestored()
+    {
+        var system = new FakeSystem();
+        system.Settings.AppliedDpcFixes.Add(new AppliedDpcFix { FixId = "legacy", Description = "Legacy", ActionType = "PowerPlanSetting", Target = UsbPowerTarget });
+        system.Settings.AppliedDpcFixes.Add(new AppliedDpcFix { FixId = "recorded", Description = "Recorded", ActionType = "PowerPlanSetting", Target = UsbPowerTarget, PreviousValue = "1" });
+
+        var items = Inventory(system).List().Items;
+
+        var legacy = items.Single(i => i.Key == "legacy").UndoDescription;
+        Assert.Contains("did not record", legacy);
+        Assert.Contains("Windows default", legacy);
+        Assert.Equal("Restores the value DPC Doctor recorded before applying the fix.",
+            items.Single(i => i.Key == "recorded").UndoDescription);
+    }
+
+    [Theory]
+    [InlineData("""{"OriginalAc":-1,"OriginalDc":-1}""", true)]
+    [InlineData("""{"OriginalAc":1,"OriginalDc":-1}""", true)]
+    [InlineData("""{"OriginalAc":1,"OriginalDc":1}""", false)]
+    public void RetiredUsbTweakWithoutRecordedOriginal_SaysTheWindowsDefaultIsRestored(string originals, bool unrecorded)
+    {
+        var system = new FakeSystem { FindTweakOverride = PairTweak };
+        system.Settings.SystemTweaks = new SystemTweaksSettings();
+        system.Settings.SystemTweaks.AppliedTweaks[nameof(DisableUsbSelectiveSuspend)] =
+            new TweakState { IsAppliedByGameShift = true, OriginalValues = originals };
+
+        var item = Assert.Single(Inventory(system).List().Items);
+
+        if (unrecorded)
+        {
+            Assert.Contains("did not record", item.UndoDescription);
+            Assert.Contains("Windows default", item.UndoDescription);
+        }
+        else
+        {
+            Assert.Equal("Restores the values it had before GameShift changed it.", item.UndoDescription);
+        }
+    }
+
+    [Theory]
+    [InlineData(1, true)]
+    [InlineData(-30, false)]
+    public void StackedUsbPair_WithLegacyEntriesWithoutValues_IsStillUndoneLatestFirst(int fixMinutesAfterTweak, bool fixFirst)
+    {
+        const string fixId = "disable_usb_selective_suspend";
+        var system = PairSystem(StackedLedger(fixId, TweakTime, TweakTime.AddMinutes(fixMinutesAfterTweak), s =>
+        {
+            var fix = s.AppliedDpcFixes.Single();
+            fix.ActionType = "PowerPlanSetting";
+            fix.Target = UsbPowerTarget;
+            fix.PreviousValue = null;
+            s.SystemTweaks!.AppliedTweaks[nameof(DisableUsbSelectiveSuspend)].OriginalValues = """{"OriginalAc":-1,"OriginalDc":-1}""";
+        }));
+        var inventory = Inventory(system);
+        var items = inventory.List().Items;
+        Assert.All(items, i => Assert.Contains("Windows default", i.UndoDescription));
+
+        var results = inventory.Undo(items.Reverse());
+
+        string[] order = ["dpc:" + fixId, "tweak:" + nameof(DisableUsbSelectiveSuspend)];
+        Assert.Equal(fixFirst ? order : order.Reverse(), system.Calls);
+        Assert.All(results, r => Assert.Equal(LastingChangeOutcome.Undone, r.Outcome));
+    }
+
     [Fact]
     public void LedgerTimes_KeepTheirKindThroughTheSettingsRoundTrip()
     {

@@ -119,6 +119,68 @@ public static partial class NativeInterop
         byte[]? Buffer,
         ref uint BufferSize);
 
+    /// <summary>
+    /// Reads a power setting's raw AC value; used for the scheme personality, a 16-byte GUID.
+    /// https://learn.microsoft.com/windows/win32/api/powersetting/nf-powersetting-powerreadacvalue
+    /// </summary>
+    [DllImport("powrprof.dll")]
+    internal static extern uint PowerReadACValue(
+        IntPtr RootPowerKey,
+        ref Guid SchemeGuid,
+        ref Guid SubGroupOfPowerSettingsGuid,
+        ref Guid PowerSettingGuid,
+        out uint Type,
+        byte[]? Buffer,
+        ref uint BufferSize);
+
+    /// <summary>
+    /// Reads a scheme's AC index for a power setting.
+    /// https://learn.microsoft.com/windows/win32/api/powrprof/nf-powrprof-powerreadacvalueindex
+    /// </summary>
+    [DllImport("powrprof.dll")]
+    internal static extern uint PowerReadACValueIndex(
+        IntPtr RootPowerKey,
+        ref Guid SchemeGuid,
+        ref Guid SubGroupOfPowerSettingsGuid,
+        ref Guid PowerSettingGuid,
+        out uint AcValueIndex);
+
+    /// <summary>
+    /// Reads a scheme's DC index for a power setting.
+    /// https://learn.microsoft.com/windows/win32/api/powrprof/nf-powrprof-powerreaddcvalueindex
+    /// </summary>
+    [DllImport("powrprof.dll")]
+    internal static extern uint PowerReadDCValueIndex(
+        IntPtr RootPowerKey,
+        ref Guid SchemeGuid,
+        ref Guid SubGroupOfPowerSettingsGuid,
+        ref Guid PowerSettingGuid,
+        out uint DcValueIndex);
+
+    /// <summary>
+    /// Reads Windows' default AC index for a power setting under a scheme personality.
+    /// https://learn.microsoft.com/windows/win32/api/powrprof/nf-powrprof-powerreadacdefaultindex
+    /// </summary>
+    [DllImport("powrprof.dll")]
+    internal static extern uint PowerReadACDefaultIndex(
+        IntPtr RootPowerKey,
+        ref Guid SchemePersonalityGuid,
+        ref Guid SubGroupOfPowerSettingsGuid,
+        ref Guid PowerSettingGuid,
+        out uint AcDefaultIndex);
+
+    /// <summary>
+    /// Reads Windows' default DC index for a power setting under a scheme personality.
+    /// https://learn.microsoft.com/windows/win32/api/powrprof/nf-powrprof-powerreaddcdefaultindex
+    /// </summary>
+    [DllImport("powrprof.dll")]
+    internal static extern uint PowerReadDCDefaultIndex(
+        IntPtr RootPowerKey,
+        ref Guid SchemePersonalityGuid,
+        ref Guid SubGroupOfPowerSettingsGuid,
+        ref Guid PowerSettingGuid,
+        out uint DcDefaultIndex);
+
     // ============================================================
     // ntdll.dll - NT Native API
     // ============================================================

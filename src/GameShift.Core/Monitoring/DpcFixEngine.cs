@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.Text.RegularExpressions;
 using Microsoft.Win32;
 using GameShift.Core.Config;
@@ -16,6 +17,12 @@ public class DpcFixResult
     public bool Success { get; init; }
     public string Message { get; init; } = "";
     public bool RebootRequired { get; init; }
+
+    /// <summary>
+    /// The fix failed, but part of it could not be rolled back, so its ledger entry is kept
+    /// for an undo.
+    /// </summary>
+    internal bool ChangeLeftInPlace { get; init; }
 }
 
 /// <summary>
@@ -63,7 +70,7 @@ public class DpcFixEngine
                 _ => (new DpcFixResult { Success = false, Message = $"Unknown action type: {fix.ActionType}" }, (AppliedDpcFix?)null)
             };
 
-            if (result.Success)
+            if (result.Success || result.ChangeLeftInPlace)
             {
                 // Persist the rollback ledger entry AND the pending-reboot marker in one atomic,
                 // lock-guarded transaction; the in-lambda dedup makes a Load-then-write race a no-op.
@@ -71,10 +78,13 @@ public class DpcFixEngine
                 {
                     if (applied != null && !s.AppliedDpcFixes.Any(f => f.FixId == applied.FixId))
                         s.AppliedDpcFixes.Add(applied);
-                    if (fix.RequiresReboot && !s.PendingRebootFixes.Contains(fix.Id))
+                    if (result.Success && fix.RequiresReboot && !s.PendingRebootFixes.Contains(fix.Id))
                         s.PendingRebootFixes.Add(fix.Id);
                 });
-                Log.Information("DpcFixEngine: applied fix {FixId} ({Name})", fix.Id, fix.Name);
+                if (result.Success)
+                    Log.Information("DpcFixEngine: applied fix {FixId} ({Name})", fix.Id, fix.Name);
+                else
+                    Log.Warning("DpcFixEngine: fix {FixId} failed and could not be rolled back; kept for undo", fix.Id);
             }
 
             return result;
@@ -445,53 +455,65 @@ public class DpcFixEngine
 
     // -- Power plan fixes ──────────────────────────────────────────
 
-    private (DpcFixResult result, AppliedDpcFix? applied) ApplyPowerPlanFix(DriverAutoFix fix)
+    internal (DpcFixResult result, AppliedDpcFix? applied) ApplyPowerPlanFix(DriverAutoFix fix)
     {
         // A power plan sub-setting such as USB selective suspend
         var subgroup = fix.Subgroup ?? "";
         var setting = fix.Setting ?? "";
         var value = fix.Value ?? "0";
 
-        // Read current value for rollback
-        var (qSuccess, queryOutput) = RunProcess(NativeInterop.SystemExePath("powercfg.exe"), $"/query SCHEME_CURRENT {subgroup} {setting}");
-        string? prevVal = null;
-        if (qSuccess)
-        {
-            // Parse "Current AC Power Setting Index: 0x00000001"
-            foreach (var line in queryOutput.Split('\n'))
-            {
-                if (line.Contains("Current AC Power Setting Index"))
-                {
-                    var hexPart = line.Split(':').LastOrDefault()?.Trim();
-                    if (hexPart != null && hexPart.StartsWith("0x"))
-                        prevVal = Convert.ToInt32(hexPart, 16).ToString();
-                    break;
-                }
-            }
-        }
+        if (!Guid.TryParse(subgroup, out var subgroupGuid) || !Guid.TryParse(setting, out var settingGuid))
+            return (new DpcFixResult { Success = false, Message = "Invalid power setting." }, null);
 
-        var (sSuccess, sOutput) = RunProcess(NativeInterop.SystemExePath("powercfg.exe"), $"/setacvalueindex SCHEME_CURRENT {subgroup} {setting} {value}");
+        // Without the current value the fix could not be undone, so nothing is changed.
+        var previous = ReadAcIndex(subgroupGuid, settingGuid);
+        if (previous == null)
+            return (new DpcFixResult { Success = false, Message = "The current power setting could not be read, so nothing was changed." }, null);
+
+        var (sSuccess, sOutput) = RunPowercfg($"/setacvalueindex SCHEME_CURRENT {subgroupGuid} {settingGuid} {value}");
         if (!sSuccess)
             return (new DpcFixResult { Success = false, Message = $"powercfg failed: {sOutput}" }, null);
-
-        // Apply the change
-        RunProcess(NativeInterop.SystemExePath("powercfg.exe"), "/setactive SCHEME_CURRENT");
 
         var subApplied = new AppliedDpcFix
         {
             FixId = fix.Id,
             Description = fix.Name,
             ActionType = "PowerPlanSetting",
-            PreviousValue = prevVal,
-            Target = $"{subgroup}|{setting}",
+            PreviousValue = previous.Value.ToString(CultureInfo.InvariantCulture),
+            Target = $"{subgroupGuid}|{settingGuid}",
             AppliedAt = DateTime.Now,
             RequiresReboot = false
         };
 
+        var (aSuccess, aOutput) = RunPowercfg("/setactive SCHEME_CURRENT");
+        if (!aSuccess)
+        {
+            var (rSuccess, _) = RunPowercfg($"/setacvalueindex SCHEME_CURRENT {subgroupGuid} {settingGuid} {previous.Value}");
+            var (rActive, _) = RunPowercfg("/setactive SCHEME_CURRENT");
+            if (rSuccess && rActive)
+                return (new DpcFixResult { Success = false, Message = $"powercfg could not apply the setting, so the earlier value was put back: {aOutput}" }, null);
+
+            return (new DpcFixResult
+            {
+                Success = false,
+                ChangeLeftInPlace = true,
+                Message = $"powercfg could not apply the setting or put the earlier value back. It stays recorded so it can be undone later: {aOutput}"
+            }, subApplied);
+        }
+
         return (new DpcFixResult { Success = true, Message = "Power plan setting applied." }, subApplied);
     }
 
-    private DpcFixResult RevertPowerPlanFix(AppliedDpcFix applied)
+    /// <summary>
+    /// True for a power setting entry that earlier versions recorded without the value it replaced;
+    /// a revert sets it back to Windows' default instead.
+    /// </summary>
+    internal static bool IsUnrecordedPowerSetting(AppliedDpcFix applied) =>
+        applied.ActionType == "PowerPlanSetting"
+        && string.IsNullOrEmpty(applied.PreviousValue)
+        && applied.Target.Contains('|');
+
+    internal DpcFixResult RevertPowerPlanFix(AppliedDpcFix applied)
     {
         if (Guid.TryParse(applied.Target, out _))
         {
@@ -500,23 +522,50 @@ public class DpcFixEngine
             if (string.IsNullOrEmpty(applied.PreviousValue) || !Guid.TryParse(applied.PreviousValue, out _))
                 return new DpcFixResult { Success = false, Message = "No valid previous power plan GUID stored." };
 
-            var (success, output) = RunProcess(NativeInterop.SystemExePath("powercfg.exe"), $"/setactive {applied.PreviousValue}");
+            var (success, output) = RunPowercfg($"/setactive {applied.PreviousValue}");
             return new DpcFixResult { Success = success, Message = success ? "Power plan reverted." : output };
         }
 
         // Sub-setting revert. Both GUID tokens and the numeric value are validated so the interpolated
         // powercfg arguments cannot be widened by a tampered ledger.
         var parts = applied.Target.Split('|');
-        if (parts.Length != 2 || string.IsNullOrEmpty(applied.PreviousValue))
+        if (parts.Length != 2)
             return new DpcFixResult { Success = false, Message = "Invalid revert target." };
-        if (!Guid.TryParse(parts[0], out _) || !Guid.TryParse(parts[1], out _) || !IsIntegerValue(applied.PreviousValue))
+        if (!Guid.TryParse(parts[0], out var subgroupGuid) || !Guid.TryParse(parts[1], out var settingGuid))
             return new DpcFixResult { Success = false, Message = "Invalid power plan revert target." };
 
-        var (s, o) = RunProcess(NativeInterop.SystemExePath("powercfg.exe"),
-            $"/setacvalueindex SCHEME_CURRENT {parts[0]} {parts[1]} {applied.PreviousValue}");
-        RunProcess(NativeInterop.SystemExePath("powercfg.exe"), "/setactive SCHEME_CURRENT");
+        bool recorded = !IsUnrecordedPowerSetting(applied);
+        uint revertValue;
+        if (recorded)
+        {
+            if (!IsIntegerValue(applied.PreviousValue)
+                || !uint.TryParse(applied.PreviousValue, NumberStyles.None, CultureInfo.InvariantCulture, out revertValue))
+                return new DpcFixResult { Success = false, Message = "Invalid power plan revert target." };
+        }
+        else
+        {
+            var defaultValue = ReadAcDefaultIndex(subgroupGuid, settingGuid);
+            if (defaultValue == null)
+                return new DpcFixResult { Success = false, Message = "The value before the fix was not recorded and the Windows default could not be read, so nothing was changed." };
+            revertValue = defaultValue.Value;
+        }
 
-        return new DpcFixResult { Success = s, Message = s ? "Setting reverted." : o };
+        var (s, o) = RunPowercfg($"/setacvalueindex SCHEME_CURRENT {subgroupGuid} {settingGuid} {revertValue}");
+        if (!s)
+            return new DpcFixResult { Success = false, Message = o };
+
+        // A failed activation keeps the entry; running the revert again writes the same value.
+        var (a, ao) = RunPowercfg("/setactive SCHEME_CURRENT");
+        if (!a)
+            return new DpcFixResult { Success = false, Message = $"powercfg could not apply the setting: {ao}" };
+
+        return new DpcFixResult
+        {
+            Success = true,
+            Message = recorded
+                ? "Setting reverted."
+                : "The value before the fix was not recorded, so the Windows default was restored."
+        };
     }
 
     // -- Network adapter fixes ─────────────────────────────────────
@@ -635,6 +684,18 @@ public class DpcFixEngine
 
     /// <summary>Process-start seam for the net adapter scripts; tests replace it so no PowerShell runs.</summary>
     internal Func<ProcessStartInfo, int, ProcessRunResult> RunPowerShell { get; set; } = ParameterizedPowerShell.Run;
+
+    /// <summary>powercfg seam; tests replace it so no power setting changes.</summary>
+    internal Func<string, (bool success, string output)> RunPowercfg { get; set; } =
+        args => RunProcess(NativeInterop.SystemExePath("powercfg.exe"), args);
+
+    /// <summary>Reads the active scheme's AC index; tests replace it.</summary>
+    internal Func<Guid, Guid, uint?> ReadAcIndex { get; set; } =
+        (subgroup, setting) => ActiveSchemePowerSetting.ReadIndex(subgroup, setting, ac: true);
+
+    /// <summary>Reads Windows' default AC index for the active scheme; tests replace it.</summary>
+    internal Func<Guid, Guid, uint?> ReadAcDefaultIndex { get; set; } =
+        (subgroup, setting) => ActiveSchemePowerSetting.ReadDefaultIndex(subgroup, setting, ac: true);
 
     private static (bool success, string output) RunProcess(string fileName, string arguments)
     {

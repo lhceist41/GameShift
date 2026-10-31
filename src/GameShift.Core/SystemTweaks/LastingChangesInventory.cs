@@ -275,9 +275,12 @@ public sealed class LastingChangesInventory
                 Kind = LastingChangeKind.SystemTweak,
                 Key = className,
                 DisplayName = tweak?.Name ?? className,
-                UndoDescription = tweak != null
-                    ? "Restores the values it had before GameShift changed it."
-                    : "This version of GameShift cannot undo it.",
+                UndoDescription = tweak == null
+                    ? "This version of GameShift cannot undo it."
+                    : className == nameof(Tweaks.DisableUsbSelectiveSuspend)
+                      && Tweaks.DisableUsbSelectiveSuspend.HasUnrecordedOriginal(state.OriginalValues)
+                        ? "GameShift did not record every value it had before; those are set back to the Windows default."
+                        : "Restores the values it had before GameShift changed it.",
                 RequiresRestart = tweak?.RequiresReboot ?? false,
             };
         }
@@ -293,7 +296,9 @@ public sealed class LastingChangesInventory
                 Kind = LastingChangeKind.LatencyDoctorFix,
                 Key = f.FixId,
                 DisplayName = string.IsNullOrWhiteSpace(f.Description) ? f.FixId : f.Description,
-                UndoDescription = "Restores the value DPC Doctor recorded before applying the fix.",
+                UndoDescription = DpcFixEngine.IsUnrecordedPowerSetting(f)
+                    ? "DPC Doctor did not record the value it had before, so it is set back to the Windows default."
+                    : "Restores the value DPC Doctor recorded before applying the fix.",
                 RequiresRestart = f.RequiresReboot,
             });
 
