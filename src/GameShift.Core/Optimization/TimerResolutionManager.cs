@@ -307,6 +307,8 @@ public class TimerResolutionManager : IOptimization, IJournaledOptimization
         catch { return false; }
     }
 
+    internal RecoveryRegistry RecoveryRegistry { get; init; } = RecoveryRegistry.Windows;
+
     /// <summary>
     /// Watchdog recovery: the process-scoped timer request is already gone with the crashed
     /// process; only the persistent GlobalTimerResolutionRequests registry value is restored here.
@@ -321,22 +323,16 @@ public class TimerResolutionManager : IOptimization, IJournaledOptimization
 
             if (values.TryGetValue(GlobalTimerResolutionValueName, out var el))
             {
-                using var key = Registry.LocalMachine.OpenSubKey(GlobalTimerResolutionKeyPath, writable: true);
-                if (key != null)
+                if (!RecoveryRegistry.RestoreDword(
+                        RecoveryHive.LocalMachine, GlobalTimerResolutionKeyPath, GlobalTimerResolutionValueName, el))
                 {
-                    if (el.ValueKind == JsonValueKind.Null)
-                    {
-                        key.DeleteValue(GlobalTimerResolutionValueName, throwOnMissingValue: false);
-                        SettingsManager.Logger.Information(
-                            "[TimerResolutionManager] Deleted GlobalTimerResolutionRequests (was absent before session)");
-                    }
-                    else if (el.ValueKind == JsonValueKind.Number)
-                    {
-                        key.SetValue(GlobalTimerResolutionValueName, el.GetInt32(), RegistryValueKind.DWord);
-                        SettingsManager.Logger.Information(
-                            "[TimerResolutionManager] Restored GlobalTimerResolutionRequests = {Value}", el.GetInt32());
-                    }
+                    SettingsManager.Logger.Warning(
+                        "[TimerResolutionManager] Could not restore GlobalTimerResolutionRequests from the journal record");
+                    return RevertFail("Not restored: GlobalTimerResolutionRequests");
                 }
+
+                SettingsManager.Logger.Information(
+                    "[TimerResolutionManager] Restored GlobalTimerResolutionRequests from the journal record");
             }
 
             return new OptimizationResult(OptimizationId, string.Empty, string.Empty, OptimizationState.Reverted);

@@ -1,5 +1,4 @@
 using System.Text.Json;
-using Microsoft.Win32;
 using GameShift.Core.Config;
 using GameShift.Core.Journal;
 using GameShift.Core.Profiles;
@@ -43,6 +42,8 @@ public class MpoToggle : IOptimization, IJournaledOptimization
 
     public bool Verify() => false;
 
+    internal RecoveryRegistry RecoveryRegistry { get; init; } = RecoveryRegistry.Windows;
+
     /// <summary>
     /// Watchdog recovery path: parses the serialized original registry state from the journal
     /// and restores it without requiring any live instance fields.
@@ -57,50 +58,31 @@ public class MpoToggle : IOptimization, IJournaledOptimization
             if (values == null)
                 return RevertFail("Failed to parse originalValueJson");
 
-            using var dwmKey = Registry.LocalMachine.OpenSubKey(DwmRegistryPath, writable: true);
-            if (dwmKey == null)
-                return RevertFail("Failed to open DWM registry key");
-
-            if (values.TryGetValue(OverlayTestModeValue, out var otm))
-                RestoreRegistryDword(dwmKey, OverlayTestModeValue, otm);
-
-            if (values.TryGetValue(EnableOverlayValue, out var eo))
-                RestoreRegistryDword(dwmKey, EnableOverlayValue, eo);
-
-            if (values.TryGetValue(DisableOverlaysValue, out var dov))
+            var notRestored = new List<string>();
+            foreach (var (path, name) in new[]
             {
-                using var gfxKey = Registry.LocalMachine.OpenSubKey(GraphicsDriversPath, writable: true);
-                if (gfxKey != null)
-                    RestoreRegistryDword(gfxKey, DisableOverlaysValue, dov);
-                else
-                    _logger.Warning("[MpoToggle] Could not open GraphicsDrivers key during watchdog revert");
+                (DwmRegistryPath, OverlayTestModeValue),
+                (DwmRegistryPath, EnableOverlayValue),
+                (GraphicsDriversPath, DisableOverlaysValue),
+            })
+            {
+                if (values.TryGetValue(name, out var original) &&
+                    !RecoveryRegistry.RestoreDword(RecoveryHive.LocalMachine, path, name, original))
+                {
+                    _logger.Warning("[MpoToggle] Could not restore HKLM\\{Path}\\{Name} from the journal record", path, name);
+                    notRestored.Add(name);
+                }
             }
 
             _isApplied = false;
-            return new OptimizationResult(OptimizationId, string.Empty, string.Empty, OptimizationState.Reverted);
+            return notRestored.Count == 0
+                ? new OptimizationResult(OptimizationId, string.Empty, string.Empty, OptimizationState.Reverted)
+                : RevertFail($"Not restored: {string.Join(", ", notRestored)}");
         }
         catch (Exception ex)
         {
             _logger.Error(ex, "[MpoToggle] RevertFromRecord failed");
             return RevertFail(ex.Message);
-        }
-    }
-
-    /// <summary>
-    /// Restores a DWORD registry value from a JsonElement: null deletes the value, a number sets it.
-    /// </summary>
-    private void RestoreRegistryDword(RegistryKey key, string valueName, JsonElement element)
-    {
-        if (element.ValueKind == JsonValueKind.Null)
-        {
-            key.DeleteValue(valueName, throwOnMissingValue: false);
-            _logger.Information("[MpoToggle] Deleted {Key}\\{Name} (was absent before session)", key.Name, valueName);
-        }
-        else if (element.ValueKind == JsonValueKind.Number)
-        {
-            int val = element.GetInt32();
-            key.SetValue(valueName, val, RegistryValueKind.DWord);
-            _logger.Information("[MpoToggle] Restored {Key}\\{Name} = {Value}", key.Name, valueName, val);
         }
     }
 

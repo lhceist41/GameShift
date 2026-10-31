@@ -37,6 +37,9 @@ public class CpuParkingManager : IOptimization, IJournaledOptimization
 
     public bool Verify() => false;
 
+    /// <summary>Runs powercfg; true on exit code 0. A seam so the revert runs without powercfg.</summary>
+    internal Func<string, bool> Powercfg { get; init; } = RunPowercfg;
+
     /// <summary>
     /// Watchdog recovery path: parses the serialized original parking state from the journal
     /// and restores AC/DC values for every tracked setting via powercfg, without requiring
@@ -52,73 +55,56 @@ public class CpuParkingManager : IOptimization, IJournaledOptimization
 
             var payload = JsonSerializer.Deserialize<JsonElement>(originalValueJson);
 
-            if (!payload.TryGetProperty("schemeGuid", out var schemeElement) ||
-                schemeElement.ValueKind != JsonValueKind.String)
-            {
+            // powercfg only ever receives canonical GUIDs and parsed numbers from a record.
+            if (!RecoveryInputRules.TryGuidProperty(payload, "schemeGuid", out var schemeGuid))
                 return RevertFail("Missing schemeGuid field");
-            }
 
-            var schemeGuid = schemeElement.GetString();
-            if (string.IsNullOrWhiteSpace(schemeGuid))
-                return RevertFail("schemeGuid is empty");
+            var problems = new List<string>();
+            int refused = 0;
 
-            // Revert core parking settings.
-            if (payload.TryGetProperty("entries", out var entriesElement) &&
-                entriesElement.ValueKind == JsonValueKind.Array)
+            // Revert core parking settings, then the C-state limiting originals if they were captured.
+            foreach (var (property, rehide) in new[] { ("entries", false), ("cStateOriginals", true) })
             {
-                foreach (var entry in entriesElement.EnumerateArray())
+                if (!payload.TryGetProperty(property, out var listElement) || listElement.ValueKind != JsonValueKind.Array)
+                    continue;
+
+                foreach (var entry in listElement.EnumerateArray())
                 {
-                    RestoreParkingEntry(schemeGuid, entry);
-                }
-            }
-
-            // Revert C-state limiting originals if they were captured.
-            if (payload.TryGetProperty("cStateOriginals", out var cStateElement) &&
-                cStateElement.ValueKind == JsonValueKind.Array)
-            {
-                foreach (var entry in cStateElement.EnumerateArray())
-                {
-                    if (!entry.TryGetProperty("settingGuid", out var guidElement) ||
-                        guidElement.ValueKind != JsonValueKind.String)
-                        continue;
-
-                    var settingGuid = guidElement.GetString();
-                    if (string.IsNullOrWhiteSpace(settingGuid))
-                        continue;
-
-                    if (entry.TryGetProperty("originalAc", out var acElement) &&
-                        acElement.ValueKind == JsonValueKind.String)
+                    if (!RecoveryInputRules.TryGuidProperty(entry, "settingGuid", out var settingGuid) ||
+                        !TryOriginalIndex(entry, "originalAc", out int? ac) ||
+                        !TryOriginalIndex(entry, "originalDc", out int? dc))
                     {
-                        var ac = acElement.GetString();
-                        if (!string.IsNullOrWhiteSpace(ac))
-                        {
-                            RunPowercfg(
-                                $"/setacvalueindex {schemeGuid} {ProcessorSubGroupGuid} {settingGuid} {ac}");
-                        }
+                        SettingsManager.Logger.Warning(
+                            "[CpuParkingManager] Refused a setting GameShift did not write: {Entry}", entry.GetRawText());
+                        refused++;
+                        continue;
                     }
 
-                    if (entry.TryGetProperty("originalDc", out var dcElement) &&
-                        dcElement.ValueKind == JsonValueKind.String)
-                    {
-                        var dc = dcElement.GetString();
-                        if (!string.IsNullOrWhiteSpace(dc))
-                        {
-                            RunPowercfg(
-                                $"/setdcvalueindex {schemeGuid} {ProcessorSubGroupGuid} {settingGuid} {dc}");
-                        }
-                    }
+                    bool restored = true;
+                    if (ac.HasValue)
+                        restored &= Powercfg($"/setacvalueindex {schemeGuid} {ProcessorSubGroupGuid} {settingGuid} {ac.Value}");
+                    if (dc.HasValue)
+                        restored &= Powercfg($"/setdcvalueindex {schemeGuid} {ProcessorSubGroupGuid} {settingGuid} {dc.Value}");
 
                     // Re-hide the setting so it goes back to being an advanced hidden option.
-                    RunPowercfg($"-attributes {ProcessorSubGroupGuid} {settingGuid} +ATTRIB_HIDE");
+                    if (rehide)
+                        restored &= Powercfg($"-attributes {ProcessorSubGroupGuid} {settingGuid} +ATTRIB_HIDE");
+
+                    if (!restored)
+                        problems.Add($"power setting {settingGuid}");
                 }
             }
 
             // Activate restored settings.
-            RunPowercfg($"/setactive {schemeGuid}");
+            if (!Powercfg($"/setactive {schemeGuid}"))
+                problems.Add($"reactivating power plan {schemeGuid}");
+            if (refused > 0)
+                problems.Add($"{refused} refused setting entr{(refused == 1 ? "y" : "ies")}");
 
             IsApplied = false;
-            return new OptimizationResult(
-                OptimizationId, string.Empty, string.Empty, OptimizationState.Reverted);
+            return problems.Count == 0
+                ? new OptimizationResult(OptimizationId, string.Empty, string.Empty, OptimizationState.Reverted)
+                : RevertFail($"Not restored: {string.Join(", ", problems)}");
         }
         catch (Exception ex)
         {
@@ -128,57 +114,33 @@ public class CpuParkingManager : IOptimization, IJournaledOptimization
     }
 
     /// <summary>
-    /// Restores AC/DC values for a single parking entry parsed from the journal JSON.
-    /// Missing values (null or absent) are skipped - nothing to restore.
+    /// A recorded original index: absent or null means it was not captured and is left alone.
     /// </summary>
-    private void RestoreParkingEntry(string schemeGuid, JsonElement entry)
+    private static bool TryOriginalIndex(JsonElement entry, string name, out int? index)
     {
-        if (!entry.TryGetProperty("settingGuid", out var guidElement) ||
-            guidElement.ValueKind != JsonValueKind.String)
-            return;
+        index = null;
+        if (!entry.TryGetProperty(name, out var element) || element.ValueKind == JsonValueKind.Null)
+            return true;
+        if (element.ValueKind != JsonValueKind.String || !RecoveryInputRules.TryPowerIndex(element.GetString(), out int value))
+            return false;
 
-        var settingGuid = guidElement.GetString();
-        if (string.IsNullOrWhiteSpace(settingGuid))
-            return;
-
-        if (entry.TryGetProperty("originalAc", out var acElement) &&
-            acElement.ValueKind == JsonValueKind.String)
-        {
-            var ac = acElement.GetString();
-            if (!string.IsNullOrWhiteSpace(ac))
-            {
-                RunPowercfg(
-                    $"/setacvalueindex {schemeGuid} {ProcessorSubGroupGuid} {settingGuid} {ac}");
-            }
-        }
-
-        if (entry.TryGetProperty("originalDc", out var dcElement) &&
-            dcElement.ValueKind == JsonValueKind.String)
-        {
-            var dc = dcElement.GetString();
-            if (!string.IsNullOrWhiteSpace(dc))
-            {
-                RunPowercfg(
-                    $"/setdcvalueindex {schemeGuid} {ProcessorSubGroupGuid} {settingGuid} {dc}");
-            }
-        }
+        index = value;
+        return true;
     }
 
     private static OptimizationResult RevertFail(string error) =>
         new(OptimizationId, string.Empty, string.Empty, OptimizationState.Failed, error);
 
-    private static string? RunPowercfg(string arguments)
+    private static bool RunPowercfg(string arguments)
     {
         try
         {
             var result = ProcessRunner.Run(NativeInterop.SystemExePath("powercfg.exe"), arguments, 5000);
-            // null only when the process could not start (callers null-check); otherwise return the
-            // captured stdout (callers regex-parse it). The runner also reaps a wedged child.
-            return result.Exited || result.TimedOut ? result.StdOut : null;
+            return result.Exited && result.ExitCode == 0;
         }
         catch
         {
-            return null;
+            return false;
         }
     }
 }

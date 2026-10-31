@@ -36,6 +36,8 @@ public class GpuDriverOptimizer : IOptimization, IJournaledOptimization
 
     public bool Verify() => false;
 
+    internal RecoveryRegistry RecoveryRegistry { get; init; } = RecoveryRegistry.Windows;
+
     /// <summary>
     /// Watchdog recovery: restores the registry changes recorded in the journal OriginalValue JSON.
     /// SDK-level driver settings (NvAPI DRS / ADLX) need the live session and cannot be reverted
@@ -55,40 +57,59 @@ public class GpuDriverOptimizer : IOptimization, IJournaledOptimization
                     "Corrupt journal record (null entry list)");
             }
 
-            int successCount = 0, failCount = 0;
+            int successCount = 0;
+            var problems = new List<string>();
             for (int i = entries.Count - 1; i >= 0; i--)
             {
                 var e = entries[i];
+                if (e == null ||
+                    !RecoveryInputRules.TryGpuDriverValue(e.KeyPath, e.ValueName, e.Kind, out var hive, out var subKeyPath, out var kind))
+                {
+                    _logger.Warning("[GpuDriverOptimizer] Refused a journal entry GameShift did not write: {KeyPath}\\{ValueName}", e?.KeyPath, e?.ValueName);
+                    problems.Add("a refused entry");
+                    continue;
+                }
+
                 try
                 {
+                    bool restored;
                     if (!e.Existed)
                     {
-                        DeleteRegistryValue(e.KeyPath, e.ValueName);
+                        RecoveryRegistry.DeleteValue(hive, subKeyPath, e.ValueName);
+                        restored = true;
                     }
                     else if (e.Value is JsonElement el)
                     {
-                        var kind = Enum.TryParse<RegistryValueKind>(e.Kind, out var k) ? k : RegistryValueKind.DWord;
-                        object restored = kind switch
+                        object value = kind switch
                         {
                             RegistryValueKind.Binary => el.GetBytesFromBase64(),
-                            RegistryValueKind.String or RegistryValueKind.ExpandString => el.GetString() ?? "",
-                            RegistryValueKind.QWord => el.GetInt64(),
+                            RegistryValueKind.String => el.GetString() ?? throw new FormatException("String original is null"),
                             _ => el.GetInt32()
                         };
-                        Registry.SetValue(e.KeyPath, e.ValueName, restored, kind);
+                        restored = RecoveryRegistry.SetValue(hive, subKeyPath, e.ValueName, value, kind);
                     }
-                    successCount++;
+                    else
+                    {
+                        restored = false;
+                    }
+
+                    if (restored)
+                        successCount++;
+                    else
+                        problems.Add($@"{e.KeyPath}\{e.ValueName}");
                 }
                 catch (Exception ex)
                 {
-                    failCount++;
+                    problems.Add($@"{e.KeyPath}\{e.ValueName}");
                     _logger.Warning(ex, "[GpuDriverOptimizer] RevertFromRecord failed for {KeyPath}\\{ValueName}", e.KeyPath, e.ValueName);
                 }
             }
 
-            _logger.Information("[GpuDriverOptimizer] RevertFromRecord - {Success} restored, {Fail} failed", successCount, failCount);
-            return new OptimizationResult(OptimizationId, string.Empty, string.Empty,
-                failCount == 0 ? OptimizationState.Reverted : OptimizationState.Failed);
+            _logger.Information("[GpuDriverOptimizer] RevertFromRecord - {Success} restored, {Fail} failed", successCount, problems.Count);
+            return problems.Count == 0
+                ? new OptimizationResult(OptimizationId, string.Empty, string.Empty, OptimizationState.Reverted)
+                : new OptimizationResult(OptimizationId, string.Empty, string.Empty, OptimizationState.Failed,
+                    $"Not restored: {string.Join(", ", problems)}");
         }
         catch (Exception ex)
         {
@@ -104,51 +125,5 @@ public class GpuDriverOptimizer : IOptimization, IJournaledOptimization
         public bool Existed { get; set; }
         public string Kind { get; set; } = "";
         public object? Value { get; set; }
-    }
-
-    /// <summary>
-    /// Deletes a registry value that was created during Apply (did not previously exist).
-    /// Handles both HKLM and HKCU paths.
-    /// </summary>
-    private void DeleteRegistryValue(string keyPath, string valueName)
-    {
-        try
-        {
-            // Parse the root key and subpath from the full path
-            RegistryKey? rootKey = null;
-            string subPath;
-
-            if (keyPath.StartsWith(@"HKEY_LOCAL_MACHINE\", StringComparison.OrdinalIgnoreCase))
-            {
-                rootKey = Registry.LocalMachine;
-                subPath = keyPath.Substring(@"HKEY_LOCAL_MACHINE\".Length);
-            }
-            else if (keyPath.StartsWith(@"HKEY_CURRENT_USER\", StringComparison.OrdinalIgnoreCase))
-            {
-                rootKey = Registry.CurrentUser;
-                subPath = keyPath.Substring(@"HKEY_CURRENT_USER\".Length);
-            }
-            else
-            {
-                _logger.Warning(
-                    "[GpuDriverOptimizer] Cannot determine registry root for path: {KeyPath}",
-                    keyPath);
-                return;
-            }
-
-            using var key = rootKey.OpenSubKey(subPath, writable: true);
-            if (key != null)
-            {
-                key.DeleteValue(valueName, throwOnMissingValue: false);
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.Warning(
-                ex,
-                "[GpuDriverOptimizer] Failed to delete registry value {KeyPath}\\{ValueName}",
-                keyPath,
-                valueName);
-        }
     }
 }

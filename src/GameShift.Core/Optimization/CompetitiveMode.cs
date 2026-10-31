@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Text.Json;
-using Microsoft.Win32;
 using GameShift.Core.Config;
 using GameShift.Core.Journal;
 using GameShift.Core.Profiles;
@@ -41,6 +40,14 @@ public class CompetitiveMode : IOptimization, IJournaledOptimization
 
     public bool Verify() => false;
 
+    internal RecoveryRegistry RecoveryRegistry { get; init; } = RecoveryRegistry.Windows;
+
+    /// <summary>
+    /// Resumes a journaled PID; false only when that process is still there and stays suspended.
+    /// A seam so the revert can be tested without touching processes.
+    /// </summary>
+    internal Func<int, string, bool>? ResumeSuspended { get; init; }
+
     /// <summary>
     /// Watchdog/boot recovery after a crash: restores the persistent Discord-overlay registry value
     /// AND resumes the processes that were suspended during the session (Discord/Steam/NVIDIA),
@@ -54,23 +61,28 @@ public class CompetitiveMode : IOptimization, IJournaledOptimization
         {
             using var doc = JsonDocument.Parse(originalValueJson);
             var root = doc.RootElement;
-            bool modified = root.TryGetProperty("discordModified", out var m) && m.ValueKind == JsonValueKind.True;
+            var problems = new List<string>();
+            int refused = 0;
 
+            bool modified = root.TryGetProperty("discordModified", out var m) && m.ValueKind == JsonValueKind.True;
             if (modified)
             {
-                using var key = Registry.CurrentUser.OpenSubKey(DiscordOverlayRegistryPath, writable: true);
-                if (key != null)
+                // No recorded previous value means the value was absent before, so it is deleted.
+                var previous = root.TryGetProperty("discordPrev", out var pv) ? pv : default;
+                if (previous.ValueKind == JsonValueKind.Undefined)
                 {
-                    if (root.TryGetProperty("discordPrev", out var pv) && pv.ValueKind == JsonValueKind.Number)
-                    {
-                        key.SetValue(DiscordOverlayEnabledValue, pv.GetInt32(), RegistryValueKind.DWord);
-                        _logger.Information("[CompetitiveMode] Restored Discord overlay registry to {Value}", pv.GetInt32());
-                    }
-                    else
-                    {
-                        key.DeleteValue(DiscordOverlayEnabledValue, throwOnMissingValue: false);
-                        _logger.Information("[CompetitiveMode] Deleted Discord overlay value (was absent before session)");
-                    }
+                    RecoveryRegistry.DeleteValue(RecoveryHive.CurrentUser, DiscordOverlayRegistryPath, DiscordOverlayEnabledValue);
+                    _logger.Information("[CompetitiveMode] Deleted Discord overlay value (was absent before session)");
+                }
+                else if (RecoveryRegistry.RestoreDword(
+                             RecoveryHive.CurrentUser, DiscordOverlayRegistryPath, DiscordOverlayEnabledValue, previous))
+                {
+                    _logger.Information("[CompetitiveMode] Restored Discord overlay registry from the journal record");
+                }
+                else
+                {
+                    _logger.Warning("[CompetitiveMode] Could not restore the Discord overlay registry value");
+                    problems.Add("Discord overlay setting");
                 }
             }
 
@@ -80,17 +92,31 @@ public class CompetitiveMode : IOptimization, IJournaledOptimization
             {
                 foreach (var item in susp.EnumerateArray())
                 {
-                    if (item.TryGetProperty("pid", out var pidEl) && pidEl.TryGetInt32(out int pid) &&
-                        item.TryGetProperty("name", out var nameEl))
+                    var name = item.ValueKind == JsonValueKind.Object &&
+                               item.TryGetProperty("name", out var nameEl) &&
+                               nameEl.ValueKind == JsonValueKind.String
+                        ? nameEl.GetString()
+                        : null;
+                    if (!RecoveryInputRules.IsSuspendedOverlay(name) ||
+                        !RecoveryInputRules.TryInt32Property(item, "pid", out int pid))
                     {
-                        var name = nameEl.GetString();
-                        if (!string.IsNullOrEmpty(name))
-                            ResumeSuspendedByRecord(pid, name);
+                        _logger.Warning("[CompetitiveMode] Refused a suspended-process entry GameShift did not write: {Entry}", item.GetRawText());
+                        refused++;
+                        continue;
                     }
+
+                    if (!(ResumeSuspended ?? ResumeSuspendedByRecord)(pid, name!))
+                        problems.Add($"{name} (PID {pid})");
                 }
             }
 
-            return new OptimizationResult(OptimizationId, string.Empty, string.Empty, OptimizationState.Reverted);
+            if (refused > 0)
+                problems.Add($"{refused} refused process entr{(refused == 1 ? "y" : "ies")}");
+
+            return problems.Count == 0
+                ? new OptimizationResult(OptimizationId, string.Empty, string.Empty, OptimizationState.Reverted)
+                : new OptimizationResult(OptimizationId, string.Empty, string.Empty, OptimizationState.Failed,
+                    $"Not restored: {string.Join(", ", problems)}");
         }
         catch (Exception ex)
         {
@@ -103,7 +129,7 @@ public class CompetitiveMode : IOptimization, IJournaledOptimization
     /// Resumes a single process by PID using NtResumeProcess via NativeInterop.
     /// Process handle is always closed in a finally block.
     /// </summary>
-    private void ResumeProcess(int processId, string processName)
+    private bool ResumeProcess(int processId, string processName)
     {
         IntPtr handle = IntPtr.Zero;
         try
@@ -114,10 +140,10 @@ public class CompetitiveMode : IOptimization, IJournaledOptimization
             if (handle == IntPtr.Zero)
             {
                 _logger.Warning(
-                    "[CompetitiveMode] Failed to open process handle for resume - {ProcessName} (PID: {ProcessId}) may have already exited",
+                    "[CompetitiveMode] Failed to open process handle for resume - {ProcessName} (PID: {ProcessId})",
                     processName,
                     processId);
-                return;
+                return false;
             }
 
             int status = NativeInterop.NtResumeProcess(handle);
@@ -128,7 +154,10 @@ public class CompetitiveMode : IOptimization, IJournaledOptimization
                     status,
                     processName,
                     processId);
+                return false;
             }
+
+            return true;
         }
         finally
         {
@@ -142,9 +171,9 @@ public class CompetitiveMode : IOptimization, IJournaledOptimization
     /// <summary>
     /// Resumes a single journaled process by PID after a crash (used by RevertFromRecord), guarding
     /// against PID reuse: if the PID now belongs to a different process, or has already exited, it is
-    /// left untouched.
+    /// left untouched and nothing of the session is left suspended.
     /// </summary>
-    private void ResumeSuspendedByRecord(int processId, string processName)
+    private bool ResumeSuspendedByRecord(int processId, string processName)
     {
         try
         {
@@ -154,23 +183,26 @@ public class CompetitiveMode : IOptimization, IJournaledOptimization
                 _logger.Warning(
                     "[CompetitiveMode] PID reuse detected on recovery - PID {ProcessId} is now {NewName}, expected {OldName}, skipping resume",
                     processId, check.ProcessName, processName);
-                return;
+                return true;
             }
         }
         catch (ArgumentException)
         {
             // Process already exited - nothing to resume.
-            return;
+            return true;
         }
         catch (InvalidOperationException)
         {
             // Process exited between lookup and access (race) - nothing to resume.
-            return;
+            return true;
         }
 
-        ResumeProcess(processId, processName);
+        if (!ResumeProcess(processId, processName))
+            return false;
+
         _logger.Information(
             "[CompetitiveMode] Resumed {ProcessName} (PID: {ProcessId}) during crash recovery",
             processName, processId);
+        return true;
     }
 }

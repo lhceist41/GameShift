@@ -296,4 +296,113 @@ public class WatchdogRevertEngineTests
         Assert.False(reloaded!.SessionActive);
         Assert.NotNull(reloaded.LastRecoveryTimestamp);
     }
+
+    // A live session end undoes the game actions first, newest first, and then the optimizations
+    // LIFO; a replay after a crash must undo them in the same order.
+    [Fact]
+    public void RevertFromJournal_RevertsGameActionsNewestFirst_ThenOptimizationsLifo()
+    {
+        using var temp = new TempPath();
+        var journal = new JournalManager(temp.GetFile("state.json"));
+        var sequence = new List<string>();
+        var factories = new Dictionary<string, Func<IJournaledOptimization>>(StringComparer.Ordinal)
+        {
+            ["First"] = () => new RecordingMockJournaledOptimization("First", sequence),
+            ["Second"] = () => new RecordingMockJournaledOptimization("Second", sequence),
+        };
+
+        journal.StartSession(NewTestProfile());
+        journal.RecordApplied(new OptimizationResult("First", "f", "f", OptimizationState.Applied));
+        journal.RecordApplied(new OptimizationResult("Second", "s", "s", OptimizationState.Applied));
+        journal.RecordGameAction("registry", "older");
+        journal.RecordGameAction("firewall", "newer");
+
+        var engine = new WatchdogRevertEngine(NoOpLogger, factories, (kind, payload, _) =>
+        {
+            sequence.Add($"{kind}:{payload}");
+            return new GameActionRevertResult(RevertOutcome.Reverted);
+        });
+        var result = engine.RevertFromJournal(journal.LoadJournal()!, journal);
+
+        Assert.Equal(new[] { "firewall:newer", "registry:older", "Second", "First" }, sequence);
+        Assert.Equal(
+            new[] { (true, "firewall"), (true, "registry"), (false, "Second"), (false, "First") },
+            result.Items.Select(i => (i.IsGameAction, i.Name)));
+        Assert.True(result.AllReverted);
+    }
+
+    [Fact]
+    public void RevertFromJournal_ReportsEachItemsOutcome()
+    {
+        using var temp = new TempPath();
+        var journal = new JournalManager(temp.GetFile("state.json"));
+        var failing = new MockJournaledOptimization { Name = "Failing", ResultState = OptimizationState.Failed };
+        var factories = new Dictionary<string, Func<IJournaledOptimization>>(StringComparer.Ordinal)
+        {
+            ["Failing"] = () => failing,
+            ["Fine"] = () => new MockJournaledOptimization { Name = "Fine" },
+        };
+
+        journal.StartSession(NewTestProfile());
+        journal.RecordApplied(new OptimizationResult("Fine", "x", "x", OptimizationState.Applied));
+        journal.RecordApplied(new OptimizationResult("Failing", "x", "x", OptimizationState.Applied));
+        journal.RecordApplied(new OptimizationResult("Retired", "x", "x", OptimizationState.Applied));
+        journal.RecordGameAction("registry", "refused");
+
+        var engine = new WatchdogRevertEngine(NoOpLogger, factories, (_, _, _) =>
+            new GameActionRevertResult(RevertOutcome.Skipped, "Refused a registry record GameShift did not write"));
+        var result = engine.RevertFromJournal(journal.LoadJournal()!, journal);
+
+        Assert.Equal(
+            new[]
+            {
+                ("registry", RevertOutcome.Skipped),
+                ("Retired", RevertOutcome.Skipped),
+                ("Failing", RevertOutcome.Failed),
+                ("Fine", RevertOutcome.Reverted),
+            },
+            result.Items.Select(i => (i.Name, i.Outcome)));
+        Assert.Equal("Refused a registry record GameShift did not write", result.Items[0].Message);
+        Assert.False(result.AllReverted);
+        Assert.Equal(nameof(OptimizationState.Failed),
+            new JournalManager(temp.GetFile("state.json")).LoadJournal()!.Optimizations.Single(e => e.Name == "Failing").State);
+    }
+
+    [Fact]
+    public void RevertFromJournal_AThrowingRecord_DoesNotStopTheRest()
+    {
+        using var temp = new TempPath();
+        var journal = new JournalManager(temp.GetFile("state.json"));
+        var throwing = new MockJournaledOptimization { Name = "Thrower", ShouldThrow = true };
+        var normal = new MockJournaledOptimization { Name = "Normal" };
+        var factories = new Dictionary<string, Func<IJournaledOptimization>>(StringComparer.Ordinal)
+        {
+            ["Thrower"] = () => throwing,
+            ["Normal"] = () => normal,
+        };
+        var gameActions = new List<string>();
+
+        journal.StartSession(NewTestProfile());
+        journal.RecordApplied(new OptimizationResult("Normal", "n", "n", OptimizationState.Applied));
+        journal.RecordApplied(new OptimizationResult("Thrower", "t", "t", OptimizationState.Applied));
+        journal.RecordGameAction("defender", "first");
+        journal.RecordGameAction("registry", "throws");
+
+        var engine = new WatchdogRevertEngine(NoOpLogger, factories, (kind, payload, _) =>
+        {
+            gameActions.Add(payload);
+            if (payload == "throws")
+                throw new InvalidOperationException("Reverter failure");
+            return new GameActionRevertResult(RevertOutcome.Reverted);
+        });
+        var result = engine.RevertFromJournal(journal.LoadJournal()!, journal);
+
+        Assert.Equal(new[] { "throws", "first" }, gameActions);
+        Assert.Single(throwing.RevertFromRecordCalls);
+        Assert.Single(normal.RevertFromRecordCalls);
+        Assert.Equal(
+            new[] { RevertOutcome.Failed, RevertOutcome.Reverted, RevertOutcome.Failed, RevertOutcome.Reverted },
+            result.Items.Select(i => i.Outcome));
+        Assert.False(new JournalManager(temp.GetFile("state.json")).LoadJournal()!.SessionActive);
+    }
 }

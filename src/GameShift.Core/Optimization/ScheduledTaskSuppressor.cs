@@ -1,4 +1,5 @@
 using System.Text.Json;
+using GameShift.Core.BackgroundMode;
 using GameShift.Core.Config;
 using GameShift.Core.Journal;
 using GameShift.Core.Profiles;
@@ -34,10 +35,13 @@ public class ScheduledTaskSuppressor : IOptimization, IJournaledOptimization
 
     public bool Verify() => false;
 
+    internal IScheduledTaskStore Tasks { get; init; } = new WindowsScheduledTaskStore();
+
     /// <summary>
-    /// Watchdog recovery path: parses the serialized list of disabled task paths from the
-    /// journal and re-enables each one without requiring any live instance fields.
-    /// schtasks /enable is idempotent - running it against an already-enabled task is a no-op.
+    /// Watchdog recovery path: re-enables each recorded task that is still disabled, through the Task
+    /// Scheduler API. Only the tasks earlier versions suppressed are touched. Earlier versions could
+    /// record a task the user had disabled themselves (their check read English schtasks output), so
+    /// the result names every task it re-enabled.
     /// </summary>
     public OptimizationResult RevertFromRecord(string originalValueJson)
     {
@@ -47,52 +51,73 @@ public class ScheduledTaskSuppressor : IOptimization, IJournaledOptimization
                 "[ScheduledTaskSuppressor] Reverting from journal record (watchdog recovery)");
 
             var stateElement = JsonSerializer.Deserialize<JsonElement>(originalValueJson);
-            if (!stateElement.TryGetProperty("disabledTasks", out var tasksElement) ||
+            if (stateElement.ValueKind != JsonValueKind.Object ||
+                !stateElement.TryGetProperty("disabledTasks", out var tasksElement) ||
                 tasksElement.ValueKind != JsonValueKind.Array)
             {
                 return RevertFail("Missing disabledTasks field");
             }
 
-            int restoredCount = 0;
-            int errorCount = 0;
+            var reEnabled = new List<string>();
+            var notReEnabled = new List<string>();
+            int refused = 0;
 
             foreach (var element in tasksElement.EnumerateArray())
             {
-                var taskPath = element.GetString();
-                if (string.IsNullOrWhiteSpace(taskPath))
+                var taskPath = element.ValueKind == JsonValueKind.String ? element.GetString() : null;
+                if (taskPath == null || !RecoveryInputRules.SuppressedTasks.Contains(taskPath))
+                {
+                    SettingsManager.Logger.Warning(
+                        "[ScheduledTaskSuppressor] Refused a journal entry that is not a task GameShift suppressed: {Entry}",
+                        element.GetRawText());
+                    refused++;
                     continue;
-
-                try
-                {
-                    var result = RunSchtasks($"/change /tn \"{taskPath}\" /enable");
-                    if (result != null && !result.Contains("ERROR"))
-                    {
-                        restoredCount++;
-                        SettingsManager.Logger.Debug(
-                            "[ScheduledTaskSuppressor] Re-enabled task: {TaskPath}", taskPath);
-                    }
-                    else
-                    {
-                        SettingsManager.Logger.Warning(
-                            "[ScheduledTaskSuppressor] Failed to re-enable task: {TaskPath}", taskPath);
-                        errorCount++;
-                    }
                 }
-                catch (Exception ex)
+
+                switch (Tasks.GetState(taskPath))
                 {
-                    SettingsManager.Logger.Warning(ex,
-                        "[ScheduledTaskSuppressor] Error re-enabling task {TaskPath}", taskPath);
-                    errorCount++;
+                    case ScheduledTaskState.Disabled:
+                        if (Tasks.Enable(taskPath) && Tasks.GetState(taskPath) == ScheduledTaskState.Enabled)
+                        {
+                            reEnabled.Add(taskPath);
+                            SettingsManager.Logger.Information(
+                                "[ScheduledTaskSuppressor] Re-enabled task: {TaskPath}", taskPath);
+                        }
+                        else
+                        {
+                            notReEnabled.Add(taskPath);
+                            SettingsManager.Logger.Warning(
+                                "[ScheduledTaskSuppressor] Failed to re-enable task: {TaskPath}", taskPath);
+                        }
+                        break;
+                    case ScheduledTaskState.Unreadable:
+                        notReEnabled.Add(taskPath);
+                        SettingsManager.Logger.Warning(
+                            "[ScheduledTaskSuppressor] Could not read task: {TaskPath}", taskPath);
+                        break;
                 }
             }
 
             SettingsManager.Logger.Information(
-                "[ScheduledTaskSuppressor] Watchdog revert completed - {Restored} re-enabled, {Errors} errors",
-                restoredCount, errorCount);
+                "[ScheduledTaskSuppressor] Watchdog revert completed - {Restored} re-enabled, {Errors} not re-enabled, {Refused} refused",
+                reEnabled.Count, notReEnabled.Count, refused);
+
+            var parts = new List<string>();
+            if (reEnabled.Count > 0)
+                parts.Add($"Re-enabled scheduled tasks: {string.Join(", ", reEnabled)}");
+            if (notReEnabled.Count > 0)
+                parts.Add($"Could not re-enable scheduled tasks: {string.Join(", ", notReEnabled)}");
+            if (refused > 0)
+                parts.Add($"Refused {refused} journal entr{(refused == 1 ? "y" : "ies")} that GameShift did not write");
+            var message = parts.Count > 0 ? string.Join(". ", parts) : null;
 
             _isApplied = false;
+            // A Reverted result still carries the message, so whoever reports the recovery can name
+            // the tasks that were re-enabled.
             return new OptimizationResult(
-                OptimizationId, string.Empty, string.Empty, OptimizationState.Reverted);
+                OptimizationId, string.Empty, string.Empty,
+                notReEnabled.Count == 0 && refused == 0 ? OptimizationState.Reverted : OptimizationState.Failed,
+                message);
         }
         catch (Exception ex)
         {
@@ -103,25 +128,4 @@ public class ScheduledTaskSuppressor : IOptimization, IJournaledOptimization
 
     private static OptimizationResult RevertFail(string error) =>
         new(OptimizationId, string.Empty, string.Empty, OptimizationState.Failed, error);
-
-    private static string? RunSchtasks(string arguments)
-    {
-        try
-        {
-            var result = ProcessRunner.Run(NativeInterop.SystemExePath("schtasks.exe"), arguments, 10000);
-            if (result.TimedOut)
-                return "ERROR: schtasks timed out";
-            if (!result.Exited)
-                return null; // failed to start
-
-            // stderr text turns the whole result into an ERROR sentinel (callers grep for "ERROR").
-            return string.IsNullOrEmpty(result.StdErr) ? result.StdOut : $"ERROR: {result.StdErr}";
-        }
-        catch (Exception ex)
-        {
-            SettingsManager.Logger.Warning(ex,
-                "[ScheduledTaskSuppressor] schtasks failed: {Args}", arguments);
-            return null;
-        }
-    }
 }

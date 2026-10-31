@@ -233,43 +233,54 @@ public class PowerPlanSwitcher : IOptimization, IJournaledOptimization
             _logger.Information("[PowerPlanSwitcher] Reverting from journal record (watchdog recovery)");
 
             var state = JsonSerializer.Deserialize<JsonElement>(originalValueJson);
+            if (state.ValueKind != JsonValueKind.Object)
+                return RevertFail("Failed to parse originalValueJson");
 
             // Restore each sub-setting's AC/DC values on the plan they came from. Records written
             // before the target plan was journaled fall back to the active plan.
-            var scheme = state.TryGetProperty("targetPlanGuid", out var targetElement) &&
-                targetElement.ValueKind == JsonValueKind.String &&
-                Guid.TryParse(targetElement.GetString(), out var targetPlan)
-                    ? SchemeArgument(targetPlan)
-                    : SchemeArgument(Guid.Empty);
+            string scheme = SchemeArgument(Guid.Empty);
+            if (state.TryGetProperty("targetPlanGuid", out var targetElement) && targetElement.ValueKind != JsonValueKind.Null)
+            {
+                if (targetElement.ValueKind != JsonValueKind.String ||
+                    !Guid.TryParse(targetElement.GetString(), out var targetPlan))
+                    return RevertFail("Refused a journal record whose target plan is not a GUID");
+                scheme = SchemeArgument(targetPlan);
+            }
+
+            var problems = new List<string>();
             if (state.TryGetProperty("subSettings", out var subSettingsElement) &&
                 subSettingsElement.ValueKind == JsonValueKind.Array)
             {
+                int written = 0;
+                int refused = 0;
                 foreach (var sub in subSettingsElement.EnumerateArray())
                 {
-                    try
+                    // powercfg only ever receives canonical GUIDs and parsed numbers from a record.
+                    if (!RecoveryInputRules.TryGuidProperty(sub, "subGroup", out var subGroup) ||
+                        !RecoveryInputRules.TryGuidProperty(sub, "setting", out var setting) ||
+                        !RecoveryInputRules.TryInt32Property(sub, "acValue", out int ac) ||
+                        !RecoveryInputRules.TryInt32Property(sub, "dcValue", out int dc))
                     {
-                        var subGroup = sub.GetProperty("subGroup").GetString();
-                        var setting = sub.GetProperty("setting").GetString();
-                        var ac = sub.GetProperty("acValue").GetInt32();
-                        var dc = sub.GetProperty("dcValue").GetInt32();
-
-                        if (string.IsNullOrEmpty(subGroup) || string.IsNullOrEmpty(setting))
-                            continue;
-
-                        Powercfg(
-                            $"/setacvalueindex {scheme} {subGroup} {setting} {ac}");
-                        Powercfg(
-                            $"/setdcvalueindex {scheme} {subGroup} {setting} {dc}");
+                        _logger.Warning("[PowerPlanSwitcher] Refused a sub-setting GameShift did not write: {Entry}", sub.GetRawText());
+                        refused++;
+                        continue;
                     }
-                    catch (Exception ex)
+
+                    written++;
+                    bool acRestored = Powercfg($"/setacvalueindex {scheme} {subGroup} {setting} {ac}").success;
+                    bool dcRestored = Powercfg($"/setdcvalueindex {scheme} {subGroup} {setting} {dc}").success;
+                    if (!acRestored || !dcRestored)
                     {
-                        _logger.Warning(ex,
-                            "[PowerPlanSwitcher] Failed to restore a sub-setting during watchdog revert");
+                        _logger.Warning("[PowerPlanSwitcher] Failed to restore sub-setting {SubGroup}/{Setting}", subGroup, setting);
+                        problems.Add($"power setting {setting}");
                     }
                 }
 
                 // Activate the restored sub-setting changes.
-                Powercfg("/setactive SCHEME_CURRENT");
+                if (written > 0 && !Powercfg("/setactive SCHEME_CURRENT").success)
+                    problems.Add("reactivating the restored power settings");
+                if (refused > 0)
+                    problems.Add($"{refused} refused power setting entr{(refused == 1 ? "y" : "ies")}");
             }
 
             // Switch back to the original plan GUID.
@@ -289,18 +300,23 @@ public class PowerPlanSwitcher : IOptimization, IJournaledOptimization
                     _logger.Warning(
                         "[PowerPlanSwitcher] Original plan {Plan} missing during watchdog revert (error {Code}), falling back to Balanced",
                         originalGuid, result);
-                    SetActiveScheme(BalancedGuid);
+                    uint fallback = SetActiveScheme(BalancedGuid);
+                    problems.Add(fallback == 0
+                        ? $"original power plan {originalGuid} (Balanced is active instead)"
+                        : $"original power plan {originalGuid} (Balanced could not be activated either)");
                 }
             }
             else
             {
                 _logger.Warning(
                     "[PowerPlanSwitcher] No originalPlanGuid in journal record, skipping plan revert");
+                problems.Add("original power plan (not in the journal record)");
             }
 
             IsApplied = false;
-            return new OptimizationResult(
-                OptimizationId, string.Empty, string.Empty, OptimizationState.Reverted);
+            return problems.Count == 0
+                ? new OptimizationResult(OptimizationId, string.Empty, string.Empty, OptimizationState.Reverted)
+                : RevertFail($"Not restored: {string.Join(", ", problems)}");
         }
         catch (Exception ex)
         {

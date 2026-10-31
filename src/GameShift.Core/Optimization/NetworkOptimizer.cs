@@ -46,6 +46,11 @@ public class NetworkOptimizer : IOptimization, IJournaledOptimization
 
     public bool Verify() => false;
 
+    internal RecoveryRegistry RecoveryRegistry { get; init; } = RecoveryRegistry.Windows;
+
+    /// <summary>Starts a service unless it runs; true once it runs. A seam so the revert runs without the SCM.</summary>
+    internal Func<string, bool> StartService { get; init; } = StartServiceIfStopped;
+
     /// <summary>
     /// Watchdog recovery path: parses the serialized original state from the journal and
     /// restores every registry value, service state, and netsh setting without any live
@@ -61,37 +66,50 @@ public class NetworkOptimizer : IOptimization, IJournaledOptimization
             if (values == null)
                 return RevertFail("Failed to parse originalValueJson");
 
+            var notRestored = new List<string>();
+            int refused = 0;
             foreach (var (fullKey, element) in values)
             {
+                bool? restored;
                 try
                 {
-                    if (fullKey.StartsWith(RegistryPrefix, StringComparison.Ordinal))
-                    {
-                        RestoreRegistryFromJson(fullKey[RegistryPrefix.Length..], element);
-                    }
-                    else if (fullKey.StartsWith(ServicePrefix, StringComparison.Ordinal))
-                    {
-                        RestoreServiceFromJson(fullKey[ServicePrefix.Length..], element);
-                    }
-                    else if (fullKey.StartsWith(NetshPrefix, StringComparison.Ordinal))
-                    {
-                        RestoreNetshFromJson(fullKey[NetshPrefix.Length..], element);
-                    }
-                    else
-                    {
-                        _logger.Warning(
-                            "[NetworkOptimizer] Unknown key prefix in journal record: {Key}", fullKey);
-                    }
+                    restored =
+                        fullKey.StartsWith(RegistryPrefix, StringComparison.Ordinal)
+                            ? RestoreRegistryFromJson(fullKey[RegistryPrefix.Length..], element)
+                        : fullKey.StartsWith(ServicePrefix, StringComparison.Ordinal)
+                            ? RestoreServiceFromJson(fullKey[ServicePrefix.Length..], element)
+                        : fullKey.StartsWith(NetshPrefix, StringComparison.Ordinal)
+                            ? RestoreNetshFromJson(fullKey[NetshPrefix.Length..], element)
+                        : null;
                 }
                 catch (Exception ex)
                 {
                     _logger.Warning(ex,
                         "[NetworkOptimizer] Failed to restore entry {Key} during watchdog revert", fullKey);
+                    restored = false;
+                }
+
+                if (restored == null)
+                {
+                    _logger.Warning("[NetworkOptimizer] Refused a journal entry GameShift did not write: {Key}", fullKey);
+                    refused++;
+                }
+                else if (restored == false)
+                {
+                    notRestored.Add(fullKey);
                 }
             }
 
             IsApplied = false;
-            return new OptimizationResult(OptimizationId, string.Empty, string.Empty, OptimizationState.Reverted);
+            if (notRestored.Count == 0 && refused == 0)
+                return new OptimizationResult(OptimizationId, string.Empty, string.Empty, OptimizationState.Reverted);
+
+            var parts = new List<string>();
+            if (notRestored.Count > 0)
+                parts.Add($"Not restored: {string.Join(", ", notRestored)}");
+            if (refused > 0)
+                parts.Add($"Refused {refused} journal entr{(refused == 1 ? "y" : "ies")} that GameShift did not write");
+            return RevertFail(string.Join(". ", parts));
         }
         catch (Exception ex)
         {
@@ -100,11 +118,7 @@ public class NetworkOptimizer : IOptimization, IJournaledOptimization
         }
     }
 
-    /// <summary>
-    /// Starts the named service if it's not already running. Waits up to 10s for the Running state.
-    /// Shared between live revert and watchdog revert paths.
-    /// </summary>
-    private void StartServiceIfStopped(string serviceName)
+    private static bool StartServiceIfStopped(string serviceName)
     {
         try
         {
@@ -113,174 +127,106 @@ public class NetworkOptimizer : IOptimization, IJournaledOptimization
             {
                 service.Start();
                 service.WaitForStatus(ServiceControllerStatus.Running, TimeSpan.FromSeconds(10));
-                _logger.Information("[NetworkOptimizer] Started service {Service}", serviceName);
+                SettingsManager.Logger.Information("[NetworkOptimizer] Started service {Service}", serviceName);
             }
+            return true;
         }
         catch (Exception ex)
         {
-            _logger.Warning(ex, "[NetworkOptimizer] Failed to start service {Service}", serviceName);
-        }
-    }
-
-    /// <summary>
-    /// Invokes netsh to set the global RSC flag to the given state ("enabled" or "disabled").
-    /// Shared by live revert and journal-driven revert.
-    /// </summary>
-    private void ApplyNetshRscSetting(string state)
-    {
-        var (exitCode, _) = Netsh($"int tcp set global rsc={state}");
-        if (exitCode == 0)
-        {
-            _logger.Information(
-                "[NetworkOptimizer] Restored RSC to original state: {State}", state);
-        }
-        else
-        {
-            _logger.Warning(
-                "[NetworkOptimizer] Failed to restore RSC via netsh (exit code {ExitCode})", exitCode);
+            SettingsManager.Logger.Warning(ex, "[NetworkOptimizer] Failed to start service {Service}", serviceName);
+            return false;
         }
     }
 
     /// <summary>
     /// Restores a registry value from the watchdog journal. <paramref name="fullRegistryPath"/>
-    /// is the full "HKLM\...\ValueName" path (prefix already stripped).
+    /// is the full "HKLM\...\ValueName" path (prefix already stripped). Null when the record names
+    /// a value the optimizer never wrote.
     /// </summary>
-    private void RestoreRegistryFromJson(string fullRegistryPath, JsonElement element)
+    private bool? RestoreRegistryFromJson(string fullRegistryPath, JsonElement element)
     {
-        // Split at the LAST backslash so the ValueName survives even when it contains slashes.
-        int sepIdx = fullRegistryPath.LastIndexOf('\\');
-        if (sepIdx <= 0 || sepIdx >= fullRegistryPath.Length - 1)
-        {
-            _logger.Warning(
-                "[NetworkOptimizer] Invalid registry path in journal: {Path}", fullRegistryPath);
-            return;
-        }
-
-        string fullKeyPath = fullRegistryPath[..sepIdx];
-        string valueName = fullRegistryPath[(sepIdx + 1)..];
-
-        // Strip "HKLM\" prefix to get the subkey path.
-        const string hklmPrefix = @"HKLM\";
-        if (!fullKeyPath.StartsWith(hklmPrefix, StringComparison.OrdinalIgnoreCase))
-        {
-            _logger.Warning(
-                "[NetworkOptimizer] Unsupported registry hive in journal path: {Path}", fullKeyPath);
-            return;
-        }
-        string subKeyPath = fullKeyPath[hklmPrefix.Length..];
-
-        using var key = Registry.LocalMachine.OpenSubKey(subKeyPath, writable: true);
-        if (key == null)
-        {
-            _logger.Warning(
-                "[NetworkOptimizer] Could not open {Path} during watchdog revert", fullKeyPath);
-            return;
-        }
+        if (!RecoveryInputRules.TryNetworkRegistryValue(fullRegistryPath, out var subKeyPath, out var valueName))
+            return null;
 
         switch (element.ValueKind)
         {
             case JsonValueKind.Null:
-                key.DeleteValue(valueName, throwOnMissingValue: false);
+                RecoveryRegistry.DeleteValue(RecoveryHive.LocalMachine, subKeyPath, valueName);
                 _logger.Information(
-                    "[NetworkOptimizer] Deleted {Path}\\{Name} (was absent before session)",
-                    fullKeyPath, valueName);
-                break;
+                    "[NetworkOptimizer] Deleted HKLM\\{Path}\\{Name} (was absent before session)", subKeyPath, valueName);
+                return true;
 
-            case JsonValueKind.Number:
-                int intVal = element.GetInt32();
-                key.SetValue(valueName, intVal, RegistryValueKind.DWord);
-                _logger.Information(
-                    "[NetworkOptimizer] Restored {Path}\\{Name} = {Value} (DWORD)",
-                    fullKeyPath, valueName, intVal);
-                break;
+            case JsonValueKind.Number when element.TryGetInt32(out int intVal):
+                return Restored(RecoveryRegistry.SetValue(
+                    RecoveryHive.LocalMachine, subKeyPath, valueName, intVal, RegistryValueKind.DWord), subKeyPath, valueName);
 
             case JsonValueKind.String:
-                string strVal = element.GetString() ?? string.Empty;
-                key.SetValue(valueName, strVal, RegistryValueKind.String);
-                _logger.Information(
-                    "[NetworkOptimizer] Restored {Path}\\{Name} = \"{Value}\" (REG_SZ)",
-                    fullKeyPath, valueName, strVal);
-                break;
+                return Restored(RecoveryRegistry.SetValue(
+                    RecoveryHive.LocalMachine, subKeyPath, valueName, element.GetString()!, RegistryValueKind.String), subKeyPath, valueName);
 
             default:
-                _logger.Warning(
-                    "[NetworkOptimizer] Unsupported JSON kind {Kind} for registry {Path}\\{Name}",
-                    element.ValueKind, fullKeyPath, valueName);
-                break;
+                return null;
         }
+    }
+
+    private bool Restored(bool written, string subKeyPath, string valueName)
+    {
+        if (written)
+            _logger.Information("[NetworkOptimizer] Restored HKLM\\{Path}\\{Name}", subKeyPath, valueName);
+        else
+            _logger.Warning("[NetworkOptimizer] Could not open HKLM\\{Path} during watchdog revert", subKeyPath);
+        return written;
     }
 
     /// <summary>
     /// Restores a service state from the watchdog journal. Only handles the "Running" case
     /// (start the service); if the original state was null or anything else, do nothing.
     /// </summary>
-    private void RestoreServiceFromJson(string serviceName, JsonElement element)
+    private bool? RestoreServiceFromJson(string serviceName, JsonElement element)
     {
-        if (element.ValueKind == JsonValueKind.Null)
-        {
-            _logger.Debug(
-                "[NetworkOptimizer] Service {Service} was not running before session - nothing to restart",
-                serviceName);
-            return;
-        }
+        if (!RecoveryInputRules.IsNetworkService(serviceName) ||
+            element.ValueKind is not (JsonValueKind.Null or JsonValueKind.String))
+            return null;
 
-        if (element.ValueKind != JsonValueKind.String)
-        {
-            _logger.Warning(
-                "[NetworkOptimizer] Unexpected JSON kind {Kind} for service {Service}",
-                element.ValueKind, serviceName);
-            return;
-        }
+        if (element.ValueKind == JsonValueKind.String &&
+            element.GetString() == nameof(ServiceControllerStatus.Running))
+            return StartService(serviceName);
 
-        string stateName = element.GetString() ?? string.Empty;
-        if (stateName == nameof(ServiceControllerStatus.Running))
-        {
-            StartServiceIfStopped(serviceName);
-        }
-        else
-        {
-            _logger.Debug(
-                "[NetworkOptimizer] Service {Service} original state was '{State}' - not restarting",
-                serviceName, stateName);
-        }
+        _logger.Debug(
+            "[NetworkOptimizer] Service {Service} was not running before session - nothing to restart", serviceName);
+        return true;
     }
 
     /// <summary>
     /// Restores a netsh-managed global setting from the watchdog journal.
     /// Currently supports the "rsc" key only.
     /// </summary>
-    private void RestoreNetshFromJson(string setting, JsonElement element)
+    private bool? RestoreNetshFromJson(string setting, JsonElement element)
     {
         if (!string.Equals(setting, "rsc", StringComparison.OrdinalIgnoreCase))
-        {
-            _logger.Warning(
-                "[NetworkOptimizer] Unknown netsh setting in journal: {Setting}", setting);
-            return;
-        }
+            return null;
 
         if (element.ValueKind == JsonValueKind.Null)
         {
-            // Original state unknown - nothing to restore.
+            // Earlier versions recorded null when they could not read RSC, and then left it alone.
             _logger.Debug("[NetworkOptimizer] Netsh rsc original state was null - skipping restore");
-            return;
+            return true;
         }
 
-        if (element.ValueKind != JsonValueKind.String)
-        {
-            _logger.Warning(
-                "[NetworkOptimizer] Unexpected JSON kind {Kind} for netsh rsc", element.ValueKind);
-            return;
-        }
-
-        string state = element.GetString() ?? string.Empty;
+        string? state = element.ValueKind == JsonValueKind.String ? element.GetString() : null;
         if (state != "enabled" && state != "disabled")
+            return null;
+
+        var (exitCode, _) = Netsh($"int tcp set global rsc={state}");
+        if (exitCode != 0)
         {
             _logger.Warning(
-                "[NetworkOptimizer] Invalid netsh rsc state in journal: {State}", state);
-            return;
+                "[NetworkOptimizer] Failed to restore RSC via netsh (exit code {ExitCode})", exitCode);
+            return false;
         }
 
-        ApplyNetshRscSetting(state);
+        _logger.Information("[NetworkOptimizer] Restored RSC to original state: {State}", state);
+        return true;
     }
 
     private static OptimizationResult RevertFail(string error) =>

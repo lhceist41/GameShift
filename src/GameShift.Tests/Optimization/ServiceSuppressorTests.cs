@@ -112,22 +112,43 @@ public class ServiceSuppressorTests
         Assert.Equal(new[] { "SysMain", "Spooler", "WdiSystemHost" }, _services.Restarted);
     }
 
-    /// <summary>
-    /// Describes current behavior, not correct behavior: Apply journals the list as "services" but
-    /// RevertFromRecord binds "Services" case-sensitively, so a record Apply wrote restarts nothing
-    /// and still reports Reverted. Flip to assert SysMain is restarted once the revert path binds the
-    /// key Apply writes.
-    /// </summary>
     [Fact]
-    public void JournalRecordAsApplyWritesIt_CurrentlyRestartsNothing()
+    public void JournalRecordAsApplyWritesIt_RestartsEveryListedService()
     {
         _services.Add("SysMain");
-        var record = JsonSerializer.Serialize(new { services = new[] { "SysMain" } });
+        _services.Add("BITS");
+        var record = JsonSerializer.Serialize(new { services = new[] { "SysMain", "BITS" } });
 
         var result = new ServiceSuppressor { Services = _services }.RevertFromRecord(record);
 
         Assert.Equal(OptimizationState.Reverted, result.State);
-        Assert.Empty(_services.Restarted);
+        Assert.Equal(new[] { "SysMain", "BITS" }, _services.Restarted);
+    }
+
+    [Fact]
+    public void JournalRecordAsApplyWritesIt_RestartFails_ReportsFailed()
+    {
+        _services.Add("SysMain");
+        _services.WillNotStart.Add("SysMain");
+
+        var result = new ServiceSuppressor { Services = _services }
+            .RevertFromRecord("""{"services":["SysMain"]}""");
+
+        Assert.Equal(OptimizationState.Failed, result.State);
+        Assert.Contains("SysMain", result.ErrorMessage);
+    }
+
+    [Fact]
+    public void JournalRecord_EntryThatIsNotAServiceName_IsRefusedAndNeverStarted()
+    {
+        _services.Add("SysMain");
+
+        var result = new ServiceSuppressor { Services = _services }
+            .RevertFromRecord("""{"services":["SysMain","..\\..\\evil",""]}""");
+
+        Assert.Equal(OptimizationState.Failed, result.State);
+        Assert.Contains("Refused 2", result.ErrorMessage);
+        Assert.Equal(new[] { "SysMain" }, _services.Restarted);
     }
 
     private sealed class FakeServices : ServiceSuppressor.IServiceControl

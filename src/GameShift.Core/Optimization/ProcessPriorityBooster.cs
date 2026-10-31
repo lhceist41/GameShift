@@ -555,12 +555,16 @@ public class ProcessPriorityBooster : IOptimization, IJournaledOptimization
         }
     }
 
+    internal RecoveryRegistry RecoveryRegistry { get; init; } = RecoveryRegistry.Windows;
+
+    private const string IfeoValueName = "CpuPriorityClass";
+
     /// <summary>
     /// Watchdog recovery path: parses the serialized IFEO state from the journal and
     /// restores each IFEO PerfOptions subkey without relying on any live instance state.
-    /// For each entry:
-    ///   - If originalValuesJson is null, GameShift created the key → delete PerfOptions.
-    ///   - Else, restore the original DWORD values.
+    /// For each entry, like the live revert:
+    ///   - If a CpuPriorityClass original was recorded, restore it.
+    ///   - Else delete CpuPriorityClass, and PerfOptions too when GameShift created it and it is now empty.
     /// Live PriorityClass changes are ephemeral and never journaled, so there's nothing
     /// to do for the non-IFEO path.
     /// </summary>
@@ -581,65 +585,12 @@ public class ProcessPriorityBooster : IOptimization, IJournaledOptimization
                     OptimizationId, string.Empty, string.Empty, OptimizationState.Reverted);
             }
 
-            foreach (var entry in keys.EnumerateArray())
-            {
-                try
-                {
-                    if (!entry.TryGetProperty("keyPath", out var keyPathElement) ||
-                        keyPathElement.ValueKind != JsonValueKind.String)
-                        continue;
-
-                    var keyPath = keyPathElement.GetString();
-                    if (string.IsNullOrEmpty(keyPath))
-                        continue;
-
-                    var hasOriginal = entry.TryGetProperty("originalValuesJson", out var origElement) &&
-                                      origElement.ValueKind == JsonValueKind.String;
-
-                    if (hasOriginal)
-                    {
-                        // Restore original values
-                        var originals = JsonSerializer.Deserialize<Dictionary<string, int>>(
-                            origElement.GetString()!);
-                        using var key = Registry.LocalMachine.OpenSubKey(keyPath, writable: true);
-                        if (key != null && originals != null)
-                        {
-                            foreach (var (name, value) in originals)
-                            {
-                                key.SetValue(name, value, RegistryValueKind.DWord);
-                            }
-
-                            _logger.Information(
-                                "[ProcessPriorityBooster] Restored {Count} original value(s) at {KeyPath}",
-                                originals.Count, keyPath);
-                        }
-                    }
-                    else
-                    {
-                        // GameShift created it - delete the PerfOptions subkey.
-                        // CRITICAL: don't hold a handle to the subkey while deleting it.
-                        var parentPath = keyPath.EndsWith(@"\PerfOptions", StringComparison.Ordinal)
-                            ? keyPath[..keyPath.LastIndexOf(@"\PerfOptions", StringComparison.Ordinal)]
-                            : keyPath;
-
-                        using var parentKey = Registry.LocalMachine.OpenSubKey(parentPath, writable: true);
-                        parentKey?.DeleteSubKey("PerfOptions", throwOnMissingSubKey: false);
-
-                        _logger.Information(
-                            "[ProcessPriorityBooster] Deleted PerfOptions subkey under {ParentPath} (created by GameShift)",
-                            parentPath);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.Warning(ex,
-                        "[ProcessPriorityBooster] Failed to revert an IFEO entry during watchdog recovery");
-                }
-            }
+            var notRestored = RecoveryRegistry.RevertIfeoRecords(keys, IfeoValueName, OptimizationId, _logger);
 
             IsApplied = false;
-            return new OptimizationResult(
-                OptimizationId, string.Empty, string.Empty, OptimizationState.Reverted);
+            return notRestored.Count == 0
+                ? new OptimizationResult(OptimizationId, string.Empty, string.Empty, OptimizationState.Reverted)
+                : RevertFail($"Not restored: {string.Join(", ", notRestored)}");
         }
         catch (Exception ex)
         {

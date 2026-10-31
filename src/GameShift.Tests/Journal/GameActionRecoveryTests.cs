@@ -10,48 +10,44 @@ namespace GameShift.Tests.Journal;
 /// <summary>
 /// Tests for <see cref="GameActionRecovery"/>, the watchdog-side undo path for per-game actions.
 ///
-/// The registry tests run against throwaway keys under HKCU\Software\GameShiftTests (created and
-/// deleted per test), exercising the real restore code including the type-faithful write-back for
-/// all four supported value kinds. The firewall/defender tests use payloads that fail validation
-/// before any PowerShell process would be spawned, so they verify the no-throw contract without
-/// touching the system. Recovery runs after a crash: it must never throw on garbage input.
+/// The registry tests replay records with the real AMD driver-value path into a throwaway HKCU tree
+/// (see <see cref="TestRecoveryRegistry"/>), exercising the real restore code including the
+/// type-faithful write-back for all four supported value kinds. The firewall/defender tests run
+/// PowerShell through a fake, or use payloads that are refused before any PowerShell process would
+/// be spawned. Recovery runs after a crash: it must never throw on garbage input, and it reports
+/// whether each record was undone.
 /// </summary>
 public class GameActionRecoveryTests
 {
-    private const string TestRoot = @"Software\GameShiftTests";
+    private const string AmdUmd = @"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\0000\UMD";
 
     private static Serilog.ILogger NoOpLogger => Logger.None;
 
-    private static string NewTestKeyPath() => $@"{TestRoot}\{Guid.NewGuid():N}";
+    private static string RegistryPayload(string hive, string path, string name, string kind, bool existed, object? value) =>
+        JsonSerializer.Serialize(new { hive, path, name, kind, existed, value });
 
-    private static string RegistryPayload(string path, string name, string kind, bool existed, object? value) =>
-        JsonSerializer.Serialize(new { hive = "HKCU", path, name, kind, existed, value });
+    private static GameActionRevertResult RevertRegistry(string payload, TestRecoveryRegistry registry) =>
+        GameActionRecovery.Revert("registry", payload, NoOpLogger, new FakePowerShellRunner().Run, registry.Registry);
 
     private static void RunRegistryRoundTrip(
         string kind, object originalValue, object overwrittenValue,
         RegistryValueKind expectedKind, Action<object?> assertRestored)
     {
-        var path = NewTestKeyPath();
-        try
+        using var registry = new TestRecoveryRegistry();
+        using (var key = registry.CreateKey(RecoveryHive.LocalMachine, AmdUmd))
         {
-            using (var key = Registry.CurrentUser.CreateSubKey(path))
-            {
-                // Simulate the "applied" state: the original value has been overwritten in-session.
-                key!.SetValue("TestValue", overwrittenValue);
-            }
-
-            var payload = RegistryPayload(path, "TestValue", kind, existed: true, value: originalValue);
-            GameActionRecovery.Revert("registry", payload, NoOpLogger);
-
-            using var readKey = Registry.CurrentUser.OpenSubKey(path);
-            Assert.NotNull(readKey);
-            assertRestored(readKey!.GetValue("TestValue"));
-            Assert.Equal(expectedKind, readKey.GetValueKind("TestValue"));
+            // Simulate the "applied" state: the original value has been overwritten in-session.
+            key.SetValue("AntiLag_DevMode", overwrittenValue);
         }
-        finally
-        {
-            Registry.CurrentUser.DeleteSubKeyTree(path, throwOnMissingSubKey: false);
-        }
+
+        var payload = RegistryPayload("HKLM", AmdUmd, "AntiLag_DevMode", kind, existed: true, value: originalValue);
+        var result = RevertRegistry(payload, registry);
+
+        Assert.Equal(RevertOutcome.Reverted, result.Outcome);
+        using var readKey = registry.Open(RecoveryHive.LocalMachine, AmdUmd);
+        Assert.NotNull(readKey);
+        assertRestored(readKey!.GetValue("AntiLag_DevMode"));
+        Assert.Equal(expectedKind, readKey.GetValueKind("AntiLag_DevMode"));
     }
 
     [Fact]
@@ -88,33 +84,80 @@ public class GameActionRecoveryTests
     [Fact]
     public void Revert_Registry_DeletesValueThatDidNotExistBeforeApply()
     {
-        var path = NewTestKeyPath();
-        try
+        using var registry = new TestRecoveryRegistry();
+        using (var key = registry.CreateKey(RecoveryHive.LocalMachine, AmdUmd))
         {
-            using (var key = Registry.CurrentUser.CreateSubKey(path))
-            {
-                key!.SetValue("CreatedBySession", "session-value");
-            }
-
-            var payload = RegistryPayload(path, "CreatedBySession", "String", existed: false, value: null);
-            GameActionRecovery.Revert("registry", payload, NoOpLogger);
-
-            using var readKey = Registry.CurrentUser.OpenSubKey(path);
-            Assert.NotNull(readKey);
-            Assert.Null(readKey!.GetValue("CreatedBySession"));
+            key.SetValue("AntiLag_DevMode", "0");
+            key.SetValue("Chill_Enabled", "1");
         }
-        finally
-        {
-            Registry.CurrentUser.DeleteSubKeyTree(path, throwOnMissingSubKey: false);
-        }
+
+        var result = RevertRegistry(RegistryPayload("HKLM", AmdUmd, "AntiLag_DevMode", "String", existed: false, value: null), registry);
+
+        Assert.Equal(RevertOutcome.Reverted, result.Outcome);
+        Assert.Null(registry.Value(RecoveryHive.LocalMachine, AmdUmd, "AntiLag_DevMode"));
+        Assert.Equal("1", registry.Value(RecoveryHive.LocalMachine, AmdUmd, "Chill_Enabled"));
     }
 
     [Fact]
-    public void Revert_Registry_OnNonexistentKey_DoesNotThrow()
+    public void Revert_Registry_OriginalButKeyMissing_IsFailedAndNotCreated()
     {
-        var payload = RegistryPayload($@"{TestRoot}\does-not-exist-{Guid.NewGuid():N}", "X", "String", existed: false, value: null);
-        var exception = Record.Exception(() => GameActionRecovery.Revert("registry", payload, NoOpLogger));
-        Assert.Null(exception);
+        using var registry = new TestRecoveryRegistry();
+
+        var result = RevertRegistry(RegistryPayload("HKLM", AmdUmd, "AntiLag_DevMode", "String", existed: true, value: "1"), registry);
+
+        Assert.Equal(RevertOutcome.Failed, result.Outcome);
+        Assert.Null(registry.Open(RecoveryHive.LocalMachine, AmdUmd));
+    }
+
+    // A value that existed but whose original could not be encoded was journaled as null.
+    [Fact]
+    public void Revert_Registry_ExistedWithoutRecordedOriginal_IsFailedAndUntouched()
+    {
+        using var registry = new TestRecoveryRegistry();
+        using (var key = registry.CreateKey(RecoveryHive.LocalMachine, AmdUmd))
+            key.SetValue("AntiLag_DevMode", "0");
+
+        var result = RevertRegistry(RegistryPayload("HKLM", AmdUmd, "AntiLag_DevMode", "DWord", existed: true, value: null), registry);
+
+        Assert.Equal(RevertOutcome.Failed, result.Outcome);
+        Assert.Equal("0", registry.Value(RecoveryHive.LocalMachine, AmdUmd, "AntiLag_DevMode"));
+    }
+
+    [Theory]
+    [InlineData("HKLM", @"SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System", "EnableLUA", "DWord")]
+    [InlineData("HKCU", @"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", @"C:\Users\Public\evil.exe", "String")]
+    [InlineData("HKLM", AmdUmd, "Debugger", "String")]
+    public void Revert_Registry_RecordGameShiftDidNotWrite_IsSkippedAndUntouched(string hive, string path, string name, string kind)
+    {
+        using var registry = new TestRecoveryRegistry();
+        var target = hive == "HKCU" ? RecoveryHive.CurrentUser : RecoveryHive.LocalMachine;
+        using (var key = registry.CreateKey(target, path))
+            key.SetValue(name, "user value");
+
+        var result = RevertRegistry(RegistryPayload(hive, path, name, kind, existed: false, value: null), registry);
+
+        Assert.Equal(RevertOutcome.Skipped, result.Outcome);
+        Assert.Equal("user value", registry.Value(target, path, name));
+    }
+
+    [Fact]
+    public void Revert_UnknownKindAndMalformedPayload_AreSkipped()
+    {
+        Assert.Equal(RevertOutcome.Skipped, GameActionRecovery.Revert("definitely-unknown-kind", "{}", NoOpLogger).Outcome);
+        Assert.Equal(RevertOutcome.Skipped, GameActionRecovery.Revert("registry", "{ this is not valid json", NoOpLogger).Outcome);
+        Assert.Equal(RevertOutcome.Skipped, GameActionRecovery.Revert("firewall", "{}", NoOpLogger).Outcome);
+    }
+
+    // The adapter is gone, and with it the value GameShift created: nothing is left to undo.
+    [Fact]
+    public void Revert_Registry_CreatedValueOnNonexistentKey_IsReverted()
+    {
+        using var registry = new TestRecoveryRegistry();
+
+        var result = RevertRegistry(RegistryPayload("HKLM", AmdUmd, "AntiLag_DevMode", "String", existed: false, value: null), registry);
+
+        Assert.Equal(RevertOutcome.Reverted, result.Outcome);
+        Assert.Null(registry.Open(RecoveryHive.LocalMachine, AmdUmd));
     }
 
     [Fact]
@@ -189,10 +232,11 @@ public class GameActionRecoveryTests
         };
         var payload = kind == "defender"
             ? JsonSerializer.Serialize(new { paths = new[] { @"C:\Games\A\" } })
-            : JsonSerializer.Serialize(new { ruleName = "GameShift Rule" });
+            : JsonSerializer.Serialize(new { ruleName = "GameShift_OW2_In" });
 
-        GameActionRecovery.Revert(kind, payload, logger, runner.Run);
+        var result = GameActionRecovery.Revert(kind, payload, logger, runner.Run);
 
+        Assert.Equal(RevertOutcome.Failed, result.Outcome);
         Assert.Single(runner.Calls);
         Assert.Contains(sink.Events, e => e.Level == Serilog.Events.LogEventLevel.Warning &&
             e.MessageTemplate.Text.Contains("not confirmed"));
@@ -209,28 +253,43 @@ public class GameActionRecoveryTests
         var runner = new FakePowerShellRunner();
         var payload = kind == "defender"
             ? JsonSerializer.Serialize(new { paths = new[] { @"C:\Games\A\" } })
-            : JsonSerializer.Serialize(new { ruleName = "GameShift Rule" });
+            : JsonSerializer.Serialize(new { ruleName = "GameShift_OW2_In" });
 
-        GameActionRecovery.Revert(kind, payload, logger, runner.Run);
+        var result = GameActionRecovery.Revert(kind, payload, logger, runner.Run);
 
+        Assert.Equal(RevertOutcome.Reverted, result.Outcome);
         Assert.Contains(sink.Events, e => e.Level == Serilog.Events.LogEventLevel.Information &&
             e.MessageTemplate.Text.Contains("Removed"));
         Assert.DoesNotContain(sink.Events, e => e.Level >= Serilog.Events.LogEventLevel.Warning);
     }
 
+    // A rule name travels to PowerShell only in the environment, and only a preset rule name gets
+    // that far: a tampered record could otherwise delete one of the user's own rules.
     [Fact]
-    public void Revert_Firewall_HostileRuleName_ValueTravelsOnlyInEnvironment()
+    public void Revert_Firewall_PresetRuleName_ValueTravelsOnlyInEnvironment()
     {
         const string script = "Remove-NetFirewallRule -DisplayName $env:GS_ARG0 -ErrorAction SilentlyContinue";
-        var ruleName = "GameShift " + HostileValue;
         var runner = new FakePowerShellRunner();
 
-        GameActionRecovery.Revert("firewall", JsonSerializer.Serialize(new { ruleName }), NoOpLogger, runner.Run);
+        GameActionRecovery.Revert("firewall", JsonSerializer.Serialize(new { ruleName = "GameShift_LoL_In" }), NoOpLogger, runner.Run);
 
         var call = Assert.Single(runner.Calls);
         Assert.Equal(script, call.Script);
         Assert.Equal(FakePowerShellRunner.ExpectedArguments(script), call.Arguments);
         Assert.Equal(FakePowerShellRunner.ManifestPath("NetSecurity"), call.ModuleManifest, ignoreCase: true);
-        Assert.Equal(new[] { ruleName }, call.Values);
+        Assert.Equal(new[] { "GameShift_LoL_In" }, call.Values);
+    }
+
+    [Theory]
+    [InlineData("Block outbound telemetry")]
+    [InlineData("GameShift " + HostileValue)]
+    public void Revert_Firewall_AnyOtherRuleName_IsSkippedWithoutPowerShell(string ruleName)
+    {
+        var runner = new FakePowerShellRunner();
+
+        var result = GameActionRecovery.Revert("firewall", JsonSerializer.Serialize(new { ruleName }), NoOpLogger, runner.Run);
+
+        Assert.Equal(RevertOutcome.Skipped, result.Outcome);
+        Assert.Empty(runner.Calls);
     }
 }

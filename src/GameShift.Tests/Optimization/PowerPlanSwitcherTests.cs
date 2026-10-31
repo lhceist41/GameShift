@@ -220,6 +220,99 @@ public class PowerPlanSwitcherTests
         Assert.DoesNotContain(_power.Writes, w => w.Plan == Balanced);
     }
 
+    // The shape 3.9 wrote, with two of its sub-setting overrides.
+    private const string EarlierVersionRecord = """
+        {"originalPlanGuid":"381b4222-f694-41f0-9685-ff5bb260df2e","targetPlanGuid":"e9a42b02-d5df-448d-aa00-03f14749eb61",
+         "subSettings":[{"subGroup":"54533251-82be-4824-96c1-47b60b740d00","setting":"45bcc044-d885-43e2-8605-ee0ec6e96b59","acValue":2,"dcValue":3},
+                        {"subGroup":"2a737441-1930-4402-8d77-b2bebba308a3","setting":"48e6b7a6-50f5-4782-a5d4-53bb8f07e226","acValue":1,"dcValue":1}]}
+        """;
+
+    [Fact]
+    public void EarlierVersionRecord_PowercfgFailure_IsFailed()
+    {
+        _power = new FakePowerScheme(Ultimate, Balanced);
+        var switcher = new PowerPlanSwitcher
+        {
+            Powercfg = args => args.StartsWith("/setdcvalueindex", StringComparison.Ordinal) ? (false, "") : _power.Run(args),
+            SetActiveScheme = plan => _power.SetActive(plan),
+        };
+
+        var result = switcher.RevertFromRecord(EarlierVersionRecord);
+
+        Assert.Equal(OptimizationState.Failed, result.State);
+        Assert.Contains(BoostPolicy, result.ErrorMessage);
+        Assert.Equal(Balanced, _power.Active);
+    }
+
+    [Theory]
+    [InlineData("""{"subGroup":"54533251-82be-4824-96c1-47b60b740d00 /hibernate off","setting":"45bcc044-d885-43e2-8605-ee0ec6e96b59","acValue":2,"dcValue":3}""")]
+    [InlineData("""{"subGroup":"SUB_PROCESSOR","setting":"45bcc044-d885-43e2-8605-ee0ec6e96b59","acValue":2,"dcValue":3}""")]
+    [InlineData("""{"subGroup":"54533251-82be-4824-96c1-47b60b740d00","setting":"45bcc044-d885-43e2-8605-ee0ec6e96b59","acValue":"2 /x","dcValue":3}""")]
+    public void SubSettingThatIsNotGuidsAndNumbers_NeverReachesPowercfg(string subSetting)
+    {
+        _power = new FakePowerScheme(Ultimate, Balanced);
+        var record = $$"""{"originalPlanGuid":"{{Balanced}}","targetPlanGuid":"{{Ultimate}}","subSettings":[{{subSetting}}]}""";
+
+        var result = NewSwitcher().RevertFromRecord(record);
+
+        Assert.Equal(OptimizationState.Failed, result.State);
+        Assert.Empty(_powercfgCalls);
+        Assert.Equal(Balanced, _power.Active);
+    }
+
+    [Fact]
+    public void RecordWhoseTargetPlanIsNotAGuid_ChangesNothing()
+    {
+        _power = new FakePowerScheme(Ultimate, Balanced);
+        var record = EarlierVersionRecord.Replace(
+            "\"targetPlanGuid\":\"e9a42b02-d5df-448d-aa00-03f14749eb61\"", "\"targetPlanGuid\":\"SCHEME_MIN /x\"");
+
+        var result = NewSwitcher().RevertFromRecord(record);
+
+        Assert.Equal(OptimizationState.Failed, result.State);
+        Assert.Empty(_powercfgCalls);
+        Assert.Equal(Ultimate, _power.Active);
+    }
+
+    [Fact]
+    public void OriginalPlanMissing_FallsBackToBalancedButIsFailed()
+    {
+        _power = new FakePowerScheme(HighPerformance, Balanced);
+        var record = JsonSerializer.Serialize(new
+        {
+            originalPlanGuid = PowerSaver.ToString(),
+            targetPlanGuid = HighPerformance.ToString(),
+        });
+
+        var result = NewSwitcher().RevertFromRecord(record);
+
+        Assert.Equal(OptimizationState.Failed, result.State);
+        Assert.Contains("Balanced is active instead", result.ErrorMessage);
+        Assert.Equal(Balanced, _power.Active);
+    }
+
+    [Fact]
+    public void OriginalPlanAndBalancedBothRefused_IsFailed()
+    {
+        _power = new FakePowerScheme(HighPerformance, Balanced);
+        _power.Refuse.Add(Balanced);
+        var record = JsonSerializer.Serialize(new { originalPlanGuid = PowerSaver.ToString() });
+
+        var result = NewSwitcher().RevertFromRecord(record);
+
+        Assert.Equal(OptimizationState.Failed, result.State);
+        Assert.Contains("Balanced could not be activated either", result.ErrorMessage);
+        Assert.Equal(HighPerformance, _power.Active);
+    }
+
+    [Fact]
+    public void RecordWithoutOriginalPlan_IsFailed()
+    {
+        var result = NewSwitcher().RevertFromRecord("""{"targetPlanGuid":"8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c"}""");
+
+        Assert.Equal(OptimizationState.Failed, result.State);
+    }
+
     /// <summary>
     /// Plans that exist, each starting with different sub-setting values. <see cref="Refuse"/> makes
     /// activation of a plan fail as the API would.

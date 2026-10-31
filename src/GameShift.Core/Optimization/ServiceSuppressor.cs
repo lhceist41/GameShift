@@ -1,5 +1,6 @@
 using System.ServiceProcess;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using GameShift.Core.Config;
 using GameShift.Core.Journal;
 using GameShift.Core.Profiles;
@@ -285,7 +286,7 @@ public class ServiceSuppressor : IOptimization, IJournaledOptimization
     {
         try
         {
-            var payload = JsonSerializer.Deserialize<ServiceRevertPayload>(originalValueJson);
+            var payload = JsonSerializer.Deserialize<ServiceRevertPayload>(originalValueJson, RecordJsonOptions);
             if (payload == null)
             {
                 // Apply always journals a payload object; a literal JSON null means the record is
@@ -295,10 +296,24 @@ public class ServiceSuppressor : IOptimization, IJournaledOptimization
                     "Corrupt journal record (null payload)");
             }
 
-            var notRestarted = RestartServices(payload.Services ?? new List<string>());
-            return notRestarted.Count == 0
-                ? new OptimizationResult(OptimizationId, string.Empty, string.Empty, OptimizationState.Reverted)
-                : RestartFailed(notRestarted);
+            var recorded = payload.Services ?? new List<string?>();
+            var valid = recorded.Where(RecoveryInputRules.IsServiceName).Select(name => name!).ToList();
+            int refused = recorded.Count - valid.Count;
+            if (refused > 0)
+                SettingsManager.Logger.Warning(
+                    "[ServiceSuppressor] Refused {Count} journal entries that are not service names", refused);
+
+            var notRestarted = RestartServices(valid);
+            if (notRestarted.Count == 0 && refused == 0)
+                return new OptimizationResult(OptimizationId, string.Empty, string.Empty, OptimizationState.Reverted);
+
+            var problems = new List<string>();
+            if (notRestarted.Count > 0)
+                problems.Add($"Could not restart: {string.Join(", ", notRestarted)}");
+            if (refused > 0)
+                problems.Add($"Refused {refused} journal entr{(refused == 1 ? "y" : "ies")} that are not service names");
+            return new OptimizationResult(
+                OptimizationId, string.Empty, string.Empty, OptimizationState.Failed, string.Join(". ", problems));
         }
         catch (Exception ex)
         {
@@ -488,9 +503,13 @@ public class ServiceSuppressor : IOptimization, IJournaledOptimization
         return false;
     }
 
+    // Apply writes "services"; records with "Services" are accepted too.
+    private static readonly JsonSerializerOptions RecordJsonOptions = new() { PropertyNameCaseInsensitive = true };
+
     private sealed class ServiceRevertPayload
     {
-        public List<string> Services { get; set; } = new();
+        [JsonPropertyName("services")]
+        public List<string?>? Services { get; set; } = new();
     }
 
     /// <summary>

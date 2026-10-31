@@ -28,6 +28,28 @@ public record OptimizationResult(
     string? ErrorMessage = null
 );
 
+/// <summary>How one journal record fared when it was replayed.</summary>
+public enum RevertOutcome
+{
+    Reverted,
+    Failed,
+
+    /// <summary>Not acted on: an unknown kind, or a record GameShift did not write.</summary>
+    Skipped
+}
+
+/// <param name="Message">What was not restored, or for a reverted record what it changed back; null when there is nothing to add.</param>
+public sealed record GameActionRevertResult(RevertOutcome Outcome, string? Message = null);
+
+/// <param name="Name">The optimization name, or the game action kind.</param>
+public sealed record JournalRevertItem(bool IsGameAction, string Name, RevertOutcome Outcome, string? Message);
+
+/// <summary>Per-record outcome of a journal replay, in the order the records were replayed.</summary>
+public sealed record JournalRevertResult(IReadOnlyList<JournalRevertItem> Items)
+{
+    public bool AllReverted => Items.All(item => item.Outcome == RevertOutcome.Reverted);
+}
+
 /// <summary>
 /// Context passed to IJournaledOptimization.CanApply().
 /// Carries the game profile and current system snapshot.

@@ -1,6 +1,5 @@
 using System.Runtime.InteropServices;
 using System.Text.Json;
-using Microsoft.Win32;
 using GameShift.Core.Profiles;
 using GameShift.Core.System;
 using GameShift.Core.Config;
@@ -47,6 +46,11 @@ public class VisualEffectReducer : IOptimization, IJournaledOptimization
 
     public bool Verify() => false;
 
+    internal RecoveryRegistry RecoveryRegistry { get; init; } = RecoveryRegistry.Windows;
+
+    /// <summary>Turns Windows animations on; a seam so the journal revert can be tested without SPI.</summary>
+    internal Func<bool> EnableAnimation { get; init; } = () => TrySetAnimation(out _, enable: true);
+
     /// <summary>
     /// Watchdog recovery path: parses the serialized original state from the journal and
     /// restores both the transparency registry value and the animation system parameter
@@ -62,62 +66,58 @@ public class VisualEffectReducer : IOptimization, IJournaledOptimization
             if (values == null)
                 return RevertFail("Failed to parse originalValueJson");
 
+            var notRestored = new List<string>();
+
             // ── Restore transparency registry value ────────────────────────
+            // A failure here must not stop the animation restore below (live Revert() keeps the two
+            // independent too).
             if (values.TryGetValue(TransparencyValueName, out var transparencyElement))
             {
-                using var key = Registry.CurrentUser.OpenSubKey(
-                    TransparencyRegistrySubKey, writable: true);
-                // A missing key must not abort the whole revert - fall through so the animation
-                // restore below still runs (mirrors live Revert() keeping the two independent).
-                if (key == null)
+                if (RecoveryRegistry.RestoreDword(
+                        RecoveryHive.CurrentUser, TransparencyRegistrySubKey, TransparencyValueName, transparencyElement))
                 {
-                    _logger.Warning(
-                        "[VisualEffectReducer] Transparency key unavailable; skipping transparency restore");
+                    _logger.Information("[VisualEffectReducer] Restored transparency from the journal record");
                 }
-                else if (transparencyElement.ValueKind == JsonValueKind.Null)
+                else
                 {
-                    key.DeleteValue(TransparencyValueName, throwOnMissingValue: false);
-                    _logger.Information(
-                        "[VisualEffectReducer] Deleted transparency value (was absent before session)");
-                }
-                else if (transparencyElement.ValueKind == JsonValueKind.Number)
-                {
-                    int val = transparencyElement.GetInt32();
-                    key.SetValue(TransparencyValueName, val, RegistryValueKind.DWord);
-                    _logger.Information(
-                        "[VisualEffectReducer] Restored transparency to {Value}", val);
+                    _logger.Warning("[VisualEffectReducer] Could not restore transparency from the journal record");
+                    notRestored.Add("transparency");
                 }
             }
 
             // ── Restore animation state ────────────────────────────────────
             if (values.TryGetValue(AnimationKey, out var animationElement))
             {
-                bool wasEnabled = animationElement.ValueKind switch
-                {
-                    JsonValueKind.True => true,
-                    JsonValueKind.False => false,
-                    _ => false
-                };
-
                 // Only drive the SPI call if the original state differed from the
                 // applied state. If animations were already off before apply, skip.
-                if (wasEnabled)
+                if (animationElement.ValueKind == JsonValueKind.True)
                 {
-                    if (TrySetAnimation(out _, enable: true))
+                    if (EnableAnimation())
+                    {
                         _logger.Information("[VisualEffectReducer] Restored Windows animations (enabled)");
+                    }
                     else
+                    {
                         _logger.Warning("[VisualEffectReducer] Failed to restore animation state");
+                        notRestored.Add("animations");
+                    }
                 }
-                else
+                else if (animationElement.ValueKind == JsonValueKind.False)
                 {
                     _logger.Debug(
                         "[VisualEffectReducer] Animations were originally disabled, no restore needed");
                 }
+                else
+                {
+                    _logger.Warning("[VisualEffectReducer] Animation state in the journal record is not a boolean");
+                    notRestored.Add("animations");
+                }
             }
 
             _isApplied = false;
-            return new OptimizationResult(
-                OptimizationId, string.Empty, string.Empty, OptimizationState.Reverted);
+            return notRestored.Count == 0
+                ? new OptimizationResult(OptimizationId, string.Empty, string.Empty, OptimizationState.Reverted)
+                : RevertFail($"Not restored: {string.Join(", ", notRestored)}");
         }
         catch (Exception ex)
         {

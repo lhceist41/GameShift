@@ -39,6 +39,11 @@ public class SessionSystemTweaksOptimizer : IOptimization, IJournaledOptimizatio
 
     public bool Verify() => false;
 
+    internal RecoveryRegistry RecoveryRegistry { get; init; } = RecoveryRegistry.Windows;
+
+    /// <summary>Runs powercfg; true on exit code 0. A seam so the revert runs without powercfg.</summary>
+    internal Func<string, bool> Powercfg { get; init; } = RunPowercfg;
+
     /// <summary>
     /// Watchdog recovery: restores the registry values and PCIe ASPM from the journaled
     /// OriginalValue JSON without any live instance state.
@@ -51,41 +56,68 @@ public class SessionSystemTweaksOptimizer : IOptimization, IJournaledOptimizatio
             if (payload == null)
                 return new OptimizationResult(OptimizationId, string.Empty, string.Empty, OptimizationState.Failed, "Failed to parse originalValueJson");
 
+            var problems = new List<string>();
+            int refused = 0;
+
             // Restore registry values in reverse (LIFO) order.
             for (int i = payload.Backups.Count - 1; i >= 0; i--)
             {
                 var b = payload.Backups[i];
+                if (!RecoveryInputRules.IsSessionTweak(b.Hklm, b.Path, b.Name, b.Kind))
+                {
+                    _logger.Warning("[SessionSystemTweaks] Refused a journal entry GameShift did not write: {Path}\\{Name}", b.Path, b.Name);
+                    refused++;
+                    continue;
+                }
+
                 try
                 {
-                    var root = b.Hklm ? Registry.LocalMachine : Registry.CurrentUser;
-                    using var key = root.OpenSubKey(b.Path, writable: true);
-                    if (key == null) continue;
-
+                    bool restored;
                     if (!b.Existed)
                     {
-                        key.DeleteValue(b.Name, throwOnMissingValue: false);
+                        RecoveryRegistry.DeleteValue(RecoveryHive.LocalMachine, b.Path, b.Name);
+                        restored = true;
                     }
-                    else if (b.Value is JsonElement el)
+                    else if (b.Value is JsonElement { ValueKind: JsonValueKind.String } text && b.Kind == nameof(RegistryValueKind.String))
                     {
-                        if (string.Equals(b.Kind, "String", StringComparison.Ordinal))
-                            key.SetValue(b.Name, el.GetString() ?? "", RegistryValueKind.String);
-                        else
-                            key.SetValue(b.Name, el.GetInt32(), RegistryValueKind.DWord);
+                        restored = RecoveryRegistry.SetValue(RecoveryHive.LocalMachine, b.Path, b.Name, text.GetString()!, RegistryValueKind.String);
                     }
+                    else if (b.Value is JsonElement { ValueKind: JsonValueKind.Number } number && b.Kind == nameof(RegistryValueKind.DWord) &&
+                             number.TryGetInt32(out int dword))
+                    {
+                        restored = RecoveryRegistry.SetValue(RecoveryHive.LocalMachine, b.Path, b.Name, dword, RegistryValueKind.DWord);
+                    }
+                    else
+                    {
+                        _logger.Warning("[SessionSystemTweaks] Recorded original of {Path}\\{Name} is not a {Kind}", b.Path, b.Name, b.Kind);
+                        restored = false;
+                    }
+
+                    if (!restored)
+                        problems.Add($@"HKLM\{b.Path}\{b.Name}");
                 }
                 catch (Exception ex)
                 {
                     _logger.Warning(ex, "[SessionSystemTweaks] RevertFromRecord failed for {Path}\\{Name}", b.Path, b.Name);
+                    problems.Add($@"HKLM\{b.Path}\{b.Name}");
                 }
             }
 
             if (payload.Aspm.HasValue)
             {
-                RunPowercfg($"/setacvalueindex SCHEME_CURRENT {PcieSubgroupGuid} {AspmSettingGuid} {payload.Aspm.Value}");
-                RunPowercfg("/setactive SCHEME_CURRENT");
+                bool written = Powercfg($"/setacvalueindex SCHEME_CURRENT {PcieSubgroupGuid} {AspmSettingGuid} {payload.Aspm.Value}");
+                bool activated = Powercfg("/setactive SCHEME_CURRENT");
+                if (!written || !activated)
+                    problems.Add("PCIe link state power management");
             }
 
-            return new OptimizationResult(OptimizationId, string.Empty, string.Empty, OptimizationState.Reverted);
+            if (refused > 0)
+                problems.Add($"{refused} refused registry entr{(refused == 1 ? "y" : "ies")}");
+
+            return problems.Count == 0
+                ? new OptimizationResult(OptimizationId, string.Empty, string.Empty, OptimizationState.Reverted)
+                : new OptimizationResult(OptimizationId, string.Empty, string.Empty, OptimizationState.Failed,
+                    $"Not restored: {string.Join(", ", problems)}");
         }
         catch (Exception ex)
         {
@@ -110,11 +142,9 @@ public class SessionSystemTweaksOptimizer : IOptimization, IJournaledOptimizatio
         public object? Value { get; set; }
     }
 
-    private static string RunPowercfg(string arguments)
+    private static bool RunPowercfg(string arguments)
     {
-        // Returns stdout regardless of exit code (callers regex-parse it); empty string when the
-        // process can't start. The shared runner additionally reaps a wedged child instead of
-        // leaving it running, with no change to the returned output.
-        return ProcessRunner.Run(NativeInterop.SystemExePath("powercfg.exe"), arguments, 10_000).StdOut;
+        var result = ProcessRunner.Run(NativeInterop.SystemExePath("powercfg.exe"), arguments, 10_000);
+        return result.Exited && result.ExitCode == 0;
     }
 }

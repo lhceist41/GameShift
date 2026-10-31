@@ -262,13 +262,14 @@ public class HybridCpuDetector : IOptimization, IJournaledOptimization
         }
     }
 
+    internal RecoveryRegistry RecoveryRegistry { get; init; } = RecoveryRegistry.Windows;
+
+    private const string IfeoValueName = "CpuAffinityMask";
+
     /// <summary>
     /// Watchdog recovery path: parses the serialized IFEO state and cleans up each
     /// PerfOptions subkey without any live instance state. If the subkey did not exist
     /// before apply and has no other values, the subkey itself is deleted.
-    ///
-    /// Critical: the write handle to PerfOptions must be closed BEFORE attempting to
-    /// delete the subkey - Windows refuses DeleteSubKey while a handle is still open.
     /// </summary>
     public OptimizationResult RevertFromRecord(string originalValueJson)
     {
@@ -295,108 +296,18 @@ public class HybridCpuDetector : IOptimization, IJournaledOptimization
                     OptimizationId, string.Empty, string.Empty, OptimizationState.Reverted);
             }
 
-            foreach (var entry in ifeoKeysElement.EnumerateArray())
-            {
-                if (!entry.TryGetProperty("keyPath", out var keyPathElement) ||
-                    keyPathElement.ValueKind != JsonValueKind.String)
-                {
-                    continue;
-                }
-
-                var keyPath = keyPathElement.GetString();
-                if (string.IsNullOrWhiteSpace(keyPath))
-                    continue;
-
-                string? originalValuesJson = null;
-                if (entry.TryGetProperty("originalValuesJson", out var originalValuesElement) &&
-                    originalValuesElement.ValueKind == JsonValueKind.String)
-                {
-                    originalValuesJson = originalValuesElement.GetString();
-                }
-
-                RevertIfeoSubKeyFromRecord(keyPath, originalValuesJson);
-            }
+            var notRestored = RecoveryRegistry.RevertIfeoRecords(
+                ifeoKeysElement, IfeoValueName, OptimizationId, SettingsManager.Logger);
 
             IsApplied = false;
-            return new OptimizationResult(
-                OptimizationId, string.Empty, string.Empty, OptimizationState.Reverted);
+            return notRestored.Count == 0
+                ? new OptimizationResult(OptimizationId, string.Empty, string.Empty, OptimizationState.Reverted)
+                : RevertFail($"Not restored: {string.Join(", ", notRestored)}");
         }
         catch (Exception ex)
         {
             SettingsManager.Logger.Error(ex, "[HybridCpuDetector] RevertFromRecord failed");
             return RevertFail(ex.Message);
-        }
-    }
-
-    /// <summary>
-    /// Cleans up a single IFEO PerfOptions subkey during watchdog recovery.
-    /// If the original values JSON is non-null, restores them; otherwise deletes the
-    /// CpuAffinityMask value, and if the subkey is now empty and was created by GameShift,
-    /// deletes the PerfOptions subkey itself.
-    /// </summary>
-    private static void RevertIfeoSubKeyFromRecord(string perfOptionsPath, string? originalValuesJson)
-    {
-        try
-        {
-            if (!string.IsNullOrEmpty(originalValuesJson))
-            {
-                // Original values existed - restore them
-                var originalValues = JsonSerializer.Deserialize<Dictionary<string, int>>(originalValuesJson);
-                if (originalValues != null)
-                {
-                    using var perfKey = Registry.LocalMachine.OpenSubKey(perfOptionsPath, writable: true);
-                    if (perfKey != null)
-                    {
-                        foreach (var (valueName, value) in originalValues)
-                        {
-                            perfKey.SetValue(valueName, value, RegistryValueKind.DWord);
-                        }
-                        SettingsManager.Logger.Information(
-                            "[HybridCpuDetector] Restored IFEO values at {Path}", perfOptionsPath);
-                    }
-                }
-                return;
-            }
-
-            // No original values - GameShift created the subkey (or CpuAffinityMask was fresh).
-            // Delete the CpuAffinityMask value; delete the subkey too only if it's now empty.
-            // Must close perfKey BEFORE attempting DeleteSubKey - Windows blocks DeleteSubKey
-            // while a handle to it is still open in the same process.
-            bool shouldDeleteSubKey;
-            using (var perfKey = Registry.LocalMachine.OpenSubKey(perfOptionsPath, writable: true))
-            {
-                if (perfKey == null)
-                    return;
-
-                perfKey.DeleteValue("CpuAffinityMask", throwOnMissingValue: false);
-                shouldDeleteSubKey = perfKey.ValueCount == 0 && perfKey.SubKeyCount == 0;
-            } // perfKey closed here - safe to delete subkey
-
-            if (shouldDeleteSubKey)
-            {
-                // Derive the parent IFEO\<exe> path from the PerfOptions subkey path
-                const string perfOptionsSuffix = @"\PerfOptions";
-                if (perfOptionsPath.EndsWith(perfOptionsSuffix, StringComparison.OrdinalIgnoreCase))
-                {
-                    var parentPath = perfOptionsPath[..^perfOptionsSuffix.Length];
-                    using var parentKey = Registry.LocalMachine.OpenSubKey(parentPath, writable: true);
-                    parentKey?.DeleteSubKey("PerfOptions", throwOnMissingSubKey: false);
-
-                    SettingsManager.Logger.Information(
-                        "[HybridCpuDetector] Deleted empty IFEO PerfOptions subkey at {Path}", perfOptionsPath);
-                }
-            }
-            else
-            {
-                SettingsManager.Logger.Information(
-                    "[HybridCpuDetector] Deleted CpuAffinityMask at {Path} (PerfOptions retained)",
-                    perfOptionsPath);
-            }
-        }
-        catch (Exception ex)
-        {
-            SettingsManager.Logger.Warning(ex,
-                "[HybridCpuDetector] Failed to revert IFEO subkey {Path} from record", perfOptionsPath);
         }
     }
 
