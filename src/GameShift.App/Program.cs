@@ -3,6 +3,7 @@ using System.IO;
 using System.Windows;
 using GameShift.Core.Config;
 using GameShift.Core.System;
+using GameShift.Core.SystemTweaks;
 
 namespace GameShift.App;
 
@@ -23,6 +24,9 @@ public static class Program
         try
         {
             LaunchOptions = LaunchOptions.Parse(args);
+            if (LaunchOptions.IsHeadless)
+                return RunHeadless();
+
             WriteDiag("Program.Main starting...");
 
             // Phase 1: Can we even load the WPF-UI assemblies?
@@ -75,6 +79,26 @@ public static class Program
             WriteDiag($"UNHANDLED: {ex}");
             WriteCrash("PROGRAM_MAIN", ex);
             return 4;
+        }
+    }
+
+    /// <summary>
+    /// The uninstaller's commands. Runs before anything of WPF is touched, so no window, tray icon,
+    /// pipe or message box can appear; the exit code is <see cref="HeadlessExitCode"/>.
+    /// </summary>
+    private static int RunHeadless()
+    {
+        try
+        {
+            WriteDiag($"Program.Main headless: restore={LaunchOptions.RestoreTweaks}, remove-tasks={LaunchOptions.RemoveTasks}");
+            var code = HeadlessRestore.RunOnThisMachine(LaunchOptions);
+            WriteDiag($"Headless run exited with {code}");
+            return code;
+        }
+        catch (Exception ex)
+        {
+            WriteCrash("HEADLESS", ex);
+            return HeadlessExitCode.Error;
         }
     }
 

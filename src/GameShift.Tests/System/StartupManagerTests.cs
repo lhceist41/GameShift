@@ -24,6 +24,7 @@ public class StartupManagerTests
         public List<(string Folder, string Name)> Deletes { get; } = new();
         public List<string> FolderDeletes { get; } = new();
         public Exception? Throw { get; set; }
+        public Dictionary<string, Exception> ThrowForTask { get; } = new();
         public Exception? FolderThrow { get; set; }
         public bool FolderEmpty { get; set; } = true;
 
@@ -37,6 +38,7 @@ public class StartupManagerTests
         {
             Deletes.Add((folder, name));
             if (Throw != null) throw Throw;
+            if (ThrowForTask.TryGetValue(name, out var forTask)) throw forTask;
         }
 
         public bool DeleteFolderIfEmpty(string folder)
@@ -494,5 +496,60 @@ public class StartupManagerTests
         var events = Capture(() => StartupManager.DeleteTaskFolderIfEmpty(registrar));
 
         Assert.Contains(events, e => e.Level == Serilog.Events.LogEventLevel.Warning && HasHResult(e, hresult));
+    }
+
+    // ── Uninstall: every GameShift task ──────────────────────────────
+
+    [Fact]
+    public void RemoveAllTasks_DeletesBothTasks_ThenTheEmptyFolder()
+    {
+        var registrar = new FakeRegistrar();
+
+        var removed = StartupManager.RemoveAllTasks(registrar);
+
+        Assert.True(removed);
+        Assert.Equal(new[] { ("GameShift", "Startup"), ("GameShift", "BootRecovery") }, registrar.Deletes);
+        Assert.Equal("GameShift", Assert.Single(registrar.FolderDeletes));
+    }
+
+    [Theory]
+    [InlineData(unchecked((int)0x80070002))]
+    [InlineData(unchecked((int)0x80070003))]
+    public void RemoveAllTasks_TasksThatDoNotExist_CountAsRemoved_Quietly(int hresult)
+    {
+        var registrar = new FakeRegistrar { Throw = new COMException("Das System kann die angegebene Datei nicht finden.", hresult) };
+
+        bool removed = false;
+        var events = Capture(() => removed = StartupManager.RemoveAllTasks(registrar));
+
+        Assert.True(removed);
+        Assert.Equal(2, registrar.Deletes.Count);
+        Assert.DoesNotContain(events, e => e.Level >= Serilog.Events.LogEventLevel.Warning);
+    }
+
+    [Theory]
+    [InlineData("Startup")]
+    [InlineData("BootRecovery")]
+    public void RemoveAllTasks_AFailedDelete_IsReported_AndTheOtherTaskIsStillDeleted(string failing)
+    {
+        var hresult = unchecked((int)0x80070005);
+        var registrar = new FakeRegistrar();
+        registrar.ThrowForTask[failing] = new COMException("access denied", hresult);
+
+        bool removed = true;
+        var events = Capture(() => removed = StartupManager.RemoveAllTasks(registrar));
+
+        Assert.False(removed);
+        Assert.Equal(2, registrar.Deletes.Count);
+        Assert.Contains(events, e => e.Level == Serilog.Events.LogEventLevel.Warning && HasHResult(e, hresult));
+    }
+
+    [Fact]
+    public void RemoveAllTasks_FolderHoldingAnotherTask_IsKept_AndStillCountsAsRemoved()
+    {
+        var registrar = new FakeRegistrar { FolderEmpty = false };
+
+        Assert.True(StartupManager.RemoveAllTasks(registrar));
+        Assert.Single(registrar.FolderDeletes);
     }
 }

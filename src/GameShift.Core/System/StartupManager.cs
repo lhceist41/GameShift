@@ -345,6 +345,40 @@ public static class StartupManager
         DeleteTaskFolderIfEmpty(registrar);
     }
 
+    /// <summary>
+    /// Deletes the startup task and the legacy boot-recovery task, then the GameShift task folder if
+    /// that left it empty. True when neither task is left; a task that does not exist counts as
+    /// removed. Never throws.
+    /// </summary>
+    public static bool RemoveAllTasks() => RemoveAllTasks(new TaskSchedulerRegistrar());
+
+    internal static bool RemoveAllTasks(ITaskRegistrar registrar)
+    {
+        var startupGone = TryDeleteTask(registrar, TaskName);
+        var legacyGone = TryDeleteTask(registrar, LegacyBootRecoveryTaskName);
+        DeleteTaskFolderIfEmpty(registrar);
+        return startupGone && legacyGone;
+    }
+
+    private static bool TryDeleteTask(ITaskRegistrar registrar, string name)
+    {
+        try
+        {
+            registrar.DeleteTask(TaskFolder, name);
+            Log.Information("[StartupManager] Removed the {Task} task", TaskFolder + "\\" + name);
+            return true;
+        }
+        catch (Exception ex) when (ex.HResult is TaskNotFound or TaskFolderNotFound)
+        {
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "[StartupManager] Failed to remove the {Task} task (0x{HResult:X8})", TaskFolder + "\\" + name, ex.HResult);
+            return false;
+        }
+    }
+
     /// <summary>Deletes the GameShift task folder when it holds no task or folder. Never throws.</summary>
     internal static void DeleteTaskFolderIfEmpty(ITaskRegistrar registrar)
     {
