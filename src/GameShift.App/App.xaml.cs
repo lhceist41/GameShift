@@ -8,6 +8,7 @@ using GameShift.Core.Journal;
 using GameShift.Core.Monitoring;
 using GameShift.Core.Profiles.GameActions;
 using GameShift.Core.System;
+using GameShift.Core.Updates;
 using GameShift.Core.Watchdog;
 using GameShift.App.Services;
 using GameShift.App.Views;
@@ -34,6 +35,9 @@ public partial class App : Application
     private GlobalHotkeyService? _hotkeyService;
     private SingleInstancePipe? _singleInstancePipe;
     private WatchdogHeartbeatClient? _watchdogHeartbeat;
+
+    // Set when a registered install was refused at startup; shown once the dashboard is up.
+    private string? _installRefusedMessage;
 
     // Holds event subscriptions for clean unsubscription in OnExit
     private EventSubscriptions? _eventSubs;
@@ -137,6 +141,13 @@ public partial class App : Application
                         MessageBoxImage.Error);
                 }
 
+                Shutdown();
+                return;
+            }
+
+            // Step a2: A portable copy hands over to a trusted installed copy before it touches any state.
+            if (HandOverToInstalledCopy())
+            {
                 Shutdown();
                 return;
             }
@@ -258,10 +269,11 @@ public partial class App : Application
             WriteDiag("Step f3: Checking for updates...");
             var updatePopupShown = await CheckAndShowUpdatePopupAsync(settings, startupNotices);
 
-            // Step f4: One-time recommendation for portable copies to switch to the installer. Skipped
-            // while an update popup was shown this start, which may already be shutting the app down.
+            // Step f4: Install notices: a refused install, the old portable file, or the one-time install
+            // offer. Skipped while an update popup was shown this start, which may already be shutting the
+            // app down.
             if (!updatePopupShown)
-                await ShowInstallRecommendationOnceAsync(startupNotices);
+                await ShowInstallNoticesAsync(startupNotices);
 
             // Wire DPC spike toast notifications
             if (Services.DpcMon != null)
@@ -503,49 +515,219 @@ public partial class App : Application
     }
 
     /// <summary>
-    /// Recommends the installer, once, to a portable copy. The installed copy lives in an admin-only
-    /// folder and updates through the installer, which a loose exe in a user-writable folder cannot do
-    /// safely. Not shown while an installed copy is registered elsewhere, and not before
-    /// <paramref name="startupNotices"/> have been closed. Never throws.
+    /// A portable copy started while a trusted install is registered offers to start the installed copy
+    /// and exits; on a logon start it exits without asking. Runs on the UI thread before the first await,
+    /// where the single-instance mutex can still be released. Returns true when this copy is to exit.
     /// </summary>
-    private async Task ShowInstallRecommendationOnceAsync(Task startupNotices)
+    private bool HandOverToInstalledCopy()
+    {
+        StartupHandover handover;
+        try
+        {
+            handover = InstallHandover.DecideAtStart(InstallationDetector.Current, Program.LaunchOptions.StartedAtLogon);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Install handover check failed - continuing as this copy");
+            return false;
+        }
+
+        switch (handover.Kind)
+        {
+            case HandoverKind.ExitQuietly:
+                WriteDiag("Step a2: Logon start of a portable copy while GameShift is installed - exiting");
+                Log.Information("Logon start of a portable copy while a trusted install is registered - exiting quietly");
+                return true;
+
+            case HandoverKind.InstallRefused:
+                Log.Warning("Registered install not used: {Reasons}", string.Join("; ", handover.Reasons ?? Array.Empty<string>()));
+                _installRefusedMessage = handover.RefusedMessage;
+                return false;
+
+            case HandoverKind.OfferInstalledCopy:
+                break;
+
+            default:
+                return false;
+        }
+
+        WriteDiag("Step a2: Portable copy while GameShift is installed - offering the installed copy");
+        var answer = MessageBox.Show(
+            "GameShift is installed on this PC. Start the installed copy instead? This copy then closes.\n\n" +
+            "The installed copy uses the same settings and game library, and installs updates for you.",
+            "GameShift Is Installed",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Information);
+        if (answer != MessageBoxResult.Yes) return false;
+
+        var installedExe = handover.InstalledExePath!;
+
+        // Released first: the installed copy would otherwise find it held, forward "show" to this
+        // process and exit.
+        ReleaseSingleInstanceMutex();
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = installedExe,
+                WorkingDirectory = Path.GetDirectoryName(installedExe)!,
+                UseShellExecute = false
+            });
+            Log.Information("Started the installed copy at {Path}", installedExe);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Could not start the installed copy at {Path}", installedExe);
+            MessageBox.Show(
+                "The installed copy could not be started. Start GameShift from the Start menu.",
+                "GameShift Is Installed",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+        }
+
+        return true;
+    }
+
+    private static void ReleaseSingleInstanceMutex()
+    {
+        if (_ownsMutex)
+        {
+            try { _singleInstanceMutex?.ReleaseMutex(); }
+            catch (ApplicationException) { /* not owner / already released - nothing to do */ }
+            _ownsMutex = false;
+        }
+        _singleInstanceMutex?.Dispose();
+        _singleInstanceMutex = null;
+    }
+
+    /// <summary>
+    /// Once <paramref name="startupNotices"/> have been closed: says why a registered install was not
+    /// used, names the portable file an install replaced, or offers a portable copy with nothing
+    /// installed, once, to install GameShift. Never throws.
+    /// </summary>
+    private async Task ShowInstallNoticesAsync(Task startupNotices)
     {
         try
         {
-            var install = GameShift.Core.Updates.InstallationDetector.Current;
-            if (install.Mode != GameShift.Core.Updates.InstallMode.Portable ||
-                install.RegisteredInstallDirectory != null)
+            var install = InstallationDetector.Current;
+
+            if (_installRefusedMessage != null)
+            {
+                await startupNotices;
+                _mainWindow?.ShowToast("Installed Copy Not Used", _installRefusedMessage, TimeSpan.FromSeconds(10));
+                return;
+            }
+
+            var recorded = SettingsManager.Load().MigratedPortableExePath;
+            var note = InstallHandover.DecideOldCopyNote(install, recorded, File.Exists);
+            if (note.ClearRecord)
+                SettingsManager.Update(s => { if (s.MigratedPortableExePath == recorded) s.MigratedPortableExePath = null; });
+            if (note.PathToMention != null)
+            {
+                await startupNotices;
+                MessageBox.Show(
+                    _mainWindow!,
+                    "GameShift is now installed and installs its own updates. The copy you used before is no longer needed:\n\n" +
+                    note.PathToMention + "\n\n" +
+                    "You can delete that file. GameShift does not delete it for you.",
+                    "Old Copy Can Be Deleted",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+                return;
+            }
+
+            if (!InstallHandover.ShouldOfferInstall(install, SettingsManager.Load().InstallOfferShown, Program.LaunchOptions.StartedAtLogon))
                 return;
 
-            if (SettingsManager.Load().InstallRecommendationShown) return;
-
             await startupNotices;
-            SettingsManager.Update(s => s.InstallRecommendationShown = true);
+            SettingsManager.Update(s => s.InstallOfferShown = true);
 
-            WriteDiag("Step f4: Portable copy - showing the one-time install recommendation");
+            WriteDiag("Step f4: Portable copy - showing the one-time install offer");
             var result = MessageBox.Show(
                 _mainWindow!,
                 "GameShift now comes with an installer, and it is the recommended way to run it.\n\n" +
-                "The installer puts GameShift in C:\\Program Files\\GameShift, where only administrators can " +
+                "Installing puts GameShift in C:\\Program Files\\GameShift, where only administrators can " +
                 "change its files, and installs future updates for you. Your settings and game library are kept.\n\n" +
-                "Exit this copy (tray icon > Exit) before you run the installer.\n\n" +
-                "Download GameShift-Setup.exe now? This message is shown only once.",
+                "Install GameShift now? This copy closes while the installer runs, and the installed copy starts " +
+                "when it is done. This message is shown only once.",
                 "Install GameShift",
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Information);
 
             if (result == MessageBoxResult.Yes)
-            {
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-                {
-                    FileName = GameShift.Core.Updates.UpdateAssetSelector.LatestInstallerUrl,
-                    UseShellExecute = true
-                });
-            }
+                _ = InstallFromPortableAsync();
         }
         catch (Exception ex)
         {
-            Log.Debug(ex, "Install recommendation failed (non-fatal)");
+            Log.Debug(ex, "Install notices failed (non-fatal)");
+        }
+    }
+
+    /// <summary>
+    /// Installs GameShift through the installer of the latest release, staged in Program Files like a
+    /// portable update, and exits once it runs. Not awaited by startup, so monitoring starts meanwhile.
+    /// Never throws.
+    /// </summary>
+    private async Task InstallFromPortableAsync()
+    {
+        UpdateInfo? release = null;
+        try
+        {
+            _mainWindow?.ShowToast("Installing GameShift",
+                "Downloading the installer. GameShift closes and installs itself when the download is done.",
+                TimeSpan.FromSeconds(8));
+
+            release = await UpdateChecker.GetLatestReleaseAsync();
+            var download = release == null
+                ? new UpdateDownloadResult(null, "GameShift could not look up the latest release.")
+                : await UpdateCoordinator.DownloadAsync(release, new Progress<double>(), CancellationToken.None);
+
+            if (download.Staged == null)
+            {
+                ShowInstallFailed(download.FailureReason, release);
+                return;
+            }
+
+            var exePath = Environment.ProcessPath;
+            SettingsManager.Update(s => s.MigratedPortableExePath = exePath);
+            if (UpdateCoordinator.Apply(download.Staged))
+            {
+                Shutdown();
+                return;
+            }
+
+            SettingsManager.Update(s => { if (s.MigratedPortableExePath == exePath) s.MigratedPortableExePath = null; });
+            ShowInstallFailed("The installer could not be started.", release);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Installing from the portable copy failed");
+            ShowInstallFailed("Something went wrong while preparing the installer.", release);
+        }
+    }
+
+    private void ShowInstallFailed(string? reason, UpdateInfo? release)
+    {
+        try
+        {
+            var answer = MessageBox.Show(
+                _mainWindow!,
+                "GameShift could not be installed from here. " + (reason ?? "The download failed or could not be verified.") +
+                "\n\nOpen the release page to download the installer yourself?",
+                "Install GameShift",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning);
+            if (answer != MessageBoxResult.Yes) return;
+
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = release?.ReleaseUrl ?? UpdateAssetSelector.LatestInstallerUrl,
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to show the install failure");
         }
     }
 

@@ -14,6 +14,13 @@ namespace GameShift.Core.Updates;
 public sealed record StagedUpdate(string Path, string? ExpectedSha256);
 
 /// <summary>
+/// Outcome of <see cref="UpdateCoordinator.DownloadAsync(UpdateInfo, IProgress{double}, CancellationToken)"/>.
+/// </summary>
+/// <param name="Staged">The verified installer, or null when nothing was staged.</param>
+/// <param name="FailureReason">Why nothing was staged, in plain words for the user; null on success.</param>
+public sealed record UpdateDownloadResult(StagedUpdate? Staged, string? FailureReason);
+
+/// <summary>
 /// What a portable copy needs to know to stage the installer in the default install folder.
 /// </summary>
 /// <param name="ProgramFilesDirectory">%ProgramFiles%, the parent of the default install folder.</param>
@@ -31,6 +38,8 @@ internal sealed record PortableUpdateTarget(
         InstallFolderTrust.CheckFolder);
 }
 
+internal delegate string? ResolveUpdateFolderWithReason(out string? userReason);
+
 internal delegate Task<bool> DownloadFile(
     string downloadUrl, string targetPath, long expectedSize, string? expectedSha256,
     IProgress<double> progress, CancellationToken ct);
@@ -45,31 +54,34 @@ public static class UpdateCoordinator
     /// <summary>Default install folder under %ProgramFiles% ({autopf}\GameShift in installer/GameShift.iss).</summary>
     public const string DefaultInstallFolderName = "GameShift";
 
+    internal const string NoInstallerReason = "This release has no installer GameShift can download.";
+    internal const string DownloadFailedReason = "The download failed or could not be verified.";
+
     /// <summary>
-    /// Downloads and verifies the installer into a new staging folder. Returns null if this copy may not
-    /// update through the installer, or the download failed or could not be verified; throws
-    /// OperationCanceledException when cancelled.
+    /// Downloads and verifies the installer into a new staging folder. Nothing is staged if this copy may
+    /// not update through the installer, or the download failed or could not be verified; the result then
+    /// says why. Throws OperationCanceledException when cancelled.
     /// </summary>
-    public static Task<StagedUpdate?> DownloadAsync(
+    public static Task<UpdateDownloadResult> DownloadAsync(
         UpdateInfo update, IProgress<double> progress, CancellationToken ct) =>
         DownloadAsync(update, progress, ct,
-            () => ResolveUpdateFolder(update.Mode, PortableUpdateTarget.Current, create: true),
+            (out string? userReason) => ResolveUpdateFolder(update.Mode, PortableUpdateTarget.Current, create: true, out userReason),
             UpdateDownloader.DownloadAsync);
 
-    internal static async Task<StagedUpdate?> DownloadAsync(
+    internal static async Task<UpdateDownloadResult> DownloadAsync(
         UpdateInfo update, IProgress<double> progress, CancellationToken ct,
-        Func<string?> resolveUpdateFolder, DownloadFile download)
+        ResolveUpdateFolderWithReason resolveUpdateFolder, DownloadFile download)
     {
-        if (string.IsNullOrEmpty(update.DownloadUrl)) return null;
+        if (string.IsNullOrEmpty(update.DownloadUrl)) return new UpdateDownloadResult(null, NoInstallerReason);
 
         if (!string.Equals(update.AssetName, UpdateAssetSelector.InstallerAssetName, StringComparison.OrdinalIgnoreCase))
         {
             Log.Error("UpdateCoordinator: Update asset is not the installer ({Asset}) - not downloading it", update.AssetName);
-            return null;
+            return new UpdateDownloadResult(null, NoInstallerReason);
         }
 
-        var installDir = resolveUpdateFolder();
-        if (installDir == null) return null;
+        var installDir = resolveUpdateFolder(out var refusal);
+        if (installDir == null) return new UpdateDownloadResult(null, refusal ?? DownloadFailedReason);
 
         var installerPath = InstallerUpdate.CreateStagingPath(installDir);
         try
@@ -78,10 +90,10 @@ public static class UpdateCoordinator
                 update.DownloadUrl, installerPath, update.DownloadSize, update.ExpectedSha256, progress, ct);
 
             if (downloaded)
-                return new StagedUpdate(installerPath, update.ExpectedSha256);
+                return new UpdateDownloadResult(new StagedUpdate(installerPath, update.ExpectedSha256), null);
 
             InstallerUpdate.DiscardStaged(installerPath, installDir);
-            return null;
+            return new UpdateDownloadResult(null, DownloadFailedReason);
         }
         catch
         {
@@ -144,20 +156,33 @@ public static class UpdateCoordinator
         InstallerUpdate.RemoveFolderIfEmpty(Path.GetDirectoryName(folder)!, DefaultInstallFolderName);
     }
 
-    internal static string? ResolveUpdateFolder(InstallMode mode, PortableUpdateTarget target, bool create)
+    internal static string? ResolveUpdateFolder(InstallMode mode, PortableUpdateTarget target, bool create) =>
+        ResolveUpdateFolder(mode, target, create, out _);
+
+    /// <param name="userReason">Why there is no folder, in plain words for the user; the log gets the details.</param>
+    internal static string? ResolveUpdateFolder(InstallMode mode, PortableUpdateTarget target, bool create, out string? userReason)
     {
+        userReason = null;
         if (mode == InstallMode.Installed)
         {
             var installDir = InstallationDetector.Current.InstallDirectory;
             if (installDir == null)
+            {
                 Log.Error("UpdateCoordinator: Installed-mode update without an install folder");
+                userReason = "GameShift could not find its install folder.";
+            }
             return installDir;
         }
 
         var folder = GetPortableUpdateFolder(target, create, out var refusal);
         if (folder == null)
+        {
             Log.Warning("UpdateCoordinator: This portable copy cannot update through the installer: {Reason}",
                 refusal ?? "the default install folder does not exist");
+            userReason = target.RegisteredInstallDirectory != null
+                ? $"GameShift is installed in {target.RegisteredInstallDirectory}. Only the copy in that folder installs updates, and only while the folder is protected so that just administrators can change it."
+                : "GameShift could not prepare a protected folder under Program Files for the installer.";
+        }
         return folder;
     }
 

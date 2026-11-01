@@ -104,6 +104,23 @@ public class UpdateCheckerParseTests
     }
 
     [Fact]
+    public void IncludeCurrent_SameVersion_ReturnsItsInstaller()
+    {
+        // A portable copy installing GameShift needs the installer of its own version.
+        var info = UpdateChecker.ParseRelease(Release("v3.8.8", AppAsset, SetupAsset), Current, InstallMode.Portable, includeCurrent: true);
+
+        Assert.NotNull(info);
+        Assert.Equal("GameShift-Setup.exe", info!.AssetName);
+        Assert.Equal(InstallMode.Portable, info.Mode);
+    }
+
+    [Fact]
+    public void IncludeCurrent_OlderRelease_ReturnsNull()
+    {
+        Assert.Null(UpdateChecker.ParseRelease(Release("v3.8.7", AppAsset, SetupAsset), Current, InstallMode.Portable, includeCurrent: true));
+    }
+
+    [Fact]
     public void InstallerUrlOutsideGitHub_IsDropped()
     {
         var foreign = new

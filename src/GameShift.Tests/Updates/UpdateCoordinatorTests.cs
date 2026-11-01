@@ -51,9 +51,12 @@ public class UpdateCoordinatorTests
                     : InstallFolderTrustResult.Untrusted("not admin-only");
             });
 
-        public Task<StagedUpdate?> DownloadAsync(PortableUpdateTarget target, string assetName = "GameShift-Setup.exe") =>
+        public async Task<StagedUpdate?> DownloadAsync(PortableUpdateTarget target, string assetName = "GameShift-Setup.exe") =>
+            (await DownloadResultAsync(target, assetName)).Staged;
+
+        public Task<UpdateDownloadResult> DownloadResultAsync(PortableUpdateTarget target, string assetName = "GameShift-Setup.exe") =>
             UpdateCoordinator.DownloadAsync(Update(assetName), new Progress<double>(), CancellationToken.None,
-                () => UpdateCoordinator.ResolveUpdateFolder(InstallMode.Portable, target, create: true),
+                (out string? reason) => UpdateCoordinator.ResolveUpdateFolder(InstallMode.Portable, target, create: true, out reason),
                 (url, path, size, digest, progress, ct) =>
                 {
                     Downloads.Add(path);
@@ -402,5 +405,62 @@ public class UpdateCoordinatorTests
 
         Assert.Equal(before, UserDataFolderTests.Snapshot(victim));
         Assert.True(Directory.Exists(f.DefaultFolder));
+    }
+
+    [Fact]
+    public async Task DownloadResult_Success_HasNoReason()
+    {
+        using var f = new Fixture();
+
+        var result = await f.DownloadResultAsync(f.Target());
+
+        Assert.NotNull(result.Staged);
+        Assert.Null(result.FailureReason);
+    }
+
+    [Fact]
+    public async Task DownloadResult_InstallRegistered_SaysWhichFolderInstallsUpdates()
+    {
+        using var f = new Fixture();
+
+        var result = await f.DownloadResultAsync(f.Target(registered: @"D:\Games\GameShift"));
+
+        Assert.Null(result.Staged);
+        Assert.Contains(@"D:\Games\GameShift", result.FailureReason);
+        Assert.Contains("protected", result.FailureReason);
+    }
+
+    [Fact]
+    public async Task DownloadResult_ProgramFilesNotAdminOnly_SaysTheFolderIsNotProtected()
+    {
+        using var f = new Fixture();
+        f.IsTrusted = path => path != f.ProgramFiles;
+
+        var result = await f.DownloadResultAsync(f.Target());
+
+        Assert.Null(result.Staged);
+        Assert.Contains("protected folder under Program Files", result.FailureReason);
+    }
+
+    [Fact]
+    public async Task DownloadResult_FailedDownload_SaysSo()
+    {
+        using var f = new Fixture { DownloadSucceeds = false };
+
+        var result = await f.DownloadResultAsync(f.Target());
+
+        Assert.Null(result.Staged);
+        Assert.Equal(UpdateCoordinator.DownloadFailedReason, result.FailureReason);
+    }
+
+    [Fact]
+    public async Task DownloadResult_NotTheInstaller_SaysThereIsNoInstaller()
+    {
+        using var f = new Fixture();
+
+        var result = await f.DownloadResultAsync(f.Target(), "GameShift.App.exe");
+
+        Assert.Null(result.Staged);
+        Assert.Equal(UpdateCoordinator.NoInstallerReason, result.FailureReason);
     }
 }

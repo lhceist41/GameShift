@@ -227,6 +227,18 @@ public class AppSettings
     /// True once a portable copy has shown the one-time recommendation to switch to the installer.
     /// </summary>
     public bool InstallRecommendationShown { get; set; }
+
+    /// <summary>
+    /// True once a portable copy with nothing installed has offered to install GameShift. Separate from
+    /// <see cref="InstallRecommendationShown"/>, which 3.9.0 already set when it only linked to the download.
+    /// </summary>
+    public bool InstallOfferShown { get; set; }
+
+    /// <summary>
+    /// The portable exe that started the installer to install GameShift, so the installed copy can say
+    /// once that it may be deleted. Null when unknown or already mentioned. Display only: user-writable.
+    /// </summary>
+    public string? MigratedPortableExePath { get; set; }
 }
 
 /// <summary>

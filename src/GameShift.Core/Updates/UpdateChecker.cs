@@ -47,11 +47,30 @@ public static class UpdateChecker
     }
 
     /// <summary>
+    /// The latest release when it is this version or newer, with its installer as the download, so a
+    /// portable copy can install GameShift. Returns null on any error - never throws.
+    /// </summary>
+    public static async Task<UpdateInfo?> GetLatestReleaseAsync()
+    {
+        try
+        {
+            var response = await _httpClient.GetStringAsync(GitHubApiUrl);
+            return ParseRelease(response, GetCurrentVersion(), InstallationDetector.Current.Mode, includeCurrent: true);
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "UpdateChecker: Latest release check failed (non-fatal)");
+            return null;
+        }
+    }
+
+    /// <summary>
     /// Parses a GitHub "latest release" response. Returns update details when the release is newer
     /// than <paramref name="currentVersion"/>, with the installer as the download and <paramref name="mode"/>
-    /// recorded for where it is staged; returns null when current. Throws on a malformed response.
+    /// recorded for where it is staged; returns null when current, unless <paramref name="includeCurrent"/>
+    /// accepts the same version. Throws on a malformed response.
     /// </summary>
-    internal static UpdateInfo? ParseRelease(string json, Version currentVersion, InstallMode mode)
+    internal static UpdateInfo? ParseRelease(string json, Version currentVersion, InstallMode mode, bool includeCurrent = false)
     {
         using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
@@ -73,7 +92,10 @@ public static class UpdateChecker
             return null;
         }
 
-        if (latestVersion <= currentVersion)
+        // The tag has three parts and the assembly version four; 3.10.0 would otherwise sort below 3.10.0.0.
+        var latest = WithFourParts(latestVersion);
+        var current = WithFourParts(currentVersion);
+        if (latest < current || (latest == current && !includeCurrent))
         {
             Log.Debug("UpdateChecker: Up to date (current {Current}, latest {Latest})",
                 currentVersion, latestVersion);
@@ -149,6 +171,9 @@ public static class UpdateChecker
             Mode = mode
         };
     }
+
+    private static Version WithFourParts(Version v) =>
+        new(v.Major, v.Minor, Math.Max(v.Build, 0), Math.Max(v.Revision, 0));
 
     private static Version GetCurrentVersion()
     {

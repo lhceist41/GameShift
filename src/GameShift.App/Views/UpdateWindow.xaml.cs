@@ -3,6 +3,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows;
+using System.Windows.Documents;
 using System.Windows.Interop;
 using GameShift.Core.Config;
 using GameShift.Core.Updates;
@@ -19,6 +20,8 @@ public partial class UpdateWindow : Window
 {
     [DllImport("dwmapi.dll", PreserveSig = true)]
     private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
+
+    private const string UpdateDownloadFailedText = "The download failed or could not be verified.";
 
     private readonly UpdateInfo _updateInfo;
     private CancellationTokenSource? _downloadCts;
@@ -118,7 +121,34 @@ public partial class UpdateWindow : Window
         ReadyButtons.Visibility = Visibility.Collapsed;
         ErrorButtons.Visibility = Visibility.Visible;
 
-        ErrorText.Text = message;
+        // The reason, then a way out that always works: a refusal does not go away by trying again.
+        ErrorText.Inlines.Clear();
+        ErrorText.Inlines.Add(new Run(message));
+        if (Uri.TryCreate(_updateInfo.ReleaseUrl, UriKind.Absolute, out var releaseUri))
+        {
+            var link = new Hyperlink(new Run("Download the new version from the release page")) { NavigateUri = releaseUri };
+            link.RequestNavigate += OnReleasePageRequested;
+            ErrorText.Inlines.Add(new LineBreak());
+            ErrorText.Inlines.Add(new LineBreak());
+            ErrorText.Inlines.Add(link);
+        }
+    }
+
+    private void OnReleasePageRequested(object sender, System.Windows.Navigation.RequestNavigateEventArgs e)
+    {
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = _updateInfo.ReleaseUrl,
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to open release URL");
+        }
+        e.Handled = true;
     }
 
     // ── Event handlers ────────────────────────────────────────────────
@@ -156,7 +186,8 @@ public partial class UpdateWindow : Window
                 ProgressPercentText.Text = $"{percent}%";
             });
 
-            _staged = await UpdateCoordinator.DownloadAsync(_updateInfo, progress, _downloadCts.Token);
+            var result = await UpdateCoordinator.DownloadAsync(_updateInfo, progress, _downloadCts.Token);
+            _staged = result.Staged;
 
             if (_staged != null)
             {
@@ -164,7 +195,7 @@ public partial class UpdateWindow : Window
             }
             else
             {
-                ShowErrorState("Download failed. Please try again.");
+                ShowErrorState(result.FailureReason ?? UpdateDownloadFailedText);
             }
         }
         catch (OperationCanceledException)

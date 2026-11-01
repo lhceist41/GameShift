@@ -152,8 +152,9 @@ public class UpdateManagementViewModel : INotifyPropertyChanged
             });
 
             var update = _pendingUpdate;
-            var staged = await Task.Run(() =>
+            var result = await Task.Run(() =>
                 UpdateCoordinator.DownloadAsync(update, progress, _downloadCts.Token));
+            var staged = result.Staged;
 
             Application.Current.Dispatcher.Invoke(() =>
             {
@@ -168,7 +169,8 @@ public class UpdateManagementViewModel : INotifyPropertyChanged
                 else
                 {
                     IsDownloading = false;
-                    DownloadStatusText = "Download failed. Click Download to retry.";
+                    DownloadStatusText = (result.FailureReason ?? "The download failed or could not be verified.") +
+                                         " You can also download the new version from the release page.";
                 }
             });
         }
