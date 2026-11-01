@@ -1,4 +1,5 @@
 using GameShift.Core.Config;
+using GameShift.Core.Updates;
 using Microsoft.Win32;
 using Serilog;
 
@@ -16,7 +17,7 @@ namespace GameShift.Core.System;
 ///
 /// Task name  : GameShift\Startup
 /// Trigger    : At log on (current user)
-/// Action     : Launch GameShift.App.exe
+/// Action     : Launch GameShift.App.exe --logon
 /// Principal  : Current user with HighestAvailable run level
 ///
 /// For backwards compatibility, SetStartWithWindows(false) also removes the legacy
@@ -27,6 +28,12 @@ public static class StartupManager
     public const string TaskFolder = "GameShift";
     public const string TaskName = "Startup";
     public const string FullTaskName = @"GameShift\Startup";
+
+    /// <summary>Passed by the startup task, so the app can tell a logon start from one the user made.</summary>
+    public const string LogonArgument = "--logon";
+
+    // A SYSTEM boot task earlier versions could register for a watchdog that releases never shipped.
+    internal const string LegacyBootRecoveryTaskName = "BootRecovery";
 
     // Legacy HKCU Run key - still cleaned up on unregister so existing installs are fixed up.
     private const string LegacyRunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
@@ -68,13 +75,22 @@ public static class StartupManager
     /// <summary>
     /// Launch-time <see cref="ReconcileStartupRegistration"/> that follows only a saved setting.
     /// Without a settings file the first-run wizard registers the user's choice; with a refused data
-    /// folder the settings in hand are defaults, so the task is left as it is.
+    /// folder the settings in hand are defaults, so the task is left as it is. A copy running outside
+    /// the registered install folder leaves the task to the installed copy.
     /// </summary>
-    public static void ReconcileAtLaunch(AppSettings settings) =>
-        ReconcileAtLaunch(settings, ReconcileStartupRegistration);
+    public static void ReconcileAtLaunch(AppSettings settings, string? registeredInstallDirectory) =>
+        ReconcileAtLaunch(settings, Environment.ProcessPath, registeredInstallDirectory, ReconcileStartupRegistration);
 
-    internal static void ReconcileAtLaunch(AppSettings settings, Action<bool> reconcile)
+    internal static void ReconcileAtLaunch(
+        AppSettings settings, string? exePath, string? registeredInstallDirectory, Action<bool> reconcile)
     {
+        if (!RunsFromRegisteredInstall(exePath, registeredInstallDirectory))
+        {
+            Log.Information("[StartupManager] Startup task left unchanged: GameShift is installed in {InstallFolder} and this copy runs from elsewhere",
+                registeredInstallDirectory);
+            return;
+        }
+
         if (SettingsManager.IsDataFolderRefused())
         {
             Log.Information("[StartupManager] Startup task left unchanged: the settings folder was refused, so there is no saved choice to follow");
@@ -91,13 +107,31 @@ public static class StartupManager
     }
 
     /// <summary>
+    /// True when no install is registered, or the exe runs from the registered install folder. Compares
+    /// folders, not the install mode, so an installed copy keeps its task whatever decides that mode.
+    /// </summary>
+    internal static bool RunsFromRegisteredInstall(string? exePath, string? registeredInstallDirectory)
+    {
+        var installDir = InstallationDetector.NormalizeDirectory(registeredInstallDirectory);
+        if (installDir == null)
+            return true;
+
+        string? exeDir;
+        try { exeDir = InstallationDetector.NormalizeDirectory(Path.GetDirectoryName(exePath)); }
+        catch { exeDir = null; }
+
+        return string.Equals(exeDir, installDir, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
     /// Startup-time reconciliation of the Windows startup registration.
     ///
     /// Unlike <see cref="SetStartWithWindows"/> (which always goes to the Task Scheduler and is
     /// meant for explicit user toggles), this runs on every launch and avoids that work
     /// unless something actually needs to change. It reads the Task Scheduler's on-disk task
-    /// definition directly and only (re)registers when the task is missing or points at a
-    /// different executable path (e.g. after the app was moved or updated).
+    /// definition directly and only (re)registers when the task is missing, points at a
+    /// different executable path (e.g. after the app was moved or updated), or lacks
+    /// <see cref="LogonArgument"/>.
     ///
     /// On the common path (already in the desired state) this performs only a cheap registry
     /// cleanup and a single file-existence check - no schtasks.exe spawn. Safe on any thread.
@@ -111,29 +145,7 @@ public static class StartupManager
             // Cheap, idempotent registry cleanup (no process spawn).
             RemoveLegacyRunEntry();
 
-            bool taskExists = TryReadRegisteredCommand(out var registeredCommand);
-
-            if (enable)
-            {
-                var exePath = GetExePath();
-                bool upToDate = taskExists
-                    && !string.IsNullOrEmpty(registeredCommand)
-                    && string.Equals(
-                        registeredCommand!.Trim().Trim('"'),
-                        exePath.Trim().Trim('"'),
-                        StringComparison.OrdinalIgnoreCase);
-
-                if (upToDate)
-                    return; // Already registered for the current exe - no schtasks spawn needed.
-
-                RegisterScheduledTask();
-            }
-            else
-            {
-                if (taskExists)
-                    UnregisterScheduledTask();
-                // Not registered and not wanted - nothing to do, no schtasks spawn.
-            }
+            ReconcileStartupTask(enable, ReadRegisteredTask(), new TaskSchedulerRegistrar(), GetExePath(), CurrentUserId());
         }
         catch (Exception ex)
         {
@@ -146,56 +158,82 @@ public static class StartupManager
     }
 
     /// <summary>
-    /// Reads the &lt;Command&gt; element of the GameShift\Startup task directly from the Task
-    /// Scheduler's on-disk definition (%windir%\System32\Tasks\GameShift\Startup), avoiding a
-    /// schtasks.exe spawn. The file is the XML the Task Scheduler writes when the task is registered.
+    /// <see cref="ReconcileStartupRegistration"/>'s decision for the task as registered (null when there
+    /// is none): registers when it is wanted and not up to date, deletes it when it is not wanted.
     /// </summary>
-    /// <param name="command">The decoded executable path the task launches, or null if it could not be parsed.</param>
-    /// <returns>True if the task definition file exists (even if the command did not parse), false otherwise.</returns>
-    private static bool TryReadRegisteredCommand(out string? command)
+    internal static void ReconcileStartupTask(
+        bool enable, RegisteredStartupTask? registered, ITaskRegistrar registrar, string exePath, string userId)
     {
-        command = null;
+        if (enable)
+        {
+            if (!IsUpToDate(registered, exePath))
+                RegisterScheduledTask(registrar, exePath, userId);
+        }
+        else if (registered != null)
+        {
+            UnregisterScheduledTask(registrar);
+        }
+    }
 
+    private static bool IsUpToDate(RegisteredStartupTask? registered, string exePath) =>
+        registered?.Command is string command
+        && string.Equals(command.Trim().Trim('"'), exePath.Trim().Trim('"'), StringComparison.OrdinalIgnoreCase)
+        // A task registered before the logon argument existed is updated once to carry it.
+        && string.Equals(registered.Arguments?.Trim(), LogonArgument, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>What the registered startup task runs; a part that could not be read is null.</summary>
+    internal sealed record RegisteredStartupTask(string? Command, string? Arguments);
+
+    /// <summary>
+    /// Reads the GameShift\Startup task directly from the Task Scheduler's on-disk definition
+    /// (%windir%\System32\Tasks\GameShift\Startup), avoiding a schtasks.exe spawn. Null when the task
+    /// does not exist; an unreadable file counts as a task whose parts are unknown, so it is replaced.
+    /// </summary>
+    private static RegisteredStartupTask? ReadRegisteredTask()
+    {
         var taskFile = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.Windows),
             "System32", "Tasks", TaskFolder, TaskName);
 
         if (!File.Exists(taskFile))
-            return false;
+            return null;
 
         try
         {
-            var xml = File.ReadAllText(taskFile);
-
-            const string openTag = "<Command>";
-            const string closeTag = "</Command>";
-            var start = xml.IndexOf(openTag, StringComparison.OrdinalIgnoreCase);
-            if (start >= 0)
-            {
-                start += openTag.Length;
-                var end = xml.IndexOf(closeTag, start, StringComparison.OrdinalIgnoreCase);
-                if (end > start)
-                {
-                    // Reverse the XML entity escaping applied by SecurityElement.Escape in BuildTaskXml.
-                    // Decode &amp; last so an already-decoded "&" is not processed twice.
-                    command = xml.Substring(start, end - start)
-                        .Replace("&lt;", "<")
-                        .Replace("&gt;", ">")
-                        .Replace("&quot;", "\"")
-                        .Replace("&apos;", "'")
-                        .Replace("&amp;", "&")
-                        .Trim();
-                }
-            }
-
-            return true; // Task file exists; treat as registered even if the command did not parse.
+            return ParseRegisteredTask(File.ReadAllText(taskFile));
         }
         catch
         {
-            // File exists but is unreadable - report "exists" so we don't needlessly re-register
-            // on every launch; if the command was needed and is null, the caller re-registers safely.
-            return true;
+            return new RegisteredStartupTask(null, null);
         }
+    }
+
+    /// <summary>Reads &lt;Command&gt; and &lt;Arguments&gt; from a task definition.</summary>
+    internal static RegisteredStartupTask ParseRegisteredTask(string xml) =>
+        new(ReadElement(xml, "Command"), ReadElement(xml, "Arguments"));
+
+    private static string? ReadElement(string xml, string name)
+    {
+        var openTag = $"<{name}>";
+        var closeTag = $"</{name}>";
+        var start = xml.IndexOf(openTag, StringComparison.OrdinalIgnoreCase);
+        if (start < 0)
+            return null;
+
+        start += openTag.Length;
+        var end = xml.IndexOf(closeTag, start, StringComparison.OrdinalIgnoreCase);
+        if (end < start)
+            return null;
+
+        // Reverse the XML entity escaping applied by SecurityElement.Escape in BuildTaskXml.
+        // Decode &amp; last so an already-decoded "&" is not processed twice.
+        return xml.Substring(start, end - start)
+            .Replace("&lt;", "<")
+            .Replace("&gt;", ">")
+            .Replace("&quot;", "\"")
+            .Replace("&apos;", "'")
+            .Replace("&amp;", "&")
+            .Trim();
     }
 
     /// <summary>
@@ -223,11 +261,10 @@ public static class StartupManager
 
     private static void RegisterScheduledTask()
     {
-        RegisterScheduledTask(
-            new TaskSchedulerRegistrar(),
-            GetExePath(),
-            Environment.UserDomainName + "\\" + Environment.UserName);
+        RegisterScheduledTask(new TaskSchedulerRegistrar(), GetExePath(), CurrentUserId());
     }
+
+    private static string CurrentUserId() => Environment.UserDomainName + "\\" + Environment.UserName;
 
     /// <summary>
     /// Registers the startup task from the XML string directly, so no task file is written to a
@@ -281,9 +318,55 @@ public static class StartupManager
         }
     }
 
+    /// <summary>
+    /// Deletes the legacy GameShift\BootRecovery task, then the GameShift task folder if that left it
+    /// empty. Never throws.
+    /// </summary>
+    public static void DeleteLegacyBootRecoveryTask() => DeleteLegacyBootRecoveryTask(new TaskSchedulerRegistrar());
+
+    internal static void DeleteLegacyBootRecoveryTask(ITaskRegistrar registrar)
+    {
+        try
+        {
+            registrar.DeleteTask(TaskFolder, LegacyBootRecoveryTaskName);
+            Log.Information("[StartupManager] Removed the legacy boot-recovery task");
+        }
+        catch (Exception ex) when (ex.HResult is TaskNotFound or TaskFolderNotFound)
+        {
+            // Never registered on this PC, which is the usual case.
+            return;
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "[StartupManager] Failed to remove the legacy boot-recovery task (0x{HResult:X8})", ex.HResult);
+            return;
+        }
+
+        DeleteTaskFolderIfEmpty(registrar);
+    }
+
+    /// <summary>Deletes the GameShift task folder when it holds no task or folder. Never throws.</summary>
+    internal static void DeleteTaskFolderIfEmpty(ITaskRegistrar registrar)
+    {
+        try
+        {
+            if (registrar.DeleteFolderIfEmpty(TaskFolder))
+                Log.Information("[StartupManager] Removed the empty GameShift task folder");
+        }
+        catch (Exception ex) when (ex.HResult is TaskNotFound or TaskFolderNotFound)
+        {
+            // Already gone.
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "[StartupManager] Failed to remove the GameShift task folder (0x{HResult:X8})", ex.HResult);
+        }
+    }
+
     internal static string BuildTaskXml(string exePath, string userId)
     {
         var escapedPath = global::System.Security.SecurityElement.Escape(exePath);
+        var escapedArguments = global::System.Security.SecurityElement.Escape(LogonArgument);
         var escapedUser = global::System.Security.SecurityElement.Escape(userId);
         var workingDir = global::System.Security.SecurityElement.Escape(Path.GetDirectoryName(exePath) ?? "");
 
@@ -328,6 +411,7 @@ public static class StartupManager
               <Actions Context="Author">
                 <Exec>
                   <Command>{escapedPath}</Command>
+                  <Arguments>{escapedArguments}</Arguments>
                   <WorkingDirectory>{workingDir}</WorkingDirectory>
                 </Exec>
               </Actions>
@@ -354,7 +438,7 @@ public static class StartupManager
         }
     }
 
-    /// <summary>Registers a task definition given as XML, and deletes a task.</summary>
+    /// <summary>Registers a task definition given as XML, and deletes a task or an empty task folder.</summary>
     internal interface ITaskRegistrar
     {
         /// <summary>Throws on failure, with the Task Scheduler HRESULT in <see cref="Exception.HResult"/>.</summary>
@@ -362,6 +446,12 @@ public static class StartupManager
 
         /// <summary>Throws on failure, with the Task Scheduler HRESULT in <see cref="Exception.HResult"/>.</summary>
         void DeleteTask(string folder, string name);
+
+        /// <summary>
+        /// Deletes a top-level task folder and returns true, or returns false when it still holds a task or
+        /// folder. Throws on failure, with the Task Scheduler HRESULT in <see cref="Exception.HResult"/>.
+        /// </summary>
+        bool DeleteFolderIfEmpty(string folder);
     }
 
     private sealed class TaskSchedulerRegistrar : ITaskRegistrar
@@ -375,6 +465,18 @@ public static class StartupManager
         public void DeleteTask(string folder, string name)
         {
             Connect().GetFolder(@"\" + folder).DeleteTask(name, 0);
+        }
+
+        public bool DeleteFolderIfEmpty(string folder)
+        {
+            var service = Connect();
+            var target = service.GetFolder(@"\" + folder);
+            // TASK_ENUM_HIDDEN, so a hidden task counts as content too.
+            if (target.GetTasks(1).Count > 0 || target.GetFolders(0).Count > 0)
+                return false;
+
+            service.GetFolder(@"\").DeleteFolder(folder, 0);
+            return true;
         }
 
         private static dynamic Connect()

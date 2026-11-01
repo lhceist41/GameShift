@@ -38,9 +38,11 @@ public static class ServiceFactory
             install.Mode, install.RegisteredInstallDirectory ?? "none");
         writeDiag("Settings loaded OK");
 
+        StartupManager.DeleteLegacyBootRecoveryTask();
+
         // Reconcile startup registration without spawning schtasks.exe on every launch.
-        // Only (re)registers when the scheduled task is missing or points at a stale exe path.
-        StartupManager.ReconcileAtLaunch(settings);
+        // Only (re)registers when the scheduled task is missing, stale or lacks the logon argument.
+        StartupManager.ReconcileAtLaunch(settings, install.RegisteredInstallDirectory);
 
         // Check VBS/HVCI state (advisory)
         services.VbsToggle = new VbsHvciToggle();

@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Windows;
 using GameShift.Core.Config;
+using GameShift.Core.System;
 
 namespace GameShift.App;
 
@@ -13,11 +14,15 @@ namespace GameShift.App;
 /// </summary>
 public static class Program
 {
+    /// <summary>What the command line asked for, kept for the app to read once it runs.</summary>
+    internal static LaunchOptions LaunchOptions { get; private set; } = LaunchOptions.None;
+
     [STAThread]
     public static int Main(string[] args)
     {
         try
         {
+            LaunchOptions = LaunchOptions.Parse(args);
             WriteDiag("Program.Main starting...");
 
             // Phase 1: Can we even load the WPF-UI assemblies?

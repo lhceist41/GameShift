@@ -22,7 +22,10 @@ public class StartupManagerTests
     {
         public List<(string Path, string Xml, int Flags, int LogonType)> Calls { get; } = new();
         public List<(string Folder, string Name)> Deletes { get; } = new();
+        public List<string> FolderDeletes { get; } = new();
         public Exception? Throw { get; set; }
+        public Exception? FolderThrow { get; set; }
+        public bool FolderEmpty { get; set; } = true;
 
         public void RegisterTask(string path, string xml, int flags, int logonType)
         {
@@ -35,7 +38,33 @@ public class StartupManagerTests
             Deletes.Add((folder, name));
             if (Throw != null) throw Throw;
         }
+
+        public bool DeleteFolderIfEmpty(string folder)
+        {
+            FolderDeletes.Add(folder);
+            if (FolderThrow != null) throw FolderThrow;
+            return FolderEmpty;
+        }
     }
+
+    private static List<Serilog.Events.LogEvent> Capture(Action action)
+    {
+        var sink = new CapturingSink();
+        var previous = Log.Logger;
+        Log.Logger = new LoggerConfiguration().MinimumLevel.Debug().WriteTo.Sink(sink).CreateLogger();
+        try
+        {
+            action();
+        }
+        finally
+        {
+            Log.Logger = previous;
+        }
+        return sink.Events;
+    }
+
+    private static bool HasHResult(Serilog.Events.LogEvent e, int hresult) =>
+        e.Properties.TryGetValue("HResult", out var value) && value.ToString() == hresult.ToString();
 
     private static List<Serilog.Events.LogEvent> Unregister(FakeRegistrar registrar)
     {
@@ -173,14 +202,15 @@ public class StartupManagerTests
         Assert.DoesNotContain(events, e => e.MessageTemplate.Text.StartsWith("[StartupManager] Unregistered"));
     }
 
-    private static List<bool> ReconcileAtLaunch(string settingsFile, AppSettings settings)
+    private static List<bool> ReconcileAtLaunch(
+        string settingsFile, AppSettings settings, string? exePath = null, string? registeredInstallDirectory = null)
     {
         var calls = new List<bool>();
         var previous = SettingsManager.SettingsFilePathOverride;
         SettingsManager.SettingsFilePathOverride = settingsFile;
         try
         {
-            StartupManager.ReconcileAtLaunch(settings, calls.Add);
+            StartupManager.ReconcileAtLaunch(settings, exePath ?? ExePath, registeredInstallDirectory, calls.Add);
         }
         finally
         {
@@ -225,5 +255,244 @@ public class StartupManagerTests
         }
 
         Assert.Equal(new[] { startWithWindows }, ReconcileAtLaunch(file, new AppSettings { StartWithWindows = startWithWindows }));
+    }
+
+    // ── Logon argument ───────────────────────────────────────────────
+
+    [Fact]
+    public void TaskXml_StartsTheExeWithTheLogonArgument()
+    {
+        var xml = StartupManager.BuildTaskXml(ExePath, @"PC\Player");
+
+        Assert.Contains("<Arguments>--logon</Arguments>", xml);
+        var exec = XDocument.Parse(xml).Descendants(TaskNs + "Exec").Single();
+        Assert.Equal(ExePath, exec.Element(TaskNs + "Command")!.Value);
+        Assert.Equal("--logon", exec.Element(TaskNs + "Arguments")!.Value);
+    }
+
+    [Fact]
+    public void RegisteredTask_ReadsBackWhatWasRegistered_EvenWithMarkupCharacters()
+    {
+        var path = @"C:\Games & <Tools>\GameShift.App.exe";
+
+        var registered = StartupManager.ParseRegisteredTask(StartupManager.BuildTaskXml(path, @"PC\Player"));
+
+        Assert.Equal(path, registered.Command);
+        Assert.Equal("--logon", registered.Arguments);
+    }
+
+    [Fact]
+    public void Reconcile_TaskWithoutTheLogonArgument_IsReRegisteredOnce()
+    {
+        var registrar = new FakeRegistrar();
+        var registered = new StartupManager.RegisteredStartupTask(ExePath, null);
+
+        StartupManager.ReconcileStartupTask(true, registered, registrar, ExePath, @"PC\Player");
+        var afterFirstStart = StartupManager.ParseRegisteredTask(Assert.Single(registrar.Calls).Xml);
+        StartupManager.ReconcileStartupTask(true, afterFirstStart, registrar, ExePath, @"PC\Player");
+
+        Assert.Single(registrar.Calls);
+        Assert.Equal("--logon", afterFirstStart.Arguments);
+    }
+
+    [Theory]
+    [InlineData("--logon")]
+    [InlineData("--LOGON")]
+    public void Reconcile_TaskUpToDate_DoesNothing(string arguments)
+    {
+        var registrar = new FakeRegistrar();
+
+        StartupManager.ReconcileStartupTask(
+            true, new StartupManager.RegisteredStartupTask("\"" + ExePath.ToUpperInvariant() + "\"", arguments), registrar, ExePath, @"PC\Player");
+
+        Assert.Empty(registrar.Calls);
+        Assert.Empty(registrar.Deletes);
+    }
+
+    [Fact]
+    public void Reconcile_TaskForAnotherExe_IsReRegistered()
+    {
+        var registrar = new FakeRegistrar();
+
+        StartupManager.ReconcileStartupTask(
+            true, new StartupManager.RegisteredStartupTask(@"C:\Old\GameShift.App.exe", "--logon"), registrar, ExePath, @"PC\Player");
+
+        Assert.Equal(ExePath, StartupManager.ParseRegisteredTask(Assert.Single(registrar.Calls).Xml).Command);
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public void Reconcile_TaskMissingOrUnreadable_IsRegistered(bool hasCommand, bool hasArguments)
+    {
+        var registrar = new FakeRegistrar();
+        var registered = hasCommand || hasArguments
+            ? new StartupManager.RegisteredStartupTask(hasCommand ? ExePath : null, hasArguments ? "--logon" : null)
+            : null;
+
+        StartupManager.ReconcileStartupTask(true, registered, registrar, ExePath, @"PC\Player");
+
+        Assert.Single(registrar.Calls);
+    }
+
+    [Fact]
+    public void Reconcile_NotWanted_DeletesAnExistingTaskOnly()
+    {
+        var registrar = new FakeRegistrar();
+
+        StartupManager.ReconcileStartupTask(false, null, registrar, ExePath, @"PC\Player");
+        Assert.Empty(registrar.Deletes);
+
+        StartupManager.ReconcileStartupTask(false, new StartupManager.RegisteredStartupTask(ExePath, null), registrar, ExePath, @"PC\Player");
+        Assert.Equal(("GameShift", "Startup"), Assert.Single(registrar.Deletes));
+        Assert.Empty(registrar.Calls);
+    }
+
+    // ── A copy outside the registered install folder ─────────────────
+
+    private static string SavedSettingsFile(TempPath temp, bool startWithWindows)
+    {
+        var file = temp.GetFile("settings.json");
+        var previous = SettingsManager.SettingsFilePathOverride;
+        SettingsManager.SettingsFilePathOverride = file;
+        try
+        {
+            SettingsManager.Save(new AppSettings { StartWithWindows = startWithWindows });
+        }
+        finally
+        {
+            SettingsManager.SettingsFilePathOverride = previous;
+        }
+        return file;
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void ReconcileAtLaunch_CopyOutsideTheRegisteredInstall_LeavesTheTaskAlone(bool startWithWindows)
+    {
+        using var temp = new TempPath();
+        var file = SavedSettingsFile(temp, startWithWindows);
+        var settings = new AppSettings { StartWithWindows = startWithWindows };
+
+        Assert.Empty(ReconcileAtLaunch(file, settings, @"C:\Users\Player\Downloads\GameShift.App.exe", @"C:\Program Files\GameShift\"));
+    }
+
+    [Fact]
+    public void ReconcileAtLaunch_UnknownExePathWithAnInstallRegistered_LeavesTheTaskAlone()
+    {
+        Assert.False(StartupManager.RunsFromRegisteredInstall(null, @"C:\Program Files\GameShift\"));
+        Assert.False(StartupManager.RunsFromRegisteredInstall("GameShift.App.exe", @"C:\Program Files\GameShift\"));
+    }
+
+    [Theory]
+    [InlineData(@"C:\Program Files\GameShift\")]
+    [InlineData(@"c:\program files\gameshift")]
+    public void ReconcileAtLaunch_InstalledCopy_Reconciles(string registeredInstallDirectory)
+    {
+        using var temp = new TempPath();
+        var file = SavedSettingsFile(temp, true);
+
+        Assert.Equal(new[] { true }, ReconcileAtLaunch(
+            file, new AppSettings { StartWithWindows = true }, @"C:\Program Files\GameShift\GameShift.App.exe", registeredInstallDirectory));
+    }
+
+    [Fact]
+    public void ReconcileAtLaunch_NothingInstalled_Reconciles()
+    {
+        using var temp = new TempPath();
+        var file = SavedSettingsFile(temp, true);
+
+        Assert.Equal(new[] { true }, ReconcileAtLaunch(
+            file, new AppSettings { StartWithWindows = true }, @"C:\Users\Player\Downloads\GameShift.App.exe", null));
+    }
+
+    // ── Legacy boot-recovery task ────────────────────────────────────
+
+    [Fact]
+    public void LegacyTask_IsDeleted_ThenAnEmptyFolder()
+    {
+        var registrar = new FakeRegistrar();
+
+        var events = Capture(() => StartupManager.DeleteLegacyBootRecoveryTask(registrar));
+
+        Assert.Equal(("GameShift", "BootRecovery"), Assert.Single(registrar.Deletes));
+        Assert.Equal("GameShift", Assert.Single(registrar.FolderDeletes));
+        Assert.Contains(events, e => e.MessageTemplate.Text.StartsWith("[StartupManager] Removed the legacy"));
+        Assert.Contains(events, e => e.MessageTemplate.Text.StartsWith("[StartupManager] Removed the empty"));
+    }
+
+    [Fact]
+    public void LegacyTask_FolderStillInUse_IsKept()
+    {
+        var registrar = new FakeRegistrar { FolderEmpty = false };
+
+        var events = Capture(() => StartupManager.DeleteLegacyBootRecoveryTask(registrar));
+
+        Assert.Single(registrar.FolderDeletes);
+        Assert.DoesNotContain(events, e => e.MessageTemplate.Text.StartsWith("[StartupManager] Removed the empty"));
+        Assert.DoesNotContain(events, e => e.Level >= Serilog.Events.LogEventLevel.Warning);
+    }
+
+    [Theory]
+    [InlineData(unchecked((int)0x80070002))] // ERROR_FILE_NOT_FOUND: no such task
+    [InlineData(unchecked((int)0x80070003))] // ERROR_PATH_NOT_FOUND: no GameShift folder
+    public void LegacyTask_NotRegistered_IsQuiet(int hresult)
+    {
+        var registrar = new FakeRegistrar { Throw = new COMException("Das System kann die angegebene Datei nicht finden.", hresult) };
+
+        var events = Capture(() => StartupManager.DeleteLegacyBootRecoveryTask(registrar));
+
+        Assert.Single(registrar.Deletes);
+        Assert.Empty(registrar.FolderDeletes);
+        Assert.DoesNotContain(events, e => e.Level >= Serilog.Events.LogEventLevel.Warning);
+        Assert.DoesNotContain(events, e => e.MessageTemplate.Text.StartsWith("[StartupManager] Removed"));
+    }
+
+    [Fact]
+    public void LegacyTask_OtherFailure_WarnsWithTheHResultAndDoesNotThrow()
+    {
+        var hresult = unchecked((int)0x80070005); // E_ACCESSDENIED
+        var registrar = new FakeRegistrar { Throw = new COMException("access denied", hresult) };
+
+        var events = Capture(() => StartupManager.DeleteLegacyBootRecoveryTask(registrar));
+
+        Assert.Contains(events, e => e.Level == Serilog.Events.LogEventLevel.Warning && HasHResult(e, hresult));
+        Assert.Empty(registrar.FolderDeletes);
+        Assert.DoesNotContain(events, e => e.MessageTemplate.Text.StartsWith("[StartupManager] Removed"));
+    }
+
+    [Fact]
+    public void LegacyTask_SchedulerUnavailable_DoesNotThrow()
+    {
+        var registrar = new FakeRegistrar { Throw = new InvalidOperationException("no Task Scheduler") };
+
+        var events = Capture(() => StartupManager.DeleteLegacyBootRecoveryTask(registrar));
+
+        Assert.Contains(events, e => e.Level == Serilog.Events.LogEventLevel.Warning);
+    }
+
+    [Theory]
+    [InlineData(unchecked((int)0x80070002))]
+    [InlineData(unchecked((int)0x80070003))]
+    public void TaskFolder_AlreadyGone_IsQuiet(int hresult)
+    {
+        var registrar = new FakeRegistrar { FolderThrow = new COMException("not found", hresult) };
+
+        var events = Capture(() => StartupManager.DeleteTaskFolderIfEmpty(registrar));
+
+        Assert.DoesNotContain(events, e => e.Level >= Serilog.Events.LogEventLevel.Warning);
+    }
+
+    [Fact]
+    public void TaskFolder_OtherFailure_WarnsWithTheHResultAndDoesNotThrow()
+    {
+        var hresult = unchecked((int)0x80070005);
+        var registrar = new FakeRegistrar { FolderThrow = new COMException("access denied", hresult) };
+
+        var events = Capture(() => StartupManager.DeleteTaskFolderIfEmpty(registrar));
+
+        Assert.Contains(events, e => e.Level == Serilog.Events.LogEventLevel.Warning && HasHResult(e, hresult));
     }
 }
