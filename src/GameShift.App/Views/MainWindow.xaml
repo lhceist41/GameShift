@@ -66,7 +66,7 @@
                 </ui:NavigationViewItem>
 
                 <ui:NavigationViewItemHeader x:Name="NavHeaderDiagnostics" Text="Diagnostics"/>
-                <ui:NavigationViewItem x:Name="NavDpcDoctor" Content="DPC Doctor" TargetPageType="{x:Type pages:DpcDoctorPage}">
+                <ui:NavigationViewItem x:Name="NavDpcDoctor" Content="Latency Doctor" TargetPageType="{x:Type pages:DpcDoctorPage}">
                     <ui:NavigationViewItem.Icon>
                         <ui:SymbolIcon Symbol="HeartPulse24"/>
                     </ui:NavigationViewItem.Icon>

@@ -1,6 +1,5 @@
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Input;
 using GameShift.App.Services;
 using GameShift.App.ViewModels;
 using GameShift.Core.Monitoring;
@@ -53,7 +52,7 @@ public partial class DpcDoctorPage : Page
             (DataContext as DpcDoctorViewModel)?.ApplyFix(fix);
     }
 
-    private void OnToggleQuickFixClicked(object sender, MouseButtonEventArgs e)
+    private void OnToggleQuickFixClicked(object sender, RoutedEventArgs e)
     {
         if (sender is FrameworkElement el && el.DataContext is QuickFixViewModel qf)
             (DataContext as DpcDoctorViewModel)?.ToggleQuickFix(qf);

@@ -42,6 +42,10 @@ jobs:
       - name: Format check
         run: dotnet format --verify-no-changes
 
+      # The theme files loaded at start are not compiled, and one bad key there stops every start.
+      - name: Theme keys
+        run: dotnet run tools/theme/CheckThemeKeys.cs
+
   # Trust-contract verification: runs a REAL probe -> apply-all -> revert-all -> probe cycle on
   # the ephemeral runner (elevated, throwaway VM) and requires zero persistent residue. This is
   # the only check that exercises the actual Windows registry/powercfg/service behavior end to

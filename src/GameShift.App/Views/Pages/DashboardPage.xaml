@@ -225,7 +225,7 @@
                                 Background="{DynamicResource GS.Status.Error}" Foreground="White"
                                 BorderThickness="0" Cursor="Hand" FontSize="12"
                                 Click="OnTroubleshootDpcClicked" Margin="0,0,8,0"/>
-                        <Button Content="Open DPC Doctor" Padding="10,4"
+                        <Button Content="Open Latency Doctor" Padding="10,4"
                                 Background="{DynamicResource GS.Accent.Primary}" Foreground="White"
                                 BorderThickness="0" Cursor="Hand" FontSize="12"
                                 Click="OnOpenDpcDoctorClicked" Margin="0,0,8,0"/>

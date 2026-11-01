@@ -512,7 +512,7 @@ public class LastingChangesInventoryTests
         var legacy = items.Single(i => i.Key == "legacy").UndoDescription;
         Assert.Contains("did not record", legacy);
         Assert.Contains("Windows default", legacy);
-        Assert.Equal("Restores the value DPC Doctor recorded before applying the fix.",
+        Assert.Equal("Restores the value Latency Doctor recorded before applying the fix.",
             items.Single(i => i.Key == "recorded").UndoDescription);
     }
 

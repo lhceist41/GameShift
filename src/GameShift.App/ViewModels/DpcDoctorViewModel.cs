@@ -1,15 +1,34 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Threading;
 using GameShift.Core.Config;
 using GameShift.Core.Monitoring;
 using GameShift.Core.Optimization;
+using GameShift.Core.Presentation;
 using GameShift.Core.System;
 using Serilog;
 
 namespace GameShift.App.ViewModels;
+
+/// <summary>The colour role of the health headline; the page maps each to a theme token.</summary>
+public enum HealthTone
+{
+    Neutral,
+    Good,
+    Warning,
+    Critical,
+}
+
+// One culture for every number on the page, so a German PC does not mix "1.234 µs" with "0.05%".
+internal static class LatencyText
+{
+    public static string Micro(double us) => us.ToString("N0", CultureInfo.InvariantCulture) + " \u00B5s";
+    public static string Milli(double us) => (us / 1000.0).ToString("N1", CultureInfo.InvariantCulture) + " ms";
+    public static string Count(double value) => value.ToString("N0", CultureInfo.InvariantCulture);
+}
 
 /// <summary>
 /// ViewModel for a single driver row in the live DPC monitor table.
@@ -28,25 +47,20 @@ public class DriverRowViewModel : INotifyPropertyChanged
     public string FriendlyName { get => _friendlyName; set { _friendlyName = value; OnPropertyChanged(); } }
     public string DriverFileName { get => _driverFileName; set { _driverFileName = value; OnPropertyChanged(); } }
     public string Category { get => _category; set { _category = value; OnPropertyChanged(); } }
-    public long DpcCount { get => _dpcCount; set { _dpcCount = value; OnPropertyChanged(); } }
+    public long DpcCount { get => _dpcCount; set { _dpcCount = value; OnPropertyChanged(); OnPropertyChanged(nameof(DpcCountFormatted)); } }
     public double HighestUs { get => _highestUs; set { _highestUs = value; OnPropertyChanged(); OnPropertyChanged(nameof(HighestUsFormatted)); } }
     public double AvgUs { get => _avgUs; set { _avgUs = value; OnPropertyChanged(); OnPropertyChanged(nameof(AvgUsFormatted)); } }
-    public DpcHealthStatus Severity { get => _severity; set { _severity = value; OnPropertyChanged(); OnPropertyChanged(nameof(StatusText)); OnPropertyChanged(nameof(StatusColor)); } }
+    public DpcHealthStatus Severity { get => _severity; set { _severity = value; OnPropertyChanged(); OnPropertyChanged(nameof(StatusText)); } }
     public double[] SparklineData { get => _sparklineData; set { _sparklineData = value; OnPropertyChanged(); } }
 
-    public string HighestUsFormatted => $"{_highestUs:N0} \u00B5s";
-    public string AvgUsFormatted => $"{_avgUs:N0} \u00B5s";
+    public string DpcCountFormatted => LatencyText.Count(_dpcCount);
+    public string HighestUsFormatted => LatencyText.Micro(_highestUs);
+    public string AvgUsFormatted => LatencyText.Micro(_avgUs);
     public string StatusText => _severity switch
     {
         DpcHealthStatus.Critical => "Critical",
         DpcHealthStatus.Warning => "Warning",
         _ => "Good"
-    };
-    public string StatusColor => _severity switch
-    {
-        DpcHealthStatus.Critical => "#EF4444",
-        DpcHealthStatus.Warning => "#F59E0B",
-        _ => "#4ADE80"
     };
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -69,9 +83,8 @@ public class DiagnosedIssueViewModel : INotifyPropertyChanged
     public List<string> ManualFixes { get; set; } = new();
     public bool IsExpanded { get; set; }
 
-    public string PeakFormatted => $"{PeakLatencyUs:N0} \u00B5s";
+    public string PeakFormatted => LatencyText.Micro(PeakLatencyUs);
     public string SeverityText => Severity == DpcHealthStatus.Critical ? "CRITICAL" : "WARNING";
-    public string SeverityColor => Severity == DpcHealthStatus.Critical ? "#EF4444" : "#F59E0B";
 
     public event PropertyChangedEventHandler? PropertyChanged;
     protected void OnPropertyChanged([CallerMemberName] string? name = null) =>
@@ -83,7 +96,7 @@ public class DiagnosedIssueViewModel : INotifyPropertyChanged
 /// </summary>
 public class QuickFixViewModel : INotifyPropertyChanged
 {
-    private bool _isActive;
+    private FixStatus _status = new(FixStatusKind.NotActive, null, FixAction.Apply);
 
     public string FixId { get; set; } = "";
     public string Name { get; set; } = "";
@@ -92,13 +105,40 @@ public class QuickFixViewModel : INotifyPropertyChanged
     public bool RequiresReboot { get; set; }
     public DriverAutoFix? Fix { get; set; }
 
-    public bool IsActive
+    /// <summary>Reads the setting as Windows has it now; null for a fix with no live reading.</summary>
+    public Func<bool?>? ReadLive { get; set; }
+
+    public FixStatus Status
     {
-        get => _isActive;
-        set { _isActive = value; OnPropertyChanged(); OnPropertyChanged(nameof(StateText)); }
+        get => _status;
+        set
+        {
+            _status = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(StateKind));
+            OnPropertyChanged(nameof(StateText));
+            OnPropertyChanged(nameof(StateReason));
+            OnPropertyChanged(nameof(HasStateReason));
+            OnPropertyChanged(nameof(CanChoose));
+            OnPropertyChanged(nameof(ActionText));
+            OnPropertyChanged(nameof(AccessibleName));
+        }
     }
 
-    public string StateText => _isActive ? "Active" : "Inactive";
+    public FixStatusKind StateKind => _status.Kind;
+    public string StateText => _status.Word;
+    public string? StateReason => _status.Reason;
+    public bool HasStateReason => _status.Reason != null;
+    public bool CanChoose => _status.Action != FixAction.None;
+
+    public string ActionText => _status.Action switch
+    {
+        FixAction.Apply => "Select to apply",
+        FixAction.Undo => "Select to undo",
+        _ => ""
+    };
+
+    public string AccessibleName => $"{Name}: {_status.Word}";
 
     public string ImpactFriendly => Fix?.Impact switch
     {
@@ -114,7 +154,7 @@ public class QuickFixViewModel : INotifyPropertyChanged
 }
 
 /// <summary>
-/// ViewModel for the DPC Doctor page.
+/// ViewModel for the Latency Doctor page.
 /// Manages ETW trace capture, diagnosed issues, and quick fixes.
 /// </summary>
 public class DpcDoctorViewModel : INotifyPropertyChanged
@@ -126,6 +166,7 @@ public class DpcDoctorViewModel : INotifyPropertyChanged
     private readonly Dispatcher _dispatcher;
 
     private DispatcherTimer? _countdownTimer;
+    private readonly Dictionary<string, FixAttempt> _attempts = new(StringComparer.Ordinal);
     private int _countdownSeconds;
 
     // -- Bindable properties
@@ -135,7 +176,7 @@ public class DpcDoctorViewModel : INotifyPropertyChanged
     private bool _isSimpleMode = true;
     private string _healthStatus = "Ready";
     private string _healthExplanation = "Start a trace to analyze your system's DPC latency.";
-    private string _healthColor = "#808080";
+    private HealthTone _healthTone = HealthTone.Neutral;
     private double _systemPeakUs;
     private int _captureSeconds;
     private bool _showDiagnosedIssues;
@@ -181,9 +222,9 @@ public class DpcDoctorViewModel : INotifyPropertyChanged
     }
     public string HealthStatus { get => _healthStatus; set { _healthStatus = value; OnPropertyChanged(); } }
     public string HealthExplanation { get => _healthExplanation; set { _healthExplanation = value; OnPropertyChanged(); } }
-    public string HealthColor { get => _healthColor; set { _healthColor = value; OnPropertyChanged(); } }
+    public HealthTone HealthTone { get => _healthTone; set { _healthTone = value; OnPropertyChanged(); } }
     public double SystemPeakUs { get => _systemPeakUs; set { _systemPeakUs = value; OnPropertyChanged(); OnPropertyChanged(nameof(SystemPeakFormatted)); } }
-    public string SystemPeakFormatted => $"{_systemPeakUs:N0} \u00B5s";
+    public string SystemPeakFormatted => LatencyText.Micro(_systemPeakUs);
     public int CaptureSeconds { get => _captureSeconds; set { _captureSeconds = value; OnPropertyChanged(); OnPropertyChanged(nameof(CaptureTimeText)); } }
     public string CaptureTimeText => $"{_captureSeconds}s";
     public bool ShowDiagnosedIssues { get => _showDiagnosedIssues; set { _showDiagnosedIssues = value; OnPropertyChanged(); } }
@@ -220,6 +261,10 @@ public class DpcDoctorViewModel : INotifyPropertyChanged
 
     public string CoreIsolationStatus { get => _coreIsolationStatus; set { _coreIsolationStatus = value; OnPropertyChanged(); } }
     public bool IsCoreReservationPresent { get => _isCoreReservationPresent; set { _isCoreReservationPresent = value; OnPropertyChanged(); } }
+
+    // The box stays after a removal to say a restart is pending; only the button goes.
+    private bool _canRemoveCoreReservation = true;
+    public bool CanRemoveCoreReservation { get => _canRemoveCoreReservation; set { _canRemoveCoreReservation = value; OnPropertyChanged(); } }
 
     public DpcDoctorViewModel(
         DpcTraceEngine? traceEngine,
@@ -263,7 +308,7 @@ public class DpcDoctorViewModel : INotifyPropertyChanged
         {
             HealthStatus = "Failed to start";
             HealthExplanation = "Another DPC monitoring tool may be running (like LatencyMon). Close it and try again.";
-            HealthColor = "#EF4444";
+            HealthTone = HealthTone.Critical;
             return;
         }
 
@@ -271,7 +316,7 @@ public class DpcDoctorViewModel : INotifyPropertyChanged
         ShowDiagnosedIssues = false;
         HealthStatus = "Capturing...";
         HealthExplanation = "Collecting per-driver DPC data. Run for at least 10 seconds for diagnosis.";
-        HealthColor = "#3B82F6";
+        HealthTone = HealthTone.Neutral;
     }
 
     public void StopCapture()
@@ -315,14 +360,21 @@ public class DpcDoctorViewModel : INotifyPropertyChanged
     {
         if (_fixEngine == null) return;
 
+        var recordedBefore = _fixEngine.IsFixActive(fix.Id);
         var result = _fixEngine.ApplyFix(fix);
         if (result.Success)
-        {
-            RefreshQuickFixStates();
+            _attempts.Remove(fix.Id);
+        else
+            _attempts[fix.Id] = new FixAttempt(FixAttemptKind.ApplyFailed, result.Message, false, DateTime.UtcNow, recordedBefore);
 
+        // Also after a failure: a failed apply can leave a ledger entry kept for undo.
+        RefreshQuickFixStates();
+
+        if (result.Success)
+        {
             if (result.RebootRequired)
             {
-                FixSuccessMessage = $"\u2705 {fix.Name} applied successfully";
+                FixSuccessMessage = $"\u2705 {fix.Name} applied, restart pending";
                 FixSuccessDetail = GetWhatToExpect(fix) + " A restart is needed for this change to take effect.";
                 ShowFixSuccessBanner = true;
                 RebootFixName = fix.Name;
@@ -353,9 +405,9 @@ public class DpcDoctorViewModel : INotifyPropertyChanged
 
     private string GetWhatToExpect(DriverAutoFix fix) => fix.Impact switch
     {
-        "High" => "You should notice smoother gameplay. Run DPC Doctor again to verify.",
+        "High" => "You should notice smoother gameplay. Run Latency Doctor again to verify.",
         "Medium" => "This may reduce occasional hitching. Try a game session to test.",
-        _ => "A small improvement \u2014 most noticeable in audio quality or input response."
+        _ => "A small improvement, most noticeable in audio quality or input response."
     };
 
     public void RevertFix(string fixId)
@@ -363,8 +415,16 @@ public class DpcDoctorViewModel : INotifyPropertyChanged
         if (_fixEngine == null) return;
 
         var result = _fixEngine.RevertFix(fixId);
-        if (result.Success)
-            RefreshQuickFixStates();
+        _attempts[fixId] = result.Success
+            ? new FixAttempt(FixAttemptKind.Undone, null, result.RebootRequired, DateTime.UtcNow)
+            : new FixAttempt(FixAttemptKind.UndoFailed, result.Message, false, DateTime.UtcNow);
+        RefreshQuickFixStates();
+
+        if (result.Success && result.RebootRequired)
+        {
+            RebootFixName = "undoing " + (QuickFixes.FirstOrDefault(q => q.FixId == fixId)?.Name ?? "the fix");
+            ShowRebootPrompt = true;
+        }
 
         FixApplied?.Invoke(result);
     }
@@ -373,10 +433,15 @@ public class DpcDoctorViewModel : INotifyPropertyChanged
     {
         if (_fixEngine == null || quickFix.Fix == null) return;
 
-        if (quickFix.IsActive)
-            RevertFix(quickFix.FixId);
-        else
-            ApplyFix(quickFix.Fix);
+        switch (quickFix.Status.Action)
+        {
+            case FixAction.Undo:
+                RevertFix(quickFix.FixId);
+                break;
+            case FixAction.Apply:
+                ApplyFix(quickFix.Fix);
+                break;
+        }
     }
 
     /// <summary>Event for the page to show fix result feedback (snackbar/dialog).</summary>
@@ -464,17 +529,17 @@ public class DpcDoctorViewModel : INotifyPropertyChanged
             case DpcHealthStatus.Good:
                 HealthStatus = "DPC Health: Excellent";
                 HealthExplanation = "Your system is responding to hardware quickly. Games should feel smooth and responsive.";
-                HealthColor = "#4ADE80";
+                HealthTone = HealthTone.Good;
                 break;
             case DpcHealthStatus.Warning:
                 HealthStatus = "DPC Health: Warning";
                 HealthExplanation = "Some hardware drivers are taking longer than they should to respond. You might notice occasional stuttering or audio glitches.";
-                HealthColor = "#F59E0B";
+                HealthTone = HealthTone.Warning;
                 break;
             case DpcHealthStatus.Critical:
-                HealthStatus = $"DPC Health: Critical \u2014 {SystemPeakUs:N0} \u00B5s peak";
-                HealthExplanation = $"A driver is freezing your system for {SystemPeakUs / 1000.0:N1}ms every time it runs. This directly causes stuttering, audio crackling, and input delay in games. The good news: this is almost always fixable.";
-                HealthColor = "#EF4444";
+                HealthStatus = $"DPC Health: Critical, {LatencyText.Micro(SystemPeakUs)} peak";
+                HealthExplanation = $"A driver is freezing your system for {LatencyText.Milli(SystemPeakUs)} every time it runs. This directly causes stuttering, audio crackling, and input delay in games. The good news: this is almost always fixable.";
+                HealthTone = HealthTone.Critical;
                 break;
         }
     }
@@ -518,14 +583,16 @@ public class DpcDoctorViewModel : INotifyPropertyChanged
         {
             var gpuDriver = gpuInfo.Vendor == "NVIDIA" ? "nvlddmkm.sys" : "atikmdag.sys";
             var msiFixId = gpuInfo.Vendor == "NVIDIA" ? "msi_mode_nvidia" : "msi_mode_amd";
-            AddQuickFix(gpuDriver, msiFixId, "Force MSI Mode for GPU", snapshot, alreadyActive: gpuInfo.MsiEnabled);
+            AddQuickFix(gpuDriver, msiFixId, "Force MSI Mode for GPU", () => GpuPciDetector.DetectGpuMsiState()?.MsiEnabled);
         }
 
-        AddQuickFix("dxgkrnl.sys", "disable_mpo", "Fix Multi-Monitor Flicker (MPO)", snapshot);
-        AddQuickFix("USBPORT.sys", "disable_usb_selective_suspend", "Disable USB Selective Suspend", snapshot);
+        AddQuickFix("dxgkrnl.sys", "disable_mpo", "Fix Multi-Monitor Flicker (MPO)", null);
+        AddQuickFix("USBPORT.sys", "disable_usb_selective_suspend", "Disable USB Selective Suspend", null);
+
+        RefreshQuickFixStates(snapshot);
     }
 
-    private void AddQuickFix(string driverFileName, string fixId, string name, AppSettings snapshot, bool alreadyActive = false)
+    private void AddQuickFix(string driverFileName, string fixId, string name, Func<bool?>? readLive)
     {
         if (!_driverDb!.TryGetDriver(driverFileName, out var driver)) return;
         var fix = driver.AutoFixes.FirstOrDefault(f => f.Id == fixId);
@@ -539,16 +606,33 @@ public class DpcDoctorViewModel : INotifyPropertyChanged
             TechnicalTooltip = fix.TechnicalExplanation,
             RequiresReboot = fix.RequiresReboot,
             Fix = fix,
-            IsActive = alreadyActive || _fixEngine!.IsFixActive(fix.Id, snapshot)
+            ReadLive = readLive
         });
     }
 
-    private void RefreshQuickFixStates()
+    private void RefreshQuickFixStates(AppSettings? snapshot = null)
     {
         if (_fixEngine == null) return;
-        var snapshot = SettingsManager.Load();
+        snapshot ??= SettingsManager.Load();
+        var bootTimeUtc = FixStatus.CurrentBootTimeUtc();
         foreach (var qf in QuickFixes)
-            qf.IsActive = _fixEngine.IsFixActive(qf.FixId, snapshot);
+        {
+            bool? live = null;
+            try
+            {
+                live = qf.ReadLive?.Invoke();
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "[DpcDoctorViewModel] Failed to read the live state of {FixId}", qf.FixId);
+            }
+
+            qf.Status = FixStatus.For(
+                snapshot.AppliedDpcFixes.FirstOrDefault(f => f.FixId == qf.FixId),
+                live,
+                _attempts.GetValueOrDefault(qf.FixId),
+                bootTimeUtc);
+        }
     }
 
     private void CheckPendingRebootComparison(AppSettings s)
@@ -558,15 +642,15 @@ public class DpcDoctorViewModel : INotifyPropertyChanged
 
         HasPendingRebootComparison = true;
 
-        var bootTime = DateTime.Now - TimeSpan.FromMilliseconds(Environment.TickCount64);
+        var bootTimeUtc = FixStatus.CurrentBootTimeUtc();
 
         foreach (var fixId in s.PendingRebootFixes)
         {
             var applied = s.AppliedDpcFixes.FirstOrDefault(f => f.FixId == fixId);
             if (applied == null) continue;
 
-            if (bootTime > applied.AppliedAt)
-                RebootComparisonLines.Add($"Reboot complete: {applied.Description} \u2014 run scan to compare");
+            if (!FixStatus.AppliedSinceBoot(applied, bootTimeUtc))
+                RebootComparisonLines.Add($"Reboot complete: {applied.Description}. Run a scan to compare.");
             else
                 RebootComparisonLines.Add($"Pending reboot: {applied.Description}");
         }
@@ -589,7 +673,7 @@ public class DpcDoctorViewModel : INotifyPropertyChanged
             if (currentPeaks.TryGetValue(driver, out var currentPeak))
             {
                 var reduction = previousPeak > 0 ? (1 - currentPeak / previousPeak) * 100 : 0;
-                RebootComparisonLines.Add($"{driver}: {previousPeak:N0} \u00B5s \u2192 {currentPeak:N0} \u00B5s ({reduction:N0}% reduction)");
+                RebootComparisonLines.Add($"{driver}: {LatencyText.Micro(previousPeak)} \u2192 {LatencyText.Micro(currentPeak)} ({LatencyText.Count(reduction)}% reduction)");
             }
         }
 
@@ -649,7 +733,8 @@ public class DpcDoctorViewModel : INotifyPropertyChanged
             return;
         }
 
-        CoreIsolationStatus = "Reservation removed. Reboot required to restore default scheduling.";
+        CoreIsolationStatus = "Reservation removed. Restart pending: Windows uses every core again after a restart.";
+        CanRemoveCoreReservation = false;
         ShowRebootPrompt = true;
         RebootFixName = "Core reservation removal";
     }

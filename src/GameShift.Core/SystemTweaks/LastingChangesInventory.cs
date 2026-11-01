@@ -157,7 +157,7 @@ public sealed class LastingChangesInventory
         {
             TryAdd(items, warnings, "Memory Integrity", () => ListMemoryIntegrity(settings));
             TryAdd(items, warnings, "System tweaks", () => ListTweaks(settings));
-            TryAdd(items, warnings, "DPC Doctor fixes", () => ListDpcFixes(settings));
+            TryAdd(items, warnings, "Latency Doctor fixes", () => ListDpcFixes(settings));
             TryAdd(items, warnings, "Kernel (boot) settings", () => ListKernelSettings(settings, warnings));
         }
         TryAdd(items, warnings, "CPU core reservation", ListCoreReservation);
@@ -313,8 +313,8 @@ public sealed class LastingChangesInventory
                 Key = f.FixId,
                 DisplayName = string.IsNullOrWhiteSpace(f.Description) ? f.FixId : f.Description,
                 UndoDescription = DpcFixEngine.IsUnrecordedPowerSetting(f)
-                    ? "DPC Doctor did not record the value it had before, so it is set back to the Windows default."
-                    : "Restores the value DPC Doctor recorded before applying the fix.",
+                    ? "Latency Doctor did not record the value it had before, so it is set back to the Windows default."
+                    : "Restores the value Latency Doctor recorded before applying the fix.",
                 RequiresRestart = f.RequiresReboot,
             });
 
@@ -353,7 +353,7 @@ public sealed class LastingChangesInventory
         {
             Kind = LastingChangeKind.CpuCoreReservation,
             Key = "ReservedCpuSets",
-            DisplayName = "CPU core reservation (set by an earlier version of GameShift's DPC Doctor or another tool)",
+            DisplayName = "CPU core reservation (set by an earlier version of GameShift or by another tool)",
             UndoDescription = "Removes the reservation so Windows schedules work on every core again.",
             RequiresRestart = true,
             NeedsOwnConfirmation = true,

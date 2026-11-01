@@ -557,7 +557,7 @@ public partial class App : Application
     {
         if (_trayManager == null) return;
 
-        var message = $"Drivers used {DpcLoad.Format(e.LatencyMicroseconds)} of CPU time for deferred procedure calls (DPC load). DPC Doctor can find the driver.";
+        var message = $"Drivers used {DpcLoad.Format(e.LatencyMicroseconds)} of CPU time for deferred procedure calls (DPC load). Latency Doctor can find the driver.";
 
         _trayManager.ShowDpcNotification("High DPC Load", message);
     }

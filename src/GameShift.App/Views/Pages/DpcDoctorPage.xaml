@@ -10,6 +10,94 @@
         <helpers:InverseBoolToVisibilityConverter x:Key="InverseBoolToVisibility"/>
         <helpers:ImpactToFriendlyConverter x:Key="ImpactToFriendly"/>
 
+        <!-- A quick fix tile: a real button, so Tab reaches it and Space or Enter chooses it -->
+        <Style x:Key="QuickFixTile" TargetType="Button">
+            <Setter Property="Background" Value="{DynamicResource GS.Fill.Card}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource GS.Line.Hairline}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="14"/>
+            <Setter Property="Margin" Value="0,0,8,8"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="VerticalContentAlignment" Value="Stretch"/>
+            <Setter Property="FocusVisualStyle" Value="{StaticResource GS.FocusVisual}"/>
+            <Setter Property="ToolTipService.ShowOnDisabled" Value="True"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Chrome" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="8" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource GS.Fill.CardSecondary}"/>
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource GS.Line.Strong}"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Cursor" Value="Arrow"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Badge tint and word colour per state -->
+        <Style x:Key="DriverSeverityBadge" TargetType="Border" BasedOn="{StaticResource GS.Badge.State}">
+            <Setter Property="Background" Value="{DynamicResource GS.Tint.Active}"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Severity}" Value="Warning">
+                    <Setter Property="Background" Value="{DynamicResource GS.Tint.Warning}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Severity}" Value="Critical">
+                    <Setter Property="Background" Value="{DynamicResource GS.Tint.Error}"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="DriverSeverityText" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource GS.State.Active}"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Severity}" Value="Warning">
+                    <Setter Property="Foreground" Value="{DynamicResource GS.State.Warning}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Severity}" Value="Critical">
+                    <Setter Property="Foreground" Value="{DynamicResource GS.State.Error}"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="FixStateBadge" TargetType="Border" BasedOn="{StaticResource GS.Badge.State}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding StateKind}" Value="Active">
+                    <Setter Property="Background" Value="{DynamicResource GS.Tint.Active}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding StateKind}" Value="RestartPending">
+                    <Setter Property="Background" Value="{DynamicResource GS.Tint.Warning}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding StateKind}" Value="Failed">
+                    <Setter Property="Background" Value="{DynamicResource GS.Tint.Error}"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="FixStateText" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource GS.State.Idle}"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding StateKind}" Value="Active">
+                    <Setter Property="Foreground" Value="{DynamicResource GS.State.Active}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding StateKind}" Value="RestartPending">
+                    <Setter Property="Foreground" Value="{DynamicResource GS.State.Warning}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding StateKind}" Value="Failed">
+                    <Setter Property="Foreground" Value="{DynamicResource GS.State.Error}"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
         <!-- Slide-in animation for banners (200ms, CubicEase) -->
         <Style x:Key="AnimatedBannerStyle" TargetType="Border">
             <Setter Property="RenderTransformOrigin" Value="0.5,0.5"/>
@@ -47,20 +135,20 @@
     <Grid>
         <!-- Admin Required Banner (shown when not admin) -->
         <Border Visibility="{Binding NotAdmin, Converter={StaticResource BoolToVisibility}}"
-                Background="#1E293B" CornerRadius="8" Padding="20" Margin="20"
+                Style="{StaticResource GS.Panel}" Padding="20" Margin="20"
                 VerticalAlignment="Top">
             <StackPanel HorizontalAlignment="Center">
                 <TextBlock Text="&#xE7BA;" FontFamily="Segoe MDL2 Assets" FontSize="48"
-                           Foreground="#F59E0B" HorizontalAlignment="Center" Margin="0,0,0,12"/>
-                <TextBlock Text="DPC Doctor requires administrator privileges"
-                           FontSize="18" FontWeight="SemiBold" Foreground="White"
+                           Foreground="{DynamicResource GS.State.Warning}" HorizontalAlignment="Center" Margin="0,0,0,12"/>
+                <TextBlock Text="Latency Doctor needs administrator rights"
+                           FontSize="18" FontWeight="SemiBold" Foreground="{DynamicResource GS.Fg.Primary}"
+                           TextWrapping="Wrap" TextAlignment="Center"
                            HorizontalAlignment="Center" Margin="0,0,0,8"/>
-                <TextBlock Text="Real-time driver analysis needs kernel-level access. Restart GameShift as administrator to unlock full DPC Doctor features."
-                           Foreground="#94A3B8" TextWrapping="Wrap" TextAlignment="Center"
+                <TextBlock Text="Measuring each driver needs kernel-level access. Restart GameShift as administrator to use every part of Latency Doctor."
+                           Foreground="{DynamicResource GS.Fg.Secondary}" TextWrapping="Wrap" TextAlignment="Center"
                            MaxWidth="500" Margin="0,0,0,16"/>
                 <Button Content="Restart as Admin" Padding="20,8"
-                        Background="#3B82F6" Foreground="White" BorderThickness="0"
-                        FontWeight="SemiBold" Cursor="Hand"
+                        Style="{StaticResource GS.Button.Primary}" Cursor="Hand"
                         HorizontalAlignment="Center"
                         Click="OnRestartAsAdminClicked"/>
             </StackPanel>
@@ -73,37 +161,37 @@
             <!-- Header -->
             <DockPanel DockPanel.Dock="Top" Margin="0,0,0,16">
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Left" VerticalAlignment="Center">
-                    <TextBlock Text="DPC Doctor" FontSize="22" FontWeight="Bold"
-                               Foreground="{DynamicResource GS.Text.Primary}"/>
+                    <TextBlock Text="Latency Doctor" FontSize="22" FontWeight="Bold"
+                               Foreground="{DynamicResource GS.Fg.Primary}"/>
                     <Button Padding="4" Margin="8,0,0,0" Cursor="Hand"
                             Background="Transparent" BorderThickness="0"
                             VerticalAlignment="Center"
-                            ToolTip="What is DPC?"
+                            ToolTip="What is DPC?" AutomationProperties.Name="What is DPC?"
                             Click="OnDpcInfoToggleClicked">
                         <TextBlock Text="&#xE897;" FontFamily="Segoe MDL2 Assets" FontSize="16"
-                                   Foreground="{DynamicResource GS.Text.Secondary}"/>
+                                   Foreground="{DynamicResource GS.Fg.Secondary}"/>
                     </Button>
                 </StackPanel>
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" HorizontalAlignment="Right">
-                    <TextBlock Text="Technical" Foreground="{DynamicResource GS.Text.Secondary}"
+                    <TextBlock Text="Technical" Foreground="{DynamicResource GS.Fg.Secondary}"
                                VerticalAlignment="Center" Margin="0,0,6,0" FontSize="12"/>
                     <CheckBox IsChecked="{Binding IsSimpleMode, Mode=TwoWay}"
                               VerticalAlignment="Center"/>
-                    <TextBlock Text="Simple" Foreground="{DynamicResource GS.Text.Primary}"
+                    <TextBlock Text="Simple" Foreground="{DynamicResource GS.Fg.Primary}"
                                VerticalAlignment="Center" Margin="6,0,0,0" FontSize="12"/>
                 </StackPanel>
             </DockPanel>
 
             <!-- "What is DPC?" Info Panel (collapsible) -->
-            <Border DockPanel.Dock="Top" Background="#1E293B" CornerRadius="8"
+            <Border DockPanel.Dock="Top" Background="{DynamicResource GS.Fill.CardSecondary}" CornerRadius="8"
                     Padding="16" Margin="0,0,0,12"
                     Style="{StaticResource AnimatedBannerStyle}"
                     Visibility="{Binding ShowDpcInfoPanel, Converter={StaticResource BoolToVisibility}}">
                 <StackPanel>
                     <TextBlock Text="What is DPC?" FontSize="15" FontWeight="Bold"
-                               Foreground="{DynamicResource GS.Text.Primary}" Margin="0,0,0,8"/>
-                    <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource GS.Text.Secondary}" FontSize="13" LineHeight="20">
-                        DPC stands for Deferred Procedure Call. In simple terms: every piece of hardware in your PC (GPU, network card, audio, USB devices) needs the CPU's attention regularly. If one device hogs the CPU for too long, everything else has to wait, including your game. That wait is what causes stuttering, audio crackling, and input lag. DPC Doctor finds which device is hogging the CPU and fixes it.
+                               Foreground="{DynamicResource GS.Fg.Primary}" Margin="0,0,0,8"/>
+                    <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource GS.Fg.Secondary}" FontSize="13" LineHeight="20">
+                        DPC stands for Deferred Procedure Call. In simple terms: every piece of hardware in your PC (GPU, network card, audio, USB devices) needs the CPU's attention regularly. If one device hogs the CPU for too long, everything else has to wait, including your game. That wait is what causes stuttering, audio crackling, and input lag. Latency Doctor finds which device is hogging the CPU and fixes it.
                     </TextBlock>
                 </StackPanel>
             </Border>
@@ -114,81 +202,82 @@
                 <StackPanel>
 
                     <!-- Fix Success Banner (green) -->
-                    <Border Background="#052E16" CornerRadius="8" Padding="14" Margin="0,0,0,12"
-                            BorderBrush="#4ADE80" BorderThickness="1"
+                    <Border Background="{DynamicResource GS.Tint.Active}" CornerRadius="8" Padding="14" Margin="0,0,0,12"
+                            BorderBrush="{DynamicResource GS.State.Active}" BorderThickness="1"
                             Style="{StaticResource AnimatedBannerStyle}"
                             Visibility="{Binding ShowFixSuccessBanner, Converter={StaticResource BoolToVisibility}}">
                         <DockPanel>
                             <Button DockPanel.Dock="Right" Padding="6,2" Margin="10,0,0,0"
                                     Background="Transparent" BorderThickness="0" Cursor="Hand"
                                     VerticalAlignment="Top"
+                                    ToolTip="Dismiss" AutomationProperties.Name="Dismiss"
                                     Click="OnDismissSuccessBanner">
                                 <TextBlock Text="&#xE711;" FontFamily="Segoe MDL2 Assets" FontSize="12"
-                                           Foreground="#94A3B8"/>
+                                           Foreground="{DynamicResource GS.Fg.Secondary}"/>
                             </Button>
                             <StackPanel>
                                 <TextBlock Text="{Binding FixSuccessMessage}" FontWeight="Bold"
-                                           Foreground="#4ADE80" FontSize="13"/>
+                                           Foreground="{DynamicResource GS.State.Active}" FontSize="13"
+                                           TextWrapping="Wrap"/>
                                 <TextBlock Text="{Binding FixSuccessDetail}"
-                                           Foreground="{DynamicResource GS.Text.Secondary}" FontSize="12"
+                                           Foreground="{DynamicResource GS.Fg.Secondary}" FontSize="12"
                                            TextWrapping="Wrap" Margin="0,4,0,0"/>
                             </StackPanel>
                         </DockPanel>
                     </Border>
 
                     <!-- Reboot Prompt Banner (amber) -->
-                    <Border Background="#1C1105" CornerRadius="8" Padding="14" Margin="0,0,0,12"
-                            BorderBrush="#F59E0B" BorderThickness="1"
+                    <Border Background="{DynamicResource GS.Tint.Warning}" CornerRadius="8" Padding="14" Margin="0,0,0,12"
+                            BorderBrush="{DynamicResource GS.State.Warning}" BorderThickness="1"
                             Style="{StaticResource AnimatedBannerStyle}"
                             Visibility="{Binding ShowRebootPrompt, Converter={StaticResource BoolToVisibility}}">
                         <DockPanel>
                             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal"
                                         VerticalAlignment="Center" Margin="10,0,0,0">
                                 <Button Content="Restart Now" Padding="10,5"
-                                        Background="#F59E0B" Foreground="#0D1117"
-                                        BorderThickness="0" FontWeight="SemiBold" Cursor="Hand"
+                                        Style="{StaticResource GS.Button.Restart}" Cursor="Hand"
                                         Margin="0,0,8,0"
                                         Click="OnRestartNowClicked"/>
                                 <Button Content="Later" Padding="10,5"
                                         Background="Transparent"
-                                        Foreground="{DynamicResource GS.Text.Secondary}"
-                                        BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1"
+                                        Foreground="{DynamicResource GS.Fg.Secondary}"
+                                        BorderBrush="{DynamicResource GS.Line.Control}" BorderThickness="1"
                                         Cursor="Hand"
                                         Click="OnDismissRebootPrompt"/>
                             </StackPanel>
                             <StackPanel VerticalAlignment="Center">
-                                <TextBlock FontWeight="Bold" Foreground="#F59E0B" FontSize="13">
+                                <TextBlock FontWeight="Bold" Foreground="{DynamicResource GS.State.Warning}" FontSize="13"
+                                           TextWrapping="Wrap">
                                     <Run Text="Restart required for "/><Run Text="{Binding RebootFixName, Mode=OneWay}" FontWeight="Bold"/>
                                 </TextBlock>
-                                <TextBlock Text="This fix modifies a system setting that only takes effect after a restart."
-                                           Foreground="{DynamicResource GS.Text.Secondary}" FontSize="12"
+                                <TextBlock Text="This changes a system setting that only takes effect after a restart."
+                                           Foreground="{DynamicResource GS.Fg.Secondary}" FontSize="12"
                                            TextWrapping="Wrap" Margin="0,4,0,0"/>
                             </StackPanel>
                         </DockPanel>
                     </Border>
 
                     <!-- Post-Reboot Comparison Section -->
-                    <Border Background="{DynamicResource GS.Surface.Card}" CornerRadius="8"
+                    <Border Background="{DynamicResource GS.Fill.Card}" CornerRadius="8"
                             Padding="16" Margin="0,0,0,16"
-                            BorderBrush="#4ADE80" BorderThickness="1"
+                            BorderBrush="{DynamicResource GS.State.Active}" BorderThickness="1"
                             Style="{StaticResource AnimatedBannerStyle}"
                             Visibility="{Binding HasPendingRebootComparison, Converter={StaticResource BoolToVisibility}}">
                         <StackPanel>
                             <TextBlock Text="Post-Reboot Results" FontSize="15" FontWeight="Bold"
-                                       Foreground="#4ADE80" Margin="0,0,0,8"/>
+                                       Foreground="{DynamicResource GS.Fg.Primary}" Margin="0,0,0,8"/>
                             <TextBlock Text="You applied fixes that required a restart. Run a 30-second scan to see before and after results."
-                                       Foreground="{DynamicResource GS.Text.Secondary}" FontSize="12"
+                                       Foreground="{DynamicResource GS.Fg.Secondary}" FontSize="12"
                                        TextWrapping="Wrap" Margin="0,0,0,12"/>
                             <Button Content="Run Comparison Scan" Padding="14,6"
-                                    Background="#4ADE80" Foreground="#0D1117"
-                                    BorderThickness="0" FontWeight="SemiBold" Cursor="Hand"
+                                    Style="{StaticResource GS.Button.Primary}" Cursor="Hand"
                                     HorizontalAlignment="Left" Margin="0,0,0,10"
                                     Click="OnRun30sClicked"/>
                             <ItemsControl ItemsSource="{Binding RebootComparisonLines}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
-                                        <TextBlock Text="{Binding}" FontFamily="Consolas" FontSize="12"
-                                                   Foreground="{DynamicResource GS.Text.Primary}" Margin="0,2"/>
+                                        <TextBlock Text="{Binding}" FontFamily="Consolas" FontSize="12" TextWrapping="Wrap"
+                                                   Foreground="{DynamicResource GS.Fg.Primary}" Margin="0,2"/>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
@@ -196,37 +285,49 @@
                     </Border>
 
                     <!-- Section 1: Health Banner + Live Monitor -->
-                    <Border Background="{DynamicResource GS.Surface.Card}" CornerRadius="8"
+                    <Border Background="{DynamicResource GS.Fill.Card}" CornerRadius="8"
                             Padding="16" Margin="0,0,0,16"
-                            BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1">
+                            BorderBrush="{DynamicResource GS.Line.Hairline}" BorderThickness="1">
                         <StackPanel>
                             <!-- Health status -->
                             <DockPanel Margin="0,0,0,12">
                                 <StackPanel DockPanel.Dock="Left">
-                                    <TextBlock FontSize="18" FontWeight="Bold"
-                                               Text="{Binding HealthStatus}"
-                                               Foreground="{Binding HealthColor}"/>
+                                    <TextBlock FontSize="18" FontWeight="Bold" TextWrapping="Wrap"
+                                               Text="{Binding HealthStatus}">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Foreground" Value="{DynamicResource GS.Fg.Primary}"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding HealthTone}" Value="Good">
+                                                        <Setter Property="Foreground" Value="{DynamicResource GS.State.Active}"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding HealthTone}" Value="Warning">
+                                                        <Setter Property="Foreground" Value="{DynamicResource GS.State.Warning}"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding HealthTone}" Value="Critical">
+                                                        <Setter Property="Foreground" Value="{DynamicResource GS.State.Error}"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
                                     <TextBlock Text="{Binding HealthExplanation}"
-                                               Foreground="{DynamicResource GS.Text.Secondary}"
+                                               Foreground="{DynamicResource GS.Fg.Secondary}"
                                                TextWrapping="Wrap" MaxWidth="600" Margin="0,4,0,0"/>
                                 </StackPanel>
                                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Right"
                                             HorizontalAlignment="Right" VerticalAlignment="Top">
                                     <Button Content="Start" Padding="14,6"
-                                            Background="#4ADE80" Foreground="#0D1117"
-                                            BorderThickness="0" FontWeight="SemiBold" Cursor="Hand"
+                                            Style="{StaticResource GS.Button.Primary}" Cursor="Hand"
                                             Margin="0,0,6,0"
                                             Visibility="{Binding CanStart, Converter={StaticResource BoolToVisibility}}"
                                             Click="OnStartClicked"/>
                                     <Button Content="Stop" Padding="14,6"
-                                            Background="#EF4444" Foreground="White"
-                                            BorderThickness="0" FontWeight="SemiBold" Cursor="Hand"
+                                            Style="{StaticResource GS.Button.Primary}" Cursor="Hand"
                                             Margin="0,0,6,0"
                                             Visibility="{Binding IsCapturing, Converter={StaticResource BoolToVisibility}}"
                                             Click="OnStopClicked"/>
-                                    <Button Content="Run 30s" Padding="14,6"
-                                            Background="#3B82F6" Foreground="White"
-                                            BorderThickness="0" FontWeight="SemiBold" Cursor="Hand"
+                                    <Button Content="Run 30s" Padding="14,6" Cursor="Hand"
                                             Visibility="{Binding CanStart, Converter={StaticResource BoolToVisibility}}"
                                             Click="OnRun30sClicked"/>
                                 </StackPanel>
@@ -234,7 +335,7 @@
 
                             <!-- Capture time indicator -->
                             <TextBlock Visibility="{Binding IsCapturing, Converter={StaticResource BoolToVisibility}}"
-                                       Foreground="{DynamicResource GS.Text.Secondary}" FontSize="12"
+                                       Foreground="{DynamicResource GS.Fg.Secondary}" FontSize="12"
                                        Margin="0,0,0,8">
                                 <Run Text="Capturing: "/><Run Text="{Binding CaptureTimeText, Mode=OneWay}"/>
                             </TextBlock>
@@ -249,14 +350,14 @@
                                     <ColumnDefinition Width="70"/>
                                 </Grid.ColumnDefinitions>
                                 <TextBlock Grid.Column="0" Text="DRIVER" FontSize="10" FontWeight="Bold"
-                                           Foreground="{DynamicResource GS.Text.Secondary}"/>
+                                           Foreground="{DynamicResource GS.Fg.Secondary}"/>
                                 <TextBlock Grid.Column="1" Text="COUNT" FontSize="10" FontWeight="Bold"
-                                           Foreground="{DynamicResource GS.Text.Secondary}" HorizontalAlignment="Right"
+                                           Foreground="{DynamicResource GS.Fg.Secondary}" HorizontalAlignment="Right"
                                            Cursor="Help"
                                            ToolTip="How many times this driver interrupted your CPU during the capture."
                                            Visibility="{Binding DataContext.IsSimpleMode, RelativeSource={RelativeSource AncestorType=Page}, Converter={StaticResource InverseBoolToVisibility}}"/>
                                 <TextBlock Grid.Column="2" Text="HIGHEST" FontSize="10" FontWeight="Bold"
-                                           Foreground="{DynamicResource GS.Text.Secondary}" HorizontalAlignment="Right"
+                                           Foreground="{DynamicResource GS.Fg.Secondary}" HorizontalAlignment="Right"
                                            Cursor="Help">
                                     <TextBlock.ToolTip>
                                         <TextBlock MaxWidth="320" TextWrapping="Wrap">
@@ -270,12 +371,12 @@ This is how long this driver locked up your CPU, in microseconds (&#x00B5;s).
                                     </TextBlock.ToolTip>
                                 </TextBlock>
                                 <TextBlock Grid.Column="3" Text="AVERAGE" FontSize="10" FontWeight="Bold"
-                                           Foreground="{DynamicResource GS.Text.Secondary}" HorizontalAlignment="Right"
+                                           Foreground="{DynamicResource GS.Fg.Secondary}" HorizontalAlignment="Right"
                                            Cursor="Help"
                                            ToolTip="Average time per interrupt. A high average means consistently bad performance, not just occasional spikes."
                                            Visibility="{Binding DataContext.IsSimpleMode, RelativeSource={RelativeSource AncestorType=Page}, Converter={StaticResource InverseBoolToVisibility}}"/>
                                 <TextBlock Grid.Column="4" Text="STATUS" FontSize="10" FontWeight="Bold"
-                                           Foreground="{DynamicResource GS.Text.Secondary}" HorizontalAlignment="Right"/>
+                                           Foreground="{DynamicResource GS.Fg.Secondary}" HorizontalAlignment="Right"/>
                             </Grid>
 
                             <!-- Driver table -->
@@ -283,7 +384,7 @@ This is how long this driver locked up your CPU, in microseconds (&#x00B5;s).
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate DataType="{x:Type vm:DriverRowViewModel}">
                                         <Border Padding="8,6" Margin="0,1"
-                                                Background="#0F172A" CornerRadius="4">
+                                                Background="{DynamicResource GS.Fill.CardSecondary}" CornerRadius="4">
                                             <Grid>
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="*"/>
@@ -296,53 +397,40 @@ This is how long this driver locked up your CPU, in microseconds (&#x00B5;s).
                                                 <!-- Driver name -->
                                                 <StackPanel Grid.Column="0">
                                                     <TextBlock Text="{Binding FriendlyName}"
-                                                               Foreground="{DynamicResource GS.Text.Primary}"
+                                                               Foreground="{DynamicResource GS.Fg.Primary}"
                                                                FontWeight="SemiBold" FontSize="13"/>
                                                     <TextBlock Text="{Binding DriverFileName}"
-                                                               Foreground="{DynamicResource GS.Text.Secondary}"
+                                                               Foreground="{DynamicResource GS.Fg.Secondary}"
                                                                FontSize="11"
                                                                Visibility="{Binding DataContext.IsSimpleMode, RelativeSource={RelativeSource AncestorType=Page}, Converter={StaticResource InverseBoolToVisibility}}"/>
                                                 </StackPanel>
 
                                                 <!-- DPC Count -->
-                                                <TextBlock Grid.Column="1" Text="{Binding DpcCount, StringFormat=N0}"
-                                                           Foreground="{DynamicResource GS.Text.Secondary}"
+                                                <TextBlock Grid.Column="1" Text="{Binding DpcCountFormatted}"
+                                                           Foreground="{DynamicResource GS.Fg.Secondary}"
                                                            VerticalAlignment="Center" HorizontalAlignment="Right"
                                                            FontSize="12"
                                                            Visibility="{Binding DataContext.IsSimpleMode, RelativeSource={RelativeSource AncestorType=Page}, Converter={StaticResource InverseBoolToVisibility}}"/>
 
                                                 <!-- Highest -->
                                                 <TextBlock Grid.Column="2" Text="{Binding HighestUsFormatted}"
-                                                           Foreground="{DynamicResource GS.Text.Primary}"
+                                                           Foreground="{DynamicResource GS.Fg.Primary}"
                                                            VerticalAlignment="Center" HorizontalAlignment="Right"
                                                            FontWeight="SemiBold" FontSize="12"/>
 
                                                 <!-- Average -->
                                                 <TextBlock Grid.Column="3" Text="{Binding AvgUsFormatted}"
-                                                           Foreground="{DynamicResource GS.Text.Secondary}"
+                                                           Foreground="{DynamicResource GS.Fg.Secondary}"
                                                            VerticalAlignment="Center" HorizontalAlignment="Right"
                                                            FontSize="12"
                                                            Visibility="{Binding DataContext.IsSimpleMode, RelativeSource={RelativeSource AncestorType=Page}, Converter={StaticResource InverseBoolToVisibility}}"/>
 
                                                 <!-- Status badge -->
-                                                <Border Grid.Column="4" CornerRadius="4" Padding="6,2"
-                                                        HorizontalAlignment="Right" VerticalAlignment="Center">
-                                                    <Border.Style>
-                                                        <Style TargetType="Border">
-                                                            <Setter Property="Background" Value="#1C4A2E"/>
-                                                            <Style.Triggers>
-                                                                <DataTrigger Binding="{Binding StatusText}" Value="Warning">
-                                                                    <Setter Property="Background" Value="#2D2006"/>
-                                                                </DataTrigger>
-                                                                <DataTrigger Binding="{Binding StatusText}" Value="Critical">
-                                                                    <Setter Property="Background" Value="#7F1D1D"/>
-                                                                </DataTrigger>
-                                                            </Style.Triggers>
-                                                        </Style>
-                                                    </Border.Style>
+                                                <Border Grid.Column="4" Style="{StaticResource DriverSeverityBadge}"
+                                                        HorizontalAlignment="Right">
                                                     <TextBlock Text="{Binding StatusText}" FontSize="11"
                                                                FontWeight="SemiBold" HorizontalAlignment="Center"
-                                                               Foreground="{Binding StatusColor}"/>
+                                                               Style="{StaticResource DriverSeverityText}"/>
                                                 </Border>
                                             </Grid>
                                         </Border>
@@ -355,40 +443,39 @@ This is how long this driver locked up your CPU, in microseconds (&#x00B5;s).
                     <!-- Section 2: Diagnosed Issues -->
                     <StackPanel Visibility="{Binding ShowDiagnosedIssues, Converter={StaticResource BoolToVisibility}}">
                         <TextBlock Text="Diagnosed Issues" FontSize="18" FontWeight="Bold"
-                                   Foreground="{DynamicResource GS.Text.Primary}" Margin="0,0,0,12"/>
+                                   Foreground="{DynamicResource GS.Fg.Primary}" Margin="0,0,0,12"/>
 
                         <ItemsControl ItemsSource="{Binding DiagnosedIssues}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate DataType="{x:Type vm:DiagnosedIssueViewModel}">
-                                    <Border Background="{DynamicResource GS.Surface.Card}" CornerRadius="8"
+                                    <Border Background="{DynamicResource GS.Fill.Card}" CornerRadius="8"
                                             Padding="16" Margin="0,0,0,10"
-                                            BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1">
+                                            BorderBrush="{DynamicResource GS.Line.Hairline}" BorderThickness="1">
                                         <StackPanel>
                                             <!-- Header: severity + driver name + peak -->
                                             <DockPanel Margin="0,0,0,8">
-                                                <Border CornerRadius="4" Padding="8,2" DockPanel.Dock="Left"
-                                                        VerticalAlignment="Center" Margin="0,0,8,0"
-                                                        Background="#7F1D1D">
+                                                <Border Style="{StaticResource DriverSeverityBadge}" Padding="8,2"
+                                                        DockPanel.Dock="Left" Margin="0,0,8,0">
                                                     <TextBlock Text="{Binding SeverityText}" FontSize="11"
-                                                               FontWeight="Bold" Foreground="{Binding SeverityColor}"/>
+                                                               FontWeight="Bold" Style="{StaticResource DriverSeverityText}"/>
                                                 </Border>
-                                                <TextBlock Foreground="{DynamicResource GS.Text.Primary}"
-                                                           FontSize="15" FontWeight="SemiBold"
-                                                           VerticalAlignment="Center"
-                                                           Text="{Binding FriendlyName}"/>
                                                 <TextBlock Text="{Binding PeakFormatted}"
-                                                           Foreground="{DynamicResource GS.Text.Secondary}"
+                                                           Foreground="{DynamicResource GS.Fg.Secondary}"
                                                            DockPanel.Dock="Right" HorizontalAlignment="Right"
-                                                           VerticalAlignment="Center" FontSize="13"/>
+                                                           VerticalAlignment="Center" FontSize="13" Margin="8,0,0,0"/>
+                                                <TextBlock Foreground="{DynamicResource GS.Fg.Primary}"
+                                                           FontSize="15" FontWeight="SemiBold"
+                                                           VerticalAlignment="Center" TextWrapping="Wrap"
+                                                           Text="{Binding FriendlyName}"/>
                                             </DockPanel>
 
                                             <!-- What's wrong -->
                                             <TextBlock Text="{Binding SimpleExplanation}"
-                                                       Foreground="{DynamicResource GS.Text.Primary}"
+                                                       Foreground="{DynamicResource GS.Fg.Primary}"
                                                        TextWrapping="Wrap" Margin="0,0,0,6"/>
 
                                             <!-- Gaming impact -->
-                                            <TextBlock Foreground="#F59E0B" TextWrapping="Wrap" Margin="0,0,0,10"
+                                            <TextBlock Foreground="{DynamicResource GS.State.Warning}" TextWrapping="Wrap" Margin="0,0,0,10"
                                                        FontWeight="SemiBold" FontSize="12">
                                                 <Run Text="THIS IS WHY: "/><Run Text="{Binding GamingImpact, Mode=OneWay}"/>
                                             </TextBlock>
@@ -397,37 +484,36 @@ This is how long this driver locked up your CPU, in microseconds (&#x00B5;s).
                                             <ItemsControl ItemsSource="{Binding AutoFixes}">
                                                 <ItemsControl.ItemTemplate>
                                                     <DataTemplate>
-                                                        <Border Background="#0F172A" CornerRadius="6"
+                                                        <Border Background="{DynamicResource GS.Fill.CardSecondary}" CornerRadius="6"
                                                                 Padding="12" Margin="0,0,0,6">
                                                             <DockPanel>
                                                                 <Button Content="Apply Fix" DockPanel.Dock="Right"
                                                                         Padding="12,6" Margin="12,0,0,0"
-                                                                        Background="#4ADE80" Foreground="#0D1117"
-                                                                        BorderThickness="0" FontWeight="SemiBold"
+                                                                        Style="{StaticResource GS.Button.Primary}"
                                                                         Cursor="Hand" VerticalAlignment="Top"
                                                                         Tag="{Binding}"
                                                                         Click="OnApplyFixClicked"/>
                                                                 <StackPanel>
                                                                     <TextBlock Text="{Binding Name}"
-                                                                               Foreground="{DynamicResource GS.Text.Primary}"
-                                                                               FontWeight="SemiBold" FontSize="13"/>
+                                                                               Foreground="{DynamicResource GS.Fg.Primary}"
+                                                                               FontWeight="SemiBold" FontSize="13" TextWrapping="Wrap"/>
                                                                     <TextBlock Text="{Binding SimpleExplanation}"
-                                                                               Foreground="{DynamicResource GS.Text.Secondary}"
+                                                                               Foreground="{DynamicResource GS.Fg.Secondary}"
                                                                                TextWrapping="Wrap" Margin="0,4,0,4"
                                                                                FontSize="12"/>
                                                                     <StackPanel Orientation="Horizontal">
                                                                         <!-- Technical mode: "Impact: High" -->
-                                                                        <TextBlock FontSize="11" Foreground="#94A3B8"
+                                                                        <TextBlock FontSize="11" Foreground="{DynamicResource GS.Fg.Secondary}"
                                                                                    Visibility="{Binding DataContext.IsSimpleMode, RelativeSource={RelativeSource AncestorType=Page}, Converter={StaticResource InverseBoolToVisibility}}">
                                                                             <Run Text="Impact: "/><Run Text="{Binding Impact, Mode=OneWay}"/>
                                                                         </TextBlock>
                                                                         <!-- Simple mode: "Expected: Big improvement" -->
-                                                                        <TextBlock FontSize="11" Foreground="#4ADE80"
+                                                                        <TextBlock FontSize="11" Foreground="{DynamicResource GS.Fg.Secondary}"
                                                                                    Visibility="{Binding DataContext.IsSimpleMode, RelativeSource={RelativeSource AncestorType=Page}, Converter={StaticResource BoolToVisibility}}">
                                                                             <Run Text="Expected: "/><Run Text="{Binding Impact, Mode=OneWay, Converter={StaticResource ImpactToFriendly}}" FontWeight="SemiBold"/>
                                                                         </TextBlock>
-                                                                        <TextBlock Text=" · Reboot required" FontSize="11"
-                                                                                   Foreground="#F59E0B"
+                                                                        <TextBlock Text=" · Restart required" FontSize="11"
+                                                                                   Foreground="{DynamicResource GS.State.Warning}"
                                                                                    Visibility="{Binding RequiresReboot, Converter={StaticResource BoolToVisibility}}"/>
                                                                     </StackPanel>
                                                                 </StackPanel>
@@ -439,12 +525,12 @@ This is how long this driver locked up your CPU, in microseconds (&#x00B5;s).
 
                                             <!-- Manual fixes -->
                                             <Expander Header="How to Fix Manually" Margin="0,6,0,0"
-                                                      Foreground="{DynamicResource GS.Text.Secondary}">
+                                                      Foreground="{DynamicResource GS.Fg.Secondary}">
                                                 <ItemsControl ItemsSource="{Binding ManualFixes}" Margin="8,8,0,0">
                                                     <ItemsControl.ItemTemplate>
                                                         <DataTemplate>
                                                             <TextBlock Text="{Binding}" TextWrapping="Wrap"
-                                                                       Foreground="{DynamicResource GS.Text.Secondary}"
+                                                                       Foreground="{DynamicResource GS.Fg.Secondary}"
                                                                        FontSize="12" Margin="0,0,0,4"/>
                                                         </DataTemplate>
                                                     </ItemsControl.ItemTemplate>
@@ -459,7 +545,7 @@ This is how long this driver locked up your CPU, in microseconds (&#x00B5;s).
 
                     <!-- Section 3: Quick Fixes Toolbar -->
                     <TextBlock Text="Quick Fixes" FontSize="18" FontWeight="Bold"
-                               Foreground="{DynamicResource GS.Text.Primary}" Margin="0,8,0,12"/>
+                               Foreground="{DynamicResource GS.Fg.Primary}" Margin="0,8,0,12"/>
 
                     <ItemsControl ItemsSource="{Binding QuickFixes}">
                         <ItemsControl.ItemsPanel>
@@ -469,52 +555,56 @@ This is how long this driver locked up your CPU, in microseconds (&#x00B5;s).
                         </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate DataType="{x:Type vm:QuickFixViewModel}">
-                                <Border Background="{DynamicResource GS.Surface.Card}" CornerRadius="8"
-                                        Padding="14" Margin="0,0,8,8" Cursor="Hand"
-                                        BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1"
-                                        MouseLeftButtonUp="OnToggleQuickFixClicked">
-                                    <Border.ToolTip>
+                                <Button Style="{StaticResource QuickFixTile}"
+                                        IsEnabled="{Binding CanChoose}"
+                                        AutomationProperties.Name="{Binding AccessibleName}"
+                                        AutomationProperties.HelpText="{Binding StateReason}"
+                                        Click="OnToggleQuickFixClicked">
+                                    <Button.ToolTip>
                                         <StackPanel MaxWidth="350">
                                             <TextBlock Text="{Binding Name}" FontWeight="Bold" FontSize="13"
-                                                       Foreground="{DynamicResource GS.Text.Primary}" Margin="0,0,0,6"/>
+                                                       Foreground="{DynamicResource GS.Fg.Primary}" Margin="0,0,0,6"/>
                                             <TextBlock Text="{Binding SimpleTooltip}" TextWrapping="Wrap" FontSize="12"
-                                                       Foreground="{DynamicResource GS.Text.Primary}" Margin="0,0,0,6"/>
+                                                       Foreground="{DynamicResource GS.Fg.Primary}" Margin="0,0,0,6"/>
                                             <TextBlock Text="{Binding TechnicalTooltip}" TextWrapping="Wrap" FontSize="11"
-                                                       Foreground="#94A3B8" Margin="0,0,0,6"/>
-                                            <TextBlock Text="Reboot required after applying" FontSize="11"
-                                                       Foreground="#F59E0B"
+                                                       Foreground="{DynamicResource GS.Fg.Secondary}" Margin="0,0,0,6"/>
+                                            <TextBlock Text="Restart required after applying" FontSize="11"
+                                                       Foreground="{DynamicResource GS.State.Warning}"
                                                        Visibility="{Binding RequiresReboot, Converter={StaticResource BoolToVisibility}}"/>
-                                            <TextBlock FontSize="11" Foreground="#94A3B8">
+                                            <TextBlock FontSize="11" Foreground="{DynamicResource GS.Fg.Secondary}">
                                                 <Run Text="Current state: "/><Run Text="{Binding StateText, Mode=OneWay}"/>
                                             </TextBlock>
                                         </StackPanel>
-                                    </Border.ToolTip>
+                                    </Button.ToolTip>
                                     <DockPanel>
-                                        <StackPanel DockPanel.Dock="Right" VerticalAlignment="Center"
-                                                    HorizontalAlignment="Right">
-                                            <Border CornerRadius="4" Padding="8,3"
-                                                    Background="#1E293B">
-                                                <TextBlock Text="{Binding StateText}" FontSize="11" FontWeight="SemiBold"
-                                                           Foreground="#94A3B8"/>
-                                            </Border>
-                                        </StackPanel>
+                                        <Border DockPanel.Dock="Right" Style="{StaticResource FixStateBadge}"
+                                                VerticalAlignment="Top" Margin="8,0,0,0">
+                                            <TextBlock Text="{Binding StateText}" FontSize="11" FontWeight="SemiBold"
+                                                       Style="{StaticResource FixStateText}"/>
+                                        </Border>
                                         <StackPanel>
                                             <TextBlock Text="{Binding Name}"
-                                                       Foreground="{DynamicResource GS.Text.Primary}"
-                                                       FontWeight="SemiBold" FontSize="13"/>
+                                                       Foreground="{DynamicResource GS.Fg.Primary}"
+                                                       FontWeight="SemiBold" FontSize="13" TextWrapping="Wrap"/>
                                             <TextBlock Text="{Binding SimpleTooltip}"
-                                                       Foreground="{DynamicResource GS.Text.Secondary}"
+                                                       Foreground="{DynamicResource GS.Fg.Secondary}"
+                                                       TextWrapping="Wrap" FontSize="11" Margin="0,4,0,0"/>
+                                            <TextBlock Text="{Binding StateReason}"
+                                                       Foreground="{DynamicResource GS.Fg.Primary}"
                                                        TextWrapping="Wrap" FontSize="11" Margin="0,4,0,0"
-                                                       MaxHeight="36" TextTrimming="CharacterEllipsis"/>
-                                            <TextBlock Text="Reboot required" FontSize="10"
-                                                       Foreground="#F59E0B" Margin="0,4,0,0"
+                                                       Visibility="{Binding HasStateReason, Converter={StaticResource BoolToVisibility}}"/>
+                                            <TextBlock Text="Restart required" FontSize="10"
+                                                       Foreground="{DynamicResource GS.State.Warning}" Margin="0,4,0,0"
                                                        Visibility="{Binding RequiresReboot, Converter={StaticResource BoolToVisibility}}"/>
-                                            <TextBlock FontSize="10" Foreground="#4ADE80" Margin="0,3,0,0"
+                                            <TextBlock FontSize="10" Foreground="{DynamicResource GS.Fg.Secondary}" Margin="0,3,0,0"
                                                        Text="{Binding ImpactFriendly}"
                                                        Visibility="{Binding DataContext.IsSimpleMode, RelativeSource={RelativeSource AncestorType=Page}, Converter={StaticResource BoolToVisibility}}"/>
+                                            <TextBlock FontSize="11" FontWeight="SemiBold" Margin="0,6,0,0"
+                                                       Foreground="{DynamicResource GS.Fg.Primary}"
+                                                       Text="{Binding ActionText}"/>
                                         </StackPanel>
                                     </DockPanel>
-                                </Border>
+                                </Button>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
@@ -524,17 +614,17 @@ This is how long this driver locked up your CPU, in microseconds (&#x00B5;s).
                             Margin="0,20,0,0">
                         <StackPanel>
                             <TextBlock Text="CPU Core Reservation" FontSize="18" FontWeight="Bold"
-                                       Foreground="{DynamicResource GS.Text.Primary}" Margin="0,0,0,4"/>
+                                       Foreground="{DynamicResource GS.Fg.Primary}" Margin="0,0,0,4"/>
                             <TextBlock Text="Some CPU cores on this PC are reserved, so Windows keeps background work off them. Earlier versions of GameShift could set this, and so can other tools. Removing it lets Windows use every core again after a restart."
-                                       Foreground="{DynamicResource GS.Text.Secondary}" FontSize="12" Margin="0,0,0,8" TextWrapping="Wrap"/>
+                                       Foreground="{DynamicResource GS.Fg.Secondary}" FontSize="12" Margin="0,0,0,8" TextWrapping="Wrap"/>
 
                             <!-- Status -->
-                            <TextBlock Text="{Binding CoreIsolationStatus}" Foreground="{DynamicResource GS.Text.Secondary}"
-                                       FontSize="12" Margin="0,0,0,12"/>
+                            <TextBlock Text="{Binding CoreIsolationStatus}" Foreground="{DynamicResource GS.Fg.Secondary}"
+                                       FontSize="12" Margin="0,0,0,12" TextWrapping="Wrap"/>
 
                             <Button Content="Remove Reservation" Padding="12,6" HorizontalAlignment="Left"
                                     FontSize="12" Cursor="Hand" Click="OnRemoveCoreIsolationClicked"
-                                    Foreground="#EF4444"/>
+                                    Visibility="{Binding CanRemoveCoreReservation, Converter={StaticResource BoolToVisibility}}"/>
                         </StackPanel>
                     </Border>
 

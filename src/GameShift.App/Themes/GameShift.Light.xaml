@@ -22,7 +22,7 @@
     <!-- Text -->
     <SolidColorBrush x:Key="GS.Fg.Primary" Color="#0E1318" />
     <SolidColorBrush x:Key="GS.Fg.Secondary" Color="#4A5561" />
-    <SolidColorBrush x:Key="GS.Fg.Tertiary" Color="#5F6B78" />
+    <SolidColorBrush x:Key="GS.Fg.Tertiary" Color="#5D6976" />
     <SolidColorBrush x:Key="GS.Fg.Link" Color="#0E1318" />
 
     <!-- Interactive elements are neutral: colour is reserved for state -->
