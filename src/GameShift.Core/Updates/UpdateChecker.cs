@@ -48,8 +48,8 @@ public static class UpdateChecker
 
     /// <summary>
     /// Parses a GitHub "latest release" response. Returns update details when the release is newer
-    /// than <paramref name="currentVersion"/>, with the download asset chosen for <paramref name="mode"/>;
-    /// returns null when current. Throws on a malformed response.
+    /// than <paramref name="currentVersion"/>, with the installer as the download and <paramref name="mode"/>
+    /// recorded for where it is staged; returns null when current. Throws on a malformed response.
     /// </summary>
     internal static UpdateInfo? ParseRelease(string json, Version currentVersion, InstallMode mode)
     {
@@ -106,7 +106,7 @@ public static class UpdateChecker
             }
         }
 
-        var selected = UpdateAssetSelector.Select(assets, mode);
+        var selected = UpdateAssetSelector.Select(assets);
         string? downloadUrl = selected?.DownloadUrl;
         long downloadSize = 0;
         string? downloadDigest = null;
@@ -117,14 +117,6 @@ public static class UpdateChecker
             downloadSize = selected.Size;
             downloadDigest = selected.Digest;
             downloadAssetName = selected.Name;
-        }
-        else if (mode == InstallMode.Portable)
-        {
-            // Last resort for a portable copy: GitHub's auto-generated source zipball. An installed copy
-            // can only install through the installer; without one the UI opens the release page instead.
-            downloadUrl = root.TryGetProperty("zipball_url", out var zipballProp)
-                ? zipballProp.GetString()
-                : null;
         }
 
         // Validate URLs before returning - reject any that point outside GitHub
@@ -186,10 +178,10 @@ public class UpdateInfo
     /// </summary>
     public string? DownloadUrl { get; set; }
 
-    /// <summary>Name of the release asset behind <see cref="DownloadUrl"/>, or null (e.g. source zipball).</summary>
+    /// <summary>Name of the release asset behind <see cref="DownloadUrl"/>, or null.</summary>
     public string? AssetName { get; set; }
 
-    /// <summary>Install mode the asset was selected for; decides how the download is applied.</summary>
+    /// <summary>Install mode of this copy; decides where the installer is staged.</summary>
     public InstallMode Mode { get; set; }
 
     /// <summary>File size in bytes (from GitHub asset metadata). Used for progress display.</summary>

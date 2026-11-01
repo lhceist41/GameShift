@@ -410,4 +410,57 @@ public class InstallerUpdateTests
 
         Assert.Empty(Directory.GetFileSystemEntries(target));
     }
+
+    [Fact]
+    public void TryOpenFolder_CreatesAMissingFolderInTheParent_OrReportsItMissing()
+    {
+        using var temp = new TempPath();
+
+        Assert.True(InstallerUpdate.TryOpenFolder(temp.Path, "GameShift", create: false, out var existed, out _));
+        Assert.False(existed);
+        Assert.False(Directory.Exists(Path.Combine(temp.Path, "GameShift")));
+
+        Assert.True(InstallerUpdate.TryOpenFolder(temp.Path, "GameShift", create: true, out var exists, out _));
+        Assert.True(exists);
+        Assert.True(Directory.Exists(Path.Combine(temp.Path, "GameShift")));
+    }
+
+    [Fact]
+    public void TryOpenFolder_FileInPlaceOfTheFolder_IsRefused()
+    {
+        using var temp = new TempPath();
+        File.WriteAllText(Path.Combine(temp.Path, "GameShift"), "file");
+
+        Assert.False(InstallerUpdate.TryOpenFolder(temp.Path, "GameShift", create: true, out _, out var refusal));
+        Assert.NotNull(refusal);
+    }
+
+    [Fact]
+    public void RemoveFolderIfEmpty_RemovesOnlyAnEmptyFolder()
+    {
+        using var temp = new TempPath();
+        var empty = Directory.CreateDirectory(Path.Combine(temp.Path, "empty")).FullName;
+        var full = Directory.CreateDirectory(Path.Combine(temp.Path, "full")).FullName;
+        File.WriteAllText(Path.Combine(full, "keep.txt"), "keep");
+
+        InstallerUpdate.RemoveFolderIfEmpty(temp.Path, "empty");
+        InstallerUpdate.RemoveFolderIfEmpty(temp.Path, "full");
+
+        Assert.False(Directory.Exists(empty));
+        Assert.True(File.Exists(Path.Combine(full, "keep.txt")));
+    }
+
+    [Fact]
+    public void RemoveFolderIfEmpty_JunctionToAnEmptyFolder_IsLeftInPlace()
+    {
+        using var temp = new TempPath();
+        var target = Directory.CreateDirectory(Path.Combine(temp.Path, "victim")).FullName;
+        var link = Path.Combine(temp.Path, "GameShift");
+        using var junction = UserDataFolderTests.Junction(link, target);
+
+        InstallerUpdate.RemoveFolderIfEmpty(temp.Path, "GameShift");
+
+        Assert.True((File.GetAttributes(link) & FileAttributes.ReparsePoint) != 0);
+        Assert.True(Directory.Exists(target));
+    }
 }

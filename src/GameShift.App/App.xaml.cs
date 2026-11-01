@@ -470,24 +470,6 @@ public partial class App : Application
     {
         try
         {
-            // Check if an update was already downloaded (e.g., from a previous session)
-            bool alreadyStaged = GameShift.Core.Updates.UpdateCoordinator.FindStagedUpdateFromPreviousSession() != null;
-
-            if (alreadyStaged)
-            {
-                // We have a staged update - check what version it is
-                var updateInfo = await GameShift.Core.Updates.UpdateChecker.CheckForUpdateAsync();
-                if (updateInfo != null)
-                {
-                    WriteDiag($"Step f3: Staged update found for v{updateInfo.LatestVersion}");
-                    await startupNotices;
-                    var updateWindow = new UpdateWindow(updateInfo, alreadyStaged: true);
-                    if (_mainWindow != null) updateWindow.Owner = _mainWindow;
-                    updateWindow.ShowDialog();
-                    return true;
-                }
-            }
-
             // Check GitHub for a newer release
             var update = await GameShift.Core.Updates.UpdateChecker.CheckForUpdateAsync();
             if (update == null)

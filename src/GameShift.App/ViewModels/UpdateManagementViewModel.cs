@@ -82,26 +82,6 @@ public class UpdateManagementViewModel : INotifyPropertyChanged
     {
         try
         {
-            // If update was already downloaded via startup popup, show "ready" state
-            var staged = UpdateCoordinator.FindStagedUpdateFromPreviousSession();
-            if (staged != null)
-            {
-                var stagedUpdate = await UpdateChecker.CheckForUpdateAsync();
-                if (stagedUpdate != null)
-                {
-                    _pendingUpdate = stagedUpdate;
-                    _staged = staged;
-                    _ = Application.Current.Dispatcher.BeginInvoke(() =>
-                    {
-                        IsUpdateReady = true;
-                        ShowUpdateBanner = true;
-                        UpdateMessage = $"GameShift v{stagedUpdate.LatestVersion} is downloaded and ready to install";
-                        UpdateUrl = stagedUpdate.ReleaseUrl;
-                    });
-                    return;
-                }
-            }
-
             var update = await UpdateChecker.CheckForUpdateAsync();
             if (update != null)
             {

@@ -14,8 +14,8 @@ public class UpdateAssetSelectorTests
     [Fact]
     public void Installed_PicksInstaller_WhenBothAssetsPresent()
     {
-        Assert.Same(Installer, UpdateAssetSelector.Select([Portable, Installer], InstallMode.Installed));
-        Assert.Same(Installer, UpdateAssetSelector.Select([Installer, Portable], InstallMode.Installed));
+        Assert.Same(Installer, UpdateAssetSelector.Select([Portable, Installer]));
+        Assert.Same(Installer, UpdateAssetSelector.Select([Installer, Portable]));
     }
 
     [Fact]
@@ -24,7 +24,7 @@ public class UpdateAssetSelectorTests
         // Without the installer there is nothing an installed copy may run.
         var assets = new[] { Portable, Asset("GameShift.exe"), Asset("tools.exe"), Asset("GameShift.zip") };
 
-        Assert.Null(UpdateAssetSelector.Select(assets, InstallMode.Installed));
+        Assert.Null(UpdateAssetSelector.Select(assets));
     }
 
     [Fact]
@@ -32,43 +32,27 @@ public class UpdateAssetSelectorTests
     {
         var installer = Asset("gameshift-setup.EXE");
 
-        Assert.Same(installer, UpdateAssetSelector.Select([Portable, installer], InstallMode.Installed));
+        Assert.Same(installer, UpdateAssetSelector.Select([Portable, installer]));
     }
 
     [Fact]
-    public void Portable_PicksPortableExe_WhenBothAssetsPresent()
+    public void BothAssets_PicksTheInstaller_ForAPortableCopyToo()
     {
-        Assert.Same(Portable, UpdateAssetSelector.Select([Portable, Installer], InstallMode.Portable));
-        Assert.Same(Portable, UpdateAssetSelector.Select([Installer, Portable], InstallMode.Portable));
+        Assert.Same(Installer, UpdateAssetSelector.Select([Portable, Installer]));
+        Assert.Same(Installer, UpdateAssetSelector.Select([Installer, Portable]));
     }
 
     [Fact]
-    public void Portable_AcceptsLegacyExeName()
+    public void OnlyThePortableExe_IsNothingToUpdateWith()
     {
-        var legacy = Asset("GameShift.exe");
-
-        Assert.Same(legacy, UpdateAssetSelector.Select([Installer, legacy], InstallMode.Portable));
+        Assert.Null(UpdateAssetSelector.Select([Portable]));
     }
 
     [Fact]
-    public void Portable_NeverTakesTheInstallerAsExeFallback()
+    public void NeverAnotherExeOrAZip()
     {
-        // The portable path moves the download over the running exe; the installer there would break the app.
-        Assert.Null(UpdateAssetSelector.Select([Installer], InstallMode.Portable));
+        var assets = new[] { Asset("GameShift.exe"), Asset("Other.exe"), Asset("GameShift.zip"), Asset("GameShift-Setup.zip") };
 
-        var other = Asset("Other.exe");
-        Assert.Same(other, UpdateAssetSelector.Select([Installer, other], InstallMode.Portable));
-
-        var zip = Asset("GameShift.zip");
-        Assert.Same(zip, UpdateAssetSelector.Select([Installer, zip], InstallMode.Portable));
-    }
-
-    [Fact]
-    public void Portable_PrefersExeFallbackOverZip()
-    {
-        var zip = Asset("GameShift.zip");
-        var other = Asset("Other.exe");
-
-        Assert.Same(other, UpdateAssetSelector.Select([zip, other], InstallMode.Portable));
+        Assert.Null(UpdateAssetSelector.Select(assets));
     }
 }

@@ -72,6 +72,23 @@ public static class InstallFolderTrust
         }
     }
 
+    /// <summary>
+    /// Reads a folder's security and evaluates it by the same rules, without an exe in it. Never
+    /// throws; anything unreadable, including a missing folder, is untrusted.
+    /// </summary>
+    public static InstallFolderTrustResult CheckFolder(string folderPath)
+    {
+        try
+        {
+            var (folder, ancestors) = ReadFolder(folderPath);
+            return EvaluateFolder(folder, ancestors);
+        }
+        catch (Exception ex)
+        {
+            return InstallFolderTrustResult.Untrusted($"could not read the folder's security: {ex.Message}");
+        }
+    }
+
     public static InstallFolderTrustResult Evaluate(InstallFolderDescriptor descriptor)
     {
         var reasons = new List<string>();
@@ -81,11 +98,26 @@ public static class InstallFolderTrust
             new[] { descriptor.Folder.OwnerSid, descriptor.Exe.OwnerSid }, reasons);
         EvaluateObject("exe", descriptor.Exe, expectDirectory: false,
             new[] { descriptor.Exe.OwnerSid }, reasons);
-
-        for (int i = 0; i < descriptor.Ancestors.Count; i++)
-            EvaluateAncestor($"folder {i + 1} above the install", descriptor.Ancestors[i], reasons);
+        EvaluateAncestors("the install", descriptor.Ancestors, reasons);
 
         return new InstallFolderTrustResult(reasons.Count == 0, reasons);
+    }
+
+    /// <summary>A folder alone: the install folder rules without the exe, and every folder above it.</summary>
+    public static InstallFolderTrustResult EvaluateFolder(
+        JournalObjectSecurity folder, IReadOnlyList<JournalObjectSecurity> ancestors)
+    {
+        var reasons = new List<string>();
+        EvaluateObject("folder", folder, expectDirectory: true, new[] { folder.OwnerSid }, reasons);
+        EvaluateAncestors("the folder", ancestors, reasons);
+
+        return new InstallFolderTrustResult(reasons.Count == 0, reasons);
+    }
+
+    private static void EvaluateAncestors(string below, IReadOnlyList<JournalObjectSecurity> ancestors, List<string> reasons)
+    {
+        for (int i = 0; i < ancestors.Count; i++)
+            EvaluateAncestor($"folder {i + 1} above {below}", ancestors[i], reasons);
     }
 
     private static void EvaluateObject(
@@ -180,6 +212,23 @@ public static class InstallFolderTrust
         using (var exeHandle = OpenForRead(fullPath))
             exeSecurity = WindowsJournalSecurity.Describe(exeHandle);
 
+        return new InstallFolderDescriptor(folderSecurity, exeSecurity, ReadAncestors(folder));
+    }
+
+    /// <summary>A folder's security and that of every folder above it, read like <see cref="Read"/>.</summary>
+    internal static (JournalObjectSecurity Folder, IReadOnlyList<JournalObjectSecurity> Ancestors) ReadFolder(string folderPath)
+    {
+        var folder = Path.TrimEndingDirectorySeparator(Path.GetFullPath(folderPath));
+
+        JournalObjectSecurity folderSecurity;
+        using (var folderHandle = OpenForRead(folder))
+            folderSecurity = WindowsJournalSecurity.Describe(folderHandle);
+
+        return (folderSecurity, ReadAncestors(folder));
+    }
+
+    private static List<JournalObjectSecurity> ReadAncestors(string folder)
+    {
         var ancestors = new List<JournalObjectSecurity>();
         for (var parent = Path.GetDirectoryName(folder); parent != null; parent = Path.GetDirectoryName(parent))
         {
@@ -187,7 +236,7 @@ public static class InstallFolderTrust
             ancestors.Add(WindowsJournalSecurity.Describe(handle));
         }
 
-        return new InstallFolderDescriptor(folderSecurity, exeSecurity, ancestors);
+        return ancestors;
     }
 
     private static SafeFileHandle OpenForRead(string path)

@@ -10,9 +10,9 @@ using Serilog;
 namespace GameShift.Core.Updates;
 
 /// <summary>
-/// Updates an installed copy by running the release installer. The installer is downloaded into a new
-/// folder under &lt;install dir&gt;\updates, which inherits the install folder's admin-only ACL (Program
-/// Files), so nothing a standard user writes can take its place. Nothing else is written: the expected
+/// Updates GameShift by running the release installer. The installer is downloaded into a new folder
+/// under &lt;install dir&gt;\updates (for a portable copy, the default install folder in Program Files),
+/// which inherits the install folder's admin-only ACL, so nothing a standard user writes can take its place. Nothing else is written: the expected
 /// hash stays in memory, and the staged file is hashed again right before it runs. Folders are created
 /// and removed through handles that never follow a junction or link, so a reparse point in the updates
 /// folder is refused instead of being written or deleted through.
@@ -206,6 +206,83 @@ public static class InstallerUpdate
         catch (Exception ex)
         {
             Log.Debug(ex, "InstallerUpdate: Cleanup of {Root} incomplete (non-fatal)", root);
+        }
+    }
+
+    /// <summary>
+    /// Opens &lt;parent&gt;\&lt;name&gt; through a handle on <paramref name="parent"/>, creating it there when
+    /// <paramref name="create"/> is set and it is missing. False with the reason when the parent or the
+    /// folder is a reparse point, not a folder, or cannot be opened or created; true with
+    /// <paramref name="exists"/> false when it is missing and was not to be created.
+    /// </summary>
+    internal static bool TryOpenFolder(string parent, string name, bool create, out bool exists, out string? refusal)
+    {
+        exists = false;
+        using var parentHandle = OpenPlainFolder(parent, FolderAccess, ShareAll, out refusal, out _);
+        if (parentHandle == null)
+        {
+            refusal = $"{parent} {refusal}";
+            return false;
+        }
+
+        var handle = HandleRelative.Open(parentHandle, name, FolderAccess, ShareAll,
+            create ? NativeInterop.FILE_OPEN_IF : NativeInterop.FILE_OPEN,
+            NativeInterop.FILE_DIRECTORY_FILE | EntryOptions, out var status);
+        if (handle == null)
+        {
+            if (!create && status == NativeInterop.STATUS_OBJECT_NAME_NOT_FOUND)
+                return true;
+
+            refusal = $"{Path.Combine(parent, name)} could not be {(create ? "created" : "opened")} (status 0x{status:X8})";
+            return false;
+        }
+
+        using var folder = CheckPlain(handle, requireDirectory: true, out _, out refusal);
+        if (folder == null)
+        {
+            refusal = $"{Path.Combine(parent, name)} {refusal}";
+            return false;
+        }
+
+        exists = true;
+        return true;
+    }
+
+    /// <summary>
+    /// Removes &lt;parent&gt;\&lt;name&gt; if it is an empty folder, through a handle on
+    /// <paramref name="parent"/>; a reparse point there is left in place. Best effort.
+    /// </summary>
+    internal static void RemoveFolderIfEmpty(string parent, string name)
+    {
+        var path = Path.Combine(parent, name);
+        try
+        {
+            using var parentHandle = OpenPlainFolder(parent, FolderAccess, ShareAll, out var refusal, out var missing);
+            if (parentHandle == null)
+            {
+                if (!missing)
+                    Log.Warning("InstallerUpdate: Not removing {Path}: {Parent} {Reason}", path, parent, refusal);
+                return;
+            }
+
+            using var folder = OpenPlainEntry(parentHandle, name, FolderAccess | NativeInterop.DELETE, ShareReadWrite,
+                NativeInterop.FILE_OPEN, NativeInterop.FILE_DIRECTORY_FILE, out _, out refusal);
+            if (folder == null)
+            {
+                Log.Debug("InstallerUpdate: Not removing {Path}: {Reason}", path, refusal);
+                return;
+            }
+
+            // Refused while anything is in the folder.
+            var status = HandleRelative.MarkForDeletion(folder);
+            if (status == 0)
+                Log.Debug("InstallerUpdate: Removed the empty folder {Path}", path);
+            else
+                Log.Debug("InstallerUpdate: {Path} not removed (status 0x{Status:X8})", path, status);
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "InstallerUpdate: Could not remove {Path} (non-fatal)", path);
         }
     }
 

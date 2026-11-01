@@ -29,8 +29,7 @@ public partial class UpdateWindow : Window
     /// Creates a new UpdateWindow for the given update info.
     /// </summary>
     /// <param name="updateInfo">Update details from UpdateChecker.</param>
-    /// <param name="alreadyStaged">True if the update file is already downloaded and staged.</param>
-    public UpdateWindow(UpdateInfo updateInfo, bool alreadyStaged = false)
+    public UpdateWindow(UpdateInfo updateInfo)
     {
         _updateInfo = updateInfo;
         InitializeComponent();
@@ -51,21 +50,12 @@ public partial class UpdateWindow : Window
 
         // If no download URL at all, fall back to opening the release page in the browser.
         // The button always says "Download & Install" - the fallback is transparent to the user.
-        // (UpdateChecker now resolves .exe > .zip > zipball, so this is rare.)
 
         // Show urgent banner for critical updates (crash fixes, data loss, security)
         if (IsCriticalUpdate(updateInfo.ReleaseNotes))
         {
             UrgentBanner.Visibility = System.Windows.Visibility.Visible;
             UrgentBannerText.Text = "\u26a0 Critical update - fixes crashes and performance issues. Update strongly recommended.";
-        }
-
-        // If update is already staged, go straight to Ready state
-        if (alreadyStaged)
-        {
-            _staged = UpdateCoordinator.FindStagedUpdateFromPreviousSession();
-            if (_staged != null)
-                ShowReadyState();
         }
     }
 

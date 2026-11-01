@@ -59,15 +59,15 @@ public class UpdateCheckerParseTests
     }
 
     [Fact]
-    public void Portable_SelectsPortableExeWithItsOwnSizeAndDigest()
+    public void Portable_SelectsInstallerWithItsOwnSizeAndDigest()
     {
-        var info = UpdateChecker.ParseRelease(Release("v3.9.0", SetupAsset, AppAsset), Current, InstallMode.Portable);
+        var info = UpdateChecker.ParseRelease(Release("v3.9.0", AppAsset, SetupAsset), Current, InstallMode.Portable);
 
         Assert.NotNull(info);
-        Assert.Equal(AppUrl, info!.DownloadUrl);
-        Assert.Equal(290_000_000L, info.DownloadSize);
-        Assert.Equal(AppDigest, info.ExpectedSha256);
-        Assert.Equal("GameShift.App.exe", info.AssetName);
+        Assert.Equal(SetupUrl, info!.DownloadUrl);
+        Assert.Equal(70_000_000L, info.DownloadSize);
+        Assert.Equal(SetupDigest, info.ExpectedSha256);
+        Assert.Equal("GameShift-Setup.exe", info.AssetName);
         Assert.Equal(InstallMode.Portable, info.Mode);
     }
 
@@ -84,14 +84,15 @@ public class UpdateCheckerParseTests
     }
 
     [Fact]
-    public void Portable_WithOnlyInstallerAsset_FallsBackToZipballWithoutTheInstallerDigest()
+    public void Portable_WithoutInstallerAsset_HasNoDownloadAndNoZipballFallback()
     {
-        var info = UpdateChecker.ParseRelease(Release("v3.9.0", SetupAsset), Current, InstallMode.Portable);
+        var info = UpdateChecker.ParseRelease(Release("v3.9.0", AppAsset), Current, InstallMode.Portable);
 
         Assert.NotNull(info);
-        Assert.Equal(ZipballUrl, info!.DownloadUrl);
+        Assert.Null(info!.DownloadUrl);
         Assert.Null(info.ExpectedSha256);
         Assert.Null(info.AssetName);
+        Assert.Equal("https://github.com/lhceist41/GameShift/releases/tag/v3.9.0", info.ReleaseUrl);
     }
 
     [Theory]

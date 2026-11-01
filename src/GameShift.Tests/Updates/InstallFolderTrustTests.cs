@@ -113,6 +113,8 @@ public class InstallFolderTrustTests
     [InlineData("(A;;0x4;;;BU)")]         // Users, add subfolder
     [InlineData("(A;;0x40;;;BU)")]        // Users, delete child
     [InlineData("(A;;WD;;;AU)")]          // Authenticated Users, WRITE_DAC
+    [InlineData("(A;;WO;;;AU)")]          // Authenticated Users, WRITE_OWNER
+    [InlineData("(A;;0x10;;;BU)")]        // Users, FILE_WRITE_EA
     [InlineData("(A;;GA;;;BU)")]          // Users, generic all
     [InlineData("(A;OICIIO;GW;;;BU)")]    // inherit-only: decides what new files in the folder allow
     public void FolderGrantingAWriteRightToAnyoneElse_IsNotTrusted(string ace)
@@ -167,6 +169,12 @@ public class InstallFolderTrustTests
         var noDacl = new JournalObjectSecurity("S-1-5-32-544", null, false, IsDirectory: true, IsReparsePoint: false, LinkCount: 1);
 
         Assert.Contains(InstallFolderTrust.Evaluate(Install(folder: noDacl)).Reasons, r => r.Contains("no DACL"));
+    }
+
+    [Fact]
+    public void EmptyDacl_IsTrusted_SinceItGrantsNobodyAnything()
+    {
+        Assert.True(InstallFolderTrust.Evaluate(Install(folder: Folder(dacl: "D:P"))).Trusted);
     }
 
     [Theory]
@@ -246,5 +254,105 @@ public class InstallFolderTrustTests
         Assert.True(descriptor.Folder.IsDirectory);
         Assert.False(descriptor.Exe.IsDirectory);
         Assert.All(descriptor.Ancestors, a => Assert.True(a.IsDirectory));
+    }
+
+    // A folder alone, as for the default install folder a portable copy stages the installer in and
+    // the Program Files folder above it.
+
+    private static readonly JournalObjectSecurity[] ProgramFilesAncestors = { FromSddl(ProgramFilesSddl), FromSddl(DriveRootSddl) };
+
+    [Fact]
+    public void FolderOnly_RealProgramFilesSubfolder_AndProgramFilesItself_AreTrusted()
+    {
+        var subfolder = InstallFolderTrust.EvaluateFolder(Folder(), ProgramFilesAncestors);
+        var programFiles = InstallFolderTrust.EvaluateFolder(FromSddl(ProgramFilesSddl), new[] { FromSddl(DriveRootSddl) });
+
+        Assert.True(subfolder.Trusted, string.Join("; ", subfolder.Reasons));
+        Assert.True(programFiles.Trusted, string.Join("; ", programFiles.Reasons));
+    }
+
+    [Fact]
+    public void FolderOnly_OwnedByAUser_IsNotTrusted_AlsoThroughCreatorOwner()
+    {
+        var result = InstallFolderTrust.EvaluateFolder(Folder(owner: AUser), ProgramFilesAncestors);
+
+        Assert.False(result.Trusted);
+        Assert.Contains(result.Reasons, r => r.Contains("folder is owned by " + AUser));
+        Assert.Contains(result.Reasons, r => r.Contains("resolved to " + AUser));
+    }
+
+    [Theory]
+    [InlineData("(A;;0x1301bf;;;AU)")]    // Authenticated Users, modify (a folder under the drive root)
+    [InlineData("(A;;0x2;;;IU)")]         // INTERACTIVE, FILE_WRITE_DATA
+    [InlineData("(A;;GW;;;WD)")]          // Everyone, generic write
+    [InlineData("(A;OICIIO;GW;;;BU)")]    // inherit-only: decides what the staging folders allow
+    public void FolderOnly_WritableByAnyoneElse_IsNotTrusted(string ace)
+    {
+        Assert.False(InstallFolderTrust.EvaluateFolder(Folder(dacl: InstallFolderDacl + ace), ProgramFilesAncestors).Trusted);
+    }
+
+    [Fact]
+    public void FolderOnly_ParentAUserCanMoveOrOwns_IsNotTrusted()
+    {
+        var movable = InstallFolderTrust.EvaluateFolder(Folder(), new[] { FromSddl(ProgramFilesSddl + "(A;;0x40;;;BU)"), FromSddl(DriveRootSddl) });
+        var userOwned = InstallFolderTrust.EvaluateFolder(Folder(),
+            new[] { FromSddl(ProgramFilesSddl.Replace("O:" + TI, "O:" + AUser)), FromSddl(DriveRootSddl) });
+
+        Assert.Contains(movable.Reasons, r => r.Contains("folder 1 above the folder"));
+        Assert.Contains(userOwned.Reasons, r => r.Contains("folder 1 above the folder is owned by " + AUser));
+    }
+
+    [Fact]
+    public void FolderOnly_ReparsePoint_IsNotTrusted()
+    {
+        var junction = FromSddl("O:BA" + InstallFolderDacl, isReparsePoint: true);
+
+        Assert.Contains(InstallFolderTrust.EvaluateFolder(junction, ProgramFilesAncestors).Reasons, r => r.Contains("reparse point"));
+    }
+
+    [Fact]
+    public void CheckFolder_MissingFolder_IsNotTrusted_AndDoesNotThrow()
+    {
+        using var temp = new TempPath();
+
+        Assert.False(InstallFolderTrust.CheckFolder(Path.Combine(temp.Path, "missing")).Trusted);
+    }
+
+    [Fact]
+    public void CheckFolder_ReadsTheFolderItself_NeverWhatAJunctionPointsTo()
+    {
+        using var temp = new TempPath();
+        var real = Path.Combine(temp.Path, "real");
+        Directory.CreateDirectory(real);
+        var link = Path.Combine(temp.Path, "GameShift");
+        using var junction = UserDataFolderTests.Junction(link, real);
+
+        var result = InstallFolderTrust.CheckFolder(link);
+
+        Assert.False(result.Trusted);
+        Assert.Contains(result.Reasons, r => r == "the folder is a reparse point");
+    }
+
+    [Fact]
+    public void CheckFolder_AFolderTheUserMade_IsNotTrusted()
+    {
+        // The test runs unelevated, so its temp folder is owned by, and writable for, the user.
+        using var temp = new TempPath();
+
+        var result = InstallFolderTrust.CheckFolder(temp.Path);
+
+        Assert.False(result.Trusted);
+        Assert.Contains(result.Reasons, r => r.StartsWith("the folder "));
+    }
+
+    [Fact]
+    public void ReadFolder_DescribesEveryFolderUpToTheDriveRoot()
+    {
+        using var temp = new TempPath();
+
+        var (folder, ancestors) = InstallFolderTrust.ReadFolder(temp.Path + "\\");
+
+        Assert.Equal(temp.Path.TrimEnd('\\').Count(c => c == '\\'), ancestors.Count);
+        Assert.True(folder.IsDirectory);
     }
 }
