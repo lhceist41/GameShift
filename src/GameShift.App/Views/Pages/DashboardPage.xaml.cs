@@ -4,8 +4,10 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media.Animation;
+using GameShift.App.Services;
 using GameShift.App.ViewModels;
 using GameShift.App.Views;
+using GameShift.Core.Presentation;
 
 namespace GameShift.App.Views.Pages;
 
@@ -93,7 +95,7 @@ public partial class DashboardPage : Page
         (DataContext as DashboardViewModel)?.Dpc.DismissDpcSpikeAlert();
     }
 
-    private void OnDisableVbsClicked(object sender, RoutedEventArgs e)
+    private async void OnDisableVbsClicked(object sender, RoutedEventArgs e)
     {
         var vm = DataContext as DashboardViewModel;
         if (vm == null) return;
@@ -115,24 +117,17 @@ public partial class DashboardPage : Page
 
         // Warn if disabling the hypervisor will break Hyper-V / WSL2 / Docker (same check the
         // DPC Doctor BCD path uses). Informed consent, not a hard block - the user may not care.
-        var depMsg = "";
+        string? dependencyWarning = null;
         try
         {
             var deps = new GameShift.Core.SystemTweaks.KernelTuningManager().CheckHypervisorDependencies();
             if (deps.HasDependencies)
-                depMsg = "\n\n" + deps.Summary + " They will stop working until you Re-enable Memory Integrity and reboot.";
+                dependencyWarning = deps.Summary;
         }
         catch { /* dependency check is best-effort */ }
 
-        var result = MessageBox.Show(
-            "This will disable Memory Integrity (VBS/HVCI) and schedule a reboot in 30 seconds." + depMsg +
-            "\n\nWindows will not turn Memory Integrity back on for you. Turn it back on in Windows Security > " +
-            "Device security > Core isolation, or with Restore All in GameShift's Settings.\n\nContinue?",
-            "Disable Memory Integrity",
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Warning);
-
-        if (result == MessageBoxResult.Yes)
+        var choice = await RestartConfirm.AskAsync(this, RestartPrompts.TurnOffMemoryIntegrity(dependencyWarning));
+        if (choice == RestartChoice.ApplyAndRestartNow)
         {
             if (vm.Vbs.DisableVbsHvci())
             {
@@ -146,22 +141,18 @@ public partial class DashboardPage : Page
         }
     }
 
-    private void OnFixAmdTimerClicked(object sender, RoutedEventArgs e)
+    private async void OnFixAmdTimerClicked(object sender, RoutedEventArgs e)
     {
         var vm = DataContext as DashboardViewModel;
         if (vm == null) return;
 
-        var confirm = MessageBox.Show(
-            "Remove the leftover platform-timer setting and restart now? This restores your AMD CPU's " +
-            "efficient per-core timer. Windows will restart in 30 seconds.",
-            "Fix AMD Timer Setting",
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Question);
-        if (confirm != MessageBoxResult.Yes) return;
+        var choice = await RestartConfirm.AskAsync(this, RestartPrompts.FixAmdTimer());
+        if (choice == RestartChoice.Cancel) return;
 
         if (vm.AmdTimer.Fix())
         {
-            GameShift.Core.Optimization.VbsHvciToggle.ScheduleReboot("GameShift: restoring the AMD per-core timer.");
+            if (choice == RestartChoice.ApplyAndRestartNow)
+                GameShift.Core.Optimization.VbsHvciToggle.ScheduleReboot("GameShift: restoring the AMD per-core timer.");
         }
         else
         {
@@ -175,19 +166,13 @@ public partial class DashboardPage : Page
         (DataContext as DashboardViewModel)?.AmdTimer.DismissBanner();
     }
 
-    private void OnReEnableVbsClicked(object sender, RoutedEventArgs e)
+    private async void OnReEnableVbsClicked(object sender, RoutedEventArgs e)
     {
         var vm = DataContext as DashboardViewModel;
         if (vm == null) return;
 
-        var result = MessageBox.Show(
-            "This will re-enable Memory Integrity (VBS/HVCI) and schedule a reboot in 30 seconds.\n\n" +
-            "FACEIT Anti-Cheat and Riot Vanguard's On-Demand mode require it.\n\nContinue?",
-            "Re-enable Memory Integrity",
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Question);
-
-        if (result == MessageBoxResult.Yes)
+        var choice = await RestartConfirm.AskAsync(this, RestartPrompts.TurnOnMemoryIntegrity());
+        if (choice == RestartChoice.ApplyAndRestartNow)
         {
             if (vm.Vbs.ReEnableVbsHvci())
             {

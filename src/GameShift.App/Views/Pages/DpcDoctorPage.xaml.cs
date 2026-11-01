@@ -1,8 +1,10 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using GameShift.App.Services;
 using GameShift.App.ViewModels;
 using GameShift.Core.Monitoring;
+using GameShift.Core.Presentation;
 
 namespace GameShift.App.Views.Pages;
 
@@ -69,15 +71,10 @@ public partial class DpcDoctorPage : Page
     private void OnDismissSuccessBanner(object sender, RoutedEventArgs e) =>
         (DataContext as DpcDoctorViewModel)?.DismissSuccessBanner();
 
-    private void OnRestartNowClicked(object sender, RoutedEventArgs e)
+    private async void OnRestartNowClicked(object sender, RoutedEventArgs e)
     {
-        var result = MessageBox.Show(
-            "This will restart your computer in 10 seconds.\n\nAre you sure?",
-            "Restart Required",
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Warning);
-
-        if (result != MessageBoxResult.Yes)
+        var choice = await RestartConfirm.AskAsync(this, RestartPrompts.FinishLatencyFixes());
+        if (choice != RestartChoice.ApplyAndRestartNow)
             return;
 
         System.Diagnostics.Process.Start(

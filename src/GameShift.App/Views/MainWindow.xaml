@@ -98,5 +98,8 @@
                            Margin="0,4,0,0" HorizontalAlignment="Center"/>
             </StackPanel>
         </Border>
+
+        <!-- Host for WPF-UI ContentDialogs (the restart confirm); last, so a dialog covers the window. -->
+        <ContentPresenter x:Name="DialogHostPresenter"/>
     </Grid>
 </Window>

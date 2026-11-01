@@ -44,7 +44,8 @@ public sealed record ModuleRevert(string ModuleName, ModuleRevertKind Kind, stri
 /// <param name="Reverts">Reverts in the order they ran (LIFO); empty until deactivation.</param>
 /// <param name="EndedUtc">When deactivation finished; null for an activation outcome.</param>
 /// <param name="RevertedByRecovery">
-/// Crash recovery had already restored the session, so deactivation reverted nothing itself.
+/// Crash recovery ran during this session, so deactivation reverted nothing itself; per-module
+/// results of the recovery are not part of this outcome.
 /// </param>
 public sealed record SessionOutcome(
     DateTime? StartedUtc,

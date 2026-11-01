@@ -2,10 +2,12 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using GameShift.App.Services;
 using GameShift.App.ViewModels;
 using GameShift.Core.Config;
 using GameShift.Core.Monitoring;
 using GameShift.Core.Optimization;
+using GameShift.Core.Presentation;
 using GameShift.Core.SystemTweaks;
 using GameShift.Core.GameProfiles;
 
@@ -47,15 +49,10 @@ public partial class SettingsPage : Page
         (DataContext as SettingsViewModel)?.SaveSettings();
     }
 
-    private void OnReEnableVbsClicked(object sender, RoutedEventArgs e)
+    private async void OnReEnableVbsClicked(object sender, RoutedEventArgs e)
     {
-        var result = MessageBox.Show(
-            "This will re-enable Memory Integrity (VBS/HVCI) and schedule a reboot in 30 seconds.\n\nContinue?",
-            "Re-enable Memory Integrity",
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Question);
-
-        if (result == MessageBoxResult.Yes)
+        var choice = await RestartConfirm.AskAsync(this, RestartPrompts.TurnOnMemoryIntegrity());
+        if (choice == RestartChoice.ApplyAndRestartNow)
         {
             if ((DataContext as SettingsViewModel)?.ReEnableVbsHvci() == true)
             {
