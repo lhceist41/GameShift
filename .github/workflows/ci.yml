@@ -26,10 +26,10 @@ jobs:
       - name: Check out
         uses: actions/checkout@v4
 
-      - name: Set up .NET 9
+      - name: Set up .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 9.0.x
+          global-json-file: global.json
 
       # Repo policy: zero warnings. Enforce it so a new warning fails the build here
       # instead of slipping into master.
@@ -54,10 +54,10 @@ jobs:
       - name: Check out
         uses: actions/checkout@v4
 
-      - name: Set up .NET 9
+      - name: Set up .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 9.0.x
+          global-json-file: global.json
 
       - name: Build
         run: dotnet build --nologo --verbosity minimal
@@ -78,10 +78,10 @@ jobs:
       - name: Check out
         uses: actions/checkout@v4
 
-      - name: Set up .NET 9
+      - name: Set up .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 9.0.x
+          global-json-file: global.json
 
       - name: Publish
         run: dotnet publish src/GameShift.App/GameShift.App.csproj -c Release -r win-x64 --nologo
@@ -89,7 +89,7 @@ jobs:
       - name: Verify artifact
         shell: pwsh
         run: |
-          $exe = "src/GameShift.App/bin/Release/net9.0-windows10.0.19041.0/win-x64/publish/GameShift.App.exe"
+          $exe = "src/GameShift.App/bin/Release/net10.0-windows10.0.19041.0/win-x64/publish/GameShift.App.exe"
           if (-not (Test-Path $exe)) { throw "GameShift.App.exe missing from publish output" }
           $vi = (Get-Item $exe).VersionInfo
           Write-Host "Published GameShift.App.exe $($vi.FileVersion) ($([math]::Round((Get-Item $exe).Length / 1MB)) MB)"
@@ -99,7 +99,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: GameShift.App.exe
-          path: src/GameShift.App/bin/Release/net9.0-windows10.0.19041.0/win-x64/publish/GameShift.App.exe
+          path: src/GameShift.App/bin/Release/net10.0-windows10.0.19041.0/win-x64/publish/GameShift.App.exe
           retention-days: 14
 
   # The installer build: a publish that keeps its native libraries next to the exe instead of
@@ -112,10 +112,10 @@ jobs:
       - name: Check out
         uses: actions/checkout@v4
 
-      - name: Set up .NET 9
+      - name: Set up .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 9.0.x
+          global-json-file: global.json
 
       # The installed app finds its install folder under the installer's AppId. If the two drift
       # apart, installed copies silently fall back to the portable update path.

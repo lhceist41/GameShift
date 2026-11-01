@@ -4,8 +4,8 @@ Hey, thanks for taking a look. GameShift is a one-person project I build in my s
 
 ## Prerequisites
 
-- [.NET 9 SDK](https://dotnet.microsoft.com/download/dotnet/9.0)
-- [Visual Studio 2022](https://visualstudio.microsoft.com/) 17.12+ (or VS Code with C# Dev Kit)
+- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
+- [Visual Studio 2026](https://visualstudio.microsoft.com/) 18.0+ (or VS Code with C# Dev Kit)
 - Windows 10 21H2+ or Windows 11 22H2+ (x64)
 - Git
 - Administrator privileges (required to run and test optimizations)

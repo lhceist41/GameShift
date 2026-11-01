@@ -4,7 +4,7 @@
   <a href="https://github.com/lhceist41/GameShift/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/lhceist41/GameShift/ci.yml?style=for-the-badge&label=CI" alt="CI"/></a>
   <a href="https://github.com/lhceist41/GameShift/releases/latest"><img src="https://img.shields.io/github/v/release/lhceist41/GameShift?style=for-the-badge&color=00c853" alt="Latest Release"/></a>
   <img src="https://img.shields.io/github/downloads/lhceist41/GameShift/total?style=for-the-badge&color=00f0ff" alt="Total Downloads"/>
-  <img src="https://img.shields.io/badge/.NET-9-512bd4?style=for-the-badge&logo=dotnet&logoColor=white" alt=".NET 9"/>
+  <img src="https://img.shields.io/badge/.NET-10-512bd4?style=for-the-badge&logo=dotnet&logoColor=white" alt=".NET 10"/>
   <img src="https://img.shields.io/badge/Platform-Windows%2010%2F11-0078d4?style=for-the-badge&logo=windows&logoColor=white" alt="Windows 10/11"/>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/lhceist41/GameShift?style=for-the-badge" alt="License"/></a>
   <a href="https://github.com/lhceist41/GameShift/stargazers"><img src="https://img.shields.io/github/stars/lhceist41/GameShift?style=for-the-badge&color=f5c542" alt="Stars"/></a>
@@ -133,7 +133,7 @@ The Releases page also has `GameShift.App.exe`, which runs without installing. P
 
 ### Build from Source
 
-**Prerequisites:** .NET 9 SDK, Visual Studio 2022 17.12+, Windows 10 21H2+ (x64)
+**Prerequisites:** .NET 10 SDK, Visual Studio 2026 (18.0+), Windows 10 21H2+ (x64)
 
 ```bash
 git clone https://github.com/lhceist41/GameShift.git
@@ -152,7 +152,7 @@ dotnet run --project src/GameShift.App
 | **OS** | Windows 10 21H2+ / Windows 11 22H2+ |
 | **Architecture** | x64 |
 | **RAM** | 8 GB minimum, 16 GB+ recommended |
-| **Runtime** | .NET 9 (bundled with release builds) |
+| **Runtime** | .NET 10 (bundled with release builds) |
 | **Privileges** | Administrator |
 
 > [!NOTE]
