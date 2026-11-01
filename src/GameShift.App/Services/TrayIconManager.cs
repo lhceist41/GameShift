@@ -1,14 +1,19 @@
 using System;
+using System.ComponentModel;
 using System.Drawing;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Threading;
 using GameShift.App.Views;
 using GameShift.Core.Config;
 using GameShift.Core.Detection;
 using GameShift.Core.Monitoring;
 using GameShift.Core.Optimization;
+using GameShift.Core.Presentation;
 using Hardcodet.Wpf.TaskbarNotification;
+using Microsoft.Win32;
 using Serilog;
 
 namespace GameShift.App.Services;
@@ -27,7 +32,10 @@ public class TrayIconManager : IDisposable
     private readonly AppSettings _settings;
     private readonly DpcLatencyMonitor? _dpcMonitor;
     private readonly ILogger _logger;
-    private bool _hasDpcWarning;
+    private readonly TrayStatusTracker _status;
+    private readonly DispatcherTimer _refreshTimer;
+    private TrayIconTheme _iconTheme;
+    private TrayIconShape _shownShape;
     private bool _disposed;
 
     // Session tracking for post-session toast
@@ -75,10 +83,21 @@ public class TrayIconManager : IDisposable
         _dpcMonitor = dpcMonitor;
         _logger = SettingsManager.Logger;
 
+        _status = new TrayStatusTracker(
+            () => _orchestrator.IsOptimizing, () => _orchestrator.IsPaused, () => _engine.AppliedCount, TimeProvider.System);
+        _iconTheme = ReadIconTheme();
+
+        // The engine raises its last events just before the orchestrator records that the session
+        // ended, so a session can look active for a moment after it is over. Re-resolving on a
+        // timer while one is seen running corrects that and expires the DPC line.
+        _refreshTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
+        _refreshTimer.Tick += OnRefreshTimerTick;
+
         // Create TaskbarIcon using Hardcodet.NotifyIcon.Wpf (works on Win10 + Win11)
         _taskbarIcon = new TaskbarIcon();
         _taskbarIcon.ToolTipText = "GameShift - Idle";
-        _taskbarIcon.Icon = LoadIcon("tray-idle"); // initial assignment - no prior icon to dispose
+        _shownShape = TrayIconShape.Idle;
+        _taskbarIcon.Icon = LoadIcon(TrayIconSets.ResourceName(_shownShape, _iconTheme)); // initial assignment - no prior icon to dispose
         _taskbarIcon.ContextMenu = BuildContextMenu();
 
         // Single-click opens dashboard (same as double-click)
@@ -94,7 +113,7 @@ public class TrayIconManager : IDisposable
         _detector.GameStopped += OnGameStopped;
         _detector.AllGamesStopped += OnAllGamesStopped;
 
-        // Subscribe to DPC spike events for warning icon
+        // A DPC spike adds a line to the tooltip and the status item
         if (_dpcMonitor != null)
         {
             _dpcMonitor.DpcSpikeDetected += OnDpcSpikeForIcon;
@@ -105,6 +124,9 @@ public class TrayIconManager : IDisposable
         {
             _dpcMonitor.LatencySampled += OnLatencySampled;
         }
+
+        SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
+        SystemParameters.StaticPropertyChanged += OnSystemParameterChanged;
 
         _logger.Information("TrayIconManager initialized with Hardcodet TaskbarIcon");
     }
@@ -122,7 +144,64 @@ public class TrayIconManager : IDisposable
         if (streamInfo == null)
             throw new FileNotFoundException($"Tray icon resource not found: {iconName}.ico");
         using var stream = streamInfo.Stream;
-        return new Icon(stream);
+
+        // The notification area draws the small icon size for the current scaling (16 px at 100%,
+        // 24 px at 150%); without a size, Icon takes the large frame and Windows shrinks it blurry.
+        var size = GetSystemMetrics(SM_CXSMICON);
+        return size > 0 ? new Icon(stream, size, size) : new Icon(stream);
+    }
+
+    private const int SM_CXSMICON = 49;
+
+    [DllImport("user32.dll")]
+    private static extern int GetSystemMetrics(int index);
+
+    /// <summary>
+    /// The icon set for the taskbar: from the Windows light-theme setting, or in high contrast from
+    /// the theme's window background. A missing setting means the dark taskbar Windows 10 started with.
+    /// </summary>
+    private TrayIconTheme ReadIconTheme()
+    {
+        var lightTheme = false;
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+            lightTheme = key?.GetValue("SystemUsesLightTheme") is int value && value == 1;
+        }
+        catch (Exception ex)
+        {
+            _logger.Debug(ex, "Could not read the taskbar theme; using the dark taskbar icons");
+        }
+
+        var background = System.Windows.SystemColors.WindowColor;
+        return TrayIconSets.Choose(lightTheme, SystemParameters.HighContrast, background.R, background.G, background.B);
+    }
+
+    private void OnUserPreferenceChanged(object sender, UserPreferenceChangedEventArgs e)
+    {
+        Application.Current?.Dispatcher.InvokeAsync(RefreshIconTheme);
+    }
+
+    private void OnSystemParameterChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(SystemParameters.HighContrast))
+            Application.Current?.Dispatcher.InvokeAsync(RefreshIconTheme);
+    }
+
+    private void RefreshIconTheme()
+    {
+        if (_disposed) return;
+        try
+        {
+            var theme = ReadIconTheme();
+            if (theme == _iconTheme) return;
+            _iconTheme = theme;
+            SetTaskbarIcon(TrayIconSets.ResourceName(_shownShape, _iconTheme));
+        }
+        catch (Exception ex)
+        {
+            _logger.Warning(ex, "Failed to switch the tray icons to the taskbar theme");
+        }
     }
 
     /// <summary>
@@ -196,44 +275,39 @@ public class TrayIconManager : IDisposable
     }
 
     /// <summary>
-    /// Updates the tray icon, tooltip, and status menu item based on current state.
-    /// Priority order: error > warning (DPC during active session) > paused > active > idle.
+    /// Updates the tray icon, tooltip, and status menu item from <see cref="TrayState"/>.
     /// Must be called on the UI thread.
     /// </summary>
     private void UpdateTrayState()
     {
-        string iconName;
-        string tooltip;
-        string statusText;
+        var state = _status.Resolve();
 
-        if (_hasDpcWarning && _orchestrator.IsOptimizing)
+        if (state.Shape != _shownShape)
         {
-            iconName = "tray-warning";
-            tooltip = "GameShift - Warning (DPC)";
-            statusText = "GameShift: Warning";
+            SetTaskbarIcon(TrayIconSets.ResourceName(state.Shape, _iconTheme));
+            _shownShape = state.Shape;
         }
-        else if (_orchestrator.IsPaused)
-        {
-            iconName = "tray-idle";
-            tooltip = "GameShift - Paused";
-            statusText = "GameShift: Paused";
-        }
-        else if (_orchestrator.IsOptimizing)
-        {
-            iconName = "tray-active";
-            tooltip = "GameShift - Optimizing";
-            statusText = "GameShift: Optimizing";
-        }
+        if (_taskbarIcon.ToolTipText != state.ToolTip)
+            _taskbarIcon.ToolTipText = state.ToolTip;
+        UpdateStatusMenuItem(state.StatusText);
+
+        if (_orchestrator.IsOptimizing)
+            _refreshTimer.Start();
         else
-        {
-            iconName = "tray-idle";
-            tooltip = "GameShift - Idle";
-            statusText = "GameShift: Idle";
-        }
+            _refreshTimer.Stop();
+    }
 
-        SetTaskbarIcon(iconName);
-        _taskbarIcon.ToolTipText = tooltip;
-        UpdateStatusMenuItem(statusText);
+    private void OnRefreshTimerTick(object? sender, EventArgs e)
+    {
+        if (_disposed) return;
+        try
+        {
+            UpdateTrayState();
+        }
+        catch (Exception ex)
+        {
+            _logger.Warning(ex, "Failed to update tray state");
+        }
     }
 
     private void UpdateStatusMenuItem(string text)
@@ -268,6 +342,8 @@ public class TrayIconManager : IDisposable
         try
         {
             lock (_statsLock) { _sessionFailedCount++; }
+            _status.RecordFailure();
+            QueueTrayStateUpdate();
         }
         catch (Exception ex)
         {
@@ -364,7 +440,7 @@ public class TrayIconManager : IDisposable
     {
         try
         {
-            _hasDpcWarning = true;
+            _status.RecordDpcSpike();
             QueueTrayStateUpdate();
         }
         catch (Exception ex)
@@ -433,8 +509,6 @@ public class TrayIconManager : IDisposable
             // Resuming raises this while the orchestrator holds its session lock, so the toast and the
             // tray update are queued, not waited for (see QueueTrayStateUpdate). The toast gets the
             // session's figures as they are now, before they are cleared below.
-            _hasDpcWarning = false;
-
             lock (_statsLock)
             {
                 if (_sessionStartTime is DateTime startTime)
@@ -575,6 +649,11 @@ public class TrayIconManager : IDisposable
         }
 
         _taskbarIcon.TrayLeftMouseUp -= OnTrayLeftDoubleClick;
+
+        SystemEvents.UserPreferenceChanged -= OnUserPreferenceChanged;
+        SystemParameters.StaticPropertyChanged -= OnSystemParameterChanged;
+        _refreshTimer.Stop();
+        _refreshTimer.Tick -= OnRefreshTimerTick;
 
         // Capture the current icon BEFORE TaskbarIcon.Dispose() so we can free its GDI
         // handle. TaskbarIcon.Dispose() does not dispose the assigned Icon.

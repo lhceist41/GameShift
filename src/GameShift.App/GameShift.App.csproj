@@ -12,10 +12,17 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Resource Include="Assets\Icons\tray-idle.ico" />
-    <Resource Include="Assets\Icons\tray-active.ico" />
-    <Resource Include="Assets\Icons\tray-warning.ico" />
-    <Resource Include="Assets\Icons\tray-error.ico" />
+    <!-- Generated from assets/icons by tools/icons/IconGen.cs -->
+    <Resource Include="Assets\Icons\tray-idle-dark.ico" />
+    <Resource Include="Assets\Icons\tray-idle-light.ico" />
+    <Resource Include="Assets\Icons\tray-active-dark.ico" />
+    <Resource Include="Assets\Icons\tray-active-light.ico" />
+    <Resource Include="Assets\Icons\tray-paused-dark.ico" />
+    <Resource Include="Assets\Icons\tray-paused-light.ico" />
+    <Resource Include="Assets\Icons\tray-warning-dark.ico" />
+    <Resource Include="Assets\Icons\tray-warning-light.ico" />
+    <Resource Include="Assets\Icons\tray-error-dark.ico" />
+    <Resource Include="Assets\Icons\tray-error-light.ico" />
     <Resource Include="Resources\gameshift.ico" />
     <Resource Include="Resources\gameshift-256.png" />
   </ItemGroup>
