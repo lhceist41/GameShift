@@ -5,118 +5,149 @@
       xmlns:helpers="clr-namespace:GameShift.App.Helpers"
       FontFamily="Segoe UI" FontSize="14">
     <Page.Resources>
-        <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
+        <Style x:Key="ActivityIcon" TargetType="ui:SymbolIcon">
+            <Setter Property="FontSize" Value="16"/>
+            <Setter Property="Margin" Value="0,0,12,0"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Symbol" Value="Circle16"/>
+            <Setter Property="Foreground" Value="{DynamicResource GS.State.Idle}"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Kind}" Value="Game">
+                    <Setter Property="Symbol" Value="Games24"/>
+                    <Setter Property="Foreground" Value="{DynamicResource GS.Fg.Secondary}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Kind}" Value="Applied">
+                    <Setter Property="Symbol" Value="CheckmarkCircle16"/>
+                    <Setter Property="Foreground" Value="{DynamicResource GS.State.Active}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Kind}" Value="Failed">
+                    <Setter Property="Symbol" Value="ErrorCircle16"/>
+                    <Setter Property="Foreground" Value="{DynamicResource GS.State.Error}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Kind}" Value="Reverted">
+                    <Setter Property="Symbol" Value="SubtractCircle16"/>
+                    <Setter Property="Foreground" Value="{DynamicResource GS.State.Off}"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
     </Page.Resources>
-    <ScrollViewer VerticalScrollBarVisibility="Auto"
-                  helpers:ScrollHelper.FixScrolling="True">
-        <StackPanel Margin="24">
 
-            <!-- Page Title -->
-            <TextBlock Text="Activity Log"
-                       Style="{DynamicResource GS.Text.Hero}"
-                       Margin="0,0,0,8"/>
-            <TextBlock Text="All system events and optimization actions"
-                       Style="{DynamicResource GS.Text.Body}"
-                       Foreground="{DynamicResource GS.Text.Secondary}"
-                       Margin="0,0,0,24"/>
+    <Grid Margin="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
 
-            <!-- Search + Filter Row -->
-            <Grid Margin="0,0,0,16">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
+        <StackPanel Grid.Row="0" Margin="0,0,0,16">
+            <TextBlock Text="Activity" Style="{DynamicResource GS.Text.Hero}" TextWrapping="Wrap" Margin="0,0,0,8"/>
+            <TextBlock Text="The latest events since GameShift started, and today's full log file."
+                       FontSize="13" Foreground="{DynamicResource GS.Fg.Secondary}" TextWrapping="Wrap"/>
+        </StackPanel>
 
-                <TextBox Grid.Column="0"
-                         x:Name="SearchBox"
-                         Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
-                         Background="{DynamicResource GS.Surface.Card}"
-                         Foreground="{DynamicResource GS.Text.Primary}"
-                         BorderBrush="{DynamicResource GS.Surface.Border}"
-                         BorderThickness="1"
-                         Padding="10,8"
-                         FontSize="13"
-                         Margin="0,0,12,0"/>
+        <TabControl Grid.Row="1" x:Name="Tabs" SelectionChanged="OnTabChanged">
+            <!-- Events since GameShift started -->
+            <TabItem x:Name="ActivityTab" Header="Activity">
+                <ScrollViewer VerticalScrollBarVisibility="Auto"
+                              helpers:ScrollHelper.FixScrolling="True">
+                    <StackPanel Margin="0,12,0,0">
+                        <Grid Margin="0,0,0,12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBox Grid.Column="0" x:Name="SearchBox"
+                                     Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                                     AutomationProperties.Name="Search activity"
+                                     Margin="0,0,12,0"/>
+                            <ComboBox Grid.Column="1" MinWidth="140"
+                                      ItemsSource="{Binding FilterOptions}"
+                                      SelectedItem="{Binding SelectedFilter}"
+                                      AutomationProperties.Name="Show"/>
+                        </Grid>
 
-                <ComboBox Grid.Column="1"
-                          ItemsSource="{Binding FilterOptions}"
-                          SelectedItem="{Binding SelectedFilter}"
-                          Background="{DynamicResource GS.Surface.Card}"
-                          Foreground="{DynamicResource GS.Text.Primary}"
-                          BorderBrush="{DynamicResource GS.Surface.Border}"
-                          BorderThickness="1"
-                          Padding="8,6"
-                          FontSize="13"
-                          Width="140"/>
-            </Grid>
-
-            <!-- Activity List -->
-            <ItemsControl ItemsSource="{Binding FilteredActivities}">
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                        <Border Background="{DynamicResource GS.Surface.Card}"
-                                CornerRadius="8"
-                                Padding="16,12"
-                                Margin="0,0,0,8"
-                                BorderBrush="{DynamicResource GS.Surface.Border}"
-                                BorderThickness="1">
+                        <Border Style="{StaticResource GS.Panel}" Padding="0">
                             <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
+                                <ItemsControl ItemsSource="{Binding FilteredActivities}" Focusable="False">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Style="{StaticResource GS.Row}">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <ui:SymbolIcon Grid.Column="0" Style="{StaticResource ActivityIcon}"/>
+                                                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,12,0">
+                                                        <TextBlock Text="{Binding Description}" FontSize="13" TextWrapping="Wrap"
+                                                                   Foreground="{DynamicResource GS.Fg.Primary}"/>
+                                                        <TextBlock Text="{Binding Label}" FontSize="12" TextWrapping="Wrap" Margin="0,2,0,0"
+                                                                   Foreground="{DynamicResource GS.Fg.Secondary}"/>
+                                                    </StackPanel>
+                                                    <TextBlock Grid.Column="2" Text="{Binding FormattedTime}" FontSize="12"
+                                                               VerticalAlignment="Center"
+                                                               Foreground="{DynamicResource GS.Fg.Secondary}"/>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
 
-                                <!-- Type icon -->
-                                <TextBlock Grid.Column="0"
-                                           Text="{Binding TypeIcon}"
-                                           FontSize="16"
-                                           Foreground="{DynamicResource GS.Text.Secondary}"
-                                           VerticalAlignment="Center"/>
-
-                                <!-- Description + type label -->
-                                <StackPanel Grid.Column="1" Margin="12,0,12,0">
-                                    <TextBlock Text="{Binding Description}"
-                                               FontSize="13"
-                                               Foreground="{DynamicResource GS.Text.Primary}"
-                                               TextWrapping="Wrap"/>
-                                    <TextBlock Text="{Binding Type}"
-                                               FontSize="11"
-                                               Foreground="{DynamicResource GS.Text.Secondary}"
-                                               Margin="0,2,0,0"/>
-                                </StackPanel>
-
-                                <!-- Timestamp -->
-                                <TextBlock Grid.Column="2"
-                                           Text="{Binding FormattedTime}"
-                                           FontSize="12"
-                                           Foreground="{DynamicResource GS.Text.Secondary}"
-                                           VerticalAlignment="Center"/>
+                                <Border BorderThickness="0">
+                                    <Border.Style>
+                                        <Style TargetType="Border" BasedOn="{StaticResource GS.Row}">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding FilteredActivities.Count}" Value="0">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
+                                    <TextBlock Text="No activity yet. Start a game to see events here."
+                                               FontSize="13" TextWrapping="Wrap" VerticalAlignment="Center"
+                                               Foreground="{DynamicResource GS.Fg.Secondary}"/>
+                                </Border>
                             </Grid>
                         </Border>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
 
-            <!-- Empty state -->
-            <TextBlock Text="No activity yet. Start a game to see events here."
-                       FontSize="13"
-                       Foreground="{DynamicResource GS.Text.Secondary}"
-                       HorizontalAlignment="Center"
-                       TextAlignment="Center"
-                       Margin="0,24,0,0">
-                <TextBlock.Style>
-                    <Style TargetType="TextBlock">
-                        <Setter Property="Visibility" Value="Collapsed"/>
-                        <Style.Triggers>
-                            <DataTrigger Binding="{Binding FilteredActivities.Count}" Value="0">
-                                <Setter Property="Visibility" Value="Visible"/>
-                            </DataTrigger>
-                        </Style.Triggers>
-                    </Style>
-                </TextBlock.Style>
-            </TextBlock>
+            <!-- Today's log file; its data context is set when the tab is first shown -->
+            <TabItem x:Name="LogTab" Header="Log">
+                <DockPanel x:Name="LogPanel" Margin="0,12,0,0">
+                    <DockPanel DockPanel.Dock="Top" Margin="0,0,0,12">
+                        <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" VerticalAlignment="Center" Margin="12,0,0,0">
+                            <Button Content="Refresh" MinHeight="32" Margin="0,0,8,0" Click="OnRefreshLogClicked"/>
+                            <Button Content="Open Folder" MinHeight="32" Click="OnOpenLogFolderClicked"/>
+                        </StackPanel>
+                        <TextBox x:Name="LogSearchBox"
+                                 Text="{Binding SearchFilter, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                 AutomationProperties.Name="Search the log"
+                                 VerticalAlignment="Center"/>
+                    </DockPanel>
 
-        </StackPanel>
-    </ScrollViewer>
+                    <TextBlock DockPanel.Dock="Bottom" Margin="0,8,0,0" Text="{Binding StatusText, Mode=OneWay}"
+                               FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource GS.Fg.Secondary}"/>
+
+                    <Border Style="{StaticResource GS.Panel}" Padding="0">
+                        <TextBox Text="{Binding LogContent, Mode=OneWay}"
+                                 IsReadOnly="True"
+                                 TextWrapping="NoWrap"
+                                 AcceptsReturn="True"
+                                 VerticalScrollBarVisibility="Auto"
+                                 HorizontalScrollBarVisibility="Auto"
+                                 FontFamily="Cascadia Mono, Consolas, Courier New"
+                                 FontSize="12"
+                                 Background="Transparent"
+                                 Foreground="{DynamicResource GS.Fg.Primary}"
+                                 BorderThickness="0"
+                                 Padding="12,8"
+                                 AutomationProperties.Name="Log file"/>
+                    </Border>
+                </DockPanel>
+            </TabItem>
+        </TabControl>
+    </Grid>
 </Page>

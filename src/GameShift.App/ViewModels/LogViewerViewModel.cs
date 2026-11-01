@@ -9,7 +9,7 @@ using GameShift.Core.Config;
 namespace GameShift.App.ViewModels;
 
 /// <summary>
-/// ViewModel for the Log Viewer page. Reads Serilog rolling log files from
+/// ViewModel for the Activity page's Log tab. Reads Serilog rolling log files from
 /// %ProgramData%\GameShift\logs\ and displays them with search filtering
 /// and auto-refresh via DispatcherTimer (3-second polling interval).
 /// </summary>

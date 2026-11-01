@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
@@ -7,6 +8,7 @@ using GameShift.Core.Config;
 using GameShift.Core.Detection;
 using GameShift.Core.GameProfiles;
 using GameShift.Core.Monitoring;
+using GameShift.Core.Presentation;
 using GameShift.Core.Profiles;
 
 namespace GameShift.App.ViewModels;
@@ -22,12 +24,6 @@ public class ProfileEditorViewModel : INotifyPropertyChanged
     private readonly DetectionOrchestrator _orchestrator;
 
     private ProfileListItem? _selectedProfile;
-    private bool _suppressServices;
-    private bool _switchPowerPlan;
-    private bool _setTimerResolution;
-    private bool _boostProcessPriority;
-    private bool _pinGameCores;
-    private bool _enableEfficiencyMode;
 
     // v2 DPC Monitoring
     private bool _enableDpcMonitoring;
@@ -58,43 +54,10 @@ public class ProfileEditorViewModel : INotifyPropertyChanged
         }
     }
 
-    // ── Optimization toggle properties ────────────────────────────────
+    // ── Optimization switches, one per module id ──────────────────────
 
-    public bool SuppressServices
-    {
-        get => _suppressServices;
-        set { if (_suppressServices != value) { _suppressServices = value; IsDirty = true; OnPropertyChanged(); } }
-    }
-
-    public bool SwitchPowerPlan
-    {
-        get => _switchPowerPlan;
-        set { if (_switchPowerPlan != value) { _switchPowerPlan = value; IsDirty = true; OnPropertyChanged(); } }
-    }
-
-    public bool SetTimerResolution
-    {
-        get => _setTimerResolution;
-        set { if (_setTimerResolution != value) { _setTimerResolution = value; IsDirty = true; OnPropertyChanged(); } }
-    }
-
-    public bool BoostProcessPriority
-    {
-        get => _boostProcessPriority;
-        set { if (_boostProcessPriority != value) { _boostProcessPriority = value; IsDirty = true; OnPropertyChanged(); } }
-    }
-
-    public bool PinGameCores
-    {
-        get => _pinGameCores;
-        set { if (_pinGameCores != value) { _pinGameCores = value; IsDirty = true; OnPropertyChanged(); } }
-    }
-
-    public bool EnableEfficiencyMode
-    {
-        get => _enableEfficiencyMode;
-        set { if (_enableEfficiencyMode != value) { _enableEfficiencyMode = value; IsDirty = true; OnPropertyChanged(); } }
-    }
+    public IReadOnlyList<ProfileModuleSwitch> Modules { get; }
+    public IReadOnlyList<ProfileModuleSwitch> AdvancedModules { get; }
 
     // ── v2 DPC Monitoring ────────────────────────────────────────────
 
@@ -208,6 +171,10 @@ public class ProfileEditorViewModel : INotifyPropertyChanged
     {
         _profileManager = profileManager;
         _orchestrator = orchestrator;
+
+        var switches = ProfileModules.Rows.Select(r => new ProfileModuleSwitch(r, () => IsDirty = true)).ToList();
+        Modules = switches.Where(m => !m.IsAdvanced).ToList();
+        AdvancedModules = switches.Where(m => m.IsAdvanced).ToList();
     }
 
     /// <summary>
@@ -223,8 +190,8 @@ public class ProfileEditorViewModel : INotifyPropertyChanged
         Profiles.Add(new ProfileListItem
         {
             Id = "default",
-            DisplayName = "Default Profile (applies to all games without custom profile)",
-            Source = "Default",
+            DisplayName = "Default profile",
+            Source = "For games without their own profile",
             IsDefault = true
         });
 
@@ -250,13 +217,8 @@ public class ProfileEditorViewModel : INotifyPropertyChanged
 
         var profile = _profileManager.GetProfileForGame(SelectedProfile.Id);
 
-        // Populate toggle properties from the loaded profile
-        _suppressServices = profile.SuppressServices;
-        _switchPowerPlan = profile.SwitchPowerPlan;
-        _setTimerResolution = profile.SetTimerResolution;
-        _boostProcessPriority = profile.BoostProcessPriority;
-        _pinGameCores = profile.PinGameCores;
-        _enableEfficiencyMode = profile.EnableEfficiencyMode;
+        foreach (var module in Modules.Concat(AdvancedModules))
+            module.Load(profile.IsOptimizationEnabled(module.ModuleName));
 
         // v2 fields
         _enableDpcMonitoring = profile.EnableDpcMonitoring;
@@ -272,13 +234,6 @@ public class ProfileEditorViewModel : INotifyPropertyChanged
         // Load game-specific action display
         LoadGameActionDisplay(SelectedProfile.Id);
 
-        // Notify all toggle properties changed
-        OnPropertyChanged(nameof(SuppressServices));
-        OnPropertyChanged(nameof(SwitchPowerPlan));
-        OnPropertyChanged(nameof(SetTimerResolution));
-        OnPropertyChanged(nameof(BoostProcessPriority));
-        OnPropertyChanged(nameof(PinGameCores));
-        OnPropertyChanged(nameof(EnableEfficiencyMode));
         OnPropertyChanged(nameof(EnableDpcMonitoring));
         OnPropertyChanged(nameof(DpcThresholdMicroseconds));
         OnPropertyChanged(nameof(DpcThresholdPercentText));
@@ -305,9 +260,9 @@ public class ProfileEditorViewModel : INotifyPropertyChanged
 
         HasStats = true;
         TotalPlayTime = stats.TotalPlayTime.TotalHours >= 1
-            ? $"{stats.TotalPlayTime.TotalHours:F1} hours"
-            : $"{stats.TotalPlayTime.TotalMinutes:F0} minutes";
-        SessionCount = $"{stats.SessionCount} sessions";
+            ? stats.TotalPlayTime.TotalHours.ToString("0.0", CultureInfo.InvariantCulture) + " hours"
+            : stats.TotalPlayTime.TotalMinutes.ToString("0", CultureInfo.InvariantCulture) + " minutes";
+        SessionCount = stats.SessionCount.ToString(CultureInfo.InvariantCulture) + " sessions";
         AvgDpcLatency = DpcLoad.Format(stats.AvgDpcLatency);
         BestDpcLatency = DpcLoad.Format(stats.BestDpcLatency);
     }
@@ -385,13 +340,8 @@ public class ProfileEditorViewModel : INotifyPropertyChanged
             }
         }
 
-        // Apply toggle values
-        profile.SuppressServices = SuppressServices;
-        profile.SwitchPowerPlan = SwitchPowerPlan;
-        profile.SetTimerResolution = SetTimerResolution;
-        profile.BoostProcessPriority = BoostProcessPriority;
-        profile.PinGameCores = PinGameCores;
-        profile.EnableEfficiencyMode = EnableEfficiencyMode;
+        foreach (var module in Modules.Concat(AdvancedModules))
+            ModuleSwitch.TrySet(profile, module.ModuleName, module.IsEnabled);
 
         // v2 fields
         profile.EnableDpcMonitoring = EnableDpcMonitoring;
@@ -413,6 +363,49 @@ public class ProfileEditorViewModel : INotifyPropertyChanged
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
     {
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+    }
+}
+
+/// <summary>
+/// One module's switch in the profile editor. Loading a profile sets it without marking the editor dirty.
+/// </summary>
+public class ProfileModuleSwitch : INotifyPropertyChanged
+{
+    private readonly ProfileModuleRow _row;
+    private readonly Action _changed;
+    private bool _isEnabled;
+
+    public ProfileModuleSwitch(ProfileModuleRow row, Action changed)
+    {
+        _row = row;
+        _changed = changed;
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    public string ModuleName => _row.ModuleName;
+    public string Title => _row.Title;
+    public string Effect => _row.Effect;
+    public string Note => _row.Note;
+    public bool HasNote => _row.Note.Length > 0;
+    public bool IsAdvanced => _row.IsAdvanced;
+
+    public bool IsEnabled
+    {
+        get => _isEnabled;
+        set
+        {
+            if (_isEnabled == value) return;
+            _isEnabled = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsEnabled)));
+            _changed();
+        }
+    }
+
+    public void Load(bool enabled)
+    {
+        _isEnabled = enabled;
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsEnabled)));
     }
 }
 
@@ -439,4 +432,5 @@ public class GameActionDisplayItem
     public string Condition { get; set; } = "";
     public bool IsConditional { get; set; }
     public bool IsHardwareMatched { get; set; } = true;
+    public bool IsHardwareMismatch => !IsHardwareMatched;
 }

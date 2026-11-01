@@ -6,44 +6,85 @@
       FontFamily="Segoe UI" FontSize="14">
     <Page.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
+
+        <Style x:Key="RowTitle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="{DynamicResource GS.Fg.Primary}"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+        </Style>
+        <Style x:Key="RowText" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Foreground" Value="{DynamicResource GS.Fg.Secondary}"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="Margin" Value="0,2,0,0"/>
+        </Style>
+
+        <!-- A module switch row; changes wait for Save, so the control is a check box, not a switch -->
+        <DataTemplate x:Key="ModuleRow">
+            <Border Style="{StaticResource GS.Row}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,0">
+                        <TextBlock Text="{Binding Title}" Style="{StaticResource RowTitle}"/>
+                        <TextBlock Text="{Binding Effect}" Style="{StaticResource RowText}"/>
+                        <TextBlock Text="{Binding Note}" Style="{StaticResource RowText}"
+                                   Visibility="{Binding HasNote, Converter={StaticResource BoolToVisibility}}"/>
+                        <TextBlock Text="{Binding ModuleName}" FontSize="11" TextWrapping="Wrap" Margin="0,2,0,0"
+                                   Foreground="{DynamicResource GS.Fg.Tertiary}"/>
+                    </StackPanel>
+                    <Grid Grid.Column="1" MinWidth="76" VerticalAlignment="Center">
+                        <CheckBox IsChecked="{Binding IsEnabled, Mode=TwoWay}" HorizontalAlignment="Right"
+                                  AutomationProperties.Name="{Binding Title}"/>
+                    </Grid>
+                </Grid>
+            </Border>
+        </DataTemplate>
     </Page.Resources>
-    <Grid Margin="15">
+
+    <Grid Margin="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="250"/>
-            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="*" MaxWidth="280"/>
+            <ColumnDefinition Width="2*"/>
         </Grid.ColumnDefinitions>
 
-        <!-- Left Panel: Profile/Game List -->
-        <Border Grid.Column="0" Background="{DynamicResource GS.Surface.Card}"
-                CornerRadius="8" Margin="0,0,10,0" Padding="10"
-                BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1">
+        <StackPanel Grid.Row="0" Grid.ColumnSpan="2" Margin="0,0,0,16">
+            <TextBlock Text="Profiles" Style="{DynamicResource GS.Text.Hero}" TextWrapping="Wrap" Margin="0,0,0,8"/>
+            <TextBlock Text="Choose what GameShift changes for each game. A game without its own profile uses the default profile. Changes take effect when you save them."
+                       FontSize="13" Foreground="{DynamicResource GS.Fg.Secondary}" TextWrapping="Wrap"/>
+        </StackPanel>
+
+        <!-- Games and the default profile -->
+        <Border Grid.Row="1" Grid.Column="0" Style="{StaticResource GS.Panel}" Padding="0" Margin="0,0,12,0">
             <DockPanel>
-                <TextBlock Text="Games" FontSize="16" FontWeight="SemiBold"
-                           Foreground="{DynamicResource GS.Text.Primary}"
-                           DockPanel.Dock="Top" Margin="5,0,0,10"/>
+                <TextBlock Text="GAMES" Style="{StaticResource GS.Text.Caps}" DockPanel.Dock="Top" Margin="12,12,12,8"/>
                 <ListBox ItemsSource="{Binding Profiles}"
                          SelectedItem="{Binding SelectedProfile, Mode=TwoWay}"
                          Background="Transparent" BorderThickness="0"
-                         Foreground="{DynamicResource GS.Text.Primary}">
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                         Foreground="{DynamicResource GS.Fg.Primary}">
                     <ListBox.ItemContainerStyle>
                         <Style TargetType="ListBoxItem">
-                            <Setter Property="Foreground" Value="{DynamicResource GS.Text.Primary}"/>
-                            <Setter Property="Padding" Value="8,6"/>
-                            <Setter Property="Margin" Value="0,1"/>
-                            <Style.Triggers>
-                                <Trigger Property="IsSelected" Value="True">
-                                    <Setter Property="Background" Value="{DynamicResource GS.Surface.Border}"/>
-                                </Trigger>
-                            </Style.Triggers>
+                            <Setter Property="Foreground" Value="{DynamicResource GS.Fg.Primary}"/>
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                            <Setter Property="MinHeight" Value="44"/>
+                            <Setter Property="Padding" Value="12,6"/>
                         </Style>
                     </ListBox.ItemContainerStyle>
                     <ListBox.ItemTemplate>
                         <DataTemplate>
-                            <StackPanel>
-                                <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold"
-                                           Foreground="{DynamicResource GS.Text.Primary}"/>
-                                <TextBlock Text="{Binding Source}" FontSize="11"
-                                           Foreground="{DynamicResource GS.Text.Secondary}"/>
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" TextWrapping="Wrap"
+                                           Foreground="{DynamicResource GS.Fg.Primary}"/>
+                                <TextBlock Text="{Binding Source}" FontSize="11" TextWrapping="Wrap"
+                                           Foreground="{DynamicResource GS.Fg.Secondary}"/>
                             </StackPanel>
                         </DataTemplate>
                     </ListBox.ItemTemplate>
@@ -51,297 +92,169 @@
             </DockPanel>
         </Border>
 
-        <!-- Right Panel: Optimization Toggles -->
-        <Border Grid.Column="1" Background="{DynamicResource GS.Surface.Card}"
-                CornerRadius="8" Padding="20"
-                BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1">
-            <DockPanel>
-                <!-- Header with save button -->
-                <DockPanel DockPanel.Dock="Top" Margin="0,0,0,15">
-                    <TextBlock Text="Optimization Settings" FontSize="18" FontWeight="Bold"
-                               Foreground="{DynamicResource GS.Text.Primary}"
-                               DockPanel.Dock="Left" VerticalAlignment="Center"/>
-                    <StackPanel Orientation="Horizontal" DockPanel.Dock="Right"
-                                HorizontalAlignment="Right">
-                        <TextBlock Text="{Binding StatusMessage, Mode=OneWay}"
-                                   VerticalAlignment="Center" Margin="0,0,10,0"
-                                   Foreground="{DynamicResource GS.Accent.Primary}" FontSize="12"/>
-                        <Button Content="Save" Padding="16,6"
-                                Background="{DynamicResource GS.Accent.Primary}"
-                                Foreground="White" BorderThickness="0"
-                                FontWeight="SemiBold" Cursor="Hand"
-                                IsEnabled="{Binding IsDirty, Mode=OneWay}"
-                                Click="OnSaveClicked"/>
-                    </StackPanel>
-                </DockPanel>
+        <!-- The selected profile -->
+        <DockPanel Grid.Row="1" Grid.Column="1">
+            <DockPanel DockPanel.Dock="Top" Margin="0,0,0,12">
+                <Button Content="Save" DockPanel.Dock="Right" VerticalAlignment="Center"
+                        Style="{StaticResource GS.Button.Primary}"
+                        IsEnabled="{Binding IsDirty, Mode=OneWay}"
+                        Click="OnSaveClicked"/>
+                <TextBlock Text="{Binding StatusMessage, Mode=OneWay}" FontSize="12" TextWrapping="Wrap"
+                           VerticalAlignment="Center" Margin="0,0,12,0"
+                           Foreground="{DynamicResource GS.Fg.Secondary}"/>
+            </DockPanel>
 
-                <!-- Toggle list (scrollable) -->
-                <ScrollViewer VerticalScrollBarVisibility="Auto"
-                              helpers:ScrollHelper.FixScrolling="True">
-                    <StackPanel IsEnabled="{Binding HasSelectedProfile, Mode=OneWay}">
+            <ScrollViewer VerticalScrollBarVisibility="Auto"
+                          helpers:ScrollHelper.FixScrolling="True">
+                <StackPanel IsEnabled="{Binding HasSelectedProfile, Mode=OneWay}">
 
-                        <Border Background="{DynamicResource GS.Surface.Base}" CornerRadius="6"
-                                Padding="12,10" Margin="0,0,0,6">
-                            <DockPanel>
-                                <CheckBox DockPanel.Dock="Left"
-                                          IsChecked="{Binding SuppressServices, Mode=TwoWay}"
-                                          VerticalAlignment="Center"/>
-                                <StackPanel Margin="10,0,0,0">
-                                    <TextBlock Text="Windows Service Suppressor" FontWeight="SemiBold"
-                                               Foreground="{DynamicResource GS.Text.Primary}"/>
-                                    <TextBlock Text="Pauses Windows Update, Delivery Optimization, background transfers and search indexing"
-                                               FontSize="11" Foreground="{DynamicResource GS.Text.Secondary}"/>
-                                </StackPanel>
-                            </DockPanel>
-                        </Border>
+                    <TextBlock Text="DURING GAMES" Style="{StaticResource GS.Text.Caps}" Margin="0,0,0,8"/>
+                    <Border Style="{StaticResource GS.Panel}" Padding="0" Margin="0,0,0,24">
+                        <ItemsControl ItemsSource="{Binding Modules}" ItemTemplate="{StaticResource ModuleRow}" Focusable="False"/>
+                    </Border>
 
-                        <Border Background="{DynamicResource GS.Surface.Base}" CornerRadius="6"
-                                Padding="12,10" Margin="0,0,0,6">
-                            <DockPanel>
-                                <CheckBox DockPanel.Dock="Left"
-                                          IsChecked="{Binding SwitchPowerPlan, Mode=TwoWay}"
-                                          VerticalAlignment="Center"/>
-                                <StackPanel Margin="10,0,0,0">
-                                    <TextBlock Text="High Performance Power Plan" FontWeight="SemiBold"
-                                               Foreground="{DynamicResource GS.Text.Primary}"/>
-                                    <TextBlock Text="Switches from Balanced to High Performance (not on Ryzen X3D with two CCDs)"
-                                               FontSize="11" Foreground="{DynamicResource GS.Text.Secondary}"/>
-                                </StackPanel>
-                            </DockPanel>
-                        </Border>
+                    <TextBlock Text="ADVANCED" Style="{StaticResource GS.Text.Caps}" Margin="0,0,0,8"/>
+                    <Border Style="{StaticResource GS.Panel}" Padding="0" Margin="0,0,0,24">
+                        <ItemsControl ItemsSource="{Binding AdvancedModules}" ItemTemplate="{StaticResource ModuleRow}" Focusable="False"/>
+                    </Border>
 
-                        <Border Background="{DynamicResource GS.Surface.Base}" CornerRadius="6"
-                                Padding="12,10" Margin="0,0,0,6">
-                            <DockPanel>
-                                <CheckBox DockPanel.Dock="Left"
-                                          IsChecked="{Binding BoostProcessPriority, Mode=TwoWay}"
-                                          VerticalAlignment="Center"/>
-                                <StackPanel Margin="10,0,0,0">
-                                    <TextBlock Text="Process Priority Booster" FontWeight="SemiBold"
-                                               Foreground="{DynamicResource GS.Text.Primary}"/>
-                                    <TextBlock Text="Sets game process to High priority"
-                                               FontSize="11" Foreground="{DynamicResource GS.Text.Secondary}"/>
-                                </StackPanel>
-                            </DockPanel>
-                        </Border>
-
-                        <Border Background="{DynamicResource GS.Surface.Base}" CornerRadius="6"
-                                Padding="12,10" Margin="0,0,0,6">
-                            <DockPanel>
-                                <CheckBox DockPanel.Dock="Left"
-                                          IsChecked="{Binding EnableEfficiencyMode, Mode=TwoWay}"
-                                          VerticalAlignment="Center"/>
-                                <StackPanel Margin="10,0,0,0">
-                                    <TextBlock Text="Put background apps in efficiency mode" FontWeight="SemiBold"
-                                               Foreground="{DynamicResource GS.Text.Primary}"/>
-                                    <TextBlock Text="Windows 11 EcoQoS for background apps while the game keeps full speed"
-                                               FontSize="11" Foreground="{DynamicResource GS.Text.Secondary}"/>
-                                </StackPanel>
-                            </DockPanel>
-                        </Border>
-
-                        <!-- ADVANCED -->
-                        <TextBlock Text="ADVANCED" FontSize="11" FontWeight="Bold"
-                                   Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,15,0,8"/>
-
-                        <Border Background="{DynamicResource GS.Surface.Base}" CornerRadius="6"
-                                Padding="12,10" Margin="0,0,0,6">
-                            <DockPanel>
-                                <CheckBox DockPanel.Dock="Left"
-                                          IsChecked="{Binding SetTimerResolution, Mode=TwoWay}"
-                                          VerticalAlignment="Center"/>
-                                <StackPanel Margin="10,0,0,0">
-                                    <TextBlock Text="System Timer Resolution" FontWeight="SemiBold"
-                                               Foreground="{DynamicResource GS.Text.Primary}"/>
-                                    <TextBlock Text="Requests a 1 ms timer while the game runs (off by default)"
-                                               FontSize="11" Foreground="{DynamicResource GS.Text.Secondary}"/>
-                                </StackPanel>
-                            </DockPanel>
-                        </Border>
-
-                        <Border Background="{DynamicResource GS.Surface.Base}" CornerRadius="6"
-                                Padding="12,10" Margin="0,0,0,6">
-                            <DockPanel>
-                                <CheckBox DockPanel.Dock="Left"
-                                          IsChecked="{Binding PinGameCores, Mode=TwoWay}"
-                                          VerticalAlignment="Center"/>
-                                <StackPanel Margin="10,0,0,0">
-                                    <TextBlock Text="Pin the game to P-cores or the V-Cache CCD" FontWeight="SemiBold"
-                                               Foreground="{DynamicResource GS.Text.Primary}"/>
-                                    <TextBlock Text="Hybrid CPUs and Ryzen X3D with two CCDs (off by default)"
-                                               FontSize="11" Foreground="{DynamicResource GS.Text.Secondary}"/>
-                                </StackPanel>
-                            </DockPanel>
-                        </Border>
-
-                        <!-- v2 MONITORING -->
-                        <TextBlock Text="MONITORING" FontSize="11" FontWeight="Bold"
-                                   Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,15,0,8"/>
-
-                        <!-- DPC Monitoring -->
-                        <Border Background="{DynamicResource GS.Surface.Base}" CornerRadius="6"
-                                Padding="12,10" Margin="0,0,0,6">
-                            <StackPanel>
-                                <DockPanel>
-                                    <CheckBox DockPanel.Dock="Left"
-                                              IsChecked="{Binding EnableDpcMonitoring, Mode=TwoWay}"
-                                              VerticalAlignment="Center"/>
-                                    <StackPanel Margin="10,0,0,0">
-                                        <TextBlock Text="DPC Load Monitoring" FontWeight="SemiBold"
-                                                   Foreground="{DynamicResource GS.Text.Primary}"/>
-                                        <TextBlock Text="Watch DPC load and alert on spikes during gameplay"
-                                                   FontSize="11" Foreground="{DynamicResource GS.Text.Secondary}"/>
+                    <TextBlock Text="MONITORING" Style="{StaticResource GS.Text.Caps}" Margin="0,0,0,8"/>
+                    <Border Style="{StaticResource GS.Panel}" Padding="0" Margin="0,0,0,24">
+                        <StackPanel>
+                            <Border Style="{StaticResource GS.Row}">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,0">
+                                        <TextBlock Text="Watch DPC load" Style="{StaticResource RowTitle}"/>
+                                        <TextBlock Text="Watches DPC load while you play and alerts on spikes."
+                                                   Style="{StaticResource RowText}"/>
                                     </StackPanel>
-                                </DockPanel>
-                                <StackPanel Margin="0,10,0,0">
-                                    <TextBlock Text="DPC load alert (% of CPU time)" FontWeight="SemiBold"
-                                               FontSize="12" Foreground="{DynamicResource GS.Text.Primary}"/>
-                                    <TextBlock Text="Per-game override. 0 = use global setting."
-                                               FontSize="11" Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,2,0,6"/>
+                                    <Grid Grid.Column="1" MinWidth="76" VerticalAlignment="Center">
+                                        <CheckBox IsChecked="{Binding EnableDpcMonitoring, Mode=TwoWay}" HorizontalAlignment="Right"
+                                                  AutomationProperties.Name="Watch DPC load"/>
+                                    </Grid>
+                                </Grid>
+                            </Border>
+                            <Border Style="{StaticResource GS.Row}" BorderThickness="0">
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="DPC load alert (% of CPU time)" Style="{StaticResource RowTitle}"/>
+                                    <TextBlock Text="For this game only. 0 uses the setting in Settings."
+                                               Style="{StaticResource RowText}" Margin="0,2,0,6"/>
                                     <TextBox Text="{Binding DpcThresholdPercentText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                             Width="100" HorizontalAlignment="Left"
-                                             Background="{DynamicResource GS.Surface.Base}"
-                                             Foreground="{DynamicResource GS.Text.Primary}"
-                                             BorderBrush="{DynamicResource GS.Surface.Border}"
-                                             Padding="6,4"/>
+                                             MinWidth="100" HorizontalAlignment="Left"
+                                             AutomationProperties.Name="DPC load alert (% of CPU time)"/>
                                 </StackPanel>
-                            </StackPanel>
-                        </Border>
-
-                        <!-- ═══ GAME TIPS ═══ -->
-                        <TextBlock Text="GAME TIPS" FontSize="11" FontWeight="Bold"
-                                   Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,20,0,8"
-                                   Visibility="{Binding IsPresetGame, Converter={StaticResource BoolToVisibility}}"/>
-
-                        <!-- Anti-cheat badge -->
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6"
-                                    Visibility="{Binding HasAntiCheat, Converter={StaticResource BoolToVisibility}}">
-                            <Border Background="{DynamicResource GS.Badge.Warning.Bg}" CornerRadius="12" Padding="8,4">
-                                <TextBlock Text="{Binding AntiCheatBadge}" FontSize="11" FontWeight="SemiBold"
-                                           Foreground="{DynamicResource GS.Status.Warning}"/>
                             </Border>
                         </StackPanel>
+                    </Border>
 
-                        <!-- VBS safety warning -->
-                        <Border Background="{DynamicResource GS.Badge.Error.Bg}" CornerRadius="6" Padding="12,8"
-                                Margin="0,0,0,6"
-                                Visibility="{Binding VbsSafetyActive, Converter={StaticResource BoolToVisibility}}">
-                            <StackPanel>
-                                <TextBlock Text="VBS Safety Interlock Active" FontWeight="SemiBold" FontSize="12"
-                                           Foreground="{DynamicResource GS.Status.Error}"/>
-                                <TextBlock Text="{Binding VbsSafetyReason}" FontSize="11"
-                                           Foreground="{DynamicResource GS.Text.Secondary}" TextWrapping="Wrap"/>
-                            </StackPanel>
-                        </Border>
-
-                        <!-- Action cards list -->
-                        <ItemsControl ItemsSource="{Binding GameActions}" Margin="0,0,0,8"
-                                      Visibility="{Binding HasGameActions, Converter={StaticResource BoolToVisibility}}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Border Background="{DynamicResource GS.Surface.Base}" CornerRadius="6"
-                                            Padding="12,8" Margin="0,0,0,4">
-                                        <Border.Style>
-                                            <Style TargetType="Border">
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding IsHardwareMatched}" Value="False">
-                                                        <Setter Property="Opacity" Value="0.5"/>
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </Border.Style>
-                                        <DockPanel>
-                                            <!-- Tier badge (right-aligned) -->
-                                            <Border DockPanel.Dock="Right" CornerRadius="10" Padding="6,2"
-                                                    VerticalAlignment="Center" Margin="8,0,0,0">
-                                                <Border.Style>
-                                                    <Style TargetType="Border">
-                                                        <Setter Property="Background" Value="{DynamicResource GS.Badge.Active.Bg}"/>
-                                                        <Style.Triggers>
-                                                            <DataTrigger Binding="{Binding Tier}" Value="3">
-                                                                <Setter Property="Background" Value="{DynamicResource GS.Badge.Warning.Bg}"/>
-                                                            </DataTrigger>
-                                                        </Style.Triggers>
-                                                    </Style>
-                                                </Border.Style>
-                                                <TextBlock Text="{Binding TierLabel}" FontSize="10" FontWeight="Bold">
-                                                    <TextBlock.Style>
-                                                        <Style TargetType="TextBlock">
-                                                            <Setter Property="Foreground" Value="{DynamicResource GS.Status.Active}"/>
-                                                            <Style.Triggers>
-                                                                <DataTrigger Binding="{Binding Tier}" Value="3">
-                                                                    <Setter Property="Foreground" Value="{DynamicResource GS.Status.Warning}"/>
-                                                                </DataTrigger>
-                                                            </Style.Triggers>
-                                                        </Style>
-                                                    </TextBlock.Style>
-                                                </TextBlock>
-                                            </Border>
-                                            <!-- Action info (left) -->
-                                            <StackPanel>
-                                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="12"
-                                                           Foreground="{DynamicResource GS.Text.Primary}"/>
-                                                <TextBlock Text="{Binding Impact}" FontSize="11"
-                                                           Foreground="{DynamicResource GS.Text.Secondary}"/>
-                                                <!-- Condition text (visible only for conditional + unmatched) -->
-                                                <TextBlock Text="{Binding Condition}" FontSize="10" FontStyle="Italic"
-                                                           Foreground="{DynamicResource GS.Text.Secondary}">
-                                                    <TextBlock.Style>
-                                                        <Style TargetType="TextBlock">
-                                                            <Setter Property="Visibility" Value="Collapsed"/>
-                                                            <Style.Triggers>
-                                                                <MultiDataTrigger>
-                                                                    <MultiDataTrigger.Conditions>
-                                                                        <Condition Binding="{Binding IsConditional}" Value="True"/>
-                                                                    </MultiDataTrigger.Conditions>
-                                                                    <Setter Property="Visibility" Value="Visible"/>
-                                                                </MultiDataTrigger>
-                                                            </Style.Triggers>
-                                                        </Style>
-                                                    </TextBlock.Style>
-                                                </TextBlock>
-                                            </StackPanel>
-                                        </DockPanel>
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-
-                        <!-- Per-Game Statistics -->
-                        <TextBlock Text="STATISTICS" FontSize="11" FontWeight="Bold"
-                                   Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,20,0,8"
-                                   Visibility="{Binding HasStats, Converter={StaticResource BoolToVisibility}}"/>
-
-                        <Border Background="{DynamicResource GS.Surface.Card}" CornerRadius="8"
-                                Padding="15" Margin="0,0,0,15"
-                                BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1"
-                                Visibility="{Binding HasStats, Converter={StaticResource BoolToVisibility}}">
-                            <StackPanel>
-                                <DockPanel Margin="0,0,0,6">
-                                    <TextBlock Text="Total Play Time" Foreground="{DynamicResource GS.Text.Primary}"/>
-                                    <TextBlock Text="{Binding TotalPlayTime}" DockPanel.Dock="Right" HorizontalAlignment="Right"
-                                               Foreground="{DynamicResource GS.Accent.Primary}" FontWeight="SemiBold"/>
-                                </DockPanel>
-                                <DockPanel Margin="0,0,0,6">
-                                    <TextBlock Text="Sessions" Foreground="{DynamicResource GS.Text.Primary}"/>
-                                    <TextBlock Text="{Binding SessionCount}" DockPanel.Dock="Right" HorizontalAlignment="Right"
-                                               Foreground="{DynamicResource GS.Text.Secondary}" FontWeight="SemiBold"/>
-                                </DockPanel>
-                                <DockPanel Margin="0,0,0,6">
-                                    <TextBlock Text="Avg DPC Load" Foreground="{DynamicResource GS.Text.Primary}"/>
-                                    <TextBlock Text="{Binding AvgDpcLatency}" DockPanel.Dock="Right" HorizontalAlignment="Right"
-                                               Foreground="{DynamicResource GS.Text.Secondary}" FontWeight="SemiBold"/>
-                                </DockPanel>
+                    <!-- Built-in knowledge for preset games -->
+                    <TextBlock Text="GAME TIPS" Style="{StaticResource GS.Text.Caps}" Margin="0,0,0,8"
+                               Visibility="{Binding IsPresetGame, Converter={StaticResource BoolToVisibility}}"/>
+                    <Border Style="{StaticResource GS.Panel}" Padding="0" Margin="0,0,0,24"
+                            Visibility="{Binding IsPresetGame, Converter={StaticResource BoolToVisibility}}">
+                        <StackPanel>
+                            <Border Style="{StaticResource GS.Row}"
+                                    Visibility="{Binding HasAntiCheat, Converter={StaticResource BoolToVisibility}}">
                                 <DockPanel>
-                                    <TextBlock Text="Best DPC Load" Foreground="{DynamicResource GS.Text.Primary}"/>
-                                    <TextBlock Text="{Binding BestDpcLatency}" DockPanel.Dock="Right" HorizontalAlignment="Right"
-                                               Foreground="{DynamicResource GS.Accent.Primary}" FontWeight="SemiBold"/>
+                                    <ui:SymbolIcon Symbol="Shield16" FontSize="14" Margin="0,0,8,0"
+                                                   DockPanel.Dock="Left" VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource GS.State.Warning}"/>
+                                    <TextBlock FontSize="12" TextWrapping="Wrap" VerticalAlignment="Center"
+                                               Foreground="{DynamicResource GS.Fg.Primary}">
+                                        <Run Text="Anti-cheat:"/>
+                                        <Run Text="{Binding AntiCheatBadge, Mode=OneWay}" FontWeight="SemiBold"/>
+                                    </TextBlock>
                                 </DockPanel>
-                            </StackPanel>
-                        </Border>
-                    </StackPanel>
-                </ScrollViewer>
-            </DockPanel>
-        </Border>
+                            </Border>
+
+                            <Border Style="{StaticResource GS.Row}" Background="{DynamicResource GS.Tint.Error}"
+                                    Visibility="{Binding VbsSafetyActive, Converter={StaticResource BoolToVisibility}}">
+                                <DockPanel>
+                                    <ui:SymbolIcon Symbol="Warning16" FontSize="14" Margin="0,0,8,0"
+                                                   DockPanel.Dock="Left" VerticalAlignment="Top"
+                                                   Foreground="{DynamicResource GS.State.Error}"/>
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="Keep Windows VBS on for this game" FontSize="12" FontWeight="SemiBold"
+                                                   TextWrapping="Wrap" Foreground="{DynamicResource GS.State.Error}"/>
+                                        <TextBlock Text="{Binding VbsSafetyReason}" Style="{StaticResource RowText}"
+                                                   Foreground="{DynamicResource GS.Fg.Primary}"/>
+                                    </StackPanel>
+                                </DockPanel>
+                            </Border>
+
+                            <ItemsControl ItemsSource="{Binding GameActions}" Focusable="False"
+                                          Visibility="{Binding HasGameActions, Converter={StaticResource BoolToVisibility}}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Style="{StaticResource GS.Row}">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,0">
+                                                    <TextBlock Text="{Binding Name}" FontSize="13" FontWeight="SemiBold" TextWrapping="Wrap"
+                                                               Foreground="{DynamicResource GS.Fg.Primary}"/>
+                                                    <TextBlock Text="{Binding Impact}" Style="{StaticResource RowText}"/>
+                                                    <TextBlock Text="{Binding Condition}" Style="{StaticResource RowText}" FontStyle="Italic"
+                                                               Visibility="{Binding IsConditional, Converter={StaticResource BoolToVisibility}}"/>
+                                                    <TextBlock Text="Does not match this PC's hardware." Style="{StaticResource RowText}"
+                                                               Visibility="{Binding IsHardwareMismatch, Converter={StaticResource BoolToVisibility}}"/>
+                                                </StackPanel>
+                                                <Border Grid.Column="1" Style="{StaticResource GS.Badge.State}">
+                                                    <TextBlock Text="{Binding TierLabel}" FontSize="11" FontWeight="SemiBold" TextWrapping="Wrap"
+                                                               Foreground="{DynamicResource GS.Fg.Primary}"/>
+                                                </Border>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Per-game statistics from session history -->
+                    <TextBlock Text="STATISTICS" Style="{StaticResource GS.Text.Caps}" Margin="0,0,0,8"
+                               Visibility="{Binding HasStats, Converter={StaticResource BoolToVisibility}}"/>
+                    <Border Style="{StaticResource GS.Panel}" Padding="0"
+                            Visibility="{Binding HasStats, Converter={StaticResource BoolToVisibility}}">
+                        <StackPanel>
+                            <Border Style="{StaticResource GS.Row}">
+                                <DockPanel VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding TotalPlayTime}" DockPanel.Dock="Right" Margin="12,0,0,0"
+                                               FontWeight="SemiBold" Foreground="{DynamicResource GS.Fg.Primary}"/>
+                                    <TextBlock Text="Total play time" TextWrapping="Wrap" Foreground="{DynamicResource GS.Fg.Secondary}"/>
+                                </DockPanel>
+                            </Border>
+                            <Border Style="{StaticResource GS.Row}">
+                                <DockPanel VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding SessionCount}" DockPanel.Dock="Right" Margin="12,0,0,0"
+                                               FontWeight="SemiBold" Foreground="{DynamicResource GS.Fg.Primary}"/>
+                                    <TextBlock Text="Sessions" TextWrapping="Wrap" Foreground="{DynamicResource GS.Fg.Secondary}"/>
+                                </DockPanel>
+                            </Border>
+                            <Border Style="{StaticResource GS.Row}">
+                                <DockPanel VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding AvgDpcLatency}" DockPanel.Dock="Right" Margin="12,0,0,0"
+                                               FontWeight="SemiBold" Foreground="{DynamicResource GS.Fg.Primary}"/>
+                                    <TextBlock Text="Average DPC load" TextWrapping="Wrap" Foreground="{DynamicResource GS.Fg.Secondary}"/>
+                                </DockPanel>
+                            </Border>
+                            <Border Style="{StaticResource GS.Row}" BorderThickness="0">
+                                <DockPanel VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding BestDpcLatency}" DockPanel.Dock="Right" Margin="12,0,0,0"
+                                               FontWeight="SemiBold" Foreground="{DynamicResource GS.Fg.Primary}"/>
+                                    <TextBlock Text="Lowest DPC load in a session" TextWrapping="Wrap" Foreground="{DynamicResource GS.Fg.Secondary}"/>
+                                </DockPanel>
+                            </Border>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+        </DockPanel>
     </Grid>
 </Page>

@@ -1,7 +1,9 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using System.Linq;
 using System.Threading.Tasks;
+using GameShift.Core.Presentation;
 using GameShift.Core.System;
 
 namespace GameShift.App.ViewModels;
@@ -62,7 +64,7 @@ public class SystemViewModel : INotifyPropertyChanged
     public bool GameBarEnabled { get => _gameBarEnabled; set { _gameBarEnabled = value; OnPropertyChanged(); } }
 
     // ── Top Processes ──────────────────────────────────────────────────────
-    public ObservableCollection<SystemInfoGatherer.ProcessInfo> TopProcesses { get; } = new();
+    public ObservableCollection<ProcessItem> TopProcesses { get; } = new();
 
     // ── Startup Apps ───────────────────────────────────────────────────────
     public ObservableCollection<StartupAppItem> StartupApps { get; } = new();
@@ -92,40 +94,29 @@ public class SystemViewModel : INotifyPropertyChanged
             // OS
             var os = SystemInfoGatherer.GetOsInfo();
             OsCaption = os.Caption;
-            OsVersion = $"Version {os.Version} (Build {os.BuildNumber})";
+            OsVersion = SystemText.OsVersion(os);
 
             // CPU
             var cpu = SystemInfoGatherer.GetCpuInfo();
             CpuName = cpu.Name;
-            CpuDetails = $"{cpu.Cores} cores / {cpu.LogicalProcessors} threads @ {cpu.MaxClockSpeedMHz} MHz";
+            CpuDetails = SystemText.CpuDetails(cpu);
 
             // GPU
             var gpu = SystemInfoGatherer.GetGpuInfo();
             GpuName = gpu.Name;
-            var vramGB = gpu.AdapterRamBytes / (1024.0 * 1024 * 1024);
-            GpuDetails = vramGB > 0
-                ? $"Driver {gpu.DriverVersion} | {vramGB:F1} GB VRAM"
-                : $"Driver {gpu.DriverVersion}";
+            GpuDetails = SystemText.GpuDetails(gpu);
 
             // RAM
             var ram = SystemInfoGatherer.GetRamInfo();
-            var totalGB = ram.TotalBytes / (1024.0 * 1024 * 1024);
-            RamTotal = $"{totalGB:F1} GB";
-            RamDetails = ram.SpeedMHz > 0
-                ? $"{ram.ModuleCount} module(s) @ {ram.SpeedMHz} MHz"
-                : $"{ram.ModuleCount} module(s)";
+            RamTotal = SystemText.RamTotal(ram);
+            RamDetails = SystemText.RamDetails(ram);
 
-            // Storage
-            var drives = SystemInfoGatherer.GetStorageDrives();
-            if (drives.Count > 0)
+            // Storage: the first drive Windows lists
+            var drive = SystemInfoGatherer.GetStorageDrives().FirstOrDefault();
+            if (drive != null)
             {
-                var d = drives[0];
-                var sizeGB = d.SizeBytes / (1024.0 * 1024 * 1024);
-                StorageSummary = $"{d.Model}";
-                var freeGB = d.FreeSpaceBytes / (1024.0 * 1024 * 1024);
-                StorageDetails = freeGB > 0
-                    ? $"{sizeGB:F0} GB total | {freeGB:F0} GB free"
-                    : $"{sizeGB:F0} GB | {d.MediaType}";
+                StorageSummary = drive.Model;
+                StorageDetails = SystemText.StorageDetails(drive);
             }
             else
             {
@@ -137,8 +128,8 @@ public class SystemViewModel : INotifyPropertyChanged
             var display = SystemInfoGatherer.GetDisplayInfo();
             if (display.Width > 0)
             {
-                DisplayResolution = $"{display.Width} x {display.Height}";
-                DisplayDetails = $"{display.RefreshRate} Hz refresh rate";
+                DisplayResolution = SystemText.DisplayResolution(display);
+                DisplayDetails = SystemText.DisplayDetails(display);
             }
             else
             {
@@ -156,7 +147,7 @@ public class SystemViewModel : INotifyPropertyChanged
             {
                 TopProcesses.Clear();
                 foreach (var p in processes)
-                    TopProcesses.Add(p);
+                    TopProcesses.Add(new ProcessItem { Name = p.Name, Details = SystemText.ProcessDetails(p) });
             });
 
             // Startup Apps
@@ -170,8 +161,7 @@ public class SystemViewModel : INotifyPropertyChanged
                     {
                         Name = app.Name,
                         Publisher = app.Source,
-                        Source = app.Source,
-                        IsRecommendedDisable = app.IsRecommendedDisable
+                        Source = app.Source
                     });
                 }
             });
@@ -204,5 +194,13 @@ public class StartupAppItem
     public string Name { get; set; } = "";
     public string Publisher { get; set; } = "";
     public string Source { get; set; } = "";
-    public bool IsRecommendedDisable { get; set; }
+}
+
+/// <summary>
+/// A process in the System Overview page's top processes list.
+/// </summary>
+public class ProcessItem
+{
+    public string Name { get; set; } = "";
+    public string Details { get; set; } = "";
 }

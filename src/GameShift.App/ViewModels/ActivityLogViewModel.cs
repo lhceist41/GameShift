@@ -5,6 +5,7 @@ using System.ComponentModel;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Windows;
+using GameShift.Core.Presentation;
 
 namespace GameShift.App.ViewModels;
 
@@ -44,7 +45,7 @@ public class ActivityLogViewModel : INotifyPropertyChanged
     /// Filtered and sorted activity entries for display in the list.
     /// Ordered newest-first. Updated when SearchText, SelectedFilter, or source collection changes.
     /// </summary>
-    public ObservableCollection<ActivityEntry> FilteredActivities { get; } = new();
+    public ObservableCollection<ActivityRow> FilteredActivities { get; } = new();
 
     /// <summary>
     /// Available filter options for the type filter ComboBox.
@@ -96,7 +97,7 @@ public class ActivityLogViewModel : INotifyPropertyChanged
                     a.Description.Contains(SearchText, StringComparison.OrdinalIgnoreCase));
 
             foreach (var entry in filtered.OrderByDescending(a => a.Timestamp))
-                FilteredActivities.Add(entry);
+                FilteredActivities.Add(new ActivityRow(entry));
         });
     }
 
@@ -104,4 +105,23 @@ public class ActivityLogViewModel : INotifyPropertyChanged
     {
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
+}
+
+/// <summary>
+/// An activity entry as the Activity page shows it: a plain label instead of the type's code name.
+/// </summary>
+public class ActivityRow
+{
+    public ActivityRow(ActivityEntry entry)
+    {
+        Description = entry.Description;
+        FormattedTime = entry.FormattedTime;
+        Label = ActivityText.Label(entry.Type);
+        Kind = ActivityText.Kind(entry.Type);
+    }
+
+    public string Description { get; }
+    public string FormattedTime { get; }
+    public string Label { get; }
+    public ActivityKind Kind { get; }
 }

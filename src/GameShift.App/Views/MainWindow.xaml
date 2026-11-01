@@ -76,7 +76,7 @@
                         <ui:SymbolIcon Symbol="HeartPulse24"/>
                     </ui:NavigationViewItem.Icon>
                 </ui:NavigationViewItem>
-                <ui:NavigationViewItem x:Name="NavLogs" Content="Logs" TargetPageType="{x:Type pages:LogViewerPage}">
+                <ui:NavigationViewItem x:Name="NavActivity" Content="Activity" TargetPageType="{x:Type pages:ActivityLogPage}">
                     <ui:NavigationViewItem.Icon>
                         <ui:SymbolIcon Symbol="Document24"/>
                     </ui:NavigationViewItem.Icon>

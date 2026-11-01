@@ -5,228 +5,214 @@
       xmlns:helpers="clr-namespace:GameShift.App.Helpers"
       FontFamily="Segoe UI" FontSize="14">
     <Page.Resources>
-        <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
+        <Style x:Key="RowLabel" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Foreground" Value="{DynamicResource GS.Fg.Secondary}"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="Margin" Value="0,0,16,0"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <Style x:Key="RowValue" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="{DynamicResource GS.Fg.Primary}"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+        </Style>
+        <Style x:Key="RowText" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Foreground" Value="{DynamicResource GS.Fg.Secondary}"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="Margin" Value="0,2,0,0"/>
+        </Style>
+
+        <!-- Windows feature state: GameShift only reads it, so it is a neutral badge, not a state colour -->
+        <Style x:Key="FeatureWord" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="Foreground" Value="{DynamicResource GS.Fg.Primary}"/>
+        </Style>
     </Page.Resources>
-    <DockPanel Margin="20">
-        <!-- Header with refresh button -->
-        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,20">
-            <TextBlock Text="System Overview" FontSize="22" FontWeight="Bold"
-                       Foreground="{DynamicResource GS.Text.Primary}"
-                       DockPanel.Dock="Left" VerticalAlignment="Center"/>
-            <Button Content="Refresh" Padding="16,6"
-                    Background="{DynamicResource GS.Accent.Primary}"
-                    Foreground="White" BorderThickness="0"
-                    FontWeight="SemiBold" Cursor="Hand"
-                    DockPanel.Dock="Right" HorizontalAlignment="Right"
-                    Click="OnRefreshClicked"/>
-        </DockPanel>
 
-        <!-- Scrollable content -->
-        <ScrollViewer VerticalScrollBarVisibility="Auto"
-                      helpers:ScrollHelper.FixScrolling="True">
-            <StackPanel>
-                <!-- 2x3 Hardware Info Grid -->
-                <UniformGrid Rows="2" Columns="3" Margin="0,0,0,20">
-                    <!-- OS Card -->
-                    <Border Background="{DynamicResource GS.Surface.Card}" CornerRadius="8"
-                            Padding="15" Margin="0,0,8,8"
-                            BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1">
-                        <StackPanel>
-                            <TextBlock Text="OPERATING SYSTEM" FontSize="10" FontWeight="Bold"
-                                       Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,0,0,8"/>
-                            <TextBlock Text="{Binding OsCaption}" FontSize="14" FontWeight="SemiBold"
-                                       Foreground="{DynamicResource GS.Text.Primary}" TextTrimming="CharacterEllipsis"/>
-                            <TextBlock Text="{Binding OsVersion}" FontSize="11"
-                                       Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,4,0,0"/>
-                        </StackPanel>
+    <ScrollViewer VerticalScrollBarVisibility="Auto"
+                  helpers:ScrollHelper.FixScrolling="True">
+        <StackPanel Margin="24">
+            <DockPanel Margin="0,0,0,8">
+                <Button Content="Refresh" DockPanel.Dock="Right" VerticalAlignment="Center" Margin="12,0,0,0"
+                        Style="{StaticResource GS.Button.Primary}"
+                        Click="OnRefreshClicked"/>
+                <TextBlock Text="System" Style="{DynamicResource GS.Text.Hero}" TextWrapping="Wrap"/>
+            </DockPanel>
+            <TextBlock Text="What Windows reports about this PC. This page only reads these values."
+                       FontSize="13" Foreground="{DynamicResource GS.Fg.Secondary}"
+                       TextWrapping="Wrap" Margin="0,0,0,16"/>
+
+            <!-- Hardware -->
+            <TextBlock Text="HARDWARE" Style="{StaticResource GS.Text.Caps}" Margin="0,0,0,8"/>
+            <Border Style="{StaticResource GS.Panel}" Padding="0" Margin="0,0,0,24">
+                <StackPanel Grid.IsSharedSizeScope="True">
+                    <Border Style="{StaticResource GS.Row}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="Label"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Operating system" Style="{StaticResource RowLabel}"/>
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                <TextBlock Text="{Binding OsCaption}" Style="{StaticResource RowValue}"/>
+                                <TextBlock Text="{Binding OsVersion}" Style="{StaticResource RowText}"/>
+                            </StackPanel>
+                        </Grid>
                     </Border>
-
-                    <!-- CPU Card -->
-                    <Border Background="{DynamicResource GS.Surface.Card}" CornerRadius="8"
-                            Padding="15" Margin="4,0,4,8"
-                            BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1">
-                        <StackPanel>
-                            <TextBlock Text="PROCESSOR" FontSize="10" FontWeight="Bold"
-                                       Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,0,0,8"/>
-                            <TextBlock Text="{Binding CpuName}" FontSize="14" FontWeight="SemiBold"
-                                       Foreground="{DynamicResource GS.Text.Primary}" TextTrimming="CharacterEllipsis"/>
-                            <TextBlock Text="{Binding CpuDetails}" FontSize="11"
-                                       Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,4,0,0"/>
-                        </StackPanel>
+                    <Border Style="{StaticResource GS.Row}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="Label"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Processor" Style="{StaticResource RowLabel}"/>
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                <TextBlock Text="{Binding CpuName}" Style="{StaticResource RowValue}"/>
+                                <TextBlock Text="{Binding CpuDetails}" Style="{StaticResource RowText}"/>
+                            </StackPanel>
+                        </Grid>
                     </Border>
-
-                    <!-- GPU Card -->
-                    <Border Background="{DynamicResource GS.Surface.Card}" CornerRadius="8"
-                            Padding="15" Margin="8,0,0,8"
-                            BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1">
-                        <StackPanel>
-                            <TextBlock Text="GRAPHICS" FontSize="10" FontWeight="Bold"
-                                       Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,0,0,8"/>
-                            <TextBlock Text="{Binding GpuName}" FontSize="14" FontWeight="SemiBold"
-                                       Foreground="{DynamicResource GS.Text.Primary}" TextTrimming="CharacterEllipsis"/>
-                            <TextBlock Text="{Binding GpuDetails}" FontSize="11"
-                                       Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,4,0,0"/>
-                        </StackPanel>
+                    <Border Style="{StaticResource GS.Row}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="Label"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Graphics" Style="{StaticResource RowLabel}"/>
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                <TextBlock Text="{Binding GpuName}" Style="{StaticResource RowValue}"/>
+                                <TextBlock Text="{Binding GpuDetails}" Style="{StaticResource RowText}"/>
+                            </StackPanel>
+                        </Grid>
                     </Border>
-
-                    <!-- RAM Card -->
-                    <Border Background="{DynamicResource GS.Surface.Card}" CornerRadius="8"
-                            Padding="15" Margin="0,8,8,0"
-                            BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1">
-                        <StackPanel>
-                            <TextBlock Text="MEMORY" FontSize="10" FontWeight="Bold"
-                                       Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,0,0,8"/>
-                            <TextBlock Text="{Binding RamTotal}" FontSize="14" FontWeight="SemiBold"
-                                       Foreground="{DynamicResource GS.Text.Primary}"/>
-                            <TextBlock Text="{Binding RamDetails}" FontSize="11"
-                                       Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,4,0,0"/>
-                        </StackPanel>
+                    <Border Style="{StaticResource GS.Row}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="Label"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Memory" Style="{StaticResource RowLabel}"/>
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                <TextBlock Text="{Binding RamTotal}" Style="{StaticResource RowValue}"/>
+                                <TextBlock Text="{Binding RamDetails}" Style="{StaticResource RowText}"/>
+                            </StackPanel>
+                        </Grid>
                     </Border>
-
-                    <!-- Storage Card -->
-                    <Border Background="{DynamicResource GS.Surface.Card}" CornerRadius="8"
-                            Padding="15" Margin="4,8,4,0"
-                            BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1">
-                        <StackPanel>
-                            <TextBlock Text="STORAGE" FontSize="10" FontWeight="Bold"
-                                       Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,0,0,8"/>
-                            <TextBlock Text="{Binding StorageSummary}" FontSize="14" FontWeight="SemiBold"
-                                       Foreground="{DynamicResource GS.Text.Primary}" TextTrimming="CharacterEllipsis"/>
-                            <TextBlock Text="{Binding StorageDetails}" FontSize="11"
-                                       Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,4,0,0"/>
-                        </StackPanel>
+                    <Border Style="{StaticResource GS.Row}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="Label"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Storage" Style="{StaticResource RowLabel}"/>
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                <TextBlock Text="{Binding StorageSummary}" Style="{StaticResource RowValue}"/>
+                                <TextBlock Text="{Binding StorageDetails}" Style="{StaticResource RowText}"/>
+                            </StackPanel>
+                        </Grid>
                     </Border>
-
-                    <!-- Display Card -->
-                    <Border Background="{DynamicResource GS.Surface.Card}" CornerRadius="8"
-                            Padding="15" Margin="8,8,0,0"
-                            BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1">
-                        <StackPanel>
-                            <TextBlock Text="DISPLAY" FontSize="10" FontWeight="Bold"
-                                       Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,0,0,8"/>
-                            <TextBlock Text="{Binding DisplayResolution}" FontSize="14" FontWeight="SemiBold"
-                                       Foreground="{DynamicResource GS.Text.Primary}"/>
-                            <TextBlock Text="{Binding DisplayDetails}" FontSize="11"
-                                       Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,4,0,0"/>
-                        </StackPanel>
+                    <Border Style="{StaticResource GS.Row}" BorderThickness="0">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="Label"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Display" Style="{StaticResource RowLabel}"/>
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                <TextBlock Text="{Binding DisplayResolution}" Style="{StaticResource RowValue}"/>
+                                <TextBlock Text="{Binding DisplayDetails}" Style="{StaticResource RowText}"/>
+                            </StackPanel>
+                        </Grid>
                     </Border>
-                </UniformGrid>
+                </StackPanel>
+            </Border>
 
-                <!-- Windows Gaming Features -->
-                <TextBlock Text="WINDOWS GAMING FEATURES" FontSize="11" FontWeight="Bold"
-                           Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,0,0,8"/>
-
-                <Border Background="{DynamicResource GS.Surface.Card}" CornerRadius="8"
-                        Padding="15" Margin="0,0,0,20"
-                        BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1">
-                    <StackPanel>
-                        <DockPanel Margin="0,0,0,8">
-                            <TextBlock Text="Game Mode" Foreground="{DynamicResource GS.Text.Primary}"
-                                       VerticalAlignment="Center"/>
-                            <Border DockPanel.Dock="Right" HorizontalAlignment="Right"
-                                    Background="{DynamicResource GS.Surface.Base}" CornerRadius="4" Padding="8,3">
-                                <TextBlock FontSize="11" FontWeight="SemiBold">
+            <!-- Windows gaming features -->
+            <TextBlock Text="WINDOWS GAMING FEATURES" Style="{StaticResource GS.Text.Caps}" Margin="0,0,0,8"/>
+            <Border Style="{StaticResource GS.Panel}" Padding="0" Margin="0,0,0,24">
+                <StackPanel>
+                    <Border Style="{StaticResource GS.Row}">
+                        <DockPanel VerticalAlignment="Center">
+                            <Border DockPanel.Dock="Right" Style="{StaticResource GS.Badge.State}" Margin="12,0,0,0">
+                                <TextBlock>
                                     <TextBlock.Style>
-                                        <Style TargetType="TextBlock">
-                                            <Setter Property="Text" Value="Disabled"/>
-                                            <Setter Property="Foreground" Value="{DynamicResource GS.Text.Secondary}"/>
+                                        <Style TargetType="TextBlock" BasedOn="{StaticResource FeatureWord}">
+                                            <Setter Property="Text" Value="Off"/>
                                             <Style.Triggers>
                                                 <DataTrigger Binding="{Binding GameModeEnabled}" Value="True">
-                                                    <Setter Property="Text" Value="Enabled"/>
-                                                    <Setter Property="Foreground" Value="{DynamicResource GS.Accent.Primary}"/>
+                                                    <Setter Property="Text" Value="On"/>
                                                 </DataTrigger>
                                             </Style.Triggers>
                                         </Style>
                                     </TextBlock.Style>
                                 </TextBlock>
                             </Border>
+                            <TextBlock Text="Game Mode" Style="{StaticResource RowValue}" VerticalAlignment="Center"/>
                         </DockPanel>
-                        <DockPanel>
-                            <TextBlock Text="Game Bar" Foreground="{DynamicResource GS.Text.Primary}"
-                                       VerticalAlignment="Center"/>
-                            <Border DockPanel.Dock="Right" HorizontalAlignment="Right"
-                                    Background="{DynamicResource GS.Surface.Base}" CornerRadius="4" Padding="8,3">
-                                <TextBlock FontSize="11" FontWeight="SemiBold">
+                    </Border>
+                    <Border Style="{StaticResource GS.Row}" BorderThickness="0">
+                        <DockPanel VerticalAlignment="Center">
+                            <Border DockPanel.Dock="Right" Style="{StaticResource GS.Badge.State}" Margin="12,0,0,0">
+                                <TextBlock>
                                     <TextBlock.Style>
-                                        <Style TargetType="TextBlock">
-                                            <Setter Property="Text" Value="Disabled"/>
-                                            <Setter Property="Foreground" Value="{DynamicResource GS.Text.Secondary}"/>
+                                        <Style TargetType="TextBlock" BasedOn="{StaticResource FeatureWord}">
+                                            <Setter Property="Text" Value="Off"/>
                                             <Style.Triggers>
                                                 <DataTrigger Binding="{Binding GameBarEnabled}" Value="True">
-                                                    <Setter Property="Text" Value="Enabled"/>
-                                                    <Setter Property="Foreground" Value="{DynamicResource GS.Accent.Primary}"/>
+                                                    <Setter Property="Text" Value="On"/>
                                                 </DataTrigger>
                                             </Style.Triggers>
                                         </Style>
                                     </TextBlock.Style>
                                 </TextBlock>
                             </Border>
+                            <TextBlock Text="Game Bar" Style="{StaticResource RowValue}" VerticalAlignment="Center"/>
                         </DockPanel>
-                    </StackPanel>
-                </Border>
+                    </Border>
+                </StackPanel>
+            </Border>
 
-                <!-- Top Processes -->
-                <TextBlock Text="TOP PROCESSES (BY CPU TIME)" FontSize="11" FontWeight="Bold"
-                           Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,0,0,8"/>
+            <!-- Top processes -->
+            <TextBlock Text="TOP PROCESSES BY CPU TIME" Style="{StaticResource GS.Text.Caps}" Margin="0,0,0,8"/>
+            <Border Style="{StaticResource GS.Panel}" Padding="0" Margin="0,0,0,24">
+                <ItemsControl ItemsSource="{Binding TopProcesses}" Focusable="False">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Style="{StaticResource GS.Row}">
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding Name}" Style="{StaticResource RowValue}"/>
+                                    <TextBlock Text="{Binding Details}" Style="{StaticResource RowText}"/>
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </Border>
 
-                <Border Background="{DynamicResource GS.Surface.Card}" CornerRadius="8"
-                        Padding="15" Margin="0,0,0,20"
-                        BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1">
-                    <ItemsControl ItemsSource="{Binding TopProcesses}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <DockPanel Margin="0,0,0,6">
-                                    <TextBlock DockPanel.Dock="Left" Width="180"
-                                               Foreground="{DynamicResource GS.Text.Primary}"
-                                               TextTrimming="CharacterEllipsis">
-                                        <Run Text="{Binding Name, Mode=OneWay}"/>
-                                    </TextBlock>
-                                    <TextBlock DockPanel.Dock="Right" HorizontalAlignment="Right"
-                                               Foreground="{DynamicResource GS.Text.Secondary}" FontSize="11">
-                                        <Run Text="{Binding MemoryMB, Mode=OneWay, StringFormat={}{0} MB}"/>
-                                    </TextBlock>
-                                    <TextBlock Foreground="{DynamicResource GS.Text.Secondary}" FontSize="11">
-                                        <Run Text="PID"/>
-                                        <Run Text="{Binding Pid, Mode=OneWay}"/>
-                                        <Run Text=" | CPU"/>
-                                        <Run Text="{Binding CpuSeconds, Mode=OneWay, StringFormat={}{0:F1}s}"/>
-                                    </TextBlock>
-                                </DockPanel>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </Border>
-
-                <!-- Startup Apps Section -->
-                <TextBlock Text="STARTUP APPLICATIONS" FontSize="11" FontWeight="Bold"
-                           Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,0,0,4"/>
-                <TextBlock Text="Turn startup apps on or off in Windows Settings &gt; Apps &gt; Startup."
-                           FontSize="11" Foreground="{DynamicResource GS.Text.Secondary}"
-                           TextWrapping="Wrap" Margin="0,0,0,8"/>
-
-                <Border Background="{DynamicResource GS.Surface.Card}" CornerRadius="8"
-                        Padding="15" Margin="0,0,0,20"
-                        BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1">
-                    <ItemsControl ItemsSource="{Binding StartupApps}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <DockPanel Margin="0,0,0,6">
-                                    <StackPanel>
-                                        <StackPanel Orientation="Horizontal">
-                                            <TextBlock Text="{Binding Name}" Foreground="{DynamicResource GS.Text.Primary}" FontWeight="SemiBold"/>
-                                            <Border Background="#FBBF24" CornerRadius="3" Padding="4,1" Margin="6,0,0,0"
-                                                    Visibility="{Binding IsRecommendedDisable, Converter={StaticResource BoolToVisibility}}">
-                                                <TextBlock Text="Safe to disable" FontSize="9" Foreground="#0D1117" FontWeight="Bold"/>
-                                            </Border>
-                                        </StackPanel>
-                                        <TextBlock Text="{Binding Publisher}" FontSize="11" Foreground="{DynamicResource GS.Text.Secondary}"/>
-                                    </StackPanel>
-                                </DockPanel>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </Border>
-            </StackPanel>
-        </ScrollViewer>
-    </DockPanel>
+            <!-- Startup apps: read only -->
+            <TextBlock Text="STARTUP APPS" Style="{StaticResource GS.Text.Caps}" Margin="0,0,0,4"/>
+            <TextBlock Text="GameShift lists these and changes none of them. Turn startup apps on or off in Windows Settings &gt; Apps &gt; Startup."
+                       FontSize="12" Foreground="{DynamicResource GS.Fg.Secondary}"
+                       TextWrapping="Wrap" Margin="0,0,0,8"/>
+            <Border Style="{StaticResource GS.Panel}" Padding="0">
+                <ItemsControl ItemsSource="{Binding StartupApps}" Focusable="False">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Style="{StaticResource GS.Row}">
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding Name}" Style="{StaticResource RowValue}"/>
+                                    <TextBlock Text="{Binding Publisher}" Style="{StaticResource RowText}"/>
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
 </Page>

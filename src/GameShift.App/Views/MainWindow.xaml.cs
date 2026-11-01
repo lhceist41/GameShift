@@ -212,7 +212,7 @@ public partial class MainWindow : FluentWindow
         // Diagnostics group
         NavHeaderDiagnostics.Visibility = vis;
         NavDpcDoctor.Visibility = vis;
-        NavLogs.Visibility = vis;
+        NavActivity.Visibility = vis;
     }
 
     /// <summary>
