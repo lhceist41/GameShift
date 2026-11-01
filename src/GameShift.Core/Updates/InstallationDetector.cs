@@ -20,7 +20,8 @@ public enum InstallMode
 /// <summary>
 /// Result of <see cref="InstallationDetector.Detect"/>.
 /// </summary>
-/// <param name="Mode">Installed only when the running exe sits in the registered install folder.</param>
+/// <param name="Mode">Installed only when the running exe sits in the registered install folder and
+/// that folder is admin-only.</param>
 /// <param name="ExePath">Path of the running executable, as reported by the process.</param>
 /// <param name="RegisteredInstallDirectory">Normalized install folder the installer registered, or null
 /// when no installed copy is registered. Set in portable mode too when an installed copy exists elsewhere.</param>
@@ -33,7 +34,9 @@ public sealed record InstallationInfo(InstallMode Mode, string? ExePath, string?
 /// <summary>
 /// Tells an installed copy apart from a portable one by comparing the running exe's folder with the
 /// install location the installer wrote to its uninstall key. That key lives under HKLM, which standard
-/// users cannot write, so a portable copy cannot make itself look installed.
+/// users cannot write, so a portable copy cannot make itself look installed. The folder must also be
+/// admin-only (<see cref="InstallFolderTrust"/>): an install a standard user can change, for example
+/// one placed with /DIR= in a folder under C:\, is handled as portable.
 /// </summary>
 public static class InstallationDetector
 {
@@ -49,7 +52,7 @@ public static class InstallationDetector
     internal const string InstallLocationValueName = "InstallLocation";
 
     private static readonly Lazy<InstallationInfo> _current =
-        new(() => Detect(Environment.ProcessPath, ReadRegisteredInstallLocation()));
+        new(() => Detect(Environment.ProcessPath, ReadRegisteredInstallLocation(), InstallFolderTrust.Check));
 
     /// <summary>Deployment of the running process. Computed once; it cannot change while the process runs.</summary>
     public static InstallationInfo Current => _current.Value;
@@ -57,19 +60,42 @@ public static class InstallationDetector
     /// <summary>
     /// Decides the install mode from the running exe path and the registered install location.
     /// Anything that cannot be read or compared reliably yields Portable, which keeps the update path
-    /// every release before the installer used.
+    /// every release before the installer used. <paramref name="checkInstall"/> is asked about the exe
+    /// only when it sits in the registered folder.
     /// </summary>
-    public static InstallationInfo Detect(string? exePath, string? registeredInstallLocation)
+    public static InstallationInfo Detect(
+        string? exePath, string? registeredInstallLocation, Func<string, InstallFolderTrustResult> checkInstall)
     {
         var registeredDir = NormalizeDirectory(registeredInstallLocation);
         var exeDir = NormalizeDirectory(GetDirectoryOrNull(exePath));
 
-        var mode = registeredDir != null && exeDir != null &&
-                   string.Equals(exeDir, registeredDir, StringComparison.OrdinalIgnoreCase)
+        var inRegisteredFolder = registeredDir != null && exeDir != null &&
+                                 string.Equals(exeDir, registeredDir, StringComparison.OrdinalIgnoreCase);
+
+        var mode = inRegisteredFolder && IsTrusted(exePath!, registeredDir!, checkInstall)
             ? InstallMode.Installed
             : InstallMode.Portable;
 
         return new InstallationInfo(mode, exePath, registeredDir);
+    }
+
+    private static bool IsTrusted(string exePath, string installDir, Func<string, InstallFolderTrustResult> checkInstall)
+    {
+        InstallFolderTrustResult result;
+        try
+        {
+            result = checkInstall(exePath);
+        }
+        catch (Exception ex)
+        {
+            result = InstallFolderTrustResult.Untrusted($"the check failed: {ex.Message}");
+        }
+
+        if (result.Trusted) return true;
+
+        Log.Warning("InstallationDetector: {InstallDir} is not admin-only ({Reasons}); running as a portable copy without installer updates",
+            installDir, string.Join("; ", result.Reasons));
+        return false;
     }
 
     /// <summary>

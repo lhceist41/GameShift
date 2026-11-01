@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Security.Cryptography;
 using GameShift.Core.Updates;
+using GameShift.Tests.Config;
 using GameShift.Tests.TestHelpers;
 using Xunit;
 
@@ -261,5 +262,152 @@ public class InstallerUpdateTests
 
         Assert.True(File.Exists(app));
         Assert.True(Directory.Exists(install.Path));
+    }
+
+    // The elevated app must never delete or create through a junction a standard user could plant in
+    // the updates folder. Junctions need no privilege, so these run unelevated on temp folders.
+
+    private static string Victim(TempPath temp)
+    {
+        var target = Path.Combine(temp.Path, "victim");
+        Directory.CreateDirectory(Path.Combine(target, "sub"));
+        File.WriteAllText(Path.Combine(target, "keep.txt"), "keep");
+        File.WriteAllText(Path.Combine(target, "sub", "keep.txt"), "keep");
+        File.WriteAllText(Path.Combine(target, UpdateAssetSelector.InstallerAssetName), "keep");
+        return target;
+    }
+
+    [Fact]
+    public void CleanupStaging_UpdatesFolderIsAJunction_LeavesItAndItsTargetAlone()
+    {
+        using var temp = new TempPath();
+        var target = Victim(temp);
+        var before = UserDataFolderTests.Snapshot(target);
+        var install = Path.Combine(temp.Path, "install");
+        Directory.CreateDirectory(install);
+        var updates = Path.Combine(install, "updates");
+        using var junction = UserDataFolderTests.Junction(updates, target);
+
+        InstallerUpdate.CleanupStaging(install);
+
+        Assert.Equal(before, UserDataFolderTests.Snapshot(target));
+        Assert.True((File.GetAttributes(updates) & FileAttributes.ReparsePoint) != 0);
+    }
+
+    [Fact]
+    public void CleanupStaging_StagingFolderIsAJunction_LeavesItAndItsTargetAlone_AndRemovesTheRest()
+    {
+        using var temp = new TempPath();
+        var target = Victim(temp);
+        var before = UserDataFolderTests.Snapshot(target);
+        var install = Directory.CreateDirectory(Path.Combine(temp.Path, "install")).FullName;
+        var stale = StageInstaller(install, InstallerBytes);
+        var planted = Path.Combine(install, "updates", "0123456789abcdef0123456789abcdef");
+        using var junction = UserDataFolderTests.Junction(planted, target);
+
+        InstallerUpdate.CleanupStaging(install);
+
+        Assert.Equal(before, UserDataFolderTests.Snapshot(target));
+        Assert.True((File.GetAttributes(planted) & FileAttributes.ReparsePoint) != 0);
+        Assert.False(Directory.Exists(Path.GetDirectoryName(stale)));
+    }
+
+    [Fact]
+    public void CleanupStaging_HardLinkInAStagingFolder_RemovesOnlyThatName()
+    {
+        using var temp = new TempPath();
+        var target = Victim(temp);
+        var install = Directory.CreateDirectory(Path.Combine(temp.Path, "install")).FullName;
+        var staged = InstallerUpdate.CreateStagingPath(install);
+        UserDataFolderTests.MkLink("/H", staged, Path.Combine(target, "keep.txt"));
+
+        InstallerUpdate.CleanupStaging(install);
+
+        Assert.False(Directory.Exists(Path.Combine(install, "updates")));
+        Assert.Equal("keep", File.ReadAllText(Path.Combine(target, "keep.txt")));
+    }
+
+    [Fact]
+    public void CleanupStaging_FolderInsideAStagingFolder_IsLeftInPlace()
+    {
+        using var temp = new TempPath();
+        var install = Directory.CreateDirectory(Path.Combine(temp.Path, "install")).FullName;
+        var staged = StageInstaller(install, InstallerBytes);
+        var nested = Path.Combine(Path.GetDirectoryName(staged)!, "nested");
+        Directory.CreateDirectory(nested);
+        File.WriteAllText(Path.Combine(nested, "file.txt"), "x");
+        var empty = Path.Combine(Path.GetDirectoryName(staged)!, "empty");
+        Directory.CreateDirectory(empty);
+
+        InstallerUpdate.CleanupStaging(install);
+
+        Assert.False(File.Exists(staged));
+        Assert.True(File.Exists(Path.Combine(nested, "file.txt")));
+        Assert.True(Directory.Exists(empty));
+    }
+
+    [Fact]
+    public void DiscardStaged_UpdatesFolderIsAJunction_LeavesTheTargetAlone()
+    {
+        using var temp = new TempPath();
+        var target = Path.Combine(temp.Path, "victim");
+        var stagingInTarget = Path.Combine(target, "0123456789abcdef0123456789abcdef");
+        Directory.CreateDirectory(stagingInTarget);
+        File.WriteAllText(Path.Combine(stagingInTarget, UpdateAssetSelector.InstallerAssetName), "keep");
+        var before = UserDataFolderTests.Snapshot(target);
+        var install = Path.Combine(temp.Path, "install");
+        Directory.CreateDirectory(install);
+        using var junction = UserDataFolderTests.Junction(Path.Combine(install, "updates"), target);
+
+        InstallerUpdate.DiscardStaged(
+            Path.Combine(install, "updates", "0123456789abcdef0123456789abcdef", UpdateAssetSelector.InstallerAssetName), install);
+
+        Assert.Equal(before, UserDataFolderTests.Snapshot(target));
+    }
+
+    [Fact]
+    public void DiscardStaged_StagingFolderIsAJunction_LeavesTheTargetAlone()
+    {
+        using var temp = new TempPath();
+        var target = Victim(temp);
+        var before = UserDataFolderTests.Snapshot(target);
+        var install = Path.Combine(temp.Path, "install");
+        Directory.CreateDirectory(Path.Combine(install, "updates"));
+        var planted = Path.Combine(install, "updates", "0123456789abcdef0123456789abcdef");
+        using var junction = UserDataFolderTests.Junction(planted, target);
+
+        InstallerUpdate.DiscardStaged(Path.Combine(planted, UpdateAssetSelector.InstallerAssetName), install);
+
+        Assert.Equal(before, UserDataFolderTests.Snapshot(target));
+        Assert.True((File.GetAttributes(planted) & FileAttributes.ReparsePoint) != 0);
+    }
+
+    [Fact]
+    public void CreateStagingPath_UpdatesFolderIsAJunction_IsRefused_AndNothingIsCreatedInTheTarget()
+    {
+        using var temp = new TempPath();
+        var target = Path.Combine(temp.Path, "victim");
+        Directory.CreateDirectory(target);
+        var install = Path.Combine(temp.Path, "install");
+        Directory.CreateDirectory(install);
+        using var junction = UserDataFolderTests.Junction(Path.Combine(install, "updates"), target);
+
+        Assert.Throws<IOException>(() => InstallerUpdate.CreateStagingPath(install));
+
+        Assert.Empty(Directory.GetFileSystemEntries(target));
+    }
+
+    [Fact]
+    public void CreateStagingPath_InstallFolderIsAJunction_IsRefused_AndNothingIsCreatedInTheTarget()
+    {
+        using var temp = new TempPath();
+        var target = Path.Combine(temp.Path, "victim");
+        Directory.CreateDirectory(target);
+        var install = Path.Combine(temp.Path, "install");
+        using var junction = UserDataFolderTests.Junction(install, target);
+
+        Assert.Throws<IOException>(() => InstallerUpdate.CreateStagingPath(install));
+
+        Assert.Empty(Directory.GetFileSystemEntries(target));
     }
 }
