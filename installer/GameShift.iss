@@ -1,4 +1,4 @@
-; GameShift installer (Inno Setup 6.3 or later).
+; GameShift installer (Inno Setup 6.7 or later).
 ;
 ; Build from the repository root:
 ;   dotnet publish src/GameShift.App/GameShift.App.csproj -c Release -r win-x64 -p:IncludeNativeLibrariesForSelfExtract=false -o artifacts/installer-publish
@@ -8,6 +8,10 @@
 ; The installed build must not self-extract. With IncludeNativeLibrariesForSelfExtract=false its native
 ; libraries sit next to the exe in Program Files instead of being unpacked into the user's %TEMP%, which
 ; the user can write to and the elevated app would load them from.
+
+#if Ver < EncodeVer(6, 7, 0)
+  #error Inno Setup 6.7 or later is required to build the GameShift installer
+#endif
 
 #define AppName "GameShift"
 #define AppExeName "GameShift.App.exe"
@@ -84,7 +88,9 @@ SolidCompression=yes
 WizardStyle=modern
 
 [Messages]
-ConfirmUninstall=Before you remove %1, undo the lasting changes it made: open %1, uncheck Easy Mode in Settings and click "Restore All GameShift Tweaks". If you used Background Mode in an earlier version, the uninstall steps in the GameShift README on GitHub name one registry value it may have left.%n%nAre you sure you want to completely remove %1 and all of its components?
+SetupAppRunningError=%1 is running.%n%nRight-click the %1 icon next to the clock (it may be behind the ^ arrow) and choose Exit. That ends any active session first.%n%nThen click OK to continue, or Cancel to stop Setup.
+ConfirmUninstall=Remove %1?%n%nUninstalling removes the %1 startup task and offers to undo the lasting changes %1 recorded for your Windows account. Changes that need your own choice are listed, not undone. For changes recorded in another Windows account, use Restore All in %1 in that account first.%n%nYour settings stay in your user folder, so installing %1 again picks them up.
+UninstallAppRunningError=%1 is running.%n%nRight-click the %1 icon next to the clock (it may be behind the ^ arrow) and choose Exit. That ends any active session first.%n%nThen click OK to continue, or Cancel to keep %1 installed.
 
 [Files]
 Source: "{#PublishFolder}{#AppExeName}"; DestDir: "{app}"; Flags: ignoreversion
@@ -114,6 +120,22 @@ begin
   Result := CheckForMutexes('{#AppMutexName}');
 end;
 
+// Restart Manager does not cover the uninstaller, and replacing or removing the files of a running,
+// elevated GameShift would leave it running without them. Returns False if the user cancels.
+function WaitForGameShiftToClose(const RunningMessage: String): Boolean;
+begin
+  Result := True;
+  while IsGameShiftRunning() do
+  begin
+    if SuppressibleMsgBox(FmtMessage(RunningMessage, ['{#AppName}']),
+      mbInformation, MB_OKCANCEL, IDCANCEL) <> IDOK then
+    begin
+      Result := False;
+      Exit;
+    end;
+  end;
+end;
+
 function InitializeSetup(): Boolean;
 var
   Waited: Integer;
@@ -131,6 +153,12 @@ begin
     end;
   end;
 
+  if not WizardSilent and not WaitForGameShiftToClose(SetupMessage(msgSetupAppRunningError)) then
+  begin
+    Result := False;
+    Exit;
+  end;
+
   Result := True;
 end;
 
@@ -139,30 +167,94 @@ begin
   Result := WizardSilent and (ExpandConstant('{param:RELAUNCH|0}') = '1');
 end;
 
-// Restart Manager does not cover the uninstaller, and removing the files of a running, elevated
-// GameShift would leave it running without them. Returns False if the user cancels.
-function WaitForGameShiftToClose(): Boolean;
+// A fresh install must land in the admin-only Program Files folder: everything in it runs elevated, and the
+// uninstaller deletes {app}\updates by path. An upgrade keeps the folder it already has.
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  ExpectedDir: String;
 begin
-  Result := True;
-  while IsGameShiftRunning() do
+  Result := '';
+  if WizardForm.PrevAppDir <> '' then
+    Exit;
+
+  ExpectedDir := ExpandConstant('{autopf}\{#AppName}');
+  if CompareText(RemoveBackslashUnlessRoot(WizardDirValue), ExpectedDir) <> 0 then
   begin
-    if SuppressibleMsgBox(FmtMessage(SetupMessage(msgUninstallAppRunningError), ['{#AppName}']),
-      mbError, MB_OKCANCEL, IDCANCEL) <> IDOK then
-    begin
-      Result := False;
-      Exit;
-    end;
+    Log('Refusing a fresh install in ' + WizardDirValue + ': GameShift installs only in ' + ExpectedDir);
+    Result := '{#AppName} installs only in ' + ExpectedDir + ', a folder only administrators can change.' + #13#10#13#10 +
+      'Run Setup again without /DIR, or with /DIR set to that folder.';
   end;
 end;
 
 function InitializeUninstall(): Boolean;
 begin
-  Result := WaitForGameShiftToClose();
+  Result := WaitForGameShiftToClose(SetupMessage(msgUninstallAppRunningError));
 end;
 
-// Checked again after the confirmation box, which asks the user to open GameShift first.
+// Runs {app}\GameShift.App.exe with one of its windowless commands and returns its exit code, or -1 when it
+// could not run. Exit code 3 means GameShift is running, possibly in another signed-in account.
+function RunGameShiftCommand(const Argument: String): Integer;
+var
+  ExePath: String;
+begin
+  Result := -1;
+  ExePath := ExpandConstant('{app}\{#AppExeName}');
+  if not FileExists(ExePath) then
+  begin
+    Log('Skipping ' + Argument + ': ' + ExePath + ' is missing');
+    Exit;
+  end;
+
+  while True do
+  begin
+    if not Exec(ExePath, Argument, '', SW_HIDE, ewWaitUntilTerminated, Result) then
+    begin
+      Log('Could not run ' + Argument + ': ' + SysErrorMessage(Result));
+      Result := -1;
+      Exit;
+    end;
+    Log(Argument + ' exited with ' + IntToStr(Result));
+
+    if (Result <> 3) or UninstallSilent then
+      Exit;
+    if SuppressibleMsgBox('{#AppName} is running in another signed-in account, so it cannot remove its startup task or undo its changes now.' + #13#10#13#10 +
+      'Close {#AppName} in every signed-in account, then click Retry. Click Cancel to remove {#AppName} without that.',
+      mbInformation, MB_RETRYCANCEL, IDCANCEL) <> IDRETRY then
+      Exit;
+  end;
+end;
+
+// Both commands need {app}, so they run before its files are deleted. The tasks go first: removing them
+// is quick and needs no answer, so no elevated task is left pointing at the removed exe whatever the
+// user answers next.
+procedure RunUninstallCommands();
+var
+  ResultCode: Integer;
+begin
+  if RunGameShiftCommand('--remove-tasks') = 3 then
+    Exit;
+
+  if not UninstallSilent and (SuppressibleMsgBox('Undo the lasting changes {#AppName} recorded for your Windows account?',
+    mbConfirmation, MB_YESNO, IDYES) <> IDYES) then
+  begin
+    Log('The user chose not to undo the recorded lasting changes');
+    Exit;
+  end;
+
+  ResultCode := RunGameShiftCommand('--restore-tweaks');
+  if (ResultCode <> 0) and (ResultCode <> 3) and not UninstallSilent then
+    SuppressibleMsgBox('Some lasting changes {#AppName} recorded are not undone. ' +
+      ExpandConstant('{commonappdata}\{#AppName}\logs\restore-tweaks.txt') + ' lists them when that file exists.' + #13#10#13#10 +
+      'To undo them, start {#AppName} again (installed or portable) and use Restore All in Settings.',
+      mbInformation, MB_OK, IDOK);
+end;
+
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
-  if (CurUninstallStep = usAppMutexCheck) and not WaitForGameShiftToClose() then
+  // Checked again after the confirmation box, which the user may answer after starting GameShift.
+  if (CurUninstallStep = usAppMutexCheck) and not WaitForGameShiftToClose(SetupMessage(msgUninstallAppRunningError)) then
     Abort;
+
+  if CurUninstallStep = usUninstall then
+    RunUninstallCommands();
 end;

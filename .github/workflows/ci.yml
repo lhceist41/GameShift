@@ -147,6 +147,7 @@ jobs:
             if (-not $iscc) { $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" }
           }
           if (-not (Test-Path $iscc)) { throw "Inno Setup compiler not found" }
+          "[Setup]", "AppName=v", "AppVersion=1", "DefaultDirName=v" | & $iscc /O- - | Select-String "Compiler engine version" | ForEach-Object { Write-Host $_.Line.Trim() }
           & $iscc /Qp installer\GameShift.iss
           if ($LASTEXITCODE -ne 0) { throw "Installer compile failed (exit $LASTEXITCODE)" }
           $setup = Get-Item artifacts/installer/GameShift-Setup.exe
