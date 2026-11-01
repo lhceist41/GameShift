@@ -101,7 +101,10 @@ public partial class FirstRunWizardWindow : Window
             // Load existing settings first, then overlay wizard values to avoid
             // resetting all other settings (profiles, etc.) to defaults
             var settings = SettingsManager.Load();
-            settings.StartWithWindows = StartWithWindowsCheckBox.IsChecked == true;
+            // With no saved settings the installed copy has no startup task yet, and this copy may not register one.
+            var startupInstallFolder = StartupManager.InstallFolderKeepingStartup();
+            var startupRefused = startupInstallFolder != null && StartWithWindowsCheckBox.IsChecked == true;
+            settings.StartWithWindows = startupInstallFolder == null && StartWithWindowsCheckBox.IsChecked == true;
             settings.ShowNotifications = NotificationsCheckBox.IsChecked == true;
 
             SettingsManager.Save(settings);
@@ -120,6 +123,13 @@ public partial class FirstRunWizardWindow : Window
             WizardCompleted = true;
             Log.Information("FirstRunWizard completed - settings saved (StartWithWindows={StartWithWindows}, ShowNotifications={ShowNotifications})",
                 settings.StartWithWindows, settings.ShowNotifications);
+
+            if (startupRefused)
+            {
+                MessageBox.Show(this,
+                    $"Start with Windows was not turned on. GameShift is installed in {startupInstallFolder}, so turn it on in the Settings of that copy.",
+                    "Start with Windows", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
         }
         catch (Exception ex)
         {

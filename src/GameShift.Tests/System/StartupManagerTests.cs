@@ -410,6 +410,110 @@ public class StartupManagerTests
             file, new AppSettings { StartWithWindows = true }, @"C:\Users\Player\Downloads\GameShift.App.exe", null));
     }
 
+    // ── Start with Windows from Settings and the first-run wizard ────
+
+    private const string OtherInstallFolder = @"C:\Program Files\GameShift\";
+    private const string InstalledExe = @"C:\Program Files\GameShift\GameShift.App.exe";
+
+    private static List<Serilog.Events.LogEvent> SetStartWithWindows(
+        bool enable, string? registeredInstallDirectory, FakeRegistrar registrar, StartupManager.RegisteredStartupTask? registered = null)
+    {
+        return Capture(() => StartupManager.SetStartWithWindows(
+            enable, ExePath, registeredInstallDirectory, () => registered, registrar, @"PC\Player"));
+    }
+
+    private static bool LeftUnchanged(List<Serilog.Events.LogEvent> events) =>
+        events.Any(e => e.MessageTemplate.Text.StartsWith("[StartupManager] Startup task left unchanged")
+            && e.Properties.TryGetValue("InstallFolder", out var folder)
+            && (folder as Serilog.Events.ScalarValue)?.Value as string == OtherInstallFolder);
+
+    [Fact]
+    public void SetStartWithWindows_CopyOutsideTheRegisteredInstall_DoesNotRegister_AndSaysWhy()
+    {
+        var registrar = new FakeRegistrar();
+
+        // Even with a task that already runs this exe, turning startup on neither registers nor deletes.
+        var events = SetStartWithWindows(true, OtherInstallFolder, registrar, new StartupManager.RegisteredStartupTask(ExePath, null));
+
+        Assert.Empty(registrar.Calls);
+        Assert.Empty(registrar.Deletes);
+        Assert.True(LeftUnchanged(events));
+    }
+
+    [Fact]
+    public void SetStartWithWindows_InstalledCopy_Registers()
+    {
+        var registrar = new FakeRegistrar();
+
+        var events = SetStartWithWindows(true, Path.GetDirectoryName(ExePath), registrar);
+
+        Assert.Equal(StartupManager.BuildTaskXml(ExePath, @"PC\Player"), Assert.Single(registrar.Calls).Xml);
+        Assert.DoesNotContain(events, e => e.MessageTemplate.Text.StartsWith("[StartupManager] Startup task left unchanged"));
+    }
+
+    [Fact]
+    public void SetStartWithWindows_NothingInstalled_Registers()
+    {
+        var registrar = new FakeRegistrar();
+
+        SetStartWithWindows(true, null, registrar);
+
+        Assert.Single(registrar.Calls);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void SetStartWithWindows_Off_InstalledOrNothingInstalled_DeletesTheTask(bool installed)
+    {
+        var registrar = new FakeRegistrar();
+
+        // No task read is needed: a missing task is recognised by the delete's HRESULT.
+        SetStartWithWindows(false, installed ? Path.GetDirectoryName(ExePath) : null, registrar);
+
+        Assert.Equal(("GameShift", "Startup"), Assert.Single(registrar.Deletes));
+        Assert.Empty(registrar.Calls);
+    }
+
+    [Theory]
+    [InlineData(InstalledExe, true)]
+    [InlineData(null, true)] // an unreadable task file gives no command
+    [InlineData(null, false)]
+    public void SetStartWithWindows_Off_CopyOutsideTheRegisteredInstall_KeepsATaskItDoesNotRun(string? command, bool hasTask)
+    {
+        var registrar = new FakeRegistrar();
+        var registered = hasTask ? new StartupManager.RegisteredStartupTask(command, StartupManager.LogonArgument) : null;
+
+        var events = SetStartWithWindows(false, OtherInstallFolder, registrar, registered);
+
+        Assert.Empty(registrar.Deletes);
+        Assert.Empty(registrar.Calls);
+        Assert.True(LeftUnchanged(events));
+    }
+
+    [Fact]
+    public void SetStartWithWindows_Off_CopyOutsideTheRegisteredInstall_DeletesItsOwnTask()
+    {
+        var registrar = new FakeRegistrar();
+        var ownTask = new StartupManager.RegisteredStartupTask($"\"{ExePath.ToUpperInvariant()}\"", null);
+
+        var events = SetStartWithWindows(false, OtherInstallFolder, registrar, ownTask);
+
+        Assert.Equal(("GameShift", "Startup"), Assert.Single(registrar.Deletes));
+        Assert.Empty(registrar.Calls);
+        Assert.False(LeftUnchanged(events));
+    }
+
+    [Theory]
+    [InlineData(@"C:\Users\Player\Downloads\GameShift.App.exe", OtherInstallFolder, OtherInstallFolder)]
+    [InlineData(InstalledExe, @"c:\program files\gameshift", null)]
+    [InlineData(@"C:\Users\Player\Downloads\GameShift.App.exe", null, null)]
+    public void InstallFolderKeepingStartup_IsTheRegisteredFolder_OnlyForACopyRunningElsewhere(
+        string exePath, string? registeredInstallDirectory, string? expected)
+    {
+        Assert.Equal(expected, StartupManager.InstallFolderKeepingStartup(exePath, registeredInstallDirectory));
+    }
+
     // ── Legacy boot-recovery task ────────────────────────────────────
 
     [Fact]

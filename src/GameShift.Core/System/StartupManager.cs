@@ -54,6 +54,7 @@ public static class StartupManager
     /// <summary>
     /// Sets whether GameShift should start with Windows.
     /// Creates or removes the scheduled task, and cleans up any legacy HKCU\Run entry.
+    /// A copy running outside the registered install folder leaves the task to the installed copy.
     /// </summary>
     /// <param name="enable">true to register for startup, false to unregister</param>
     public static void SetStartWithWindows(bool enable)
@@ -62,15 +63,45 @@ public static class StartupManager
         // and would just leave dead entries in Task Manager's Startup tab.
         RemoveLegacyRunEntry();
 
-        if (enable)
-        {
-            RegisterScheduledTask();
-        }
-        else
-        {
-            UnregisterScheduledTask();
-        }
+        SetStartWithWindows(enable, GetExePath(), InstallationDetector.Current.RegisteredInstallDirectory,
+            ReadRegisteredTask, new TaskSchedulerRegistrar(), CurrentUserId());
     }
+
+    internal static void SetStartWithWindows(
+        bool enable, string exePath, string? registeredInstallDirectory,
+        Func<RegisteredStartupTask?> readRegistered, ITaskRegistrar registrar, string userId)
+    {
+        var installFolder = InstallFolderKeepingStartup(exePath, registeredInstallDirectory);
+        if (installFolder == null)
+        {
+            if (enable)
+                RegisterScheduledTask(registrar, exePath, userId);
+            else
+                UnregisterScheduledTask(registrar);
+            return;
+        }
+
+        // The installed copy's task is never deleted from here; one that runs this exe (registered by an
+        // older version) is this copy's own and may go when startup is turned off.
+        if (!enable && RunsExe(readRegistered()?.Command, exePath))
+        {
+            UnregisterScheduledTask(registrar);
+            return;
+        }
+
+        Log.Information("[StartupManager] Startup task left unchanged: GameShift is installed in {InstallFolder} and this copy runs from elsewhere",
+            installFolder);
+    }
+
+    /// <summary>
+    /// The registered install folder when this copy runs from elsewhere, so the startup task is the
+    /// installed copy's to change; null when this copy may change it.
+    /// </summary>
+    public static string? InstallFolderKeepingStartup() =>
+        InstallFolderKeepingStartup(GetExePath(), InstallationDetector.Current.RegisteredInstallDirectory);
+
+    internal static string? InstallFolderKeepingStartup(string? exePath, string? registeredInstallDirectory) =>
+        RunsFromRegisteredInstall(exePath, registeredInstallDirectory) ? null : registeredInstallDirectory;
 
     /// <summary>
     /// Launch-time <see cref="ReconcileStartupRegistration"/> that follows only a saved setting.
@@ -176,10 +207,13 @@ public static class StartupManager
     }
 
     private static bool IsUpToDate(RegisteredStartupTask? registered, string exePath) =>
-        registered?.Command is string command
-        && string.Equals(command.Trim().Trim('"'), exePath.Trim().Trim('"'), StringComparison.OrdinalIgnoreCase)
+        RunsExe(registered?.Command, exePath)
         // A task registered before the logon argument existed is updated once to carry it.
-        && string.Equals(registered.Arguments?.Trim(), LogonArgument, StringComparison.OrdinalIgnoreCase);
+        && string.Equals(registered!.Arguments?.Trim(), LogonArgument, StringComparison.OrdinalIgnoreCase);
+
+    private static bool RunsExe(string? command, string exePath) =>
+        command != null
+        && string.Equals(command.Trim().Trim('"'), exePath.Trim().Trim('"'), StringComparison.OrdinalIgnoreCase);
 
     /// <summary>What the registered startup task runs; a part that could not be read is null.</summary>
     internal sealed record RegisteredStartupTask(string? Command, string? Arguments);
@@ -259,11 +293,6 @@ public static class StartupManager
     internal const int TaskCreateOrUpdate = 6;
     internal const int TaskLogonInteractiveToken = 3;
 
-    private static void RegisterScheduledTask()
-    {
-        RegisterScheduledTask(new TaskSchedulerRegistrar(), GetExePath(), CurrentUserId());
-    }
-
     private static string CurrentUserId() => Environment.UserDomainName + "\\" + Environment.UserName;
 
     /// <summary>
@@ -294,8 +323,6 @@ public static class StartupManager
     // HRESULT_FROM_WIN32 of ERROR_FILE_NOT_FOUND (no such task) and ERROR_PATH_NOT_FOUND (no such folder).
     internal const int TaskNotFound = unchecked((int)0x80070002);
     internal const int TaskFolderNotFound = unchecked((int)0x80070003);
-
-    private static void UnregisterScheduledTask() => UnregisterScheduledTask(new TaskSchedulerRegistrar());
 
     /// <summary>
     /// Deletes the startup task through the Task Scheduler API. A task or folder that does not exist

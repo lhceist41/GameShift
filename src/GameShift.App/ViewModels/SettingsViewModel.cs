@@ -265,8 +265,13 @@ public class SettingsViewModel : INotifyPropertyChanged
         // Load existing settings to preserve fields not shown in UI
         var settings = SettingsManager.Load();
 
+        // A copy outside the registered install folder keeps the installed copy's choice, which its task follows.
+        var startupInstallFolder = StartupManager.InstallFolderKeepingStartup();
+        var startupChangeRefused = startupInstallFolder != null && StartWithWindows != settings.StartWithWindows;
+
         // Overlay UI-managed fields
-        settings.StartWithWindows = StartWithWindows;
+        if (startupInstallFolder == null)
+            settings.StartWithWindows = StartWithWindows;
         settings.StartMinimized = StartMinimized;
         settings.ShowNotifications = ShowNotifications;
         settings.EnableLogging = EnableLogging;
@@ -284,8 +289,16 @@ public class SettingsViewModel : INotifyPropertyChanged
         // Apply startup registration change to Windows registry
         StartupManager.SetStartWithWindows(settings.StartWithWindows);
 
+        if (startupChangeRefused)
+        {
+            _startWithWindows = settings.StartWithWindows;
+            OnPropertyChanged(nameof(StartWithWindows));
+        }
+
         IsDirty = false;
-        StatusMessage = "Settings saved.";
+        StatusMessage = startupChangeRefused
+            ? $"Settings saved. Start with Windows was not changed: GameShift is installed in {startupInstallFolder}, so change it in that copy."
+            : "Settings saved.";
     }
 
     // ── Export / Import ──────────────────────────────────────────────
