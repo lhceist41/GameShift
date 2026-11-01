@@ -2,6 +2,7 @@ using GameShift.Core.Config;
 using GameShift.Core.Detection;
 using GameShift.Core.Journal;
 using GameShift.Core.Optimization;
+using GameShift.Core.Presentation;
 using GameShift.Core.Profiles;
 using GameShift.Core.Profiles.GameActions;
 using GameShift.Core.System;
@@ -392,6 +393,52 @@ public sealed class DetectionOrchestratorSessionTests : IAsyncLifetime
         Assert.False(_optimization.IsApplied);
         Assert.False(_orchestrator.IsOptimizing);
         Assert.Equal(new[] { "apply engine", "revert engine" }, _calls);
+    }
+
+    [Fact]
+    public async Task SessionRequestTime_FindsThisSessionsResults_ForAReaderThatSubscribedToNothing()
+    {
+        Assert.Null(_orchestrator.SessionRequestedUtc);
+
+        await StartGameAsync(5000, PresetPath);
+
+        // Read only now, as a page opened in the middle of the session would.
+        var current = CurrentSession.Select(_engine.LastOutcome, _orchestrator.SessionRequestedUtc);
+        Assert.NotNull(current);
+        Assert.Contains(current.Modules, m => m.ModuleName == _optimization.Name && m.Kind == ModuleOutcomeKind.Applied);
+
+        await StopGameAsync(5000);
+
+        Assert.Null(_orchestrator.SessionRequestedUtc);
+        Assert.Null(CurrentSession.Select(_engine.LastOutcome, _orchestrator.SessionRequestedUtc));
+    }
+
+    [Fact]
+    public async Task SessionRequestTime_AfterAPauseEndsTheSession_IsCleared()
+    {
+        await StartGameAsync(5000, PresetPath);
+        Assert.NotNull(_orchestrator.SessionRequestedUtc);
+
+        await _orchestrator.PauseAsync();
+
+        Assert.Null(_orchestrator.SessionRequestedUtc);
+    }
+
+    [Fact]
+    public async Task SessionRequestTime_GameActivationFailing_DoesNotTakeQuickOptimizesResultsAsItsOwn()
+    {
+        var profile = GameProfile.CreateDefault();
+        profile.GameName = "Quick Optimize";
+        await _engine.ActivateProfileAsync(profile);
+        var quickOptimize = _engine.LastOutcome;
+
+        // The game's activation throws, so the engine keeps Quick Optimize's outcome.
+        _laterOptimization.Throw = true;
+        await StartGameAsync(5000, PresetPath);
+
+        Assert.True(_orchestrator.IsOptimizing);
+        Assert.Same(quickOptimize, _engine.LastOutcome);
+        Assert.Null(CurrentSession.Select(_engine.LastOutcome, _orchestrator.SessionRequestedUtc));
     }
 
     [Fact]

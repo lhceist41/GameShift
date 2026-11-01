@@ -10,7 +10,7 @@ public enum HomeStatusKind
     Paused,
 }
 
-/// <summary>How the headline is coloured: active only while a session runs with nothing failed.</summary>
+/// <summary>How the headline is coloured: active only while changes are applied and none failed.</summary>
 public enum HomeStatusTone
 {
     Neutral,
@@ -23,45 +23,65 @@ public sealed record HomeStatus(HomeStatusKind Kind, HomeStatusTone Tone, string
 {
     internal const string WaitingForResults = "Waiting for the results of this session";
 
-    /// <param name="isOptimizing">A game session runs (orchestrator).</param>
+    /// <summary>The tray's words for a session that changed nothing.</summary>
+    internal const string NoChangesActive = "No changes active";
+
+    /// <param name="sessionRequestedUtc">
+    /// <see cref="Detection.DetectionOrchestrator.SessionRequestedUtc"/>, read once: non-null while a
+    /// game session runs. Taking both the session flag and the current results from this one value
+    /// keeps them from disagreeing.
+    /// </param>
     /// <param name="isPaused">Monitoring is paused (orchestrator).</param>
     /// <param name="gameName">The game the orchestrator is optimizing, when known.</param>
-    /// <param name="current">The current session's activation outcome (see <see cref="CurrentSession.Select"/>), or null.</param>
+    /// <param name="lastOutcome"><see cref="OptimizationEngine.LastOutcome"/>.</param>
     /// <param name="timeZone">Converts the session start for "Since 21:14".</param>
     public static HomeStatus For(
-        bool isOptimizing, bool isPaused, string? gameName, SessionOutcome? current, TimeZoneInfo timeZone)
+        DateTime? sessionRequestedUtc, bool isPaused, string? gameName, SessionOutcome? lastOutcome, TimeZoneInfo timeZone)
     {
-        if (current is { EndedUtc: not null })
-            current = null;
+        bool isOptimizing = sessionRequestedUtc != null;
+        var current = CurrentSession.Select(lastOutcome, sessionRequestedUtc);
 
-        // Quick Optimize runs an engine session without the orchestrator optimizing a game.
-        bool quickOptimize = !isOptimizing && current != null;
+        int applied = current?.Modules.Count(m =>
+            m.Kind is ModuleOutcomeKind.Applied or ModuleOutcomeKind.AlreadyApplied) ?? 0;
+        int failed = current?.Modules.Count(m => m.Kind == ModuleOutcomeKind.Failed) ?? 0;
+
+        // Quick Optimize runs an engine session without the orchestrator optimizing a game; like the
+        // tray, it counts only while some of its changes are applied.
+        bool quickOptimize = !isOptimizing && applied > 0;
+
+        string? counts = null;
+        if (current is { StartedUtc: { } started })
+        {
+            var since = TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(started, DateTimeKind.Utc), timeZone)
+                .ToString("HH:mm", CultureInfo.InvariantCulture);
+            counts = $"Since {since} · {applied} applied";
+            if (failed > 0)
+                counts += $" · {failed} failed";
+        }
+
+        // The orchestrator sets paused before it ends the game session, so paused is checked first.
+        // Counts stay only for Quick Optimize, whose changes pausing leaves applied.
+        if (isPaused)
+            return new(HomeStatusKind.Paused, HomeStatusTone.Neutral, "Paused", quickOptimize ? counts : null);
 
         if (!isOptimizing && !quickOptimize)
-            return isPaused
-                ? new(HomeStatusKind.Paused, HomeStatusTone.Neutral, "Paused", null)
-                : new(HomeStatusKind.Idle, HomeStatusTone.Neutral, "Waiting for a game", null);
+            return new(HomeStatusKind.Idle, HomeStatusTone.Neutral, "Waiting for a game", null);
 
         // Without this session's own results nothing is claimed: no counts, no active colour.
-        if (current is not { StartedUtc: { } started })
+        if (counts == null)
             return new(HomeStatusKind.Optimizing, HomeStatusTone.Neutral, GameHeadline(gameName, null), WaitingForResults);
 
-        int applied = current.Modules.Count(m =>
-            m.Kind is ModuleOutcomeKind.Applied or ModuleOutcomeKind.AlreadyApplied);
-        int failed = current.Modules.Count(m => m.Kind == ModuleOutcomeKind.Failed);
-
-        var since = TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(started, DateTimeKind.Utc), timeZone)
-            .ToString("HH:mm", CultureInfo.InvariantCulture);
-        var counts = $"Since {since} · {applied} applied";
         if (failed > 0)
-            counts += $" · {failed} failed";
+            return new(HomeStatusKind.Optimizing, HomeStatusTone.Warning, SessionHeadline(quickOptimize, gameName, current), counts);
 
-        if (quickOptimize && isPaused)
-            return new(HomeStatusKind.Paused, HomeStatusTone.Neutral, "Paused", counts);
+        if (applied == 0)
+            return new(HomeStatusKind.Optimizing, HomeStatusTone.Neutral, NoChangesActive, counts);
 
-        var headline = quickOptimize ? "Quick Optimize is on" : GameHeadline(gameName, current.GameName);
-        return new(HomeStatusKind.Optimizing, failed > 0 ? HomeStatusTone.Warning : HomeStatusTone.Active, headline, counts);
+        return new(HomeStatusKind.Optimizing, HomeStatusTone.Active, SessionHeadline(quickOptimize, gameName, current), counts);
     }
+
+    private static string SessionHeadline(bool quickOptimize, string? gameName, SessionOutcome? current) =>
+        quickOptimize ? "Quick Optimize is on" : GameHeadline(gameName, current?.GameName);
 
     private static string GameHeadline(string? gameName, string? outcomeGameName)
     {

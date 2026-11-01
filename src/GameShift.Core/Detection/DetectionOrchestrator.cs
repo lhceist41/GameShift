@@ -49,6 +49,10 @@ public class DetectionOrchestrator
     private bool _isShutDown;
     private bool _initialized;
 
+    // UTC ticks of the running game session's request, 0 without one. A long, so a reader on
+    // another thread never sees a torn value.
+    private long _sessionRequestedTicks;
+
     /// <summary>
     /// Start events of the games the detector is tracking, oldest first, so resuming can optimize a
     /// game that kept running while monitoring was paused. Guarded by locking the list itself.
@@ -73,6 +77,14 @@ public class DetectionOrchestrator
     /// Gets whether optimizations are currently active.
     /// </summary>
     public bool IsOptimizing => _isOptimizing;
+
+    /// <summary>
+    /// When the running game session was asked for, taken before the engine starts its activation;
+    /// null without a game session. Pass it with the engine's last outcome to
+    /// <see cref="Presentation.CurrentSession.Select"/> to find this session's results.
+    /// </summary>
+    public DateTime? SessionRequestedUtc =>
+        Volatile.Read(ref _sessionRequestedTicks) is var ticks and not 0 ? new DateTime(ticks, DateTimeKind.Utc) : null;
 
     /// <summary>
     /// Gets whether monitoring is paused (<see cref="PauseAsync"/>) and not yet resumed.
@@ -380,6 +392,7 @@ public class DetectionOrchestrator
 
         // Counted as active before anything is applied, so a failure part-way through is still torn
         // down when the session ends.
+        Volatile.Write(ref _sessionRequestedTicks, DateTime.UtcNow.Ticks);
         _isOptimizing = true;
         await _engine.ActivateProfileAsync(profile, e.GameName).ConfigureAwait(false);
 
@@ -709,6 +722,7 @@ public class DetectionOrchestrator
 
         await _engine.DeactivateProfileAsync().ConfigureAwait(false);
         _isOptimizing = false;
+        Volatile.Write(ref _sessionRequestedTicks, 0);
     }
 
     /// <summary>

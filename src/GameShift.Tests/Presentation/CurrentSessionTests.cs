@@ -37,6 +37,15 @@ public class CurrentSessionTests
     }
 
     [Fact]
+    public void Select_WithoutAGameSession_TakesAnActivationThatHasNotEnded()
+    {
+        var quickOptimize = Activation(Module("A", ModuleOutcomeKind.Applied));
+
+        Assert.Same(quickOptimize, CurrentSession.Select(quickOptimize, null));
+        Assert.Null(CurrentSession.Select(Deactivation([Revert("A", ModuleRevertKind.Reverted)]), null));
+    }
+
+    [Fact]
     public void Select_Nothing_IsNotCurrent()
     {
         Assert.Null(CurrentSession.Select(null, Start));

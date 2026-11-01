@@ -6,13 +6,16 @@ using static GameShift.Tests.Presentation.OutcomeFixtures;
 namespace GameShift.Tests.Presentation;
 
 /// <summary>
-/// The Home headline is active only while a session runs with nothing failed, and its counts come
+/// The Home headline is active only while changes are applied and none failed, and its counts come
 /// from this session's own results.
 /// </summary>
 public class HomeStatusTests
 {
-    private static HomeStatus Home(bool optimizing, bool paused, SessionOutcome? current, string? game = "Test Game") =>
-        HomeStatus.For(optimizing, paused, game, current, UtcPlusOne);
+    // A game session requested just before the fixtures' activation started.
+    private static readonly DateTime Requested = Start.AddSeconds(-1);
+
+    private static HomeStatus Home(bool optimizing, bool paused, SessionOutcome? lastOutcome, string? game = "Test Game") =>
+        HomeStatus.For(optimizing ? Requested : null, paused, game, lastOutcome, UtcPlusOne);
 
     [Fact]
     public void Idle_WaitsForAGame()
@@ -68,15 +71,46 @@ public class HomeStatusTests
     [Fact]
     public void Optimizing_WithoutThisSessionsResults_ClaimsNothing()
     {
-        var stale = Deactivation([Revert("A", ModuleRevertKind.Reverted)], false, Module("A", ModuleOutcomeKind.Applied));
+        var ended = Deactivation([Revert("A", ModuleRevertKind.Reverted)], false, Module("A", ModuleOutcomeKind.Applied));
+        var earlier = Activation(Module("A", ModuleOutcomeKind.Applied));
 
-        foreach (var current in new[] { null, stale })
+        foreach (var (lastOutcome, requested) in new (SessionOutcome?, DateTime)[] { (null, Requested), (ended, Requested), (earlier, Start.AddMinutes(5)) })
         {
-            var status = Home(true, false, current);
+            var status = HomeStatus.For(requested, false, "Test Game", lastOutcome, UtcPlusOne);
             Assert.Equal(HomeStatusKind.Optimizing, status.Kind);
             Assert.Equal(HomeStatusTone.Neutral, status.Tone);
             Assert.Equal(HomeStatus.WaitingForResults, status.CountsLine);
         }
+    }
+
+    [Fact]
+    public void Optimizing_NothingApplied_IsNeutralWithTheTraysWords()
+    {
+        var status = Home(true, false, Activation(
+            Module("A", ModuleOutcomeKind.SkippedDisabled),
+            Module("B", ModuleOutcomeKind.NotApplicable)));
+
+        Assert.Equal(new HomeStatus(HomeStatusKind.Optimizing, HomeStatusTone.Neutral, "No changes active",
+            "Since 21:14 · 0 applied"), status);
+    }
+
+    [Fact]
+    public void Optimizing_EveryChangeFailed_IsAWarning()
+    {
+        var status = Home(true, false, Activation(Module("A", ModuleOutcomeKind.Failed, "did not apply")));
+
+        Assert.Equal(HomeStatusTone.Warning, status.Tone);
+        Assert.Equal("Optimizing Test Game", status.Headline);
+        Assert.Equal("Since 21:14 · 0 applied · 1 failed", status.CountsLine);
+    }
+
+    [Fact]
+    public void Paused_WhileTheGameSessionIsEnding_SaysPaused()
+    {
+        // Pausing sets paused first and then reverts the session, which still runs meanwhile.
+        var status = Home(true, true, Activation(Module("A", ModuleOutcomeKind.Applied)));
+
+        Assert.Equal(new HomeStatus(HomeStatusKind.Paused, HomeStatusTone.Neutral, "Paused", null), status);
     }
 
     [Theory]
@@ -100,6 +134,16 @@ public class HomeStatusTests
 
         Assert.Equal(new HomeStatus(HomeStatusKind.Optimizing, HomeStatusTone.Active, "Quick Optimize is on",
             "Since 21:14 · 1 applied"), status);
+    }
+
+    [Fact]
+    public void QuickOptimize_WithNothingApplied_IsIdleLikeTheTray()
+    {
+        var status = Home(false, false, Activation(
+            Module("A", ModuleOutcomeKind.Failed, "did not apply"),
+            Module("B", ModuleOutcomeKind.SkippedDisabled)));
+
+        Assert.Equal(new HomeStatus(HomeStatusKind.Idle, HomeStatusTone.Neutral, "Waiting for a game", null), status);
     }
 
     [Fact]

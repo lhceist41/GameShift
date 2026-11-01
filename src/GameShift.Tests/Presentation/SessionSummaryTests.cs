@@ -79,6 +79,17 @@ public class SessionSummaryTests
     }
 
     [Fact]
+    public void CrashRecovery_ClaimsNothingAboutWhatItUndid()
+    {
+        // Recovery also stamps modules it could not revert and skips the ones it does not journal.
+        var summary = SessionSummary.For(Deactivation([], recovered: true, Module("A", ModuleOutcomeKind.Applied)))!;
+
+        Assert.Equal(
+            "Crash recovery ran during this session. GameShift cannot tell which of its changes recovery undid.",
+            summary.Text);
+    }
+
+    [Fact]
     public void CrashRecovery_WinsOverAnyRevertList()
     {
         var summary = SessionSummary.For(Deactivation([Revert("A", ModuleRevertKind.Reverted)], recovered: true))!;

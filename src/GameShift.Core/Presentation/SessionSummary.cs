@@ -13,7 +13,7 @@ public enum SessionSummaryTone
 public sealed record SessionSummary(SessionSummaryTone Tone, string Text, IReadOnlyList<string> StillActive)
 {
     internal const string RecoveryText =
-        "Crash recovery ran during this session and undid its changes. GameShift cannot tell which ones it restored.";
+        "Crash recovery ran during this session. GameShift cannot tell which of its changes recovery undid.";
 
     internal const string NothingToUndoText = "No changes were active, so there was nothing to undo.";
 

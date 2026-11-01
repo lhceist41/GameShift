@@ -13,11 +13,16 @@ public static class CurrentSession
     /// An activation that throws before it finishes leaves the previous outcome in place, so an
     /// outcome that started before the request, or one that already ended, is never the current one.
     /// </summary>
-    public static SessionOutcome? Select(SessionOutcome? lastOutcome, DateTime requestedUtc)
+    /// <param name="requestedUtc">
+    /// <see cref="Detection.DetectionOrchestrator.SessionRequestedUtc"/>, read once. Null means no game
+    /// session runs, and an activation that has not ended is then Quick Optimize's: every game session
+    /// ends with a deactivation before the orchestrator clears its request time.
+    /// </param>
+    public static SessionOutcome? Select(SessionOutcome? lastOutcome, DateTime? requestedUtc)
     {
         if (lastOutcome is not { EndedUtc: null, StartedUtc: { } started })
             return null;
 
-        return started >= requestedUtc ? lastOutcome : null;
+        return requestedUtc is not { } requested || started >= requested ? lastOutcome : null;
     }
 }
