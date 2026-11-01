@@ -87,6 +87,7 @@ public class TrayIconManager : IDisposable
             () => _orchestrator.IsOptimizing,
             () => _orchestrator.IsPaused,
             () => _engine.AppliedCount,
+            () => _orchestrator.GameActionsInEffect,
             () => _engine.LastOutcome,
             TimeProvider.System);
         _iconTheme = ReadIconTheme();
@@ -112,6 +113,8 @@ public class TrayIconManager : IDisposable
         _engine.OptimizationReverted += OnOptimizationReverted;
         _engine.OptimizationFailed += OnOptimizationFailed;
         _engine.ActivationCompleted += OnActivationCompleted;
+        // Reverts that fail, or a recovered session, raise no OptimizationReverted.
+        _engine.DeactivationCompleted += OnDeactivationCompleted;
 
         // Subscribe to detector events for notifications
         _detector.GameStarted += OnGameStarted;
@@ -366,6 +369,18 @@ public class TrayIconManager : IDisposable
         catch (Exception ex)
         {
             _logger.Warning(ex, "Failed to update tray state on activation completed");
+        }
+    }
+
+    private void OnDeactivationCompleted(object? sender, SessionOutcomeEventArgs e)
+    {
+        try
+        {
+            QueueTrayStateUpdate();
+        }
+        catch (Exception ex)
+        {
+            _logger.Warning(ex, "Failed to update tray state on deactivation completed");
         }
     }
 
@@ -658,6 +673,7 @@ public class TrayIconManager : IDisposable
         _engine.OptimizationReverted -= OnOptimizationReverted;
         _engine.OptimizationFailed -= OnOptimizationFailed;
         _engine.ActivationCompleted -= OnActivationCompleted;
+        _engine.DeactivationCompleted -= OnDeactivationCompleted;
 
         _detector.GameStarted -= OnGameStarted;
         _detector.GameStopped -= OnGameStopped;

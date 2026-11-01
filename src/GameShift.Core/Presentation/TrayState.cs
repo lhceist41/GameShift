@@ -31,7 +31,8 @@ public enum TrayIconTheme
 /// monotonic clock, so a change of the system time cannot keep a notice up or hide it early.
 /// </summary>
 /// <param name="IsOptimizing">A game session is running.</param>
-/// <param name="AppliedCount">Changes in effect now, from a game session or Quick Optimize.</param>
+/// <param name="AppliedCount">Changes in effect now: a game session's or Quick Optimize's, and the
+/// game actions applied with a game session.</param>
 /// <param name="FailedCount">Changes that failed in the run whose changes are in effect.</param>
 public readonly record struct TrayStateInput(
     bool IsOptimizing,
@@ -52,9 +53,13 @@ public sealed record TrayState(TrayIconShape Shape, string ToolTip, string Statu
 
     public static TrayState Resolve(TrayStateInput input)
     {
-        // Pausing ends the session even while the game keeps running.
+        // Pausing ends the session even while the game keeps running, but leaves Quick Optimize's
+        // changes applied, and a session's stay until its revert has run.
         if (input.IsPaused)
-            return new TrayState(TrayIconShape.Paused, "GameShift - Paused", "GameShift: Paused");
+        {
+            var paused = input.AppliedCount > 0 ? $"Paused, {Changes(input.AppliedCount)} active" : "Paused";
+            return new TrayState(TrayIconShape.Paused, $"GameShift - {paused}", $"GameShift: {paused}");
+        }
 
         // Quick Optimize applies without a game session; its changes are just as active.
         if (!input.IsOptimizing && input.AppliedCount == 0)
@@ -90,7 +95,7 @@ public sealed record TrayState(TrayIconShape Shape, string ToolTip, string Statu
         return state;
     }
 
-    private static string Changes(int count) => count == 1 ? "1 change" : $"{count} changes";
+    internal static string Changes(int count) => count == 1 ? "1 change" : $"{count} changes";
 }
 
 /// <summary>
@@ -103,18 +108,23 @@ public sealed class TrayStatusTracker
     private readonly Func<bool> _isOptimizing;
     private readonly Func<bool> _isPaused;
     private readonly Func<int> _appliedCount;
+    private readonly Func<int> _gameActionsInEffect;
     private readonly Func<SessionOutcome?> _lastOutcome;
     private readonly TimeProvider _time;
     private readonly object _lock = new();
     private DateTimeOffset? _spikeAt;
     private long _spikeTimestamp;
 
+    /// <param name="appliedCount">Changes the engine has in effect.</param>
+    /// <param name="gameActionsInEffect"><see cref="Detection.DetectionOrchestrator.GameActionsInEffect"/>.</param>
     public TrayStatusTracker(
-        Func<bool> isOptimizing, Func<bool> isPaused, Func<int> appliedCount, Func<SessionOutcome?> lastOutcome, TimeProvider time)
+        Func<bool> isOptimizing, Func<bool> isPaused, Func<int> appliedCount, Func<int> gameActionsInEffect,
+        Func<SessionOutcome?> lastOutcome, TimeProvider time)
     {
         _isOptimizing = isOptimizing;
         _isPaused = isPaused;
         _appliedCount = appliedCount;
+        _gameActionsInEffect = gameActionsInEffect;
         _lastOutcome = lastOutcome;
         _time = time;
     }
@@ -151,7 +161,8 @@ public sealed class TrayStatusTracker
                 : outcome.Modules.Count(m => m.Kind == ModuleOutcomeKind.Failed);
 
             var age = _spikeAt == null ? TimeSpan.Zero : _time.GetElapsedTime(_spikeTimestamp);
-            return TrayState.Resolve(new TrayStateInput(isOptimizing, _isPaused(), _appliedCount(), failed, _spikeAt, age));
+            var applied = _appliedCount() + _gameActionsInEffect();
+            return TrayState.Resolve(new TrayStateInput(isOptimizing, _isPaused(), applied, failed, _spikeAt, age));
         }
     }
 }

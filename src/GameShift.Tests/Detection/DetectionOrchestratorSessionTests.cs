@@ -44,6 +44,10 @@ public sealed class DetectionOrchestratorSessionTests : IAsyncLifetime
     // One set per time the orchestrator asked for the preset game's actions.
     private readonly List<List<FakeGameAction>> _actionSets = new();
 
+    // Shapes the next action set: the action whose Apply throws, and a one-time tip alongside.
+    private string? _throwingAction;
+    private bool _withTip;
+
     private readonly MockOptimizationSuccess _optimization = new() { Name = "Mock optimization" };
 
     // Applied after _optimization. Unavailable, and so skipped, unless a test makes it throw.
@@ -125,6 +129,33 @@ public sealed class DetectionOrchestratorSessionTests : IAsyncLifetime
 
         Assert.False(_orchestrator.IsOptimizing);
         Assert.Equal(SessionApplied.Concat(SessionReverted), _calls);
+    }
+
+    [Fact]
+    public async Task GameActionsInEffect_CountsAppliedActions_UntilTheSessionEnds()
+    {
+        Assert.Equal(0, _orchestrator.GameActionsInEffect);
+
+        await StartGameAsync(5000, PresetPath);
+        Assert.Equal(2, _orchestrator.GameActionsInEffect);
+
+        await StopGameAsync(5000);
+        Assert.Equal(0, _orchestrator.GameActionsInEffect);
+    }
+
+    [Fact]
+    public async Task GameActionsInEffect_LeavesOutAnActionThatThrew_AndTips_AndClearsOnPause()
+    {
+        _throwingAction = "Defender exclusion";
+        _withTip = true;
+
+        await StartGameAsync(5000, PresetPath);
+
+        Assert.Equal(1, _actionSets[0][2].Applied);
+        Assert.Equal(1, _orchestrator.GameActionsInEffect);
+
+        await _orchestrator.PauseAsync();
+        Assert.Equal(0, _orchestrator.GameActionsInEffect);
     }
 
     [Fact]
@@ -492,6 +523,10 @@ public sealed class DetectionOrchestratorSessionTests : IAsyncLifetime
             new("Defender exclusion", _calls),
             new("Firewall rule", _calls)
         };
+        foreach (var action in set)
+            action.ThrowOnApply = action.Name == _throwingAction;
+        if (_withTip)
+            set.Add(new FakeGameAction("Tip", _calls) { TierOverride = 3 });
         _actionSets.Add(set);
         return new List<GameAction>(set);
     }
@@ -533,6 +568,12 @@ public sealed class DetectionOrchestratorSessionTests : IAsyncLifetime
 
         public int Applied { get; private set; }
 
+        public bool ThrowOnApply { get; set; }
+
+        public int TierOverride { get; init; } = 1;
+
+        public override int Tier => TierOverride;
+
         public int Reverted { get; private set; }
 
         /// <summary>Runs inside <see cref="Revert"/>, after the revert is recorded.</summary>
@@ -542,6 +583,8 @@ public sealed class DetectionOrchestratorSessionTests : IAsyncLifetime
         {
             Applied++;
             _calls.Add("apply " + _name);
+            if (ThrowOnApply)
+                throw new InvalidOperationException("Apply failed");
         }
 
         public override void Revert(SystemStateSnapshot snapshot)

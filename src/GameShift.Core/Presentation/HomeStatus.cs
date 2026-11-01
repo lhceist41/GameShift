@@ -34,20 +34,23 @@ public sealed record HomeStatus(HomeStatusKind Kind, HomeStatusTone Tone, string
     /// <param name="isPaused">Monitoring is paused (orchestrator).</param>
     /// <param name="gameName">The game the orchestrator is optimizing, when known.</param>
     /// <param name="lastOutcome"><see cref="OptimizationEngine.LastOutcome"/>.</param>
+    /// <param name="gameActionsInEffect"><see cref="Detection.DetectionOrchestrator.GameActionsInEffect"/>.</param>
     /// <param name="timeZone">Converts the session start for "Since 21:14".</param>
     public static HomeStatus For(
-        DateTime? sessionRequestedUtc, bool isPaused, string? gameName, SessionOutcome? lastOutcome, TimeZoneInfo timeZone)
+        DateTime? sessionRequestedUtc, bool isPaused, string? gameName, SessionOutcome? lastOutcome,
+        int gameActionsInEffect, TimeZoneInfo timeZone)
     {
         bool isOptimizing = sessionRequestedUtc != null;
         var current = CurrentSession.Select(lastOutcome, sessionRequestedUtc);
 
-        int applied = current?.Modules.Count(m =>
+        int modulesApplied = current?.Modules.Count(m =>
             m.Kind is ModuleOutcomeKind.Applied or ModuleOutcomeKind.AlreadyApplied) ?? 0;
         int failed = current?.Modules.Count(m => m.Kind == ModuleOutcomeKind.Failed) ?? 0;
 
         // Quick Optimize runs an engine session without the orchestrator optimizing a game; like the
-        // tray, it counts only while some of its changes are applied.
-        bool quickOptimize = !isOptimizing && applied > 0;
+        // tray, it counts only while some of its changes are applied. Game actions come with a game session.
+        bool quickOptimize = !isOptimizing && modulesApplied > 0;
+        int applied = modulesApplied + gameActionsInEffect;
 
         string? counts = null;
         if (current is { StartedUtc: { } started })
@@ -60,9 +63,13 @@ public sealed record HomeStatus(HomeStatusKind Kind, HomeStatusTone Tone, string
         }
 
         // The orchestrator sets paused before it ends the game session, so paused is checked first.
-        // Counts stay only for Quick Optimize, whose changes pausing leaves applied.
+        // Counts stay only for Quick Optimize, whose changes pausing leaves applied; the headline names
+        // any change still in effect, also a game session's until its revert has run.
         if (isPaused)
-            return new(HomeStatusKind.Paused, HomeStatusTone.Neutral, "Paused", quickOptimize ? counts : null);
+        {
+            var headline = applied > 0 ? $"Paused, {TrayState.Changes(applied)} active" : "Paused";
+            return new(HomeStatusKind.Paused, HomeStatusTone.Neutral, headline, quickOptimize ? counts : null);
+        }
 
         if (!isOptimizing && !quickOptimize)
             return new(HomeStatusKind.Idle, HomeStatusTone.Neutral, "Waiting for a game", null);

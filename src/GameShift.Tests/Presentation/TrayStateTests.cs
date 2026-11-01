@@ -106,11 +106,25 @@ public class TrayStateTests
     [Fact]
     public void Paused_WhilePausedWithAGameRunning_WinsOverEverySessionState()
     {
+        // The session's changes stay until its revert has run, so they are still named.
         var state = TrayState.Resolve(Input(
             optimizing: true, paused: true, applied: 3, failed: 1, spikeAt: SpikeAt, spikeAge: TimeSpan.FromSeconds(10)));
 
         Assert.Equal(TrayIconShape.Paused, state.Shape);
-        Assert.Equal("GameShift: Paused", state.StatusText);
+        Assert.Equal("GameShift - Paused, 3 changes active", state.ToolTip);
+        Assert.Equal("GameShift: Paused, 3 changes active", state.StatusText);
+    }
+
+    [Theory]
+    [InlineData(1, "GameShift - Paused, 1 change active")]
+    [InlineData(3, "GameShift - Paused, 3 changes active")]
+    public void Paused_WithQuickOptimizeChangesInEffect_NamesThem(int applied, string toolTip)
+    {
+        var state = TrayState.Resolve(Input(paused: true, applied: applied));
+
+        Assert.Equal(TrayIconShape.Paused, state.Shape);
+        Assert.Equal(toolTip, state.ToolTip);
+        Assert.Equal(toolTip.Replace("GameShift - ", "GameShift: "), state.StatusText);
     }
 
     [Fact]
@@ -177,9 +191,11 @@ public class TrayStatusTrackerTests
     private bool _optimizing;
     private bool _paused;
     private int _applied;
+    private int _gameActions;
     private SessionOutcome? _outcome;
 
-    private TrayStatusTracker CreateTracker() => new(() => _optimizing, () => _paused, () => _applied, () => _outcome, _time);
+    private TrayStatusTracker CreateTracker() =>
+        new(() => _optimizing, () => _paused, () => _applied, () => _gameActions, () => _outcome, _time);
 
     private static SessionOutcome Activation(params ModuleOutcomeKind[] kinds) => new(
         new DateTime(2026, 11, 1, 21, 0, 0, DateTimeKind.Utc),
@@ -328,6 +344,46 @@ public class TrayStatusTrackerTests
         _applied = 1;
 
         Assert.DoesNotContain("DPC", tracker.Resolve().ToolTip);
+    }
+
+    [Fact]
+    public void GameActionsInEffect_WithNoModuleApplied_AreActive()
+    {
+        var tracker = CreateTracker();
+        _optimizing = true;
+        _gameActions = 2;
+        _outcome = Activation(ModuleOutcomeKind.SkippedDisabled);
+
+        var state = tracker.Resolve();
+
+        Assert.Equal(TrayIconShape.Active, state.Shape);
+        Assert.Equal("GameShift - 2 changes active", state.ToolTip);
+    }
+
+    [Fact]
+    public void GameActionsInEffect_AddToTheEnginesChanges()
+    {
+        var tracker = CreateTracker();
+        _optimizing = true;
+        _applied = 3;
+        _gameActions = 1;
+        _outcome = Activation(ModuleOutcomeKind.Applied, ModuleOutcomeKind.Applied, ModuleOutcomeKind.Applied);
+
+        Assert.Equal("GameShift: 4 changes active", tracker.Resolve().StatusText);
+    }
+
+    [Fact]
+    public void PausedWithQuickOptimizeApplied_NamesItsChanges()
+    {
+        var tracker = CreateTracker();
+        _paused = true;
+        _applied = 3;
+        _outcome = Activation(ModuleOutcomeKind.Applied, ModuleOutcomeKind.Applied, ModuleOutcomeKind.Applied);
+
+        var state = tracker.Resolve();
+
+        Assert.Equal(TrayIconShape.Paused, state.Shape);
+        Assert.Equal("GameShift - Paused, 3 changes active", state.ToolTip);
     }
 
     [Fact]

@@ -53,6 +53,9 @@ public class DetectionOrchestrator
     // another thread never sees a torn value.
     private long _sessionRequestedTicks;
 
+    // Game actions of this session whose Apply returned; read from the UI thread.
+    private int _gameActionsInEffect;
+
     /// <summary>
     /// Start events of the games the detector is tracking, oldest first, so resuming can optimize a
     /// game that kept running while monitoring was paused. Guarded by locking the list itself.
@@ -90,6 +93,13 @@ public class DetectionOrchestrator
     /// Gets whether monitoring is paused (<see cref="PauseAsync"/>) and not yet resumed.
     /// </summary>
     public bool IsPaused => _isPaused;
+
+    /// <summary>
+    /// Auto-applied game actions of the running session that applied and that the session has not
+    /// reverted yet (a revert that throws still counts as done, as the session forgets the action).
+    /// One-time tips are not among them: they change nothing on the machine.
+    /// </summary>
+    public int GameActionsInEffect => Volatile.Read(ref _gameActionsInEffect);
 
     /// <summary>
     /// Exposes the DPC latency monitor instance for dashboard ViewModel
@@ -429,6 +439,7 @@ public class DetectionOrchestrator
                 {
                     action.ExecutablePath = e.ExecutablePath;
                     action.Apply(_actionSnapshot);
+                    Interlocked.Increment(ref _gameActionsInEffect);
                     _logger.Information("Applied game action: {ActionName}", action.Name);
 
                     // Journal a reversible record so the watchdog can undo this action's
@@ -712,6 +723,7 @@ public class DetectionOrchestrator
 
         _activeGameActions = null;
         _actionSnapshot = null;
+        Volatile.Write(ref _gameActionsInEffect, 0);
 
         // Stop DPC monitoring
         if (_dpcMonitor != null && _dpcMonitor.IsMonitoring)

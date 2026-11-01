@@ -14,8 +14,9 @@ public class HomeStatusTests
     // A game session requested just before the fixtures' activation started.
     private static readonly DateTime Requested = Start.AddSeconds(-1);
 
-    private static HomeStatus Home(bool optimizing, bool paused, SessionOutcome? lastOutcome, string? game = "Test Game") =>
-        HomeStatus.For(optimizing ? Requested : null, paused, game, lastOutcome, UtcPlusOne);
+    private static HomeStatus Home(
+        bool optimizing, bool paused, SessionOutcome? lastOutcome, string? game = "Test Game", int gameActions = 0) =>
+        HomeStatus.For(optimizing ? Requested : null, paused, game, lastOutcome, gameActions, UtcPlusOne);
 
     [Fact]
     public void Idle_WaitsForAGame()
@@ -76,7 +77,7 @@ public class HomeStatusTests
 
         foreach (var (lastOutcome, requested) in new (SessionOutcome?, DateTime)[] { (null, Requested), (ended, Requested), (earlier, Start.AddMinutes(5)) })
         {
-            var status = HomeStatus.For(requested, false, "Test Game", lastOutcome, UtcPlusOne);
+            var status = HomeStatus.For(requested, false, "Test Game", lastOutcome, 0, UtcPlusOne);
             Assert.Equal(HomeStatusKind.Optimizing, status.Kind);
             Assert.Equal(HomeStatusTone.Neutral, status.Tone);
             Assert.Equal(HomeStatus.WaitingForResults, status.CountsLine);
@@ -105,12 +106,38 @@ public class HomeStatusTests
     }
 
     [Fact]
-    public void Paused_WhileTheGameSessionIsEnding_SaysPaused()
+    public void Paused_WhileTheGameSessionIsEnding_SaysPausedAndNamesWhatIsStillInEffect()
     {
         // Pausing sets paused first and then reverts the session, which still runs meanwhile.
-        var status = Home(true, true, Activation(Module("A", ModuleOutcomeKind.Applied)));
+        var status = Home(true, true, Activation(Module("A", ModuleOutcomeKind.Applied)), gameActions: 1);
 
-        Assert.Equal(new HomeStatus(HomeStatusKind.Paused, HomeStatusTone.Neutral, "Paused", null), status);
+        Assert.Equal(new HomeStatus(HomeStatusKind.Paused, HomeStatusTone.Neutral, "Paused, 2 changes active", null), status);
+    }
+
+    [Fact]
+    public void GameActionsInEffect_WithNoModuleApplied_AreActive_NotNoChangesActive()
+    {
+        var status = Home(true, false, Activation(Module("A", ModuleOutcomeKind.SkippedDisabled)), gameActions: 1);
+
+        Assert.Equal(new HomeStatus(HomeStatusKind.Optimizing, HomeStatusTone.Active, "Optimizing Test Game",
+            "Since 21:14 · 1 applied"), status);
+    }
+
+    [Fact]
+    public void GameActionsReadAsTheSessionEnds_DoNotMakeItQuickOptimize()
+    {
+        // The orchestrator clears its count and the request time one after the other; a reader can see either first.
+        var status = Home(false, false, Activation(Module("A", ModuleOutcomeKind.SkippedDisabled)), gameActions: 1);
+
+        Assert.Equal(new HomeStatus(HomeStatusKind.Idle, HomeStatusTone.Neutral, "Waiting for a game", null), status);
+    }
+
+    [Fact]
+    public void GameActionsInEffect_AddToTheAppliedCount()
+    {
+        var status = Home(true, false, Activation(Module("A", ModuleOutcomeKind.Applied)), gameActions: 2);
+
+        Assert.Equal("Since 21:14 · 3 applied", status.CountsLine);
     }
 
     [Theory]
@@ -147,11 +174,11 @@ public class HomeStatusTests
     }
 
     [Fact]
-    public void QuickOptimize_WhilePaused_SaysPausedAndKeepsTheCounts()
+    public void QuickOptimize_WhilePaused_SaysPausedNamesItsChangesAndKeepsTheCounts()
     {
         var status = Home(false, true, Activation(Module("A", ModuleOutcomeKind.Applied)));
 
-        Assert.Equal(new HomeStatus(HomeStatusKind.Paused, HomeStatusTone.Neutral, "Paused", "Since 21:14 · 1 applied"),
-            status);
+        Assert.Equal(new HomeStatus(HomeStatusKind.Paused, HomeStatusTone.Neutral, "Paused, 1 change active",
+            "Since 21:14 · 1 applied"), status);
     }
 }
