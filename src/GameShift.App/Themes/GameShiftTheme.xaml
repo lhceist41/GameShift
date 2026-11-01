@@ -2,36 +2,38 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
     <!-- ============================================================
-         GameShift Design Token System
-         All GS.* resources are referenced via DynamicResource in views.
+         Alias layer: the keys pages used before the theme tokens existed, each pointing at a token
+         of the active theme (Themes/GameShift.*.xaml). StaticResource resolves when this file loads,
+         so the theme service reloads it after every token swap; pages keep their DynamicResource uses.
          ============================================================ -->
 
-    <!-- Surface Colors -->
-    <SolidColorBrush x:Key="GS.Surface.Base"     Color="#0D1117" />
-    <SolidColorBrush x:Key="GS.Surface.Card"     Color="#1A1D23" />
-    <SolidColorBrush x:Key="GS.Surface.Elevated" Color="#232323" />
-    <SolidColorBrush x:Key="GS.Surface.Border"   Color="#2D333B" />
+    <!-- Surfaces -->
+    <StaticResource x:Key="GS.Surface.Base" ResourceKey="GS.Fill.Window" />
+    <StaticResource x:Key="GS.Surface.Card" ResourceKey="GS.Fill.Card" />
+    <StaticResource x:Key="GS.Surface.Elevated" ResourceKey="GS.Fill.CardSecondary" />
+    <StaticResource x:Key="GS.Surface.Border" ResourceKey="GS.Line.Hairline" />
 
-    <!-- Text Colors -->
-    <SolidColorBrush x:Key="GS.Text.Primary"   Color="#DEDEDE" />
-    <SolidColorBrush x:Key="GS.Text.Secondary"  Color="#999999" />
-    <SolidColorBrush x:Key="GS.Text.Disabled"   Color="#626262" />
+    <!-- Text -->
+    <StaticResource x:Key="GS.Text.Primary" ResourceKey="GS.Fg.Primary" />
+    <StaticResource x:Key="GS.Text.Secondary" ResourceKey="GS.Fg.Secondary" />
+    <StaticResource x:Key="GS.Text.Disabled" ResourceKey="GS.Fg.Tertiary" />
 
-    <!-- Status Colors -->
-    <SolidColorBrush x:Key="GS.Status.Active"   Color="#4ADE80" />
-    <SolidColorBrush x:Key="GS.Status.Warning"  Color="#FBBF24" />
-    <SolidColorBrush x:Key="GS.Status.Error"    Color="#F87171" />
-    <SolidColorBrush x:Key="GS.Status.Info"     Color="#60A5FA" />
-    <SolidColorBrush x:Key="GS.Status.Disabled" Color="#9CA3AF" />
+    <!-- Status. The design has no info state, and colour is reserved for state. -->
+    <StaticResource x:Key="GS.Status.Active" ResourceKey="GS.State.Active" />
+    <StaticResource x:Key="GS.Status.Warning" ResourceKey="GS.State.Warning" />
+    <StaticResource x:Key="GS.Status.Error" ResourceKey="GS.State.Error" />
+    <StaticResource x:Key="GS.Status.Info" ResourceKey="GS.Fg.Secondary" />
+    <StaticResource x:Key="GS.Status.Disabled" ResourceKey="GS.State.Off" />
 
-    <!-- Badge Backgrounds (with alpha channel) -->
-    <SolidColorBrush x:Key="GS.Badge.Active.Bg"  Color="#1A4ADE80" />
-    <SolidColorBrush x:Key="GS.Badge.Warning.Bg" Color="#1AFBBF24" />
-    <SolidColorBrush x:Key="GS.Badge.Error.Bg"   Color="#1AF87171" />
+    <!-- Badge backgrounds -->
+    <StaticResource x:Key="GS.Badge.Active.Bg" ResourceKey="GS.Tint.Active" />
+    <StaticResource x:Key="GS.Badge.Warning.Bg" ResourceKey="GS.Tint.Warning" />
+    <StaticResource x:Key="GS.Badge.Error.Bg" ResourceKey="GS.Tint.Error" />
 
-    <!-- Accent Colors -->
-    <SolidColorBrush x:Key="GS.Accent.Primary" Color="#4ADE80" />
-    <SolidColorBrush x:Key="GS.Accent.Hover"   Color="#6AEE9A" />
+    <!-- Accent. Pages still use it for buttons and status text alike until they are restyled;
+         the brand colour keeps both readable where the neutral fill would not be. -->
+    <StaticResource x:Key="GS.Accent.Primary" ResourceKey="GS.State.Active" />
+    <StaticResource x:Key="GS.Accent.Hover" ResourceKey="GS.Interactive.FillHover" />
 
     <!-- ============================================================
          Typography Styles
@@ -41,31 +43,30 @@
         <Setter Property="FontFamily"  Value="Segoe UI" />
         <Setter Property="FontSize"    Value="32" />
         <Setter Property="FontWeight"  Value="Bold" />
-        <Setter Property="Foreground"  Value="{DynamicResource GS.Text.Primary}" />
+        <Setter Property="Foreground"  Value="{DynamicResource GS.Fg.Primary}" />
     </Style>
 
     <Style x:Key="GS.Text.SectionHeader" TargetType="TextBlock">
         <Setter Property="FontFamily"  Value="Segoe UI" />
         <Setter Property="FontSize"    Value="15" />
         <Setter Property="FontWeight"  Value="SemiBold" />
-        <Setter Property="Foreground"  Value="{DynamicResource GS.Text.Primary}" />
+        <Setter Property="Foreground"  Value="{DynamicResource GS.Fg.Primary}" />
     </Style>
 
     <Style x:Key="GS.Text.Body" TargetType="TextBlock">
         <Setter Property="FontFamily"  Value="Segoe UI" />
         <Setter Property="FontSize"    Value="13" />
         <Setter Property="FontWeight"  Value="Normal" />
-        <Setter Property="Foreground"  Value="{DynamicResource GS.Text.Primary}" />
+        <Setter Property="Foreground"  Value="{DynamicResource GS.Fg.Primary}" />
     </Style>
 
     <!-- ============================================================
          Hero Button Style
-         Large CTA button for one-click optimize. Green when idle,
-         outline when optimized (revert action).
+         Large call-to-action button for one-click optimize, now the neutral primary look.
          ============================================================ -->
     <Style x:Key="GS.Button.Hero" TargetType="Button">
-        <Setter Property="Background" Value="{DynamicResource GS.Accent.Primary}"/>
-        <Setter Property="Foreground" Value="#0D1117"/>
+        <Setter Property="Background" Value="{DynamicResource GS.Interactive.Fill}"/>
+        <Setter Property="Foreground" Value="{DynamicResource GS.Interactive.Text}"/>
         <Setter Property="BorderThickness" Value="0"/>
         <Setter Property="Template">
             <Setter.Value>
@@ -79,11 +80,11 @@
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter Property="Background" Value="{DynamicResource GS.Accent.Hover}"/>
+                            <Setter Property="Background" Value="{DynamicResource GS.Interactive.FillHover}"/>
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
-                            <Setter Property="Background" Value="{DynamicResource GS.Surface.Elevated}"/>
-                            <Setter Property="Foreground" Value="{DynamicResource GS.Text.Disabled}"/>
+                            <Setter Property="Background" Value="{DynamicResource GS.Fill.CardSecondary}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource GS.Fg.Tertiary}"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>

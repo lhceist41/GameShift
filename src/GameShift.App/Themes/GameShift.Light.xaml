@@ -1,0 +1,58 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Light theme tokens. The three theme files define the same keys; only these files hold colour values. -->
+
+    <Color x:Key="GS.Color.Interactive">#0E1318</Color>
+
+    <!-- Surfaces -->
+    <SolidColorBrush x:Key="GS.Fill.Window" Color="#EEF1F4" />
+    <SolidColorBrush x:Key="GS.Fill.Pane" Color="#E6EAEE" />
+    <SolidColorBrush x:Key="GS.Fill.PaneEdge" Color="#D5DBE1" />
+    <SolidColorBrush x:Key="GS.Fill.Card" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="GS.Fill.CardSecondary" Color="#F5F7F9" />
+    <SolidColorBrush x:Key="GS.Fill.Input" Color="#FFFFFF" />
+
+    <!-- Lines. Hairlines are decoration; control borders mark component boundaries and need 3:1. -->
+    <SolidColorBrush x:Key="GS.Line.Hairline" Color="#D5DBE1" />
+    <SolidColorBrush x:Key="GS.Line.Strong" Color="#BCC5CE" />
+    <SolidColorBrush x:Key="GS.Line.Control" Color="#5F6B78" />
+    <SolidColorBrush x:Key="GS.Line.Badge" Color="Transparent" />
+
+    <!-- Text -->
+    <SolidColorBrush x:Key="GS.Fg.Primary" Color="#0E1318" />
+    <SolidColorBrush x:Key="GS.Fg.Secondary" Color="#4A5561" />
+    <SolidColorBrush x:Key="GS.Fg.Tertiary" Color="#5F6B78" />
+    <SolidColorBrush x:Key="GS.Fg.Link" Color="#0E1318" />
+
+    <!-- Interactive elements are neutral: colour is reserved for state -->
+    <SolidColorBrush x:Key="GS.Interactive.Fill" Color="{StaticResource GS.Color.Interactive}" />
+    <SolidColorBrush x:Key="GS.Interactive.FillHover" Color="#262D36" />
+    <SolidColorBrush x:Key="GS.Interactive.FillPressed" Color="#36404B" />
+    <SolidColorBrush x:Key="GS.Interactive.Text" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="GS.Nav.Selected" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="GS.Nav.Indicator" Color="#0E1318" />
+    <SolidColorBrush x:Key="GS.Focus" Color="#0E1318" />
+
+    <!-- States -->
+    <SolidColorBrush x:Key="GS.State.Active" Color="#00728F" />
+    <SolidColorBrush x:Key="GS.State.Warning" Color="#8F5400" />
+    <SolidColorBrush x:Key="GS.State.Error" Color="#C0262D" />
+    <SolidColorBrush x:Key="GS.State.Paused" Color="#6B4FD8" />
+    <SolidColorBrush x:Key="GS.State.Idle" Color="#4A5561" />
+    <SolidColorBrush x:Key="GS.State.Off" Color="#5F6B78" />
+
+    <!-- Badge tints: the state colour at 8% over the card, flattened so contrast can be computed -->
+    <SolidColorBrush x:Key="GS.Tint.Active" Color="#EBF4F6" />
+    <SolidColorBrush x:Key="GS.Tint.Warning" Color="#F6F1EB" />
+    <SolidColorBrush x:Key="GS.Tint.Error" Color="#FAEEEE" />
+    <SolidColorBrush x:Key="GS.Tint.Paused" Color="#F3F1FC" />
+    <SolidColorBrush x:Key="GS.Tint.Idle" Color="#F1F1F2" />
+
+    <!-- Charts and the icon tile (the tile stays dark on both themes, like the app icon) -->
+    <SolidColorBrush x:Key="GS.Chart.Line" Color="#4A5561" />
+    <SolidColorBrush x:Key="GS.Chart.Grid" Color="#D5DBE1" />
+    <SolidColorBrush x:Key="GS.Icon.Tile" Color="#13171C" />
+    <SolidColorBrush x:Key="GS.Icon.Glyph" Color="#2ED3F0" />
+
+</ResourceDictionary>

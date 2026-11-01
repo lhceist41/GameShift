@@ -154,6 +154,12 @@ public class AppSettings
     public bool AdvancedMode { get; set; } = false;
 
     /// <summary>
+    /// Colour theme: follow Windows (the default) or always dark or light. Windows high contrast
+    /// overrides any choice. Settings files without it load as <see cref="AppTheme.System"/>.
+    /// </summary>
+    public AppTheme AppTheme { get; set; } = AppTheme.System;
+
+    /// <summary>
     /// DPC fixes that have been applied, with their previous values for rollback.
     /// Persisted so fixes can be reverted even after app restart or crash.
     /// </summary>

@@ -8,7 +8,9 @@
             <ResourceDictionary.MergedDictionaries>
                 <ui:ThemesDictionary Theme="Dark" />
                 <ui:ControlsDictionary />
-                <ResourceDictionary Source="Themes/GameShiftTheme.xaml" />
+                <ResourceDictionary Source="Themes/GameShiftStyles.xaml" />
+                <!-- Services/ThemeService adds the theme tokens, the alias layer (GameShiftTheme.xaml)
+                     and the WPF-UI overrides before the first window, in that order. -->
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </Application.Resources>

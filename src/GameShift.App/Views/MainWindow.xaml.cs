@@ -1,9 +1,7 @@
 using System;
-using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
-using System.Windows.Interop;
 using System.Windows.Media;
 using GameShift.App.Helpers;
 using GameShift.App.ViewModels;
@@ -15,19 +13,12 @@ namespace GameShift.App.Views;
 
 /// <summary>
 /// NavigationView shell window. Hosts all pages in a single-window sidebar-navigated layout.
-/// Uses plain Window with dark background (#0D1117) for reliable title bar on Win10/Win11.
+/// A FluentWindow with its own title bar, coloured by the active theme (Services/ThemeService).
 /// When tray is available: close and minimize both hide to tray.
-/// Applies immersive dark mode title bar via DwmSetWindowAttribute.
 /// Saves/restores window position and size via AppSettings.
 /// </summary>
-public partial class MainWindow : Window
+public partial class MainWindow : FluentWindow
 {
-    // ── Win32 DWM interop for dark title bar ────────────────────────────
-    [DllImport("dwmapi.dll", PreserveSig = true)]
-    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
-
-    private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
-
     // ── Snackbar for toast notifications ────────────────────────────────
     private Snackbar? _snackbar;
 
@@ -42,21 +33,12 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        SourceInitialized += OnSourceInitialized;
         Loaded += OnLoaded;
         PreviewMouseWheel += OnPreviewMouseWheel;
 
         // Show assembly version in nav pane footer
         var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
         VersionLabel.Text = version != null ? $"v{version.Major}.{version.Minor}.{version.Build}" : "";
-    }
-
-    /// <summary>
-    /// Called when the window handle is available. Applies dark title bar.
-    /// </summary>
-    private void OnSourceInitialized(object? sender, EventArgs e)
-    {
-        ApplyDarkTitleBar();
     }
 
     /// <summary>
@@ -189,27 +171,6 @@ public partial class MainWindow : Window
             if (found != null) return found;
         }
         return null;
-    }
-
-    /// <summary>
-    /// Uses DwmSetWindowAttribute with DWMWA_USE_IMMERSIVE_DARK_MODE (attribute 20)
-    /// to apply a dark title bar. Works on Win10 20H1+ and all Win11 builds.
-    /// Silently fails on older Windows versions.
-    /// </summary>
-    private void ApplyDarkTitleBar()
-    {
-        try
-        {
-            var hwnd = new WindowInteropHelper(this).Handle;
-            if (hwnd == IntPtr.Zero) return;
-
-            int value = 1; // 1 = dark mode
-            DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ref value, sizeof(int));
-        }
-        catch
-        {
-            // Silently ignore - older Windows versions don't support this attribute
-        }
     }
 
     /// <summary>

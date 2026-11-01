@@ -145,6 +145,8 @@ public partial class App : Application
             WriteDiag("Step b: Crash recovery check...");
             CrashRecoveryHandler.RecoverIfNeeded();
 
+            ThemeService.Apply(SettingsManager.Load().AppTheme);
+
             // Step c: Show the window IMMEDIATELY with a loading overlay, before the heavy
             // service initialization. The user sees GameShift within a fraction of a second
             // instead of a blank screen while WMI / performance-counter / registry work runs.

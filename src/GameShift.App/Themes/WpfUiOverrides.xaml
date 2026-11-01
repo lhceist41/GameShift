@@ -1,0 +1,42 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Stock WPF-UI 4.0.3 brushes pointed at GameShift tokens, so stock controls take the theme.
+         Key names come from the Dark, Light, HC1, HC2, HCBlack and HCWhite theme dictionaries inside
+         Wpf.Ui.dll 4.0.3; every key below is defined in all six. A WPF-UI update can rename keys and
+         quietly bring the stock colours back: Debug builds log any key here the loaded WPF-UI theme
+         lacks. Reloaded by the theme service after every token swap. -->
+
+    <!-- Window and layers -->
+    <StaticResource x:Key="ApplicationBackgroundBrush" ResourceKey="GS.Fill.Window" />
+    <StaticResource x:Key="SolidBackgroundFillColorBaseBrush" ResourceKey="GS.Fill.Window" />
+    <StaticResource x:Key="SolidBackgroundFillColorSecondaryBrush" ResourceKey="GS.Fill.Pane" />
+    <StaticResource x:Key="LayerFillColorDefaultBrush" ResourceKey="GS.Fill.Window" />
+    <StaticResource x:Key="NavigationViewContentGridBorderBrush" ResourceKey="GS.Fill.PaneEdge" />
+
+    <!-- Text -->
+    <StaticResource x:Key="TextFillColorPrimaryBrush" ResourceKey="GS.Fg.Primary" />
+    <StaticResource x:Key="TextFillColorSecondaryBrush" ResourceKey="GS.Fg.Secondary" />
+    <StaticResource x:Key="TextFillColorTertiaryBrush" ResourceKey="GS.Fg.Tertiary" />
+    <StaticResource x:Key="TextFillColorDisabledBrush" ResourceKey="GS.Fg.Tertiary" />
+
+    <!-- Cards -->
+    <StaticResource x:Key="CardBackgroundFillColorDefaultBrush" ResourceKey="GS.Fill.Card" />
+    <StaticResource x:Key="CardBackgroundFillColorSecondaryBrush" ResourceKey="GS.Fill.CardSecondary" />
+    <StaticResource x:Key="CardStrokeColorDefaultBrush" ResourceKey="GS.Line.Hairline" />
+
+    <!-- Controls: rest, hover, pressed; borders at 3:1 so a control's edge is visible -->
+    <StaticResource x:Key="ControlFillColorDefaultBrush" ResourceKey="GS.Fill.Input" />
+    <StaticResource x:Key="ControlFillColorSecondaryBrush" ResourceKey="GS.Fill.CardSecondary" />
+    <StaticResource x:Key="ControlFillColorTertiaryBrush" ResourceKey="GS.Fill.Pane" />
+    <StaticResource x:Key="ControlStrokeColorDefaultBrush" ResourceKey="GS.Line.Control" />
+    <StaticResource x:Key="ControlStrongStrokeColorDefaultBrush" ResourceKey="GS.Line.Control" />
+    <StaticResource x:Key="ControlStrongFillColorDefaultBrush" ResourceKey="GS.Line.Control" />
+
+    <!-- Lines and focus -->
+    <StaticResource x:Key="DividerStrokeColorDefaultBrush" ResourceKey="GS.Line.Hairline" />
+    <StaticResource x:Key="SurfaceStrokeColorDefaultBrush" ResourceKey="GS.Line.Strong" />
+    <StaticResource x:Key="FocusStrokeColorOuterBrush" ResourceKey="GS.Focus" />
+    <StaticResource x:Key="TextControlFocusedBorderBrush" ResourceKey="GS.Focus" />
+
+</ResourceDictionary>

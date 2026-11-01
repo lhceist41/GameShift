@@ -1,0 +1,156 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Named styles of the GameShift design. Colours come only from theme tokens, through
+         DynamicResource, so a theme swap restyles every element that uses them. -->
+
+    <!-- Focus ring in the text colour, for keyboard focus on the custom buttons below -->
+    <Style x:Key="GS.FocusVisual">
+        <Setter Property="Control.Template">
+            <Setter.Value>
+                <ControlTemplate>
+                    <Rectangle Margin="-3" RadiusX="6" RadiusY="6" StrokeThickness="2"
+                               Stroke="{DynamicResource GS.Focus}" SnapsToDevicePixels="True" />
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Section and field labels. WPF has no text-transform: callers pass upper-case text. -->
+    <Style x:Key="GS.Text.Caps" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{DynamicResource GS.Fg.Secondary}" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+
+    <!-- Live values. Tabular figures keep changing numbers from jittering where the font has them. -->
+    <Style x:Key="GS.Text.Numeric" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="Bahnschrift, Segoe UI" />
+        <Setter Property="FontSize" Value="14" />
+        <Setter Property="Typography.NumeralAlignment" Value="Tabular" />
+        <Setter Property="Foreground" Value="{DynamicResource GS.Fg.Primary}" />
+    </Style>
+
+    <Style x:Key="GS.Counter" TargetType="TextBlock" BasedOn="{StaticResource GS.Text.Numeric}">
+        <Setter Property="FontSize" Value="22" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+
+    <!-- State badge: tint behind, state colour for its icon and word (set by the caller), and a
+         border that only high contrast draws -->
+    <Style x:Key="GS.Badge.State" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource GS.Tint.Idle}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource GS.Line.Badge}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="4" />
+        <Setter Property="Padding" Value="6,2" />
+        <Setter Property="HorizontalAlignment" Value="Left" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <Style x:Key="GS.Chip.Status" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource GS.Fill.CardSecondary}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource GS.Line.Strong}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="12" />
+        <Setter Property="Padding" Value="10,4" />
+        <Setter Property="HorizontalAlignment" Value="Left" />
+    </Style>
+
+    <!-- Primary action: a text-coloured fill, never a state colour -->
+    <Style x:Key="GS.Button.Primary" TargetType="Button">
+        <Setter Property="Background" Value="{DynamicResource GS.Interactive.Fill}" />
+        <Setter Property="Foreground" Value="{DynamicResource GS.Interactive.Text}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource GS.Interactive.Fill}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Padding" Value="16,6" />
+        <Setter Property="MinHeight" Value="32" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="FocusVisualStyle" Value="{StaticResource GS.FocusVisual}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Chrome" Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="6" Padding="{TemplateBinding Padding}">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource GS.Interactive.FillHover}" />
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource GS.Interactive.FillPressed}" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource GS.Fill.CardSecondary}" />
+                            <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource GS.Line.Strong}" />
+                            <Setter Property="Foreground" Value="{DynamicResource GS.Fg.Tertiary}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- An action that restarts the PC: neutral text with a warning outline, because it carries risk -->
+    <Style x:Key="GS.Button.Restart" TargetType="Button" BasedOn="{StaticResource GS.Button.Primary}">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Foreground" Value="{DynamicResource GS.Fg.Primary}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource GS.State.Warning}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Chrome" Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="6" Padding="{TemplateBinding Padding}">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource GS.Tint.Warning}" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource GS.Line.Strong}" />
+                            <Setter Property="Foreground" Value="{DynamicResource GS.Fg.Tertiary}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Containers -->
+    <Style x:Key="GS.Panel" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource GS.Fill.Card}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource GS.Line.Hairline}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="Padding" Value="16" />
+    </Style>
+
+    <Style x:Key="GS.Tile.Metric" TargetType="Border" BasedOn="{StaticResource GS.Panel}">
+        <Setter Property="Padding" Value="12" />
+        <Setter Property="MinHeight" Value="88" />
+    </Style>
+
+    <!-- A list row: MinHeight, never Height, so wrapped text and larger scaling keep fitting -->
+    <Style x:Key="GS.Row" TargetType="Border">
+        <Setter Property="MinHeight" Value="44" />
+        <Setter Property="Padding" Value="12,8" />
+        <Setter Property="BorderBrush" Value="{DynamicResource GS.Line.Hairline}" />
+        <Setter Property="BorderThickness" Value="0,0,0,1" />
+    </Style>
+
+    <Style x:Key="GS.Nav.Header" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{DynamicResource GS.Fg.Tertiary}" />
+        <Setter Property="Margin" Value="12,16,12,4" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+
+</ResourceDictionary>

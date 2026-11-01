@@ -27,6 +27,13 @@
     <Resource Include="Resources\gameshift-256.png" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Loaded with XamlReader by Services/ThemeService after the theme tokens: their StaticResource
+         entries name keys of another dictionary, which the markup compiler cannot resolve. -->
+    <Page Remove="Themes\GameShiftTheme.xaml;Themes\WpfUiOverrides.xaml" />
+    <Resource Include="Themes\GameShiftTheme.xaml;Themes\WpfUiOverrides.xaml" />
+  </ItemGroup>
+
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>

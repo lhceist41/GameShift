@@ -1,0 +1,60 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- High contrast tokens: every key points at a Windows system colour, so the user's high contrast
+         theme decides every colour. States then differ only by icon and word. The values are read when
+         this file loads; the theme service reloads it whenever the system colours change. -->
+
+    <x:Static x:Key="GS.Color.Interactive" Member="SystemColors.HighlightColor" />
+
+    <!-- Surfaces -->
+    <x:Static x:Key="GS.Fill.Window" Member="SystemColors.WindowBrush" />
+    <x:Static x:Key="GS.Fill.Pane" Member="SystemColors.WindowBrush" />
+    <x:Static x:Key="GS.Fill.PaneEdge" Member="SystemColors.WindowTextBrush" />
+    <x:Static x:Key="GS.Fill.Card" Member="SystemColors.WindowBrush" />
+    <x:Static x:Key="GS.Fill.CardSecondary" Member="SystemColors.WindowBrush" />
+    <x:Static x:Key="GS.Fill.Input" Member="SystemColors.WindowBrush" />
+
+    <!-- Lines -->
+    <x:Static x:Key="GS.Line.Hairline" Member="SystemColors.GrayTextBrush" />
+    <x:Static x:Key="GS.Line.Strong" Member="SystemColors.WindowTextBrush" />
+    <x:Static x:Key="GS.Line.Control" Member="SystemColors.WindowTextBrush" />
+    <x:Static x:Key="GS.Line.Badge" Member="SystemColors.WindowTextBrush" />
+
+    <!-- Text -->
+    <x:Static x:Key="GS.Fg.Primary" Member="SystemColors.WindowTextBrush" />
+    <x:Static x:Key="GS.Fg.Secondary" Member="SystemColors.WindowTextBrush" />
+    <x:Static x:Key="GS.Fg.Tertiary" Member="SystemColors.GrayTextBrush" />
+    <x:Static x:Key="GS.Fg.Link" Member="SystemColors.HotTrackBrush" />
+
+    <!-- Interactive -->
+    <x:Static x:Key="GS.Interactive.Fill" Member="SystemColors.HighlightBrush" />
+    <x:Static x:Key="GS.Interactive.FillHover" Member="SystemColors.HighlightBrush" />
+    <x:Static x:Key="GS.Interactive.FillPressed" Member="SystemColors.HighlightBrush" />
+    <x:Static x:Key="GS.Interactive.Text" Member="SystemColors.HighlightTextBrush" />
+    <x:Static x:Key="GS.Nav.Selected" Member="SystemColors.WindowBrush" />
+    <x:Static x:Key="GS.Nav.Indicator" Member="SystemColors.HighlightBrush" />
+    <x:Static x:Key="GS.Focus" Member="SystemColors.WindowTextBrush" />
+
+    <!-- States -->
+    <x:Static x:Key="GS.State.Active" Member="SystemColors.WindowTextBrush" />
+    <x:Static x:Key="GS.State.Warning" Member="SystemColors.WindowTextBrush" />
+    <x:Static x:Key="GS.State.Error" Member="SystemColors.WindowTextBrush" />
+    <x:Static x:Key="GS.State.Paused" Member="SystemColors.WindowTextBrush" />
+    <x:Static x:Key="GS.State.Idle" Member="SystemColors.WindowTextBrush" />
+    <x:Static x:Key="GS.State.Off" Member="SystemColors.WindowTextBrush" />
+
+    <!-- Badge tints -->
+    <x:Static x:Key="GS.Tint.Active" Member="SystemColors.WindowBrush" />
+    <x:Static x:Key="GS.Tint.Warning" Member="SystemColors.WindowBrush" />
+    <x:Static x:Key="GS.Tint.Error" Member="SystemColors.WindowBrush" />
+    <x:Static x:Key="GS.Tint.Paused" Member="SystemColors.WindowBrush" />
+    <x:Static x:Key="GS.Tint.Idle" Member="SystemColors.WindowBrush" />
+
+    <!-- Charts and the icon tile -->
+    <x:Static x:Key="GS.Chart.Line" Member="SystemColors.WindowTextBrush" />
+    <x:Static x:Key="GS.Chart.Grid" Member="SystemColors.GrayTextBrush" />
+    <x:Static x:Key="GS.Icon.Tile" Member="SystemColors.WindowBrush" />
+    <x:Static x:Key="GS.Icon.Glyph" Member="SystemColors.WindowTextBrush" />
+
+</ResourceDictionary>
