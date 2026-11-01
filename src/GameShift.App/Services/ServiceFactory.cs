@@ -40,7 +40,7 @@ public static class ServiceFactory
 
         // Reconcile startup registration without spawning schtasks.exe on every launch.
         // Only (re)registers when the scheduled task is missing or points at a stale exe path.
-        StartupManager.ReconcileStartupRegistration(settings.StartWithWindows);
+        StartupManager.ReconcileAtLaunch(settings);
 
         // Check VBS/HVCI state (advisory)
         services.VbsToggle = new VbsHvciToggle();

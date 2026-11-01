@@ -95,10 +95,14 @@ public class VbsHvciToggle
                 "VbsHvciToggle: VBS={VbsEnabled}, HVCI={HvciEnabled}, Either={EitherEnabled}",
                 IsVbsEnabled, IsHvciEnabled, IsEitherEnabled);
 
-            // Update last-checked timestamp in settings
-            var settings = SettingsManager.Load();
-            settings.VbsHvciLastChecked = DateTime.UtcNow;
-            SettingsManager.Save(settings);
+            // Update last-checked timestamp in settings. Not on a fresh install: creating
+            // settings.json this early would skip the first-run wizard.
+            if (!SettingsManager.IsFirstRun())
+            {
+                var settings = SettingsManager.Load();
+                settings.VbsHvciLastChecked = DateTime.UtcNow;
+                SettingsManager.Save(settings);
+            }
         }
         catch (Exception ex)
         {

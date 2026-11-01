@@ -1,6 +1,8 @@
 using System.Runtime.InteropServices;
 using System.Xml.Linq;
+using GameShift.Core.Config;
 using GameShift.Core.System;
+using GameShift.Tests.TestHelpers;
 using Serilog;
 using Xunit;
 
@@ -106,5 +108,59 @@ public class StartupManagerTests
         var registrar = new FakeRegistrar { Throw = new InvalidOperationException("no Task Scheduler") };
 
         Assert.False(StartupManager.RegisterScheduledTask(registrar, ExePath, @"PC\Player"));
+    }
+
+    private static List<bool> ReconcileAtLaunch(string settingsFile, AppSettings settings)
+    {
+        var calls = new List<bool>();
+        var previous = SettingsManager.SettingsFilePathOverride;
+        SettingsManager.SettingsFilePathOverride = settingsFile;
+        try
+        {
+            StartupManager.ReconcileAtLaunch(settings, calls.Add);
+        }
+        finally
+        {
+            SettingsManager.SettingsFilePathOverride = previous;
+        }
+        return calls;
+    }
+
+    [Fact]
+    public void ReconcileAtLaunch_FreshInstall_LeavesTheTaskToTheWizard()
+    {
+        using var temp = new TempPath();
+
+        Assert.Empty(ReconcileAtLaunch(temp.GetFile("settings.json"), new AppSettings()));
+    }
+
+    [Fact]
+    public void ReconcileAtLaunch_RefusedSettingsFolder_LeavesTheTaskAlone()
+    {
+        var refused = $@"\\gameshift-refused-{Guid.NewGuid():N}\share\GameShift\settings.json";
+
+        Assert.Empty(ReconcileAtLaunch(refused, new AppSettings()));
+        Assert.Empty(ReconcileAtLaunch(refused, new AppSettings { StartWithWindows = false }));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void ReconcileAtLaunch_SavedSetting_ReconcilesToIt(bool startWithWindows)
+    {
+        using var temp = new TempPath();
+        var file = temp.GetFile("settings.json");
+        var previous = SettingsManager.SettingsFilePathOverride;
+        SettingsManager.SettingsFilePathOverride = file;
+        try
+        {
+            SettingsManager.Save(new AppSettings { StartWithWindows = startWithWindows });
+        }
+        finally
+        {
+            SettingsManager.SettingsFilePathOverride = previous;
+        }
+
+        Assert.Equal(new[] { startWithWindows }, ReconcileAtLaunch(file, new AppSettings { StartWithWindows = startWithWindows }));
     }
 }

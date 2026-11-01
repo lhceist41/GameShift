@@ -66,6 +66,31 @@ public static class StartupManager
     }
 
     /// <summary>
+    /// Launch-time <see cref="ReconcileStartupRegistration"/> that follows only a saved setting.
+    /// Without a settings file the first-run wizard registers the user's choice; with a refused data
+    /// folder the settings in hand are defaults, so the task is left as it is.
+    /// </summary>
+    public static void ReconcileAtLaunch(AppSettings settings) =>
+        ReconcileAtLaunch(settings, ReconcileStartupRegistration);
+
+    internal static void ReconcileAtLaunch(AppSettings settings, Action<bool> reconcile)
+    {
+        if (SettingsManager.IsDataFolderRefused())
+        {
+            Log.Information("[StartupManager] Startup task left unchanged: the settings folder was refused, so there is no saved choice to follow");
+            return;
+        }
+
+        if (SettingsManager.IsFirstRun())
+        {
+            Log.Information("[StartupManager] Startup task left unchanged until the first-run setup saves a choice");
+            return;
+        }
+
+        reconcile(settings.StartWithWindows);
+    }
+
+    /// <summary>
     /// Startup-time reconciliation of the Windows startup registration.
     ///
     /// Unlike <see cref="SetStartWithWindows"/> (which always goes to the Task Scheduler and is

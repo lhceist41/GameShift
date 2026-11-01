@@ -291,6 +291,26 @@ public static class SettingsManager
         }
     }
 
+    /// <summary>
+    /// Whether the data folder was refused for this run, so <see cref="Load"/> returns defaults and
+    /// <see cref="Save"/> keeps nothing. True as well when the folder could not be checked.
+    /// </summary>
+    public static bool IsDataFolderRefused()
+    {
+        lock (_fileLock)
+        {
+            try
+            {
+                return GetDataFolder() == null;
+            }
+            catch (Exception ex)
+            {
+                Logger.Warning(ex, "Could not check the data folder");
+                return true;
+            }
+        }
+    }
+
     /// <summary>The verified data folder for this run; null, with a logged warning, when it was refused.</summary>
     internal static UserDataFolder? GetDataFolder()
     {
