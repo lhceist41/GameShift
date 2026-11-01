@@ -1,4 +1,5 @@
 using System.Globalization;
+using GameShift.Core.Optimization;
 
 namespace GameShift.Core.Presentation;
 
@@ -29,6 +30,9 @@ public enum TrayIconTheme
 /// What the tray shows is resolved from. <paramref name="LastDpcSpikeAge"/> is measured on a
 /// monotonic clock, so a change of the system time cannot keep a notice up or hide it early.
 /// </summary>
+/// <param name="IsOptimizing">A game session is running.</param>
+/// <param name="AppliedCount">Changes in effect now, from a game session or Quick Optimize.</param>
+/// <param name="FailedCount">Changes that failed in the run whose changes are in effect.</param>
 public readonly record struct TrayStateInput(
     bool IsOptimizing,
     bool IsPaused,
@@ -52,18 +56,23 @@ public sealed record TrayState(TrayIconShape Shape, string ToolTip, string Statu
         if (input.IsPaused)
             return new TrayState(TrayIconShape.Paused, "GameShift - Paused", "GameShift: Paused");
 
-        if (!input.IsOptimizing)
+        // Quick Optimize applies without a game session; its changes are just as active.
+        if (!input.IsOptimizing && input.AppliedCount == 0)
             return new TrayState(TrayIconShape.Idle, "GameShift - Idle", "GameShift: Idle");
 
         TrayState state;
         if (input.FailedCount > 0)
         {
             var failed = Changes(input.FailedCount);
-            state = new TrayState(TrayIconShape.Warning, $"GameShift - Optimizing, {failed} failed", $"GameShift: {failed} failed");
+            var toolTip = input.AppliedCount > 0
+                ? $"GameShift - {Changes(input.AppliedCount)} active, {input.FailedCount} failed"
+                : $"GameShift - {failed} failed";
+            state = new TrayState(TrayIconShape.Warning, toolTip, $"GameShift: {failed} failed");
         }
         else if (input.AppliedCount > 0)
         {
-            state = new TrayState(TrayIconShape.Active, $"GameShift - Optimizing, {Changes(input.AppliedCount)} applied", "GameShift: Optimizing");
+            var active = $"{Changes(input.AppliedCount)} active";
+            state = new TrayState(TrayIconShape.Active, $"GameShift - {active}", $"GameShift: {active}");
         }
         else
         {
@@ -85,35 +94,29 @@ public sealed record TrayState(TrayIconShape Shape, string ToolTip, string Statu
 }
 
 /// <summary>
-/// Keeps the session-scoped inputs of <see cref="TrayState"/> (failed changes, the last DPC spike)
-/// and forgets them once the session is over. Thread-safe: the engine and the DPC monitor report
-/// from their own threads while the UI resolves.
+/// Gathers the inputs of <see cref="TrayState"/>. Failures come from the engine's latest outcome, so
+/// each belongs to the run that produced it; the last DPC spike is kept here and forgotten once the
+/// session is over. Thread-safe: the DPC monitor reports from its own thread while the UI resolves.
 /// </summary>
 public sealed class TrayStatusTracker
 {
     private readonly Func<bool> _isOptimizing;
     private readonly Func<bool> _isPaused;
     private readonly Func<int> _appliedCount;
+    private readonly Func<SessionOutcome?> _lastOutcome;
     private readonly TimeProvider _time;
     private readonly object _lock = new();
-    private int _failedCount;
     private DateTimeOffset? _spikeAt;
     private long _spikeTimestamp;
 
-    public TrayStatusTracker(Func<bool> isOptimizing, Func<bool> isPaused, Func<int> appliedCount, TimeProvider time)
+    public TrayStatusTracker(
+        Func<bool> isOptimizing, Func<bool> isPaused, Func<int> appliedCount, Func<SessionOutcome?> lastOutcome, TimeProvider time)
     {
         _isOptimizing = isOptimizing;
         _isPaused = isPaused;
         _appliedCount = appliedCount;
+        _lastOutcome = lastOutcome;
         _time = time;
-    }
-
-    public void RecordFailure()
-    {
-        lock (_lock)
-        {
-            _failedCount++;
-        }
     }
 
     /// <summary>
@@ -135,17 +138,20 @@ public sealed class TrayStatusTracker
     {
         lock (_lock)
         {
-            // Read under the lock: a report that arrives after the session was seen ending belongs
+            // Read under the lock: a spike that arrives after the session was seen ending belongs
             // to the next session and must survive this reset.
             var isOptimizing = _isOptimizing();
             if (!isOptimizing)
-            {
-                _failedCount = 0;
                 _spikeAt = null;
-            }
+
+            // A later activation replaces the run, and a deactivation ends it with its failures.
+            var outcome = _lastOutcome();
+            var failed = outcome == null || outcome.EndedUtc != null
+                ? 0
+                : outcome.Modules.Count(m => m.Kind == ModuleOutcomeKind.Failed);
 
             var age = _spikeAt == null ? TimeSpan.Zero : _time.GetElapsedTime(_spikeTimestamp);
-            return TrayState.Resolve(new TrayStateInput(isOptimizing, _isPaused(), _appliedCount(), _failedCount, _spikeAt, age));
+            return TrayState.Resolve(new TrayStateInput(isOptimizing, _isPaused(), _appliedCount(), failed, _spikeAt, age));
         }
     }
 }

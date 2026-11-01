@@ -84,7 +84,11 @@ public class TrayIconManager : IDisposable
         _logger = SettingsManager.Logger;
 
         _status = new TrayStatusTracker(
-            () => _orchestrator.IsOptimizing, () => _orchestrator.IsPaused, () => _engine.AppliedCount, TimeProvider.System);
+            () => _orchestrator.IsOptimizing,
+            () => _orchestrator.IsPaused,
+            () => _engine.AppliedCount,
+            () => _engine.LastOutcome,
+            TimeProvider.System);
         _iconTheme = ReadIconTheme();
 
         // The engine raises its last events just before the orchestrator records that the session
@@ -107,6 +111,7 @@ public class TrayIconManager : IDisposable
         _engine.OptimizationApplied += OnOptimizationApplied;
         _engine.OptimizationReverted += OnOptimizationReverted;
         _engine.OptimizationFailed += OnOptimizationFailed;
+        _engine.ActivationCompleted += OnActivationCompleted;
 
         // Subscribe to detector events for notifications
         _detector.GameStarted += OnGameStarted;
@@ -342,12 +347,25 @@ public class TrayIconManager : IDisposable
         try
         {
             lock (_statsLock) { _sessionFailedCount++; }
-            _status.RecordFailure();
             QueueTrayStateUpdate();
         }
         catch (Exception ex)
         {
             _logger.Warning(ex, "Failed to track optimization failure");
+        }
+    }
+
+    // A run where nothing applied or failed raises no module event, and the session may have been
+    // recorded as started only after OnGameStarted's update ran.
+    private void OnActivationCompleted(object? sender, SessionOutcomeEventArgs e)
+    {
+        try
+        {
+            QueueTrayStateUpdate();
+        }
+        catch (Exception ex)
+        {
+            _logger.Warning(ex, "Failed to update tray state on activation completed");
         }
     }
 
@@ -402,6 +420,8 @@ public class TrayIconManager : IDisposable
                     _sessionFailedCount = 0;
                 }
             }
+
+            QueueTrayStateUpdate();
 
             if (_settings.ShowNotifications && _settings.ShowGameDetectedToast)
             {
@@ -637,6 +657,7 @@ public class TrayIconManager : IDisposable
         _engine.OptimizationApplied -= OnOptimizationApplied;
         _engine.OptimizationReverted -= OnOptimizationReverted;
         _engine.OptimizationFailed -= OnOptimizationFailed;
+        _engine.ActivationCompleted -= OnActivationCompleted;
 
         _detector.GameStarted -= OnGameStarted;
         _detector.GameStopped -= OnGameStopped;

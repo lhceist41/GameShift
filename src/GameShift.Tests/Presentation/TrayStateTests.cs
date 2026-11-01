@@ -1,3 +1,4 @@
+using GameShift.Core.Optimization;
 using GameShift.Core.Presentation;
 using Xunit;
 
@@ -28,8 +29,18 @@ public class TrayStateTests
         var state = TrayState.Resolve(Input(optimizing: true, applied: 5));
 
         Assert.Equal(TrayIconShape.Active, state.Shape);
-        Assert.Equal("GameShift - Optimizing, 5 changes applied", state.ToolTip);
-        Assert.Equal("GameShift: Optimizing", state.StatusText);
+        Assert.Equal("GameShift - 5 changes active", state.ToolTip);
+        Assert.Equal("GameShift: 5 changes active", state.StatusText);
+    }
+
+    [Fact]
+    public void Active_WhenQuickOptimizeChangesAreInEffectWithoutASession()
+    {
+        var state = TrayState.Resolve(Input(applied: 1));
+
+        Assert.Equal(TrayIconShape.Active, state.Shape);
+        Assert.Equal("GameShift - 1 change active", state.ToolTip);
+        Assert.Equal("GameShift: 1 change active", state.StatusText);
     }
 
     [Fact]
@@ -38,8 +49,18 @@ public class TrayStateTests
         var state = TrayState.Resolve(Input(optimizing: true, applied: 4, failed: 1));
 
         Assert.Equal(TrayIconShape.Warning, state.Shape);
-        Assert.Equal("GameShift - Optimizing, 1 change failed", state.ToolTip);
+        Assert.Equal("GameShift - 4 changes active, 1 failed", state.ToolTip);
         Assert.Equal("GameShift: 1 change failed", state.StatusText);
+    }
+
+    [Fact]
+    public void Warning_WhenQuickOptimizeHadAFailure()
+    {
+        var state = TrayState.Resolve(Input(applied: 3, failed: 2));
+
+        Assert.Equal(TrayIconShape.Warning, state.Shape);
+        Assert.Equal("GameShift - 3 changes active, 2 failed", state.ToolTip);
+        Assert.Equal("GameShift: 2 changes failed", state.StatusText);
     }
 
     [Fact]
@@ -48,7 +69,18 @@ public class TrayStateTests
         var state = TrayState.Resolve(Input(optimizing: true, failed: 2));
 
         Assert.Equal(TrayIconShape.Warning, state.Shape);
+        Assert.Equal("GameShift - 2 changes failed", state.ToolTip);
         Assert.Equal("GameShift: 2 changes failed", state.StatusText);
+    }
+
+    [Fact]
+    public void Idle_WithoutASession_WhenNothingIsInEffect_EvenAfterAFailure()
+    {
+        // Nothing would ever clear a warning that has no session or active change behind it.
+        var state = TrayState.Resolve(Input(failed: 1));
+
+        Assert.Equal(TrayIconShape.Idle, state.Shape);
+        Assert.Equal("GameShift - Idle", state.ToolTip);
     }
 
     [Fact]
@@ -57,6 +89,7 @@ public class TrayStateTests
         var state = TrayState.Resolve(Input(optimizing: true));
 
         Assert.Equal(TrayIconShape.Idle, state.Shape);
+        Assert.Equal("GameShift - No changes active", state.ToolTip);
         Assert.Equal("GameShift: No changes active", state.StatusText);
     }
 
@@ -87,8 +120,8 @@ public class TrayStateTests
             optimizing: true, applied: 5, spikeAt: SpikeAt, spikeAge: TimeSpan.FromSeconds(30)));
 
         Assert.Equal(TrayIconShape.Active, state.Shape);
-        Assert.Equal("GameShift - Optimizing, 5 changes applied\nHigh DPC load at 21:14", state.ToolTip);
-        Assert.Equal("GameShift: Optimizing\nHigh DPC load at 21:14", state.StatusText);
+        Assert.Equal("GameShift - 5 changes active\nHigh DPC load at 21:14", state.ToolTip);
+        Assert.Equal("GameShift: 5 changes active\nHigh DPC load at 21:14", state.StatusText);
     }
 
     [Fact]
@@ -110,8 +143,8 @@ public class TrayStateTests
             optimizing: true, applied: 5, spikeAt: SpikeAt, spikeAge: TrayState.DpcNoticeDuration));
 
         Assert.Contains("High DPC load", justBefore.ToolTip);
-        Assert.Equal("GameShift - Optimizing, 5 changes applied", atExpiry.ToolTip);
-        Assert.Equal("GameShift: Optimizing", atExpiry.StatusText);
+        Assert.Equal("GameShift - 5 changes active", atExpiry.ToolTip);
+        Assert.Equal("GameShift: 5 changes active", atExpiry.StatusText);
     }
 
     [Fact]
@@ -144,8 +177,20 @@ public class TrayStatusTrackerTests
     private bool _optimizing;
     private bool _paused;
     private int _applied;
+    private SessionOutcome? _outcome;
 
-    private TrayStatusTracker CreateTracker() => new(() => _optimizing, () => _paused, () => _applied, _time);
+    private TrayStatusTracker CreateTracker() => new(() => _optimizing, () => _paused, () => _applied, () => _outcome, _time);
+
+    private static SessionOutcome Activation(params ModuleOutcomeKind[] kinds) => new(
+        new DateTime(2026, 11, 1, 21, 0, 0, DateTimeKind.Utc),
+        "Quick Optimize",
+        kinds.Select((kind, i) => new ModuleOutcome($"Module {i}", kind, null, DateTime.UtcNow)).ToArray(),
+        Array.Empty<ModuleRevert>(),
+        EndedUtc: null,
+        RevertedByRecovery: false);
+
+    private static SessionOutcome Deactivation(SessionOutcome activation) =>
+        activation with { EndedUtc = new DateTime(2026, 11, 1, 21, 30, 0, DateTimeKind.Utc) };
 
     [Fact]
     public void FailureDuringASession_ShowsWarning()
@@ -153,18 +198,82 @@ public class TrayStatusTrackerTests
         var tracker = CreateTracker();
         _optimizing = true;
         _applied = 3;
+        _outcome = Activation(ModuleOutcomeKind.Applied, ModuleOutcomeKind.Failed, ModuleOutcomeKind.Applied, ModuleOutcomeKind.Applied);
 
-        tracker.RecordFailure();
+        var state = tracker.Resolve();
+
+        Assert.Equal(TrayIconShape.Warning, state.Shape);
+        Assert.Equal("GameShift: 1 change failed", state.StatusText);
+    }
+
+    [Fact]
+    public void QuickOptimizeFailure_ShowsWarningWithoutASession()
+    {
+        var tracker = CreateTracker();
+        _applied = 2;
+        _outcome = Activation(ModuleOutcomeKind.Applied, ModuleOutcomeKind.Failed, ModuleOutcomeKind.Applied);
 
         Assert.Equal(TrayIconShape.Warning, tracker.Resolve().Shape);
     }
 
     [Fact]
-    public void FailuresAreForgotten_OnceTheSessionIsSeenEnding()
+    public void QuickOptimizeFailure_IsNotShownForAGameSessionThatStartsLater()
+    {
+        var tracker = CreateTracker();
+        _applied = 2;
+        _outcome = Activation(ModuleOutcomeKind.Applied, ModuleOutcomeKind.Failed, ModuleOutcomeKind.Applied);
+        Assert.Equal(TrayIconShape.Warning, tracker.Resolve().Shape);
+
+        // The game was detected while Quick Optimize was still applying; its own run applies the
+        // module that failed before and finds the rest already applied.
+        _optimizing = true;
+        _applied = 3;
+        _outcome = Activation(ModuleOutcomeKind.AlreadyApplied, ModuleOutcomeKind.Applied, ModuleOutcomeKind.AlreadyApplied);
+        var state = tracker.Resolve();
+
+        Assert.Equal(TrayIconShape.Active, state.Shape);
+        Assert.Equal("GameShift - 3 changes active", state.ToolTip);
+    }
+
+    [Fact]
+    public void FailuresAreForgotten_OnceTheirRunIsReverted()
+    {
+        var tracker = CreateTracker();
+        _applied = 2;
+        var quickOptimize = Activation(ModuleOutcomeKind.Applied, ModuleOutcomeKind.Failed, ModuleOutcomeKind.Applied);
+        _outcome = quickOptimize;
+        Assert.Equal(TrayIconShape.Warning, tracker.Resolve().Shape);
+
+        // The deactivation outcome still lists the activation's modules, failure included.
+        _applied = 0;
+        _outcome = Deactivation(quickOptimize);
+        _optimizing = true;
+        Assert.Equal("GameShift - No changes active", tracker.Resolve().ToolTip);
+
+        _optimizing = false;
+        Assert.Equal("GameShift - Idle", tracker.Resolve().ToolTip);
+    }
+
+    [Fact]
+    public void GameSessionWithNothingApplied_ShowsNoChangesActive()
     {
         var tracker = CreateTracker();
         _optimizing = true;
-        tracker.RecordFailure();
+        _outcome = Activation(ModuleOutcomeKind.SkippedDisabled, ModuleOutcomeKind.NotApplicable, ModuleOutcomeKind.Unavailable);
+
+        var state = tracker.Resolve();
+
+        Assert.Equal(TrayIconShape.Idle, state.Shape);
+        Assert.Equal("GameShift - No changes active", state.ToolTip);
+        Assert.Equal("GameShift: No changes active", state.StatusText);
+    }
+
+    [Fact]
+    public void DpcSpikeIsForgotten_OnceTheSessionIsSeenEnding()
+    {
+        var tracker = CreateTracker();
+        _optimizing = true;
+        _applied = 2;
         tracker.RecordDpcSpike();
 
         _optimizing = false;
@@ -206,7 +315,7 @@ public class TrayStatusTrackerTests
         Assert.EndsWith("High DPC load at 21:18", tracker.Resolve().ToolTip);
 
         _time.Advance(TimeSpan.FromMinutes(1));
-        Assert.Equal("GameShift - Optimizing, 5 changes applied", tracker.Resolve().ToolTip);
+        Assert.Equal("GameShift - 5 changes active", tracker.Resolve().ToolTip);
     }
 
     [Fact]

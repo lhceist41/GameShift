@@ -80,6 +80,13 @@ static string FindRepositoryRoot(string start)
 static byte[] Render(string svgPath, int size)
 {
     var svg = XElement.Load(svgPath);
+    foreach (var attribute in svg.Attributes())
+    {
+        // Unprefixed, so xmlns here is only the default namespace declaration.
+        if (attribute.Name.Namespace != XNamespace.None || attribute.Name.LocalName is not ("xmlns" or "viewBox" or "width" or "height"))
+            throw new InvalidDataException($"{svgPath}: unsupported attribute {attribute} on <svg>");
+    }
+
     var viewBox = svg.Attribute("viewBox")?.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries).Select(Number).ToArray()
         ?? throw new InvalidDataException($"{svgPath}: no viewBox");
     if (viewBox.Length != 4 || viewBox[0] != 0 || viewBox[1] != 0)
