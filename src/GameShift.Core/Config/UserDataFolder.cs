@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Text;
+using GameShift.Core.Journal;
 using GameShift.Core.System;
 using Microsoft.Win32.SafeHandles;
 
@@ -18,6 +19,7 @@ internal sealed class UserDataFolder : IDisposable
 {
     private const uint ShareAll = NativeInterop.FILE_SHARE_READ | NativeInterop.FILE_SHARE_WRITE | NativeInterop.FILE_SHARE_DELETE;
     private const uint EntryOptions = NativeInterop.FILE_SYNCHRONOUS_IO_NONALERT | NativeInterop.FILE_OPEN_REPARSE_POINT;
+    private const int StatusObjectNameCollision = unchecked((int)0xC0000035);
 
     private static readonly object RegistryLock = new();
     private static readonly Dictionary<string, (UserDataFolder? Folder, string? Refusal)> Registry =
@@ -297,6 +299,32 @@ internal sealed class UserDataFolder : IDisposable
         RefuseUnlessPlainFile(file, name, "deleted");
         status = HandleRelative.MarkForDeletion(file);
         return status == 0 ? true : throw new IOException($"Could not delete {name} (status 0x{status:X8})");
+    }
+
+    /// <summary>
+    /// Renames the file <paramref name="name"/> to <paramref name="newName"/> in this folder, never
+    /// over an existing entry. False when <paramref name="newName"/> is taken; throws, renaming
+    /// nothing, when <paramref name="name"/> is missing, a link or a file with more than one link.
+    /// </summary>
+    public bool RenameFile(string name, string newName)
+    {
+        // The rename takes the name relative to this folder's handle; a plain name cannot lead out of it.
+        if (newName.Length == 0 || newName.IndexOfAny(new[] { '\\', '/', ':' }) >= 0 || newName is "." or "..")
+            throw new ArgumentException("A plain file name is required", nameof(newName));
+
+        using var file = HandleRelative.Open(_handle, name,
+            NativeInterop.DELETE | NativeInterop.FILE_READ_ATTRIBUTES | NativeInterop.SYNCHRONIZE, ShareAll,
+            NativeInterop.FILE_OPEN, EntryOptions, out var status)
+            ?? throw new IOException($"Could not open {name} (status 0x{status:X8})");
+
+        RefuseUnlessPlainFile(file, name, "renamed");
+        status = WindowsJournalSecurity.RenameRelative(file, _handle, newName, replaceIfExists: false);
+        return status switch
+        {
+            0 => true,
+            StatusObjectNameCollision => false,
+            _ => throw new IOException($"Could not rename {name} to {newName} (status 0x{status:X8})"),
+        };
     }
 
     private void RefuseUnlessPlainFile(string name, string action)

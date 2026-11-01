@@ -70,6 +70,12 @@ public interface ILastingChangeSystem
 {
     AppSettings LoadSettings();
 
+    /// <summary>
+    /// One sentence for each record GameShift kept but could not read; the changes it holds are
+    /// not listed.
+    /// </summary>
+    IReadOnlyList<string> DescribeUnreadableRecords() => [];
+
     ISystemTweak? FindTweak(string className);
 
     /// <summary>Reverts the tweak and drops its ledger entry only on success.</summary>
@@ -135,6 +141,16 @@ public sealed class LastingChangesInventory
         {
             _logger.Warning(ex, "[LastingChanges] Failed to load settings");
             warnings.Add("GameShift's settings could not be read, so the changes it recorded are not listed.");
+        }
+
+        try
+        {
+            warnings.AddRange(_system.DescribeUnreadableRecords());
+        }
+        catch (Exception ex)
+        {
+            _logger.Warning(ex, "[LastingChanges] Failed to look for kept settings files");
+            warnings.Add("GameShift could not check for settings files it kept aside, so changes recorded in them may not be listed.");
         }
 
         if (settings != null)
@@ -600,7 +616,20 @@ internal sealed class WindowsLastingChangeSystem : ILastingChangeSystem
         _vbs = vbs;
     }
 
-    public AppSettings LoadSettings() => SettingsManager.Load();
+    public AppSettings LoadSettings() => LoadRecordedSettings();
+
+    // Load() would hand back defaults, which read as "nothing recorded" while changes remain.
+    internal static AppSettings LoadRecordedSettings() =>
+        SettingsManager.TryLoad(out var settings)
+            ? settings
+            : throw new InvalidDataException("settings.json exists but could not be read");
+
+    public IReadOnlyList<string> DescribeUnreadableRecords() => DescribeKeptSettingsFiles();
+
+    internal static IReadOnlyList<string> DescribeKeptSettingsFiles() =>
+        SettingsManager.GetUnreadableSettingsFiles()
+            .Select(path => $"GameShift kept a settings file it could not read: {path}. The changes recorded in it are not listed and cannot be undone automatically.")
+            .ToList();
 
     public ISystemTweak? FindTweak(string className) => _tweaks.GetTweakByClassName(className);
 

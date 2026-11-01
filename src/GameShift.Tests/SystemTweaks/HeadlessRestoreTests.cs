@@ -4,14 +4,17 @@ using GameShift.Core.Monitoring;
 using GameShift.Core.Optimization;
 using GameShift.Core.System;
 using GameShift.Core.SystemTweaks;
+using GameShift.Tests.TestHelpers;
 using Xunit;
 
 namespace GameShift.Tests.SystemTweaks;
 
 /// <summary>
 /// The uninstaller's headless commands, through fakes for the instance lock, crash recovery and the
-/// lasting-change reverters, so nothing on the test machine is changed.
+/// lasting-change reverters, so nothing on the test machine is changed. Some tests read settings.json
+/// from a temp folder through the real loader, so the class shares the config-state collection.
 /// </summary>
+[Collection("ConfigState")]
 public class HeadlessRestoreTests
 {
     private const string NetworkFix = "ndis_interrupt_moderation";
@@ -243,6 +246,8 @@ public class HeadlessRestoreTests
 
         Assert.Equal(HeadlessExitCode.SomethingLeft, run.Restore());
         Assert.Contains("could not be read", run.Summary);
+        Assert.Contains("could not read all of its records", run.Summary);
+        Assert.DoesNotContain("found no lasting changes", run.Summary);
     }
 
     [Fact]
@@ -252,6 +257,117 @@ public class HeadlessRestoreTests
         run.System.LoadFails = true;
 
         Assert.Equal(HeadlessExitCode.SomethingLeft, run.Restore());
+    }
+
+    [Theory]
+    [InlineData("{ \"AppliedDpcFixes\": [")]
+    [InlineData("null")]
+    [InlineData("[]")]
+    public void SettingsFileThatIsNotSettings_IsKeptAside_ExitsWithOne_AndNamesIt(string contents)
+    {
+        using var temp = new TempPath();
+        var path = temp.GetFile("settings.json");
+        File.WriteAllText(path, contents);
+        SettingsManager.SettingsFilePathOverride = path;
+        try
+        {
+            var run = new Run();
+            run.System.LoadFromSettingsFile = true;
+
+            Assert.Equal(HeadlessExitCode.SomethingLeft, run.Restore());
+            var kept = Assert.Single(SettingsManager.GetUnreadableSettingsFiles());
+            Assert.Contains(kept, run.Summary);
+            Assert.Contains("cannot be undone automatically", run.Summary);
+            Assert.Contains("could not read all of its records", run.Summary);
+            Assert.DoesNotContain("found no lasting changes", run.Summary);
+
+            // Still warned on the next run, when settings.json is a fresh file again.
+            SettingsManager.Save(new AppSettings());
+            var again = new Run();
+            again.System.LoadFromSettingsFile = true;
+            Assert.Equal(HeadlessExitCode.SomethingLeft, again.Restore());
+            Assert.Contains(kept, again.Summary);
+        }
+        finally
+        {
+            SettingsManager.SettingsFilePathOverride = null;
+        }
+    }
+
+    [Fact]
+    public void SettingsFileThatCannotBeOpened_ExitsWithOne_AndSaysSo()
+    {
+        using var temp = new TempPath();
+        var path = temp.GetFile("settings.json");
+        SettingsManager.SettingsFilePathOverride = path;
+        try
+        {
+            SettingsManager.Save(new AppSettings());
+            var run = new Run();
+            run.System.LoadFromSettingsFile = true;
+
+            using (new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+                Assert.Equal(HeadlessExitCode.SomethingLeft, run.Restore());
+
+            Assert.Contains("settings could not be read", run.Summary);
+            Assert.DoesNotContain("found no lasting changes", run.Summary);
+        }
+        finally
+        {
+            SettingsManager.SettingsFilePathOverride = null;
+        }
+    }
+
+    [Fact]
+    public void KeptFilesThatCannotBeChecked_ExitWithOne()
+    {
+        var run = new Run();
+        run.System.KeptFilesThrow = true;
+
+        Assert.Equal(HeadlessExitCode.SomethingLeft, run.Restore());
+        Assert.Contains("kept aside", run.Summary);
+    }
+
+    [Fact]
+    public void NoSettingsFile_ExitsWithZero_AndNothingIsRecorded()
+    {
+        using var temp = new TempPath();
+        SettingsManager.SettingsFilePathOverride = temp.GetFile("settings.json");
+        try
+        {
+            var run = new Run();
+            run.System.LoadFromSettingsFile = true;
+
+            Assert.Equal(HeadlessExitCode.Done, run.Restore());
+            Assert.Contains("found no lasting changes", run.Summary);
+            Assert.DoesNotContain("could not be read", run.Summary);
+        }
+        finally
+        {
+            SettingsManager.SettingsFilePathOverride = null;
+        }
+    }
+
+    [Fact]
+    public void ChangeRecordedInTheSettingsFile_IsUndone()
+    {
+        using var temp = new TempPath();
+        SettingsManager.SettingsFilePathOverride = temp.GetFile("settings.json");
+        try
+        {
+            var recorded = new AppSettings();
+            recorded.AppliedDpcFixes.Add(new AppliedDpcFix { FixId = NetworkFix, ActionType = "SetNetAdapterProperty" });
+            SettingsManager.Save(recorded);
+            var run = new Run();
+            run.System.LoadFromSettingsFile = true;
+
+            Assert.Equal(HeadlessExitCode.Done, run.Restore());
+            Assert.Equal(new[] { "dpc:" + NetworkFix }, run.System.Calls);
+        }
+        finally
+        {
+            SettingsManager.SettingsFilePathOverride = null;
+        }
     }
 
     [Fact]
@@ -287,11 +403,23 @@ public class HeadlessRestoreTests
         public AppSettings Settings { get; } = new();
         public bool RevertsFail { get; set; }
         public bool LoadFails { get; set; }
+
+        /// <summary>Reads settings.json and kept files through the real inventory loader instead of <see cref="Settings"/>.</summary>
+        public bool LoadFromSettingsFile { get; set; }
+        public bool KeptFilesThrow { get; set; }
         public bool CoreReservationPresent { get; set; }
         public List<RenamedStartupEntry> StartupEntries { get; } = new();
         public List<string> Calls { get; } = new();
 
-        public AppSettings LoadSettings() => LoadFails ? throw new IOException("settings locked") : Settings;
+        public AppSettings LoadSettings() =>
+            LoadFails ? throw new IOException("settings locked")
+            : LoadFromSettingsFile ? WindowsLastingChangeSystem.LoadRecordedSettings()
+            : Settings;
+
+        public IReadOnlyList<string> DescribeUnreadableRecords() =>
+            KeptFilesThrow ? throw new IOException("folder busy")
+            : LoadFromSettingsFile ? WindowsLastingChangeSystem.DescribeKeptSettingsFiles()
+            : [];
 
         public ISystemTweak? FindTweak(string className) => null;
 

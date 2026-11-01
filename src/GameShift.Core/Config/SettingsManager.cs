@@ -43,6 +43,12 @@ public static class SettingsManager
     /// </summary>
     internal static string? SettingsFilePathOverride { get; set; }
 
+    /// <summary>Internal test hook: the clock that names a kept unreadable settings file.</summary>
+    internal static Func<DateTime> UtcNow { get; set; } = () => DateTime.UtcNow;
+
+    private const string UnreadableSettingsPrefix = "settings.unreadable-";
+    private const int MaxKeptNameAttempts = 100;
+
     private static string SettingsFilePath =>
         SettingsFilePathOverride ?? Path.Combine(DefaultAppDataPath, "settings.json");
 
@@ -83,10 +89,23 @@ public static class SettingsManager
 
     /// <summary>
     /// Loads settings from %AppData%/GameShift/settings.json.
-    /// Returns default settings if file doesn't exist.
+    /// Returns default settings if file doesn't exist or could not be read.
     /// </summary>
     /// <returns>Loaded or default AppSettings instance</returns>
     public static AppSettings Load()
+    {
+        TryLoad(out var settings);
+        return settings;
+    }
+
+    /// <summary>
+    /// Loads settings like <see cref="Load"/>. False when a settings file is in place but could not
+    /// be read as settings; <paramref name="settings"/> are then defaults. A file that opened but did
+    /// not deserialize is first kept aside (see <see cref="GetUnreadableSettingsFiles"/>) and then
+    /// counts as missing. A missing file or a refused data folder (see
+    /// <see cref="IsDataFolderRefused"/>) gives defaults and true.
+    /// </summary>
+    public static bool TryLoad(out AppSettings settings)
     {
         lock (_fileLock)
         {
@@ -94,43 +113,48 @@ public static class SettingsManager
             {
                 var folder = GetDataFolder();
                 if (folder == null)
-                    return new AppSettings();
-
-                var json = folder.ReadAllText(SettingsFileName);
-                if (json == null)
                 {
-                    Logger.Information("Settings file not found, using defaults");
-                    return new AppSettings();
+                    settings = new AppSettings();
+                    return true;
                 }
 
-                var settings = JsonSerializer.Deserialize<AppSettings>(json);
-
-                if (settings == null)
+                if (!TryRead(folder, out var loaded))
                 {
-                    Logger.Warning("Settings file was null after deserialization, using defaults");
-                    return new AppSettings();
+                    settings = new AppSettings();
+                    return false;
+                }
+
+                if (loaded == null)
+                {
+                    Logger.Information("No settings file in place, using defaults");
+                    settings = new AppSettings();
+                    return true;
                 }
 
                 // Only reconfigure logger if logging settings actually changed
-                if (settings.EnableLogging != _lastLoggingEnabled || settings.LogLevel != _lastLogLevel)
+                if (loaded.EnableLogging != _lastLoggingEnabled || loaded.LogLevel != _lastLogLevel)
                 {
-                    ConfigureLogger(settings);
+                    ConfigureLogger(loaded);
                 }
                 Logger.Information("Settings loaded from {Path}", SettingsFilePath);
 
-                return settings;
+                settings = loaded;
+                return true;
             }
             catch (Exception ex)
             {
                 Logger.Error(ex, "Failed to load settings, using defaults");
-                return new AppSettings();
+                settings = new AppSettings();
+                return false;
             }
         }
     }
 
     /// <summary>
     /// Saves settings to %AppData%/GameShift/settings.json.
-    /// Creates the folder if it doesn't exist; saves nothing when the folder was refused.
+    /// Creates the folder if it doesn't exist; saves nothing when the folder was refused. Throws
+    /// <see cref="IOException"/>, saving nothing, when a settings file is in place that could not
+    /// be read, since it may hold changes still to undo.
     /// </summary>
     /// <param name="settings">Settings to persist</param>
     public static void Save(AppSettings settings)
@@ -140,26 +164,13 @@ public static class SettingsManager
             try
             {
                 var folder = GetDataFolder();
-                if (folder != null)
+                if (folder != null && !TryRead(folder, out _))
                 {
-                    var json = JsonSerializer.Serialize(settings, new JsonSerializerOptions
-                    {
-                        WriteIndented = true
-                    });
-
-                    folder.WriteAllText(SettingsFileName, json);
+                    Logger.Warning("Settings were not saved: {Path} could not be read and was left in place", SettingsFilePath);
+                    throw UnreadableInPlace();
                 }
 
-                // Only reconfigure logger if logging settings actually changed
-                if (settings.EnableLogging != _lastLoggingEnabled || settings.LogLevel != _lastLogLevel)
-                {
-                    ConfigureLogger(settings);
-                }
-
-                if (folder != null)
-                    Logger.Information("Settings saved to {Path}", SettingsFilePath);
-                else
-                    Logger.Warning("Settings were not saved: {Path} was refused", AppDataPath);
+                Write(folder, settings);
             }
             catch (Exception ex)
             {
@@ -175,19 +186,148 @@ public static class SettingsManager
     /// instead of a separate Load() -> mutate -> Save() when the caller may run concurrently with
     /// another writer (e.g. a background detection-thread tip dismissal racing a UI settings save),
     /// where the unguarded read-modify-write sequence can lose one writer's update.
+    /// Throws <see cref="IOException"/>, without running <paramref name="mutate"/>, when a settings
+    /// file is in place that could not be read.
     /// </summary>
     /// <param name="mutate">Mutation applied to the loaded settings before they are saved.</param>
     public static void Update(Action<AppSettings> mutate)
     {
         ArgumentNullException.ThrowIfNull(mutate);
-        // Monitor (lock) is reentrant, so the nested Load()/Save() calls re-enter this same lock on
-        // this thread; the whole load-mutate-save is therefore atomic against other Update/Save callers.
+        // Monitor (lock) is reentrant, so the nested TryLoad() re-enters this same lock on this
+        // thread; the whole load-mutate-save is therefore atomic against other Update/Save callers.
         lock (_fileLock)
         {
-            var settings = Load();
+            if (!TryLoad(out var settings))
+            {
+                Logger.Warning("A settings change was dropped: {Path} could not be read and was left in place", SettingsFilePath);
+                throw UnreadableInPlace();
+            }
+
             mutate(settings);
-            Save(settings);
+            try
+            {
+                Write(GetDataFolder(), settings);
+            }
+            catch (Exception ex)
+            {
+                Logger.Error(ex, "Failed to save settings to {Path}", SettingsFilePath);
+                throw;
+            }
         }
+    }
+
+    // Thrown like a failed write, so callers that record a change before making it stop first.
+    private static IOException UnreadableInPlace() =>
+        new($"The settings file {SettingsFilePath} could not be read and is still in place, so nothing was saved");
+
+    /// <summary>
+    /// The full paths of settings files that could not be read and were kept aside in the data
+    /// folder. Empty when the folder was refused.
+    /// </summary>
+    public static IReadOnlyList<string> GetUnreadableSettingsFiles()
+    {
+        lock (_fileLock)
+        {
+            var folder = GetDataFolder();
+            if (folder == null)
+                return [];
+
+            // Names only; nothing is opened by path.
+            return Directory.EnumerateFiles(folder.Path, UnreadableSettingsPrefix + "*.json")
+                .Order(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+    }
+
+    /// <summary>
+    /// Reads the settings file. False when one is in place but could not be read as settings.
+    /// <paramref name="loaded"/> is null when there is none, including after an unreadable one was
+    /// kept aside.
+    /// </summary>
+    private static bool TryRead(UserDataFolder folder, out AppSettings? loaded)
+    {
+        loaded = null;
+        string? json;
+        try
+        {
+            json = folder.ReadAllText(SettingsFileName);
+        }
+        catch (Exception ex)
+        {
+            Logger.Error(ex, "Could not read {Path}", SettingsFilePath);
+            return false;
+        }
+
+        if (json == null)
+            return true;
+
+        try
+        {
+            loaded = JsonSerializer.Deserialize<AppSettings>(json);
+        }
+        catch (JsonException ex)
+        {
+            Logger.Warning(ex, "{Path} does not hold valid settings", SettingsFilePath);
+        }
+
+        return loaded != null || KeepAside(folder);
+    }
+
+    /// <summary>
+    /// Renames the unreadable settings file to <c>settings.unreadable-&lt;UTC time&gt;.json</c> in the
+    /// same folder, so no later save can replace the changes it may record. False when it could not
+    /// be moved; it is then still in place.
+    /// </summary>
+    private static bool KeepAside(UserDataFolder folder)
+    {
+        var stamp = UtcNow().ToString("yyyyMMdd-HHmmss", global::System.Globalization.CultureInfo.InvariantCulture);
+        try
+        {
+            for (int n = 0; n < MaxKeptNameAttempts; n++)
+            {
+                var name = n == 0
+                    ? $"{UnreadableSettingsPrefix}{stamp}.json"
+                    : $"{UnreadableSettingsPrefix}{stamp}-{n}.json";
+                if (folder.RenameFile(SettingsFileName, name))
+                {
+                    Logger.Warning("{Path} could not be read; it was kept as {Name} and defaults are used", SettingsFilePath, name);
+                    return true;
+                }
+            }
+
+            Logger.Error("{Path} could not be read and was left in place: no free name to keep it under", SettingsFilePath);
+        }
+        catch (Exception ex)
+        {
+            Logger.Error(ex, "{Path} could not be read and could not be kept aside; it was left in place", SettingsFilePath);
+        }
+
+        return false;
+    }
+
+    /// <summary>Writes <paramref name="settings"/>; nothing is written when <paramref name="folder"/> was refused.</summary>
+    private static void Write(UserDataFolder? folder, AppSettings settings)
+    {
+        if (folder != null)
+        {
+            var json = JsonSerializer.Serialize(settings, new JsonSerializerOptions
+            {
+                WriteIndented = true
+            });
+
+            folder.WriteAllText(SettingsFileName, json);
+        }
+
+        // Only reconfigure logger if logging settings actually changed
+        if (settings.EnableLogging != _lastLoggingEnabled || settings.LogLevel != _lastLogLevel)
+        {
+            ConfigureLogger(settings);
+        }
+
+        if (folder != null)
+            Logger.Information("Settings saved to {Path}", SettingsFilePath);
+        else
+            Logger.Warning("Settings were not saved: {Path} was refused", AppDataPath);
     }
 
     /// <summary>

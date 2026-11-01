@@ -119,7 +119,8 @@ public static class HeadlessRestore
 
         try
         {
-            if (!settingsAvailable())
+            var settingsFolderUsable = settingsAvailable();
+            if (!settingsFolderUsable)
             {
                 code = Math.Max(code, HeadlessExitCode.SomethingLeft);
                 summary.AppendLine("GameShift's settings folder could not be used, so the changes it recorded could not be read.");
@@ -148,7 +149,11 @@ public static class HeadlessRestore
             }
 
             if (list.Items.Count == 0)
-                summary.AppendLine("GameShift found no lasting changes to undo.");
+            {
+                summary.AppendLine(settingsFolderUsable && list.Warnings.Count == 0
+                    ? "GameShift found no lasting changes to undo."
+                    : "GameShift could not read all of its records, so it cannot tell whether lasting changes are left.");
+            }
         }
         catch (Exception ex)
         {

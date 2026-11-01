@@ -246,12 +246,19 @@ public partial class SettingsPage : Page
         try
         {
             var list = await Task.Run(inventory.List);
-            var warnings = list.Warnings.Count > 0 ? "\n\n" + string.Join("\n", list.Warnings) : "";
+            var warningLines = list.Warnings.ToList();
+            if (SettingsManager.IsDataFolderRefused())
+                warningLines.Insert(0, "GameShift's settings folder could not be used, so the changes it recorded could not be read.");
+            var warnings = warningLines.Count > 0 ? "\n\n" + string.Join("\n", warningLines) : "";
 
             if (list.Items.Count == 0)
             {
-                MessageBox.Show("GameShift found no lasting changes to undo." + warnings,
-                    "Restore All", MessageBoxButton.OK, MessageBoxImage.Information);
+                if (warningLines.Count > 0)
+                    MessageBox.Show("GameShift could not read all of its records, so it cannot tell whether lasting changes are left." + warnings,
+                        "Restore All", MessageBoxButton.OK, MessageBoxImage.Warning);
+                else
+                    MessageBox.Show("GameShift found no lasting changes to undo.",
+                        "Restore All", MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
