@@ -55,6 +55,7 @@ public class VbsReEnableTests
         var settings = Settings(toggle: true, tweakByGameShift: true);
         settings.VbsHvciOriginalRpsfExisted = true;
         settings.VbsHvciOriginalRpsfValue = 3;
+        settings.VbsHvciDisabledAtUtc = DateTime.UtcNow;
         settings.SystemTweaks!.AppliedTweaks["DisableHags"] = new TweakState { IsAppliedByGameShift = true };
 
         VbsHvciToggle.ForgetToggleRecord(settings);
@@ -63,6 +64,7 @@ public class VbsReEnableTests
         Assert.False(settings.VbsHvciDisabledByGameShift);
         Assert.False(settings.VbsHvciOriginalRpsfExisted);
         Assert.Equal(0, settings.VbsHvciOriginalRpsfValue);
+        Assert.Null(settings.VbsHvciDisabledAtUtc);
         Assert.Equal(["DisableHags"], settings.SystemTweaks.AppliedTweaks.Keys);
         Assert.False(VbsHvciToggle.IsDisabledByGameShift(settings));
     }

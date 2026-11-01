@@ -52,6 +52,12 @@ public class AppSettings
     public int VbsHvciOriginalRpsfValue { get; set; } = 0;
 
     /// <summary>
+    /// When GameShift last turned VBS/HVCI off, so a later start can tell whether Windows has
+    /// restarted since. Null when there is no such record.
+    /// </summary>
+    public DateTime? VbsHvciDisabledAtUtc { get; set; } = null;
+
+    /// <summary>
     /// Whether user dismissed the VBS/HVCI performance warning banner.
     /// </summary>
     public bool VbsHvciNotificationDismissed { get; set; } = false;

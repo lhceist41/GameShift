@@ -17,6 +17,23 @@ public class VbsHvciToggle
 {
     private readonly ILogger _logger = SettingsManager.Logger;
 
+    private readonly Func<string, string, int> _readDword;
+    private readonly IDeviceGuardReader _deviceGuard;
+    private readonly Func<DateTime> _bootTimeUtc;
+
+    public VbsHvciToggle()
+        : this(null, new WmiDeviceGuardReader(), MemoryIntegrityStatus.BootTimeUtc)
+    {
+    }
+
+    internal VbsHvciToggle(
+        Func<string, string, int>? readDword, IDeviceGuardReader deviceGuard, Func<DateTime> bootTimeUtc)
+    {
+        _readDword = readDword ?? ReadRegistryDword;
+        _deviceGuard = deviceGuard;
+        _bootTimeUtc = bootTimeUtc;
+    }
+
     // ── Registry paths ──────────────────────────────────────────────────
 
     private const string DeviceGuardPath =
@@ -46,20 +63,56 @@ public class VbsHvciToggle
     public bool IsEitherEnabled => IsVbsEnabled || IsHvciEnabled;
 
     /// <summary>
-    /// Banner message shown when VBS/HVCI is detected as enabled.
+    /// What Windows runs, from Win32_DeviceGuard; the registry alone when that cannot be read.
     /// </summary>
-    public string BannerMessage =>
-        "Memory Integrity (VBS/HVCI) is on. It can lower gaming FPS by a few percent on average.";
+    public MemoryIntegrityState State { get; private set; }
+
+    /// <summary>
+    /// Whether GameShift's last disable has taken effect, judged against <see cref="State"/>.
+    /// </summary>
+    public MemoryIntegrityDisableOutcome DisableOutcome { get; private set; }
+
+    /// <summary>
+    /// Banner message for the current state.
+    /// </summary>
+    public string BannerMessage => DisableOutcome switch
+    {
+        MemoryIntegrityDisableOutcome.DidNotTakeEffect =>
+            "Turning off Memory Integrity (VBS/HVCI) did not take effect: it is still running after the restart. " +
+            "A device policy or a UEFI lock may keep it on. Check Windows Security > Device security > Core isolation.",
+        MemoryIntegrityDisableOutcome.PendingRestart =>
+            "Memory Integrity (VBS/HVCI) is still running. Restart Windows to finish turning it off.",
+        _ when State == MemoryIntegrityState.NotRunning =>
+            "Memory Integrity (VBS/HVCI) is turned on but not running right now. " +
+            "When it runs, it can lower gaming FPS by a few percent on average.",
+        _ => "Memory Integrity (VBS/HVCI) is on. It can lower gaming FPS by a few percent on average.",
+    };
+
+    /// <summary>
+    /// Short status for the Settings page.
+    /// </summary>
+    public string StatusText => DisableOutcome switch
+    {
+        MemoryIntegrityDisableOutcome.DidNotTakeEffect => "Running. Turning it off did not take effect.",
+        MemoryIntegrityDisableOutcome.PendingRestart => "Running. Restart Windows to finish turning it off.",
+        _ => State switch
+        {
+            MemoryIntegrityState.Running => "Running",
+            MemoryIntegrityState.NotRunning => "Turned on, not running",
+            MemoryIntegrityState.TurnedOn => "Turned on",
+            _ => "Off",
+        },
+    };
 
     /// <summary>
     /// Whether the dashboard should display the VBS/HVCI warning banner.
-    /// True when either VBS or HVCI is enabled AND user has not dismissed the notification.
+    /// True when Memory Integrity is running or turned on AND user has not dismissed the notification.
     /// </summary>
     public bool ShouldShowBanner
     {
         get
         {
-            if (!IsEitherEnabled)
+            if (State == MemoryIntegrityState.Off)
                 return false;
 
             var settings = SettingsManager.Load();
@@ -77,7 +130,8 @@ public class VbsHvciToggle
     // ── Detection ──────────────────────────────────────────────────────
 
     /// <summary>
-    /// Reads VBS and HVCI state from DeviceGuard registry keys and caches the results.
+    /// Reads VBS and HVCI state from DeviceGuard registry keys and what Windows runs from
+    /// Win32_DeviceGuard, and caches the results.
     /// Updates AppSettings.VbsHvciLastChecked timestamp.
     /// Call once on startup.
     /// </summary>
@@ -86,10 +140,10 @@ public class VbsHvciToggle
         try
         {
             // Check VBS: HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard -> EnableVirtualizationBasedSecurity
-            IsVbsEnabled = ReadRegistryDword(DeviceGuardPath, VbsValueName) == 1;
+            IsVbsEnabled = _readDword(DeviceGuardPath, VbsValueName) == 1;
 
             // Check HVCI: DeviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity -> Enabled
-            IsHvciEnabled = ReadRegistryDword(HvciScenarioPath, HvciValueName) == 1;
+            IsHvciEnabled = _readDword(HvciScenarioPath, HvciValueName) == 1;
 
             _logger.Information(
                 "VbsHvciToggle: VBS={VbsEnabled}, HVCI={HvciEnabled}, Either={EitherEnabled}",
@@ -111,6 +165,15 @@ public class VbsHvciToggle
             IsVbsEnabled = false;
             IsHvciEnabled = false;
         }
+
+        var reading = _deviceGuard.Read();
+        State = MemoryIntegrityStatus.Evaluate(reading, IsEitherEnabled);
+        DisableOutcome = MemoryIntegrityStatus.JudgeDisable(
+            State, IsEitherEnabled, SettingsManager.Load(), _bootTimeUtc());
+
+        _logger.Information(
+            "VbsHvciToggle: Memory Integrity {State} (Win32_DeviceGuard read: {Read}), GameShift disable: {Outcome}",
+            State, reading != null, DisableOutcome);
     }
 
     // ── Banner dismiss ─────────────────────────────────────────────────
@@ -253,6 +316,17 @@ public class VbsHvciToggle
             //    at boot and Windows can re-enable VBS despite registry values being 0.
             //    This is the most common reason VBS disable doesn't persist after reboot.
             SetHypervisorLaunchType(off: true);
+
+            // Lets a later start tell a pending restart from a disable that did not take effect.
+            // The disable itself is done, so a failed save must not report it as failed.
+            try
+            {
+                SettingsManager.Update(s => s.VbsHvciDisabledAtUtc = DateTime.UtcNow);
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning(ex, "VbsHvciToggle: Could not record when VBS/HVCI was turned off");
+            }
 
             _logger.Information(
                 "VbsHvciToggle: VBS and HVCI disabled successfully. Reboot required for changes to take effect");
@@ -476,6 +550,7 @@ public class VbsHvciToggle
         settings.VbsHvciDisabledByGameShift = false;
         settings.VbsHvciOriginalRpsfExisted = false;
         settings.VbsHvciOriginalRpsfValue = 0;
+        settings.VbsHvciDisabledAtUtc = null;
     }
 
     internal static void ForgetTweakRecord(AppSettings settings) =>

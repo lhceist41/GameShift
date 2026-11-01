@@ -445,10 +445,7 @@ public class SettingsViewModel : INotifyPropertyChanged
             return;
         }
 
-        if (_vbsHvciToggle.IsEitherEnabled)
-            VbsHvciStatus = "Enabled";
-        else
-            VbsHvciStatus = "Disabled";
+        VbsHvciStatus = _vbsHvciToggle.StatusText;
 
         var settings = SettingsManager.Load();
         ShowReEnableButton = VbsHvciToggle.IsDisabledByGameShift(settings) && !_vbsHvciToggle.IsEitherEnabled;
@@ -461,7 +458,12 @@ public class SettingsViewModel : INotifyPropertyChanged
     {
         if (_vbsHvciToggle == null) return false;
         var result = _vbsHvciToggle.ReEnableVbsHvci();
-        if (result) UpdateVbsStatus();
+        if (result)
+        {
+            // The cached state still reflects the disable that was just undone.
+            _vbsHvciToggle.CheckState();
+            UpdateVbsStatus();
+        }
         return result;
     }
 

@@ -51,7 +51,7 @@ public class VbsAdvisoryViewModel : INotifyPropertyChanged
         if (_vbsHvciToggle != null)
         {
             var blockingACs = AntiCheatDetector.GetVbsRequiringAntiCheats();
-            if (!_vbsHvciToggle.IsEitherEnabled && blockingACs.Count > 0)
+            if (_vbsHvciToggle.State == MemoryIntegrityState.Off && blockingACs.Count > 0)
             {
                 _isVbsConflict = true;
                 _vbsBannerSeverity = "error";
