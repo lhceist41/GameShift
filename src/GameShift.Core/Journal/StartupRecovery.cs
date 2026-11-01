@@ -19,19 +19,24 @@ public enum StartupRecoveryOutcome
     Untrusted,
 
     /// <summary>Earlier replays did not finish, or the attempt could not be recorded; nothing was replayed.</summary>
-    GaveUp
+    GaveUp,
+
+    /// <summary>The journal folder could not be made a plain folder; nothing in it was read.</summary>
+    FolderUnavailable
 }
 
 /// <param name="Items">One entry per record, replayed or left; empty when nothing was read from a trusted journal.</param>
 /// <param name="GameName">From a trusted journal only.</param>
 /// <param name="SessionStarted">From a trusted journal only.</param>
+/// <param name="JournalFolder">The refused folder, for <see cref="StartupRecoveryOutcome.FolderUnavailable"/> only.</param>
 public sealed record StartupRecoveryResult(
     bool WasSessionActive,
     StartupRecoveryOutcome Outcome,
     IReadOnlyList<JournalRevertItem> Items,
     string? GameName = null,
     DateTimeOffset? SessionStarted = null,
-    string? EvidencePath = null)
+    string? EvidencePath = null,
+    string? JournalFolder = null)
 {
     /// <summary>What to tell the user once, or null when there is nothing to say.</summary>
     public string? Notice => StartupRecovery.DescribeForUser(this);
@@ -64,6 +69,18 @@ public static class StartupRecovery
         SessionJournalData? trusted = null;
         try
         {
+            // The folder may be a link to one a standard user controls, so nothing is read through
+            // it. Whether the last session ended is then unknown, so it counts as not ended.
+            if (journal.FolderRefusal is { } refusal)
+            {
+                var folder = Path.GetDirectoryName(journal.JournalPath);
+                logger.Warning("[StartupRecovery] {Folder} could not be used ({Reason}); nothing in it was read and crash recovery is off for this run",
+                    folder, refusal);
+                return new StartupRecoveryResult(
+                    WasSessionActive: true, StartupRecoveryOutcome.FolderUnavailable, Array.Empty<JournalRevertItem>(),
+                    JournalFolder: folder);
+            }
+
             // Look first without adopting the file, so an untrusted journal never becomes this
             // instance's state (a later metadata save would write it back under the journal name).
             var peeked = journal.PeekJournal();
@@ -220,6 +237,12 @@ public static class StartupRecovery
     internal const string UntrustedNotice =
         "GameShift found a session record it could not verify and did not act on it.";
 
+    /// <summary>Formatted with the journal folder.</summary>
+    internal const string FolderUnavailableNotice =
+        "GameShift could not use its data folder ({0}) because something changed it or is holding it open. " +
+        "Crash recovery is off until it can, and nothing from an earlier session was undone. " +
+        "Restart Windows, then start GameShift again.";
+
     internal const string NotUndoneAdvice = "GameShift kept a copy of that session's record, and its log lists what is left.";
 
     internal const string TaskReEnabledAdvice =
@@ -236,6 +259,8 @@ public static class StartupRecovery
             return null;
         if (result.Outcome == StartupRecoveryOutcome.Untrusted)
             return UntrustedNotice;
+        if (result.Outcome == StartupRecoveryOutcome.FolderUnavailable)
+            return string.Format(CultureInfo.InvariantCulture, FolderUnavailableNotice, result.JournalFolder);
 
         var game = string.IsNullOrWhiteSpace(result.GameName) ? "a game session" : result.GameName;
         var when = result.SessionStarted is { } started

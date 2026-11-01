@@ -308,6 +308,13 @@ public class JournalManager
     /// <summary>The journal file this instance reads and writes.</summary>
     public string JournalPath => _journalPath;
 
+    /// <summary>
+    /// Why the journal folder could not be made a plain folder for this run, or null when it could.
+    /// When set, nothing in the folder is written, and nothing in it should be read either: it may
+    /// be a link to a folder a standard user controls.
+    /// </summary>
+    public string? FolderRefusal => _writeRefusal;
+
     private static string GetDefaultJournalPath()
     {
         var dir = Path.Combine(

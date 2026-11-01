@@ -418,6 +418,7 @@ public partial class App : Application
         {
             StartupRecoveryOutcome.Recovered => ("Changes Undone", MessageBoxImage.Information),
             StartupRecoveryOutcome.Untrusted => ("Session Record Ignored", MessageBoxImage.Warning),
+            StartupRecoveryOutcome.FolderUnavailable => ("Crash Recovery Unavailable", MessageBoxImage.Warning),
             _ => ("Changes Not Fully Undone", MessageBoxImage.Warning),
         };
 
