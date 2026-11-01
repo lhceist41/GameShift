@@ -79,6 +79,26 @@ public class OptimizationEngine : IDisposable
     public event EventHandler<OptimizationAppliedEventArgs>? OptimizationFailed;
 
     /// <summary>
+    /// Fired once after every activation, after the per-module events, with what each module did.
+    /// </summary>
+    public event EventHandler<SessionOutcomeEventArgs>? ActivationCompleted;
+
+    /// <summary>
+    /// Fired once after every deactivation, after the per-module events, with the activation's
+    /// module outcomes and what each revert did.
+    /// </summary>
+    public event EventHandler<SessionOutcomeEventArgs>? DeactivationCompleted;
+
+    /// <summary>
+    /// The outcome of the latest activation or deactivation; null before the first one.
+    /// </summary>
+    public SessionOutcome? LastOutcome => Volatile.Read(ref _lastOutcome);
+    private SessionOutcome? _lastOutcome;
+
+    // The activation the next deactivation reports on. Read and written only under the semaphore.
+    private SessionOutcome? _activeSession;
+
+    /// <summary>
     /// Creates a new OptimizationEngine with the specified optimizations.
     /// </summary>
     /// <param name="optimizations">Collection of optimizations to manage</param>
@@ -124,13 +144,22 @@ public class OptimizationEngine : IDisposable
             _snapshot = SystemStateSnapshot.Capture();
             _logger.Debug("System state snapshot captured at {CaptureTime}", _snapshot.CaptureTime);
 
+            var startedUtc = DateTime.UtcNow;
+            var outcomes = new List<ModuleOutcome>();
+
             // Open session journal
             _journal.StartSession(profile, gameName);
 
             // Apply available optimizations in order
             int skippedCount = 0;
-            foreach (var optimization in _optimizations.Where(o => o.IsAvailable))
+            foreach (var optimization in _optimizations)
             {
+                if (!optimization.IsAvailable)
+                {
+                    outcomes.Add(Outcome(optimization, ModuleOutcomeKind.Unavailable));
+                    continue;
+                }
+
                 // Guard against double-apply: if an optimization is already applied (e.g. the
                 // manual "Optimize Now" path ran, then a game auto-launched), re-applying would
                 // let modules that capture original state on Apply overwrite their true baseline
@@ -138,12 +167,14 @@ public class OptimizationEngine : IDisposable
                 if (optimization.IsApplied || _appliedOptimizations.Contains(optimization))
                 {
                     _logger.Information("Skipped (already applied): {OptimizationName}", optimization.Name);
+                    outcomes.Add(Outcome(optimization, ModuleOutcomeKind.AlreadyApplied));
                     continue;
                 }
 
                 if (!profile.IsOptimizationEnabled(optimization.Name))
                 {
                     _logger.Information("Skipped (disabled in profile): {OptimizationName}", optimization.Name);
+                    outcomes.Add(Outcome(optimization, ModuleOutcomeKind.SkippedDisabled));
                     skippedCount++;
                     continue;
                 }
@@ -153,6 +184,7 @@ public class OptimizationEngine : IDisposable
                     _logger.Debug("Applying optimization: {OptimizationName}", optimization.Name);
 
                     bool success;
+                    string? failureDetail = null;
 
                     if (optimization is IJournaledOptimization journaled)
                     {
@@ -160,12 +192,14 @@ public class OptimizationEngine : IDisposable
                         if (!journaled.CanApply(context))
                         {
                             _logger.Information("Skipped (CanApply returned false): {OptimizationName}", optimization.Name);
+                            outcomes.Add(Outcome(optimization, ModuleOutcomeKind.NotApplicable));
                             skippedCount++;
                             continue;
                         }
 
                         var result = journaled.Apply();
                         success = result.State == OptimizationState.Applied;
+                        failureDetail = result.ErrorMessage;
 
                         if (success)
                             _journal.RecordApplied(result);
@@ -185,6 +219,7 @@ public class OptimizationEngine : IDisposable
                         // Queue UI notification - fired outside semaphore below
                         var appliedOpt = optimization;
                         eventsToFire.Add(() => OptimizationApplied?.Invoke(this, new OptimizationAppliedEventArgs(appliedOpt)));
+                        outcomes.Add(Outcome(optimization, ModuleOutcomeKind.Applied));
                     }
                     else
                     {
@@ -192,6 +227,7 @@ public class OptimizationEngine : IDisposable
                             optimization.Name);
                         var failedOpt = optimization;
                         eventsToFire.Add(() => OptimizationFailed?.Invoke(this, new OptimizationAppliedEventArgs(failedOpt)));
+                        outcomes.Add(Outcome(optimization, ModuleOutcomeKind.Failed, Because("did not apply", failureDetail)));
                     }
                 }
                 catch (Exception ex)
@@ -200,11 +236,23 @@ public class OptimizationEngine : IDisposable
                         optimization.Name);
                     var failedOpt = optimization;
                     eventsToFire.Add(() => OptimizationFailed?.Invoke(this, new OptimizationAppliedEventArgs(failedOpt)));
+                    outcomes.Add(Outcome(optimization, ModuleOutcomeKind.Failed, Because("did not apply", ex.Message)));
                 }
             }
 
             _logger.Information("Profile activation complete. Applied {AppliedCount}, skipped {SkippedCount} (disabled in profile or not applicable).",
                 _appliedCount, skippedCount);
+
+            var session = new SessionOutcome(
+                startedUtc,
+                string.IsNullOrWhiteSpace(gameName) ? profile.GameName : gameName,
+                outcomes.ToArray(),
+                Array.Empty<ModuleRevert>(),
+                EndedUtc: null,
+                RevertedByRecovery: false);
+            _activeSession = session;
+            Volatile.Write(ref _lastOutcome, session);
+            eventsToFire.Add(() => ActivationCompleted?.Invoke(this, new SessionOutcomeEventArgs(session)));
         }
         finally
         {
@@ -239,7 +287,10 @@ public class OptimizationEngine : IDisposable
             // state has been restored under our feet. Re-running our own revert
             // would redundantly process no-op state and could race with anything
             // else reading the journal. Clear in-memory tracking and exit early.
-            if (_journal.WasRecoveredDuringCurrentSession())
+            var reverts = new List<ModuleRevert>();
+            bool recovered = _journal.WasRecoveredDuringCurrentSession();
+
+            if (recovered)
             {
                 _logger.Information(
                     "[OptimizationEngine] Watchdog already recovered optimizations - skipping LIFO revert");
@@ -247,66 +298,87 @@ public class OptimizationEngine : IDisposable
                 _appliedOptimizations.Clear(); // Clear in-memory tracking
                 Interlocked.Exchange(ref _appliedCount, 0);
                 _snapshot = null;
-                return;
             }
-
-            _logger.Information("Deactivating profile. Reverting {Count} optimizations in LIFO order.",
-                _appliedCount);
-
-            // Revert in reverse order (LIFO via Stack)
-            while (_appliedOptimizations.TryPop(out var optimization))
+            else
             {
-                Interlocked.Decrement(ref _appliedCount);
-                try
+                _logger.Information("Deactivating profile. Reverting {Count} optimizations in LIFO order.",
+                    _appliedCount);
+
+                // Revert in reverse order (LIFO via Stack)
+                while (_appliedOptimizations.TryPop(out var optimization))
                 {
-                    _logger.Debug("Reverting optimization: {OptimizationName}", optimization.Name);
-
-                    if (_snapshot == null)
+                    Interlocked.Decrement(ref _appliedCount);
+                    try
                     {
-                        _logger.Error("Cannot revert {OptimizationName}: snapshot is null (double-deactivate or activate failed)", optimization.Name);
-                        continue;
+                        _logger.Debug("Reverting optimization: {OptimizationName}", optimization.Name);
+
+                        if (_snapshot == null)
+                        {
+                            _logger.Error("Cannot revert {OptimizationName}: snapshot is null (double-deactivate or activate failed)", optimization.Name);
+                            reverts.Add(RevertResult(optimization, ModuleRevertKind.RevertFailed,
+                                Because("did not revert", "the session snapshot is missing")));
+                            continue;
+                        }
+
+                        bool success;
+                        string? failureDetail = null;
+
+                        if (optimization is IJournaledOptimization journaled)
+                        {
+                            var result = journaled.Revert();
+                            success = result.State == OptimizationState.Reverted;
+                            failureDetail = result.ErrorMessage;
+                            _journal.RecordReverted(optimization.Name, result.State);
+                        }
+                        else
+                        {
+                            success = await optimization.RevertAsync(_snapshot).ConfigureAwait(false);
+                        }
+
+                        if (success)
+                        {
+                            _logger.Information("Successfully reverted: {OptimizationName}", optimization.Name);
+
+                            // Queue UI notification - fired outside semaphore below
+                            var revertedOpt = optimization;
+                            eventsToFire.Add(() => OptimizationReverted?.Invoke(this, new OptimizationRevertedEventArgs(revertedOpt)));
+                            reverts.Add(RevertResult(optimization, ModuleRevertKind.Reverted));
+                        }
+                        else
+                        {
+                            _logger.Error("Revert failed (returned false): {OptimizationName}",
+                                optimization.Name);
+                            reverts.Add(RevertResult(optimization, ModuleRevertKind.RevertFailed,
+                                Because("did not revert", failureDetail)));
+                        }
                     }
-
-                    bool success;
-
-                    if (optimization is IJournaledOptimization journaled)
+                    catch (Exception ex)
                     {
-                        var result = journaled.Revert();
-                        success = result.State == OptimizationState.Reverted;
-                        _journal.RecordReverted(optimization.Name, result.State);
-                    }
-                    else
-                    {
-                        success = await optimization.RevertAsync(_snapshot).ConfigureAwait(false);
-                    }
-
-                    if (success)
-                    {
-                        _logger.Information("Successfully reverted: {OptimizationName}", optimization.Name);
-
-                        // Queue UI notification - fired outside semaphore below
-                        var revertedOpt = optimization;
-                        eventsToFire.Add(() => OptimizationReverted?.Invoke(this, new OptimizationRevertedEventArgs(revertedOpt)));
-                    }
-                    else
-                    {
-                        _logger.Error("Revert failed (returned false): {OptimizationName}",
-                            optimization.Name);
+                        // Log error but continue reverting other optimizations
+                        _logger.Error(ex, "Revert threw exception: {OptimizationName}", optimization.Name);
+                        reverts.Add(RevertResult(optimization, ModuleRevertKind.RevertFailed,
+                            Because("did not revert", ex.Message)));
                     }
                 }
-                catch (Exception ex)
-                {
-                    // Log error but continue reverting other optimizations
-                    _logger.Error(ex, "Revert threw exception: {OptimizationName}", optimization.Name);
-                }
+
+                // Close the journal - session ended cleanly
+                _journal.EndSession();
+
+                // Clear snapshot after all reverts complete
+                _snapshot = null;
+                _logger.Information("Profile deactivation complete.");
             }
 
-            // Close the journal - session ended cleanly
-            _journal.EndSession();
-
-            // Clear snapshot after all reverts complete
-            _snapshot = null;
-            _logger.Information("Profile deactivation complete.");
+            var session = new SessionOutcome(
+                _activeSession?.StartedUtc,
+                _activeSession?.GameName,
+                _activeSession?.Modules ?? Array.Empty<ModuleOutcome>(),
+                reverts.ToArray(),
+                DateTime.UtcNow,
+                recovered);
+            _activeSession = null;
+            Volatile.Write(ref _lastOutcome, session);
+            eventsToFire.Add(() => DeactivationCompleted?.Invoke(this, new SessionOutcomeEventArgs(session)));
         }
         finally
         {
@@ -320,6 +392,15 @@ public class OptimizationEngine : IDisposable
             catch (Exception ex) { _logger.Warning(ex, "Optimization event subscriber threw"); }
         }
     }
+
+    private static ModuleOutcome Outcome(IOptimization optimization, ModuleOutcomeKind kind, string? reason = null) =>
+        new(optimization.Name, kind, reason, DateTime.UtcNow);
+
+    private static ModuleRevert RevertResult(IOptimization optimization, ModuleRevertKind kind, string? reason = null) =>
+        new(optimization.Name, kind, reason, DateTime.UtcNow);
+
+    private static string Because(string what, string? detail) =>
+        string.IsNullOrWhiteSpace(detail) ? what : $"{what}: {detail}";
 
     public void Dispose()
     {
