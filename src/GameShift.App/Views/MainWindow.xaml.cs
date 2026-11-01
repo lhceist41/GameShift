@@ -205,7 +205,8 @@ public partial class MainWindow : FluentWindow
 
         // Tuning group
         NavHeaderTuning.Visibility = vis;
-        NavOptimizations.Visibility = vis;
+        NavDuringGames.Visibility = vis;
+        NavLastingChanges.Visibility = vis;
         NavSystem.Visibility = vis;
 
         // Diagnostics group

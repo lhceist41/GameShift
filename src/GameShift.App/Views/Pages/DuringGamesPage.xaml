@@ -1,0 +1,135 @@
+<Page x:Class="GameShift.App.Views.Pages.DuringGamesPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+      xmlns:helpers="clr-namespace:GameShift.App.Helpers"
+      FontFamily="Segoe UI" FontSize="14">
+    <Page.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
+
+        <!-- Badge colours follow the module's state kind from ModuleStatus -->
+        <Style x:Key="ModuleBadge" TargetType="Border" BasedOn="{StaticResource GS.Badge.State}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding StatusKind}" Value="Applied">
+                    <Setter Property="Background" Value="{DynamicResource GS.Tint.Active}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding StatusKind}" Value="Failed">
+                    <Setter Property="Background" Value="{DynamicResource GS.Tint.Error}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding StatusKind}" Value="Paused">
+                    <Setter Property="Background" Value="{DynamicResource GS.Tint.Paused}"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="ModuleBadgeIcon" TargetType="ui:SymbolIcon">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Margin" Value="0,0,4,0"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Symbol" Value="Circle16"/>
+            <Setter Property="Foreground" Value="{DynamicResource GS.State.Idle}"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding StatusKind}" Value="Applied">
+                    <Setter Property="Symbol" Value="CheckmarkCircle16"/>
+                    <Setter Property="Foreground" Value="{DynamicResource GS.State.Active}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding StatusKind}" Value="Failed">
+                    <Setter Property="Symbol" Value="ErrorCircle16"/>
+                    <Setter Property="Foreground" Value="{DynamicResource GS.State.Error}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding StatusKind}" Value="Off">
+                    <Setter Property="Symbol" Value="SubtractCircle16"/>
+                    <Setter Property="Foreground" Value="{DynamicResource GS.State.Off}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding StatusKind}" Value="NotAvailable">
+                    <Setter Property="Symbol" Value="DismissCircle16"/>
+                    <Setter Property="Foreground" Value="{DynamicResource GS.State.Off}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding StatusKind}" Value="Paused">
+                    <Setter Property="Symbol" Value="Pause16"/>
+                    <Setter Property="Foreground" Value="{DynamicResource GS.State.Paused}"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <!-- Off and Not available keep the Idle word colour: GS.State.Off is under 4.5:1 on the tint in Dark -->
+        <Style x:Key="ModuleBadgeWord" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="Foreground" Value="{DynamicResource GS.State.Idle}"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding StatusKind}" Value="Applied">
+                    <Setter Property="Foreground" Value="{DynamicResource GS.State.Active}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding StatusKind}" Value="Failed">
+                    <Setter Property="Foreground" Value="{DynamicResource GS.State.Error}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding StatusKind}" Value="Paused">
+                    <Setter Property="Foreground" Value="{DynamicResource GS.State.Paused}"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+    </Page.Resources>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto"
+                  helpers:ScrollHelper.FixScrolling="True">
+        <StackPanel Margin="24">
+            <TextBlock Text="During games" Style="{DynamicResource GS.Text.Hero}"
+                       TextWrapping="Wrap" Margin="0,0,0,8"/>
+            <TextBlock Text="What GameShift changes while a game runs, and how each change went in the session running now. GameShift undoes these changes when the game exits. The switches set the default profile, which games without their own profile use."
+                       FontSize="13" Foreground="{DynamicResource GS.Fg.Secondary}"
+                       TextWrapping="Wrap" Margin="0,0,0,16"/>
+
+            <Border Style="{StaticResource GS.Panel}" Padding="0">
+                <ItemsControl ItemsSource="{Binding Modules}" Focusable="False">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Style="{StaticResource GS.Row}">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,0">
+                                        <TextBlock Text="{Binding Title}" FontSize="14" FontWeight="SemiBold"
+                                                   Foreground="{DynamicResource GS.Fg.Primary}" TextWrapping="Wrap"/>
+                                        <TextBlock Text="{Binding Effect}" FontSize="12"
+                                                   Foreground="{DynamicResource GS.Fg.Secondary}"
+                                                   TextWrapping="Wrap" Margin="0,2,0,0"/>
+                                        <TextBlock Text="{Binding ModuleName}" FontSize="11"
+                                                   Foreground="{DynamicResource GS.Fg.Tertiary}"
+                                                   TextWrapping="Wrap" Margin="0,2,0,0"/>
+                                        <TextBlock Text="{Binding FollowsOtherSwitchesText}" FontSize="12"
+                                                   Foreground="{DynamicResource GS.Fg.Secondary}"
+                                                   TextWrapping="Wrap" Margin="0,4,0,0"
+                                                   Visibility="{Binding HasNoSwitch, Converter={StaticResource BoolToVisibility}}"/>
+                                        <TextBlock Text="{Binding StatusReason}" FontSize="12"
+                                                   Foreground="{DynamicResource GS.Fg.Primary}"
+                                                   TextWrapping="Wrap" Margin="0,4,0,0"
+                                                   Visibility="{Binding HasStatusReason, Converter={StaticResource BoolToVisibility}}"/>
+                                    </StackPanel>
+
+                                    <Border Grid.Column="1" Style="{StaticResource ModuleBadge}" Margin="0,0,12,0">
+                                        <StackPanel Orientation="Horizontal">
+                                            <ui:SymbolIcon Style="{StaticResource ModuleBadgeIcon}"/>
+                                            <TextBlock Text="{Binding StatusWord}" Style="{StaticResource ModuleBadgeWord}"/>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <Grid Grid.Column="2" MinWidth="76" VerticalAlignment="Center">
+                                        <ui:ToggleSwitch IsChecked="{Binding IsEnabled, Mode=TwoWay}"
+                                                         AutomationProperties.Name="{Binding Title}"
+                                                         HorizontalAlignment="Right"
+                                                         Visibility="{Binding HasSwitch, Converter={StaticResource BoolToVisibility}}"/>
+                                    </Grid>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</Page>

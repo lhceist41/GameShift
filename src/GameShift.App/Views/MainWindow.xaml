@@ -54,9 +54,14 @@
                 </ui:NavigationViewItem>
 
                 <ui:NavigationViewItemHeader x:Name="NavHeaderTuning" Text="Tuning"/>
-                <ui:NavigationViewItem x:Name="NavOptimizations" Content="Optimizations" TargetPageType="{x:Type pages:OptimizationsPage}">
+                <ui:NavigationViewItem x:Name="NavDuringGames" Content="During games" TargetPageType="{x:Type pages:DuringGamesPage}">
                     <ui:NavigationViewItem.Icon>
                         <ui:SymbolIcon Symbol="Rocket24"/>
+                    </ui:NavigationViewItem.Icon>
+                </ui:NavigationViewItem>
+                <ui:NavigationViewItem x:Name="NavLastingChanges" Content="Lasting changes" TargetPageType="{x:Type pages:LastingChangesPage}">
+                    <ui:NavigationViewItem.Icon>
+                        <ui:SymbolIcon Symbol="Wrench24"/>
                     </ui:NavigationViewItem.Icon>
                 </ui:NavigationViewItem>
                 <ui:NavigationViewItem x:Name="NavSystem" Content="System" TargetPageType="{x:Type pages:SystemPage}">

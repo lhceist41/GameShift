@@ -64,7 +64,7 @@ public static class RestartPrompts
             what,
             null,
             "Windows will not turn it back on for you. Turn it back on in Windows Security > Device security > " +
-            "Core isolation, or with Restore All in GameShift's Settings.",
+            "Core isolation, or with Restore All on GameShift's Lasting changes page.",
             ApplyAndRestartNow,
             null);
     }
@@ -89,11 +89,43 @@ public static class RestartPrompts
         ApplyAndRestartNow,
         ApplyRestartLater);
 
+    /// <summary>
+    /// Applying or undoing a system tweak that takes effect after a restart. The tweak does not
+    /// restart Windows itself, so the restart is a separate step and "later" is offered.
+    /// </summary>
+    /// <param name="warning">What the change stops from working, when anything.</param>
+    public static RestartPrompt ChangeSystemTweak(string tweakName, bool undo, string? warning)
+    {
+        var what = (undo
+            ? $"GameShift sets {tweakName} back to the value it had before GameShift changed it."
+            : $"GameShift applies {tweakName} as recommended for this PC.") +
+            " This takes effect after a restart. Restart now restarts Windows 30 seconds after you confirm.";
+        if (!string.IsNullOrWhiteSpace(warning))
+            what += " " + warning.Trim();
+
+        return new(
+            undo ? "Undo a lasting change" : "Apply a lasting change",
+            what,
+            null,
+            undo
+                ? "To apply it again, use Apply on the Lasting changes page, then restart."
+                : "Use Revert on the Lasting changes page or Restore All, then restart.",
+            undo ? "Undo and restart now" : ApplyAndRestartNow,
+            undo ? "Undo, restart later" : ApplyRestartLater);
+    }
+
+    /// <summary>The warning for turning HAGS off on a GPU that has Frame Generation; null otherwise.</summary>
+    public static string? HagsFrameGenerationWarning(bool isFrameGenCapable, bool isHagsEnabled) =>
+        isFrameGenCapable && isHagsEnabled
+            ? "Your GPU supports Frame Generation (DLSS FG / AFMF), which requires HAGS to be enabled. " +
+              "Disabling HAGS will prevent Frame Generation from working."
+            : null;
+
     public static RestartPrompt FinishLatencyFixes() => new(
         "Restart to finish the fixes",
         "Windows restarts 10 seconds after you confirm, so the fixes you applied take effect.",
         null,
-        "To undo a fix, turn it off on this page or use Restore All in Settings, then restart again.",
+        "To undo a fix, turn it off on this page or use Restore All on the Lasting changes page, then restart again.",
         "Restart now",
         null);
 }

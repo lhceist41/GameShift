@@ -15,6 +15,8 @@ public class RestartPromptTests
         { "turn on memory integrity", RestartPrompts.TurnOnMemoryIntegrity(), false },
         { "fix amd timer", RestartPrompts.FixAmdTimer(), true },
         { "finish latency fixes", RestartPrompts.FinishLatencyFixes(), false },
+        { "apply a system tweak", RestartPrompts.ChangeSystemTweak("HAGS", undo: false, warning: null), true },
+        { "undo a system tweak", RestartPrompts.ChangeSystemTweak("HAGS", undo: true, warning: null), true },
     };
 
     [Theory]
@@ -57,5 +59,29 @@ public class RestartPromptTests
         Assert.Contains("Hyper-V and WSL2 use the hypervisor. They stop working until you turn Memory Integrity back on and restart.",
             with.WhatChanges);
         Assert.DoesNotContain("stop working", without.WhatChanges);
+    }
+
+    [Theory]
+    [InlineData(true, true, true)]
+    [InlineData(true, false, false)]
+    [InlineData(false, true, false)]
+    [InlineData(false, false, false)]
+    public void HagsFrameGenerationWarning_OnlyWhenTurningOffHagsBreaksFrameGeneration(bool capable, bool enabled, bool warns)
+    {
+        var warning = RestartPrompts.HagsFrameGenerationWarning(capable, enabled);
+
+        Assert.Equal(warns, warning != null);
+        var prompt = RestartPrompts.ChangeSystemTweak("HAGS", undo: false, warning);
+        Assert.Equal(warns, prompt.WhatChanges.Contains("Frame Generation", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ChangeSystemTweak_UndoSaysUndoOnItsButtons()
+    {
+        var undo = RestartPrompts.ChangeSystemTweak("HAGS", undo: true, warning: null);
+
+        Assert.Contains("back to the value it had", undo.WhatChanges);
+        Assert.StartsWith("Undo", undo.PrimaryText);
+        Assert.StartsWith("Undo", undo.LaterText);
     }
 }
