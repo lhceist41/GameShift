@@ -232,11 +232,9 @@ public partial class App : Application
             _mainWindow.HideLoadingOverlay();
             WriteDiag("Dashboard shown OK");
 
-            // Step f1: Surface any boot-recovery warnings recorded by the watchdog.
-            // Deferred to ApplicationIdle so the MessageBoxes appear after MainWindow renders.
-            CheckJournalWarnings();
-            ShowStartupRecoveryNotice();
-            ShowBackgroundModeRetirementNotice();
+            // Step f1: Startup notices, shown one after another once the dashboard has rendered while
+            // the rest of startup carries on. Later dialogs wait for them so none opens over another.
+            var startupNotices = ShowStartupNoticesAsync();
 
             // Step f2: Register global hotkey
             // Must happen after MainWindow is shown so the window handle is available.
@@ -256,12 +254,12 @@ public partial class App : Application
 
             // Step f3: Check for updates and show popup if available
             WriteDiag("Step f3: Checking for updates...");
-            var updatePopupShown = await CheckAndShowUpdatePopupAsync(settings);
+            var updatePopupShown = await CheckAndShowUpdatePopupAsync(settings, startupNotices);
 
             // Step f4: One-time recommendation for portable copies to switch to the installer. Skipped
             // while an update popup was shown this start, which may already be shutting the app down.
             if (!updatePopupShown)
-                ShowInstallRecommendationOnce();
+                await ShowInstallRecommendationOnceAsync(startupNotices);
 
             // Wire DPC spike toast notifications
             if (Services.DpcMon != null)
@@ -343,11 +341,36 @@ public partial class App : Application
     }
 
     /// <summary>
+    /// Shows the startup notices in a fixed order, each after the previous one is closed: crash
+    /// recovery, the Background Mode removal, then the journal warnings. Runs once the dashboard has
+    /// rendered, at <see cref="System.Windows.Threading.DispatcherPriority.Background"/>: waiting for
+    /// ApplicationIdle could take a minute on a slow machine while startup work keeps the dispatcher
+    /// busy. Never throws.
+    /// </summary>
+    private async Task ShowStartupNoticesAsync()
+    {
+        try
+        {
+            await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Background);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to wait for the dashboard before the startup notices");
+        }
+
+        try { ShowStartupRecoveryNotice(); }
+        catch (Exception ex) { Log.Warning(ex, "Failed to show the crash recovery notice"); }
+
+        try { ShowBackgroundModeRetirementNotice(); }
+        catch (Exception ex) { Log.Warning(ex, "Failed to show the Background Mode notice"); }
+
+        CheckJournalWarnings();
+    }
+
+    /// <summary>
     /// Surfaces any boot-recovery warnings recorded by the watchdog in the session journal:
     /// (1) pending DPC fixes that required a reboot but haven't been acknowledged, and
     /// (2) a Windows Update that occurred between the last session and this boot.
-    /// Dialogs are deferred to <see cref="System.Windows.Threading.DispatcherPriority.ApplicationIdle"/>
-    /// so they appear after the MainWindow has rendered and can own the MessageBox.
     /// Never throws; failures are logged but non-fatal.
     /// </summary>
     private void CheckJournalWarnings()
@@ -363,40 +386,37 @@ public partial class App : Application
             if (pendingFixes.Count == 0 && string.IsNullOrEmpty(buildWarning))
                 return;
 
-            Dispatcher.BeginInvoke(() =>
+            if (pendingFixes.Count > 0)
             {
-                if (pendingFixes.Count > 0)
+                var msg = "A previous DPC fix required a system reboot:\n\n" +
+                          string.Join("\n", pendingFixes.Select(d => "  \u2022 " + d)) +
+                          "\n\nHas the system been rebooted since?";
+
+                var result = MessageBox.Show(
+                    _mainWindow!,
+                    msg,
+                    "Pending DPC Fixes",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Information);
+
+                if (result == MessageBoxResult.Yes)
                 {
-                    var msg = "A previous DPC fix required a system reboot:\n\n" +
-                              string.Join("\n", pendingFixes.Select(d => "  \u2022 " + d)) +
-                              "\n\nHas the system been rebooted since?";
-
-                    var result = MessageBox.Show(
-                        _mainWindow!,
-                        msg,
-                        "Pending DPC Fixes",
-                        MessageBoxButton.YesNo,
-                        MessageBoxImage.Information);
-
-                    if (result == MessageBoxResult.Yes)
-                    {
-                        journal.ClearPendingRebootFixes();
-                    }
+                    journal.ClearPendingRebootFixes();
                 }
+            }
 
-                if (!string.IsNullOrEmpty(buildWarning))
-                {
-                    MessageBox.Show(
-                        _mainWindow!,
-                        "Windows was updated since your last GameShift session:\n\n" + buildWarning +
-                        "\n\nSome optimizations may need to be reapplied.",
-                        "Windows Build Changed",
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Information);
+            if (!string.IsNullOrEmpty(buildWarning))
+            {
+                MessageBox.Show(
+                    _mainWindow!,
+                    "Windows was updated since your last GameShift session:\n\n" + buildWarning +
+                    "\n\nSome optimizations may need to be reapplied.",
+                    "Windows Build Changed",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
 
-                    journal.ClearBuildChangedWarning();
-                }
-            }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+                journal.ClearBuildChangedWarning();
+            }
         }
         catch (Exception ex)
         {
@@ -406,7 +426,6 @@ public partial class App : Application
 
     /// <summary>
     /// Tells the user once what the Background Mode cleanup changed or could not change.
-    /// Deferred like <see cref="CheckJournalWarnings"/> so the MainWindow can own the MessageBox.
     /// </summary>
     private void ShowStartupRecoveryNotice()
     {
@@ -422,10 +441,7 @@ public partial class App : Application
             _ => ("Changes Not Fully Undone", MessageBoxImage.Warning),
         };
 
-        Dispatcher.BeginInvoke(() =>
-        {
-            MessageBox.Show(_mainWindow!, message, title, MessageBoxButton.OK, icon);
-        }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+        MessageBox.Show(_mainWindow!, message, title, MessageBoxButton.OK, icon);
     }
 
     private void ShowBackgroundModeRetirementNotice()
@@ -433,24 +449,22 @@ public partial class App : Application
         var message = Services.BackgroundModeRetirementMessage;
         if (string.IsNullOrEmpty(message)) return;
 
-        Dispatcher.BeginInvoke(() =>
-        {
-            MessageBox.Show(
-                _mainWindow!,
-                message,
-                "Background Mode Removed",
-                MessageBoxButton.OK,
-                MessageBoxImage.Information);
-        }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+        MessageBox.Show(
+            _mainWindow!,
+            message,
+            "Background Mode Removed",
+            MessageBoxButton.OK,
+            MessageBoxImage.Information);
     }
 
     /// <summary>
     /// Checks for available updates and shows the UpdateWindow popup if one exists.
     /// Called during startup after MainWindow is shown. Never blocks or throws.
     /// Respects the user's "Skip This Version" preference.
+    /// The popup waits until <paramref name="startupNotices"/> have been closed.
     /// Returns true if the popup was shown.
     /// </summary>
-    private async Task<bool> CheckAndShowUpdatePopupAsync(AppSettings settings)
+    private async Task<bool> CheckAndShowUpdatePopupAsync(AppSettings settings, Task startupNotices)
     {
         try
         {
@@ -464,6 +478,7 @@ public partial class App : Application
                 if (updateInfo != null)
                 {
                     WriteDiag($"Step f3: Staged update found for v{updateInfo.LatestVersion}");
+                    await startupNotices;
                     var updateWindow = new UpdateWindow(updateInfo, alreadyStaged: true);
                     if (_mainWindow != null) updateWindow.Owner = _mainWindow;
                     updateWindow.ShowDialog();
@@ -488,6 +503,7 @@ public partial class App : Application
             }
 
             WriteDiag($"Step f3: Update available v{update.LatestVersion}, showing popup");
+            await startupNotices;
             var popup = new UpdateWindow(update);
             if (_mainWindow != null) popup.Owner = _mainWindow;
             popup.ShowDialog();
@@ -505,9 +521,10 @@ public partial class App : Application
     /// <summary>
     /// Recommends the installer, once, to a portable copy. The installed copy lives in an admin-only
     /// folder and updates through the installer, which a loose exe in a user-writable folder cannot do
-    /// safely. Not shown while an installed copy is registered elsewhere. Never throws.
+    /// safely. Not shown while an installed copy is registered elsewhere, and not before
+    /// <paramref name="startupNotices"/> have been closed. Never throws.
     /// </summary>
-    private void ShowInstallRecommendationOnce()
+    private async Task ShowInstallRecommendationOnceAsync(Task startupNotices)
     {
         try
         {
@@ -517,6 +534,8 @@ public partial class App : Application
                 return;
 
             if (SettingsManager.Load().InstallRecommendationShown) return;
+
+            await startupNotices;
             SettingsManager.Update(s => s.InstallRecommendationShown = true);
 
             WriteDiag("Step f4: Portable copy - showing the one-time install recommendation");

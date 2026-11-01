@@ -329,7 +329,12 @@ public class JournalManager
     /// Opens a new session journal entry for the given profile.
     /// Overwrites any previous journal (new session always starts fresh).
     /// </summary>
-    public void StartSession(GameProfile profile)
+    /// <param name="profile">The profile being applied.</param>
+    /// <param name="gameName">
+    /// The detected game's display name, recorded instead of the profile's name when given: a game
+    /// on the default profile would otherwise be named "Default Profile" in the recovery notice.
+    /// </param>
+    public void StartSession(GameProfile profile, string? gameName = null)
     {
         lock (_lock)
         {
@@ -337,7 +342,7 @@ public class JournalManager
             {
                 Version = 2,
                 WindowsBuild = ReadWindowsBuildString(),
-                GameShiftVersion = ReadGameShiftVersion(),
+                GameShiftVersion = ReadGameShiftVersion(global::System.Reflection.Assembly.GetEntryAssembly()),
                 Timestamp = DateTimeOffset.UtcNow,
                 SessionActive = true,
                 SessionStartTime = DateTime.UtcNow,
@@ -345,7 +350,7 @@ public class JournalManager
                 RecoveryAttempts = 0,
                 ActiveGame = new ActiveGameInfo
                 {
-                    Name = profile.GameName,
+                    Name = string.IsNullOrWhiteSpace(gameName) ? profile.GameName : gameName,
                     Executable = profile.ExecutableName,
                     Pid = profile.ProcessId,
                     StartTime = DateTimeOffset.UtcNow
@@ -823,12 +828,15 @@ public class JournalManager
         }
     }
 
-    private static string ReadGameShiftVersion()
+    /// <summary>
+    /// The product version of the running app (GameShift.App.exe carries it; this assembly does not),
+    /// in the same three-part form the updater compares, or "unknown" without an entry assembly.
+    /// </summary>
+    internal static string ReadGameShiftVersion(global::System.Reflection.Assembly? entryAssembly)
     {
         try
         {
-            return global::System.Reflection.Assembly.GetExecutingAssembly()
-                .GetName().Version?.ToString(3) ?? "unknown";
+            return entryAssembly?.GetName().Version?.ToString(3) ?? "unknown";
         }
         catch
         {

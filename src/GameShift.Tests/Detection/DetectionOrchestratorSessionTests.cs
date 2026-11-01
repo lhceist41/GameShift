@@ -340,6 +340,20 @@ public sealed class DetectionOrchestratorSessionTests : IAsyncLifetime
     }
 
     /// <summary>
+    /// A game without a profile of its own runs on the default profile; the session record still
+    /// names the game, which is what the crash recovery notice shows.
+    /// </summary>
+    [Fact]
+    public async Task GameOnTheDefaultProfile_SessionRecordNamesTheGame()
+    {
+        await StartGameAsync(5001, OtherPath);
+
+        var record = new JournalManager(JournalPath).PeekJournal();
+        Assert.True(record?.SessionActive);
+        Assert.Equal("Other", record?.ActiveGame?.Name);
+    }
+
+    /// <summary>
     /// Ending a session that never started must not touch the journal: an earlier run's journal that
     /// still records an active session is what crash recovery reverts from.
     /// </summary>

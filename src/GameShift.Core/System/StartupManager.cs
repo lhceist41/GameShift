@@ -254,19 +254,30 @@ public static class StartupManager
         }
     }
 
-    private static void UnregisterScheduledTask()
+    // HRESULT_FROM_WIN32 of ERROR_FILE_NOT_FOUND (no such task) and ERROR_PATH_NOT_FOUND (no such folder).
+    internal const int TaskNotFound = unchecked((int)0x80070002);
+    internal const int TaskFolderNotFound = unchecked((int)0x80070003);
+
+    private static void UnregisterScheduledTask() => UnregisterScheduledTask(new TaskSchedulerRegistrar());
+
+    /// <summary>
+    /// Deletes the startup task through the Task Scheduler API. A task or folder that does not exist
+    /// is recognised by its HRESULT, which unlike schtasks output does not depend on the display language.
+    /// </summary>
+    internal static void UnregisterScheduledTask(ITaskRegistrar registrar)
     {
         try
         {
-            var (success, output) = RunSchtasks($"/Delete /TN \"{FullTaskName}\" /F");
-            if (success)
-                Log.Information("[StartupManager] Unregistered GameShift from Windows startup");
-            else if (!output.Contains("cannot find", StringComparison.OrdinalIgnoreCase))
-                Log.Warning("[StartupManager] Failed to unregister startup task: {Output}", output);
+            registrar.DeleteTask(TaskFolder, TaskName);
+            Log.Information("[StartupManager] Unregistered GameShift from Windows startup");
+        }
+        catch (Exception ex) when (ex.HResult is TaskNotFound or TaskFolderNotFound)
+        {
+            // Not registered, so there is nothing to remove.
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "[StartupManager] Failed to unregister startup task");
+            Log.Warning(ex, "[StartupManager] Failed to unregister startup task (0x{HResult:X8})", ex.HResult);
         }
     }
 
@@ -343,22 +354,35 @@ public static class StartupManager
         }
     }
 
-    /// <summary>Registers a task definition given as XML.</summary>
+    /// <summary>Registers a task definition given as XML, and deletes a task.</summary>
     internal interface ITaskRegistrar
     {
         /// <summary>Throws on failure, with the Task Scheduler HRESULT in <see cref="Exception.HResult"/>.</summary>
         void RegisterTask(string path, string xml, int flags, int logonType);
+
+        /// <summary>Throws on failure, with the Task Scheduler HRESULT in <see cref="Exception.HResult"/>.</summary>
+        void DeleteTask(string folder, string name);
     }
 
     private sealed class TaskSchedulerRegistrar : ITaskRegistrar
     {
         public void RegisterTask(string path, string xml, int flags, int logonType)
         {
+            // Null user, password and SDDL go out as VT_EMPTY, so the principal comes from the XML.
+            Connect().GetFolder(@"\").RegisterTask(path, xml, flags, null, null, logonType, null);
+        }
+
+        public void DeleteTask(string folder, string name)
+        {
+            Connect().GetFolder(@"\" + folder).DeleteTask(name, 0);
+        }
+
+        private static dynamic Connect()
+        {
             var type = Type.GetTypeFromProgID("Schedule.Service", throwOnError: true)!;
             dynamic service = Activator.CreateInstance(type)!;
             service.Connect();
-            // Null user, password and SDDL go out as VT_EMPTY, so the principal comes from the XML.
-            service.GetFolder(@"\").RegisterTask(path, xml, flags, null, null, logonType, null);
+            return service;
         }
     }
 

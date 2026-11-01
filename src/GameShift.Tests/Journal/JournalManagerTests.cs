@@ -391,6 +391,47 @@ public class JournalManagerTests
     }
 
     [Fact]
+    public void StartSession_WithTheDetectedGameName_RecordsItInsteadOfTheProfileName()
+    {
+        using var temp = new TempPath();
+        var path = temp.GetFile("state.json");
+        var journal = new JournalManager(path);
+
+        journal.StartSession(NewTestProfile("default", "Default Profile"), "Hollow Knight");
+
+        var data = new JournalManager(path).LoadJournal();
+        Assert.Equal("Hollow Knight", data?.ActiveGame?.Name);
+        Assert.Equal("test.exe", data?.ActiveGame?.Executable);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("  ")]
+    public void StartSession_WithoutAGameName_RecordsTheProfileName(string? gameName)
+    {
+        using var temp = new TempPath();
+        var path = temp.GetFile("state.json");
+        var journal = new JournalManager(path);
+
+        journal.StartSession(NewTestProfile("quick", "Quick Optimize"), gameName);
+
+        Assert.Equal("Quick Optimize", new JournalManager(path).LoadJournal()?.ActiveGame?.Name);
+    }
+
+    [Fact]
+    public void ReadGameShiftVersion_ReadsTheGivenEntryAssemblyNotGameShiftCore()
+    {
+        // Any assembly whose version differs from GameShift.Core's 1.0.0.0 default stands in for the app.
+        var entry = typeof(Moq.Mock).Assembly;
+        var expected = entry.GetName().Version!.ToString(3);
+        Assert.NotEqual(typeof(JournalManager).Assembly.GetName().Version!.ToString(3), expected);
+
+        Assert.Equal(expected, JournalManager.ReadGameShiftVersion(entry));
+        Assert.Equal("unknown", JournalManager.ReadGameShiftVersion(null));
+    }
+
+    [Fact]
     public void EndSession_ClearsSessionActive()
     {
         using var temp = new TempPath();

@@ -107,7 +107,8 @@ public class OptimizationEngine : IDisposable
     /// Thread-safe: Serializes with DeactivateProfileAsync via semaphore.
     /// </summary>
     /// <param name="profile">Game profile to activate</param>
-    public async Task ActivateProfileAsync(GameProfile profile)
+    /// <param name="gameName">The detected game's display name for the session journal, when known.</param>
+    public async Task ActivateProfileAsync(GameProfile profile, string? gameName = null)
     {
         // Collect events to fire AFTER the semaphore is released, so subscriber
         // reentrancy (e.g. a handler that calls DeactivateProfileAsync) can't deadlock.
@@ -124,7 +125,7 @@ public class OptimizationEngine : IDisposable
             _logger.Debug("System state snapshot captured at {CaptureTime}", _snapshot.CaptureTime);
 
             // Open session journal
-            _journal.StartSession(profile);
+            _journal.StartSession(profile, gameName);
 
             // Apply available optimizations in order
             int skippedCount = 0;

@@ -9,20 +9,36 @@ namespace GameShift.Core.Watchdog;
 /// Sends a heartbeat byte to the watchdog service every 5 seconds via
 /// \\.\pipe\GameShiftWatchdog. Run in the main GameShift.App process.
 ///
-/// If the watchdog is not installed or the pipe is unavailable, the client retries
-/// silently - the heartbeat is best-effort and must not affect app stability.
-/// Dispose to stop the heartbeat loop cleanly.
+/// If the watchdog is not installed or the pipe is unavailable, the client keeps retrying and
+/// logs the failure once until it connects again - the heartbeat is best-effort and must not
+/// affect app stability. Dispose to stop the heartbeat loop cleanly.
 /// </summary>
 public sealed class WatchdogHeartbeatClient : IDisposable
 {
-    private const int HeartbeatIntervalMs = 5_000;
     private const int ConnectTimeoutMs = 1_000;
 
     private static readonly byte[] HeartbeatByte = [0x01];
 
     private readonly CancellationTokenSource _cts = new();
-    private readonly ILogger _logger = SettingsManager.Logger;
+    private readonly Func<CancellationToken, Task<Stream>> _connect;
+    private readonly ILogger _logger;
+    private readonly TimeSpan _heartbeatInterval;
+    private readonly TimeSpan _retryDelay;
     private Task? _loopTask;
+
+    public WatchdogHeartbeatClient()
+        : this(ConnectPipeAsync, SettingsManager.Logger, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(2))
+    {
+    }
+
+    internal WatchdogHeartbeatClient(
+        Func<CancellationToken, Task<Stream>> connect, ILogger logger, TimeSpan heartbeatInterval, TimeSpan retryDelay)
+    {
+        _connect = connect;
+        _logger = logger;
+        _heartbeatInterval = heartbeatInterval;
+        _retryDelay = retryDelay;
+    }
 
     /// <summary>Starts the background heartbeat loop.</summary>
     public void Start()
@@ -31,33 +47,52 @@ public sealed class WatchdogHeartbeatClient : IDisposable
         _logger.Information("[WatchdogHeartbeatClient] Heartbeat loop started");
     }
 
+    private static async Task<Stream> ConnectPipeAsync(CancellationToken ct)
+    {
+        var pipe = new NamedPipeClientStream(
+            serverName: ".",
+            pipeName: WatchdogPipeServer.PipeName,
+            direction: PipeDirection.Out,
+            options: PipeOptions.Asynchronous,
+            impersonationLevel: global::System.Security.Principal.TokenImpersonationLevel.Anonymous,
+            inheritability: HandleInheritability.None);
+        try
+        {
+            await pipe.ConnectAsync(ConnectTimeoutMs, ct);
+            return pipe;
+        }
+        catch
+        {
+            pipe.Dispose();
+            throw;
+        }
+    }
+
     private async Task HeartbeatLoopAsync(CancellationToken ct)
     {
-        NamedPipeClientStream? pipe = null;
+        Stream? pipe = null;
+
+        // Releases do not ship the watchdog, so a missing pipe is the normal case: log the first
+        // failure of each outage, not every retry.
+        bool failureLogged = false;
 
         while (!ct.IsCancellationRequested)
         {
             try
             {
                 // (Re)connect if not connected
-                if (pipe?.IsConnected != true)
+                if (pipe == null || pipe is PipeStream { IsConnected: false })
                 {
                     pipe?.Dispose();
-                    pipe = new NamedPipeClientStream(
-                        serverName: ".",
-                        pipeName: WatchdogPipeServer.PipeName,
-                        direction: PipeDirection.Out,
-                        options: PipeOptions.Asynchronous,
-                        impersonationLevel: global::System.Security.Principal.TokenImpersonationLevel.Anonymous,
-                        inheritability: HandleInheritability.None);
-
-                    await pipe.ConnectAsync(ConnectTimeoutMs, ct);
+                    pipe = null;
+                    pipe = await _connect(ct);
                     _logger.Information("[WatchdogHeartbeatClient] Connected to watchdog pipe");
+                    failureLogged = false;
                 }
 
                 await pipe.WriteAsync(HeartbeatByte, ct);
                 _logger.Debug("[WatchdogHeartbeatClient] Heartbeat sent");
-                await Task.Delay(HeartbeatIntervalMs, ct);
+                await Task.Delay(_heartbeatInterval, ct);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
@@ -66,11 +101,15 @@ public sealed class WatchdogHeartbeatClient : IDisposable
             catch (Exception ex)
             {
                 // Watchdog not installed or not running - retry after a backoff
-                _logger.Debug(ex, "[WatchdogHeartbeatClient] Pipe error, will retry");
+                if (!failureLogged)
+                {
+                    _logger.Debug(ex, "[WatchdogHeartbeatClient] Watchdog pipe unavailable, retrying quietly until it connects");
+                    failureLogged = true;
+                }
                 pipe?.Dispose();
                 pipe = null;
 
-                try { await Task.Delay(2_000, ct); }
+                try { await Task.Delay(_retryDelay, ct); }
                 catch (OperationCanceledException) { break; }
             }
         }

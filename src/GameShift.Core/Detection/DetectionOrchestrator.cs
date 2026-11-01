@@ -381,7 +381,7 @@ public class DetectionOrchestrator
         // Counted as active before anything is applied, so a failure part-way through is still torn
         // down when the session ends.
         _isOptimizing = true;
-        await _engine.ActivateProfileAsync(profile).ConfigureAwait(false);
+        await _engine.ActivateProfileAsync(profile, e.GameName).ConfigureAwait(false);
 
         _logger.Information("Optimizations activated for: {GameName}", e.GameName);
 

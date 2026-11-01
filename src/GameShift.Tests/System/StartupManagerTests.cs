@@ -21,6 +21,7 @@ public class StartupManagerTests
     private sealed class FakeRegistrar : StartupManager.ITaskRegistrar
     {
         public List<(string Path, string Xml, int Flags, int LogonType)> Calls { get; } = new();
+        public List<(string Folder, string Name)> Deletes { get; } = new();
         public Exception? Throw { get; set; }
 
         public void RegisterTask(string path, string xml, int flags, int logonType)
@@ -28,6 +29,28 @@ public class StartupManagerTests
             Calls.Add((path, xml, flags, logonType));
             if (Throw != null) throw Throw;
         }
+
+        public void DeleteTask(string folder, string name)
+        {
+            Deletes.Add((folder, name));
+            if (Throw != null) throw Throw;
+        }
+    }
+
+    private static List<Serilog.Events.LogEvent> Unregister(FakeRegistrar registrar)
+    {
+        var sink = new CapturingSink();
+        var previous = Log.Logger;
+        Log.Logger = new LoggerConfiguration().MinimumLevel.Debug().WriteTo.Sink(sink).CreateLogger();
+        try
+        {
+            StartupManager.UnregisterScheduledTask(registrar);
+        }
+        finally
+        {
+            Log.Logger = previous;
+        }
+        return sink.Events;
     }
 
     private sealed class CapturingSink : Serilog.Core.ILogEventSink
@@ -108,6 +131,46 @@ public class StartupManagerTests
         var registrar = new FakeRegistrar { Throw = new InvalidOperationException("no Task Scheduler") };
 
         Assert.False(StartupManager.RegisterScheduledTask(registrar, ExePath, @"PC\Player"));
+    }
+
+    [Fact]
+    public void Unregister_DeletesTheStartupTaskFromItsFolder()
+    {
+        var registrar = new FakeRegistrar();
+
+        var events = Unregister(registrar);
+
+        Assert.Equal(("GameShift", "Startup"), Assert.Single(registrar.Deletes));
+        Assert.Contains(events, e => e.MessageTemplate.Text.StartsWith("[StartupManager] Unregistered"));
+    }
+
+    [Theory]
+    [InlineData(unchecked((int)0x80070002))] // ERROR_FILE_NOT_FOUND: no such task
+    [InlineData(unchecked((int)0x80070003))] // ERROR_PATH_NOT_FOUND: no GameShift folder
+    public void Unregister_TaskNotRegistered_IsNothingToDo(int hresult)
+    {
+        // The message is in the display language; only the HRESULT may decide.
+        var registrar = new FakeRegistrar { Throw = new COMException("Das System kann die angegebene Datei nicht finden.", hresult) };
+
+        var events = Unregister(registrar);
+
+        Assert.Single(registrar.Deletes);
+        Assert.DoesNotContain(events, e => e.Level >= Serilog.Events.LogEventLevel.Warning);
+        Assert.DoesNotContain(events, e => e.MessageTemplate.Text.StartsWith("[StartupManager] Unregistered"));
+    }
+
+    [Fact]
+    public void Unregister_OtherFailure_WarnsWithTheHResult()
+    {
+        var hresult = unchecked((int)0x80070005); // E_ACCESSDENIED
+        var registrar = new FakeRegistrar { Throw = new COMException("cannot find", hresult) };
+
+        var events = Unregister(registrar);
+
+        Assert.Contains(events, e => e.Level == Serilog.Events.LogEventLevel.Warning
+            && e.Properties.TryGetValue("HResult", out var value)
+            && value.ToString() == hresult.ToString());
+        Assert.DoesNotContain(events, e => e.MessageTemplate.Text.StartsWith("[StartupManager] Unregistered"));
     }
 
     private static List<bool> ReconcileAtLaunch(string settingsFile, AppSettings settings)
