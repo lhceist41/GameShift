@@ -3,6 +3,7 @@
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
       xmlns:helpers="clr-namespace:GameShift.App.Helpers"
+      xmlns:controls="clr-namespace:GameShift.App.Views.Controls"
       FontFamily="Segoe UI" FontSize="14">
     <Page.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
@@ -83,168 +84,81 @@
                   helpers:ScrollHelper.FixScrolling="True">
         <StackPanel Margin="24">
 
-            <!-- Easy Mode toggle - top-right -->
-            <CheckBox x:Name="EasyModeToggle"
-                      IsChecked="{Binding IsEasyMode, Mode=TwoWay}"
-                      HorizontalAlignment="Right" Margin="0,0,0,12"
-                      Foreground="{DynamicResource GS.Text.Secondary}"
-                      FontSize="12" Cursor="Hand"
-                      ToolTip="Simplify the interface - show only Dashboard and Settings">
-                <TextBlock Text="Easy Mode"
-                           Foreground="{DynamicResource GS.Text.Secondary}"
-                           FontSize="12"/>
-            </CheckBox>
+            <!-- Notices. Each shows whenever its condition holds; on a narrow window two or more fold
+                 into one bar, so the status and the primary action below stay in view. -->
+            <controls:NoticeBar Title="{Binding NoticeArea.SummaryText}" Severity="{Binding NoticeArea.SummarySeverity}"
+                                Visibility="{Binding NoticeArea.ShowSummary, Converter={StaticResource BoolToVisibility}}">
+                <Button Content="{Binding NoticeToggleText}" HorizontalAlignment="Left" Click="OnToggleNoticesClicked"/>
+            </controls:NoticeBar>
 
-            <!-- ═══════════════════════════════════════════════════════════
-                 Alert Banners Section
-                 Appears at top above the card grid - conditional visibility
-                 ═══════════════════════════════════════════════════════════ -->
+            <StackPanel Visibility="{Binding NoticeArea.ShowNotices, Converter={StaticResource BoolToVisibility}}">
 
-            <!-- Alert banners - Advanced Mode only -->
-            <StackPanel Visibility="{Binding IsAdvancedMode, Converter={StaticResource BoolToVisibility}}">
-
-            <!-- VBS/HVCI Banner - amber (warning: VBS enabled, perf cost) or red (error: VBS disabled + AC conflict) -->
-            <Border x:Name="VbsBanner" CornerRadius="8" Padding="15" Margin="0,0,0,12"
-                    Background="{DynamicResource GS.Badge.Warning.Bg}"
-                    BorderBrush="{DynamicResource GS.Status.Warning}" BorderThickness="1"
-                    Visibility="{Binding Vbs.ShowVbsBanner, Converter={StaticResource BoolToVisibility}}">
-                <Border.Style>
-                    <Style TargetType="Border" BasedOn="{StaticResource AnimatedBannerStyle}">
+            <!-- Memory Integrity (VBS/HVCI): a warning while it costs performance, an error when it is off
+                 and an installed anti-cheat needs it -->
+            <controls:NoticeBar x:Name="VbsBanner" Message="{Binding Vbs.VbsBannerMessage, Mode=OneWay}"
+                                Visibility="{Binding Vbs.ShowVbsBanner, Converter={StaticResource BoolToVisibility}}">
+                <controls:NoticeBar.Style>
+                    <Style TargetType="controls:NoticeBar">
+                        <Setter Property="Title" Value="Performance Warning"/>
+                        <Setter Property="Severity" Value="Warning"/>
                         <Style.Triggers>
                             <DataTrigger Binding="{Binding Vbs.VbsBannerSeverity}" Value="error">
-                                <Setter Property="Background" Value="{DynamicResource GS.Badge.Error.Bg}"/>
-                                <Setter Property="BorderBrush" Value="{DynamicResource GS.Status.Error}"/>
+                                <Setter Property="Title" Value="Anti-Cheat Conflict"/>
+                                <Setter Property="Severity" Value="Error"/>
                             </DataTrigger>
                         </Style.Triggers>
                     </Style>
-                </Border.Style>
-                <DockPanel>
-                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal"
-                                VerticalAlignment="Center" Margin="10,0,0,0">
-                        <!-- Warning mode: Disable & Reboot button (only when NOT conflict) -->
-                        <Button Content="Disable &amp; Reboot" Padding="10,4"
-                                Background="{DynamicResource GS.Status.Warning}" Foreground="White"
-                                BorderThickness="0" Cursor="Hand" FontSize="12"
-                                Click="OnDisableVbsClicked" Margin="0,0,8,0">
-                            <Button.Style>
-                                <Style TargetType="Button">
-                                    <Setter Property="Visibility" Value="Visible"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding Vbs.IsVbsConflict}" Value="True">
-                                            <Setter Property="Visibility" Value="Collapsed"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </Button.Style>
-                        </Button>
-                        <!-- Conflict mode: Re-enable & Reboot button (only when IS conflict) -->
-                        <Button Content="Re-enable &amp; Reboot" Padding="10,4"
-                                Background="{DynamicResource GS.Status.Error}" Foreground="White"
-                                BorderThickness="0" Cursor="Hand" FontSize="12"
-                                Click="OnReEnableVbsClicked" Margin="0,0,8,0">
-                            <Button.Style>
-                                <Style TargetType="Button">
-                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding Vbs.IsVbsConflict}" Value="True">
-                                            <Setter Property="Visibility" Value="Visible"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </Button.Style>
-                        </Button>
-                        <Button Content="Dismiss" Padding="10,4"
-                                Background="{DynamicResource GS.Surface.Card}"
-                                Foreground="{DynamicResource GS.Text.Primary}"
-                                BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1"
-                                Cursor="Hand" FontSize="12"
-                                Click="OnDismissVbsClicked"/>
-                    </StackPanel>
-                    <StackPanel VerticalAlignment="Center">
-                        <!-- Title switches between "Performance Warning" and "Anti-Cheat Conflict" -->
-                        <TextBlock FontWeight="Bold" FontSize="13">
-                            <TextBlock.Style>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="Text" Value="Performance Warning"/>
-                                    <Setter Property="Foreground" Value="{DynamicResource GS.Status.Warning}"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding Vbs.VbsBannerSeverity}" Value="error">
-                                            <Setter Property="Text" Value="Anti-Cheat Conflict"/>
-                                            <Setter Property="Foreground" Value="{DynamicResource GS.Status.Error}"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </TextBlock.Style>
-                        </TextBlock>
-                        <TextBlock Text="{Binding Vbs.VbsBannerMessage, Mode=OneWay}"
-                                   FontSize="12" Foreground="{DynamicResource GS.Text.Primary}"
-                                   TextWrapping="Wrap"/>
-                    </StackPanel>
-                </DockPanel>
-            </Border>
+                </controls:NoticeBar.Style>
+                <WrapPanel>
+                    <Button Content="Disable &amp; Reboot" Margin="0,0,8,4" Click="OnDisableVbsClicked">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource GS.Button.Restart}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Vbs.IsVbsConflict}" Value="True">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+                    <Button Content="Re-enable &amp; Reboot" Margin="0,0,8,4" Click="OnReEnableVbsClicked">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource GS.Button.Restart}">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Vbs.IsVbsConflict}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+                    <Button Content="Dismiss" Margin="0,0,8,4" Click="OnDismissVbsClicked"/>
+                </WrapPanel>
+            </controls:NoticeBar>
 
-            <!-- AMD platform-timer leftover advisory (amber) - one-click revert + reboot -->
-            <Border CornerRadius="8" Padding="15" Margin="0,0,0,12"
-                    Background="{DynamicResource GS.Badge.Warning.Bg}"
-                    BorderBrush="{DynamicResource GS.Status.Warning}" BorderThickness="1"
-                    Visibility="{Binding AmdTimer.ShowBanner, Converter={StaticResource BoolToVisibility}}">
-                <DockPanel>
-                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal"
-                                VerticalAlignment="Center" Margin="10,0,0,0">
-                        <Button Content="Fix &amp; Restart" Padding="10,4"
-                                Background="{DynamicResource GS.Status.Warning}" Foreground="White"
-                                BorderThickness="0" Cursor="Hand" FontSize="12"
-                                Click="OnFixAmdTimerClicked" Margin="0,0,8,0"/>
-                        <Button Content="Dismiss" Padding="10,4"
-                                Background="{DynamicResource GS.Surface.Card}"
-                                Foreground="{DynamicResource GS.Text.Primary}"
-                                BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1"
-                                Cursor="Hand" FontSize="12"
-                                Click="OnDismissAmdTimerClicked"/>
-                    </StackPanel>
-                    <StackPanel VerticalAlignment="Center">
-                        <TextBlock Text="AMD Timer Setting" FontWeight="Bold" FontSize="13"
-                                   Foreground="{DynamicResource GS.Status.Warning}"/>
-                        <TextBlock Text="{Binding AmdTimer.BannerMessage, Mode=OneWay}"
-                                   FontSize="12" Foreground="{DynamicResource GS.Text.Primary}"
-                                   TextWrapping="Wrap"/>
-                    </StackPanel>
-                </DockPanel>
-            </Border>
+            <!-- AMD platform-timer leftover: one-click revert and restart -->
+            <controls:NoticeBar Title="AMD Timer Setting" Severity="Warning"
+                                Message="{Binding AmdTimer.BannerMessage, Mode=OneWay}"
+                                Visibility="{Binding AmdTimer.ShowBanner, Converter={StaticResource BoolToVisibility}}">
+                <WrapPanel>
+                    <Button Content="Fix &amp; Restart" Style="{StaticResource GS.Button.Restart}" Margin="0,0,8,4"
+                            Click="OnFixAmdTimerClicked"/>
+                    <Button Content="Dismiss" Margin="0,0,8,4" Click="OnDismissAmdTimerClicked"/>
+                </WrapPanel>
+            </controls:NoticeBar>
 
-            <!-- DPC Spike Alert Banner (red) - with Troubleshoot + Dismiss buttons -->
-            <Border Background="{DynamicResource GS.Badge.Error.Bg}"
-                    CornerRadius="8" Padding="15" Margin="0,0,0,12"
-                    BorderBrush="{DynamicResource GS.Status.Error}" BorderThickness="1"
-                    Visibility="{Binding Dpc.ShowDpcSpikeAlert, Converter={StaticResource BoolToVisibility}}"
-                    Style="{StaticResource AnimatedBannerStyle}">
-                <DockPanel>
-                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal"
-                                VerticalAlignment="Center" Margin="10,0,0,0">
-                        <Button Content="Troubleshoot" Padding="10,4"
-                                Background="{DynamicResource GS.Status.Error}" Foreground="White"
-                                BorderThickness="0" Cursor="Hand" FontSize="12"
-                                Click="OnTroubleshootDpcClicked" Margin="0,0,8,0"/>
-                        <Button Content="Open Latency Doctor" Padding="10,4"
-                                Background="{DynamicResource GS.Accent.Primary}" Foreground="White"
-                                BorderThickness="0" Cursor="Hand" FontSize="12"
-                                Click="OnOpenDpcDoctorClicked" Margin="0,0,8,0"/>
-                        <Button Content="Dismiss" Padding="10,4"
-                                Background="{DynamicResource GS.Surface.Card}"
-                                Foreground="{DynamicResource GS.Text.Primary}"
-                                BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1"
-                                Cursor="Hand" FontSize="12"
-                                Click="OnDismissDpcSpikeClicked"/>
-                    </StackPanel>
-                    <StackPanel VerticalAlignment="Center">
-                        <TextBlock Text="High DPC Load" FontWeight="Bold"
-                                   Foreground="{DynamicResource GS.Status.Error}" FontSize="13"/>
-                        <TextBlock Text="{Binding Dpc.DpcSpikeAlertMessage, Mode=OneWay}"
-                                   FontSize="12" Foreground="{DynamicResource GS.Text.Primary}"
-                                   TextWrapping="Wrap"/>
-                    </StackPanel>
-                </DockPanel>
-            </Border>
+            <!-- DPC load spike -->
+            <controls:NoticeBar Title="High DPC Load" Severity="Error"
+                                Message="{Binding Dpc.DpcSpikeAlertMessage, Mode=OneWay}"
+                                Visibility="{Binding Dpc.ShowDpcSpikeAlert, Converter={StaticResource BoolToVisibility}}">
+                <WrapPanel>
+                    <Button Content="Troubleshoot" Style="{StaticResource GS.Button.Primary}" Margin="0,0,8,4"
+                            Click="OnTroubleshootDpcClicked"/>
+                    <Button Content="Open Latency Doctor" Margin="0,0,8,4" Click="OnOpenDpcDoctorClicked"/>
+                    <Button Content="Dismiss" Margin="0,0,8,4" Click="OnDismissDpcSpikeClicked"/>
+                </WrapPanel>
+            </controls:NoticeBar>
 
             <!-- DPC Troubleshooter Results Panel (inline, below spike banner) -->
             <Border CornerRadius="8" Padding="15" Margin="0,0,0,12"
@@ -297,23 +211,34 @@
                                         <!-- Driver header: filename + component name + severity badge -->
                                         <DockPanel Margin="0,0,0,4">
                                             <!-- Severity badge -->
-                                            <Border DockPanel.Dock="Right" CornerRadius="4" Padding="6,2"
-                                                    VerticalAlignment="Center">
+                                            <Border DockPanel.Dock="Right">
                                                 <Border.Style>
-                                                    <Style TargetType="Border">
-                                                        <Setter Property="Background" Value="#555"/>
+                                                    <Style TargetType="Border" BasedOn="{StaticResource GS.Badge.State}">
                                                         <Style.Triggers>
                                                             <DataTrigger Binding="{Binding Offender.Severity}" Value="High">
-                                                                <Setter Property="Background" Value="{DynamicResource GS.Status.Error}"/>
+                                                                <Setter Property="Background" Value="{DynamicResource GS.Tint.Error}"/>
                                                             </DataTrigger>
                                                             <DataTrigger Binding="{Binding Offender.Severity}" Value="Medium">
-                                                                <Setter Property="Background" Value="{DynamicResource GS.Status.Warning}"/>
+                                                                <Setter Property="Background" Value="{DynamicResource GS.Tint.Warning}"/>
                                                             </DataTrigger>
                                                         </Style.Triggers>
                                                     </Style>
                                                 </Border.Style>
-                                                <TextBlock Text="{Binding Offender.Severity}" FontSize="10"
-                                                           Foreground="White" FontWeight="SemiBold"/>
+                                                <TextBlock Text="{Binding Offender.Severity}" FontSize="10" FontWeight="SemiBold">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock">
+                                                            <Setter Property="Foreground" Value="{DynamicResource GS.Fg.Secondary}"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding Offender.Severity}" Value="High">
+                                                                    <Setter Property="Foreground" Value="{DynamicResource GS.State.Error}"/>
+                                                                </DataTrigger>
+                                                                <DataTrigger Binding="{Binding Offender.Severity}" Value="Medium">
+                                                                    <Setter Property="Foreground" Value="{DynamicResource GS.State.Warning}"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
                                             </Border>
                                             <StackPanel VerticalAlignment="Center">
                                                 <StackPanel Orientation="Horizontal">
@@ -379,107 +304,96 @@
                 </StackPanel>
             </Border>
 
-            <!-- Update Available Banner - three states: idle / downloading / ready -->
-            <Border Background="{DynamicResource GS.Surface.Card}"
-                    CornerRadius="8" Padding="15" Margin="0,0,0,12"
-                    BorderBrush="{DynamicResource GS.Accent.Primary}" BorderThickness="1"
-                    Visibility="{Binding Update.ShowUpdateBanner, Converter={StaticResource BoolToVisibility}}"
-                    Style="{StaticResource AnimatedBannerStyle}">
-                <DockPanel>
-                    <!-- Right-side action area -->
-                    <StackPanel DockPanel.Dock="Right" VerticalAlignment="Center" Margin="10,0,0,0">
 
-                        <!-- State 1: Download button (idle) -->
-                        <Button Content="Download" Padding="10,4"
-                                Background="{DynamicResource GS.Accent.Primary}" Foreground="White"
-                                BorderThickness="0" Cursor="Hand" FontSize="12"
-                                Click="OnUpdateDownloadClicked">
-                            <Button.Style>
-                                <Style TargetType="Button">
-                                    <Setter Property="Visibility" Value="Visible"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding Update.IsDownloading}" Value="True">
-                                            <Setter Property="Visibility" Value="Collapsed"/>
-                                        </DataTrigger>
-                                        <DataTrigger Binding="{Binding Update.IsUpdateReady}" Value="True">
-                                            <Setter Property="Visibility" Value="Collapsed"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </Button.Style>
-                        </Button>
+            <!-- Update: download, then restart into it. The status line replaces the version line while
+                 there is one, including why a download was refused; the release page is the way around. -->
+            <controls:NoticeBar Title="Update Available"
+                                Visibility="{Binding Update.ShowUpdateBanner, Converter={StaticResource BoolToVisibility}}">
+                <controls:NoticeBar.Style>
+                    <Style TargetType="controls:NoticeBar">
+                        <Setter Property="Message" Value="{Binding Update.DownloadStatusText, Mode=OneWay}"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding Update.DownloadStatusText}" Value="">
+                                <Setter Property="Message" Value="{Binding Update.UpdateMessage, Mode=OneWay}"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </controls:NoticeBar.Style>
+                <WrapPanel>
+                    <Button Content="Download" Margin="0,0,8,4" Click="OnUpdateDownloadClicked">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource GS.Button.Primary}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Update.IsDownloading}" Value="True">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding Update.IsUpdateReady}" Value="True">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
 
-                        <!-- State 2: Progress bar + cancel (downloading) -->
-                        <StackPanel Orientation="Horizontal">
-                            <StackPanel.Style>
-                                <Style TargetType="StackPanel">
-                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding Update.IsDownloading}" Value="True">
-                                            <Setter Property="Visibility" Value="Visible"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </StackPanel.Style>
-                            <ProgressBar Width="120" Height="16" Minimum="0" Maximum="100"
-                                         Value="{Binding Update.DownloadProgress, Mode=OneWay}"
-                                         VerticalAlignment="Center"
-                                         Foreground="{DynamicResource GS.Accent.Primary}"
-                                         Background="{DynamicResource GS.Surface.Base}"/>
-                            <TextBlock Text="{Binding Update.DownloadProgress, Mode=OneWay, StringFormat={}{0:F0}%}"
-                                       FontSize="12" VerticalAlignment="Center" Margin="6,0,0,0"
-                                       Foreground="{DynamicResource GS.Text.Primary}" MinWidth="32"/>
-                            <Button Content="Cancel" Padding="6,2"
-                                    Background="Transparent"
-                                    Foreground="{DynamicResource GS.Text.Secondary}"
-                                    BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1"
-                                    Cursor="Hand" FontSize="11" Margin="8,0,0,0"
-                                    VerticalAlignment="Center"
-                                    Click="OnUpdateCancelClicked"/>
-                        </StackPanel>
-
-                        <!-- State 3: Restart Now button (download complete) -->
-                        <Button Content="Restart Now" Padding="10,4"
-                                Background="{DynamicResource GS.Accent.Primary}" Foreground="White"
-                                BorderThickness="0" Cursor="Hand" FontSize="12"
-                                Click="OnUpdateRestartClicked">
-                            <Button.Style>
-                                <Style TargetType="Button">
-                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding Update.IsUpdateReady}" Value="True">
-                                            <Setter Property="Visibility" Value="Visible"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </Button.Style>
-                        </Button>
+                    <!-- Downloading: the status line above carries the percentage -->
+                    <StackPanel Orientation="Horizontal" Margin="0,0,8,4">
+                        <StackPanel.Style>
+                            <Style TargetType="StackPanel">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Update.IsDownloading}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </StackPanel.Style>
+                        <ProgressBar Width="120" Height="16" Minimum="0" Maximum="100"
+                                     Value="{Binding Update.DownloadProgress, Mode=OneWay}"
+                                     VerticalAlignment="Center"
+                                     Foreground="{DynamicResource GS.Accent.Primary}"
+                                     Background="{DynamicResource GS.Surface.Base}"/>
+                        <Button Content="Cancel" Margin="8,0,0,0" VerticalAlignment="Center"
+                                Click="OnUpdateCancelClicked"/>
                     </StackPanel>
 
-                    <!-- Left side: title + message/status -->
-                    <StackPanel VerticalAlignment="Center">
-                        <TextBlock Text="Update Available" FontWeight="Bold"
-                                   Foreground="{DynamicResource GS.Accent.Primary}" FontSize="13"/>
-                        <TextBlock FontSize="12" Foreground="{DynamicResource GS.Text.Primary}" TextWrapping="Wrap">
-                            <TextBlock.Style>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="Text" Value="{Binding Update.UpdateMessage, Mode=OneWay}"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding Update.IsDownloading}" Value="True">
-                                            <Setter Property="Text" Value="{Binding Update.DownloadStatusText, Mode=OneWay}"/>
-                                        </DataTrigger>
-                                        <DataTrigger Binding="{Binding Update.IsUpdateReady}" Value="True">
-                                            <Setter Property="Text" Value="{Binding Update.DownloadStatusText, Mode=OneWay}"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </TextBlock.Style>
-                        </TextBlock>
-                    </StackPanel>
-                </DockPanel>
-            </Border>
+                    <Button Content="Restart Now" Margin="0,0,8,4" Click="OnUpdateRestartClicked">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource GS.Button.Primary}">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Update.IsUpdateReady}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
 
-            </StackPanel> <!-- End alert banners (Advanced Mode only) -->
+                    <Button Content="Release page" Margin="0,0,8,4" Click="OnUpdateReleasePageClicked">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Update.IsDownloading}" Value="True">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding Update.IsUpdateReady}" Value="True">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+                </WrapPanel>
+            </controls:NoticeBar>
+
+            <!-- Lasting changes GameShift made, which stay after games close -->
+            <controls:NoticeBar Title="Lasting changes" Message="{Binding LastingChangesMessage}"
+                                Severity="{Binding LastingChangesSeverity}"
+                                Visibility="{Binding ShowLastingChangesNotice, Converter={StaticResource BoolToVisibility}}">
+                <Button Content="Review" HorizontalAlignment="Left" Click="OnReviewLastingChangesClicked"/>
+            </controls:NoticeBar>
+
+            </StackPanel> <!-- End notices -->
 
             <!-- ═══════════════════════════════════════════════════════════
                  Hero Section - One-Click Optimize
@@ -619,9 +533,8 @@
 
             </UniformGrid>
 
-            <!-- Advanced cards - Advanced Mode only -->
-            <UniformGrid Rows="1" Columns="4" Margin="-8,8,-8,0"
-                         Visibility="{Binding IsAdvancedMode, Converter={StaticResource BoolToVisibility}}">
+            <!-- Live monitoring cards -->
+            <UniformGrid Rows="1" Columns="4" Margin="-8,8,-8,0">
 
                 <!-- Card 3: DPC Load -->
                 <Border Background="{DynamicResource GS.Surface.Card}"
@@ -734,9 +647,6 @@
                 </Border>
 
             </UniformGrid>
-
-            <!-- Advanced-only sections below the card grid -->
-            <StackPanel Visibility="{Binding IsAdvancedMode, Converter={StaticResource BoolToVisibility}}">
 
             <!-- ═══════════════════════════════════════════════════════════
                  Hardware Advisories Section
@@ -1122,8 +1032,6 @@
                     </Style>
                 </TextBlock.Style>
             </TextBlock>
-
-            </StackPanel> <!-- End advanced-only sections -->
 
         </StackPanel>
     </ScrollViewer>

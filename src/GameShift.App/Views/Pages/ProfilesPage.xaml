@@ -57,7 +57,7 @@
 
         <StackPanel Grid.Row="0" Grid.ColumnSpan="2" Margin="0,0,0,16">
             <TextBlock Text="Profiles" Style="{DynamicResource GS.Text.Hero}" TextWrapping="Wrap" Margin="0,0,0,8"/>
-            <TextBlock Text="Choose what GameShift changes for each game. A game without its own profile uses the default profile. Changes take effect when you save them."
+            <TextBlock Text="Choose what GameShift changes for each game. A game without its own profile uses the default profile. Saved changes apply the next time the game starts."
                        FontSize="13" Foreground="{DynamicResource GS.Fg.Secondary}" TextWrapping="Wrap"/>
         </StackPanel>
 

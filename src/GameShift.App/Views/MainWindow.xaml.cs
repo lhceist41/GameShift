@@ -7,6 +7,7 @@ using GameShift.App.Helpers;
 using GameShift.App.ViewModels;
 using GameShift.App.Views.Pages;
 using GameShift.Core.Config;
+using GameShift.Core.Presentation;
 using Wpf.Ui.Controls;
 
 namespace GameShift.App.Views;
@@ -48,7 +49,8 @@ public partial class MainWindow : FluentWindow
     {
         _snackbar = new Snackbar(SnackbarPresenter);
         RestoreWindowPosition();
-        ApplyAdvancedMode(SettingsManager.Load().AdvancedMode);
+        ApplyWindowWidth(ActualWidth);
+        SizeChanged += (_, args) => ApplyWindowWidth(args.NewSize.Width);
 
         // WPF-UI's NavigationView resets IsDynamicScrollViewerEnabled to true after
         // every page navigation during its internal layout pass. We must re-disable it
@@ -190,29 +192,38 @@ public partial class MainWindow : FluentWindow
         LoadingOverlay.Visibility = Visibility.Collapsed;
     }
 
+    private bool? _iconRail;
+
     /// <summary>
-    /// Shows or hides navigation items based on Advanced Mode setting.
-    /// Simple Mode: only Dashboard and Settings visible.
+    /// Narrows the navigation pane to an icon rail on narrow windows. The pane's compact state hides
+    /// the item labels, so the group headers, which it does not hide, swap for separators.
     /// </summary>
-    public void ApplyAdvancedMode(bool advanced)
+    private void ApplyWindowWidth(double width)
     {
-        var vis = advanced ? Visibility.Visible : Visibility.Collapsed;
+        bool rail = ShellLayout.UseIconRail(width);
+        if (_iconRail == rail) return;
+        _iconRail = rail;
 
-        // Games group
-        NavHeaderGames.Visibility = vis;
-        NavGameLibrary.Visibility = vis;
-        NavProfiles.Visibility = vis;
+        NavigationView.IsPaneOpen = !rail;
 
-        // Tuning group
-        NavHeaderTuning.Visibility = vis;
-        NavDuringGames.Visibility = vis;
-        NavLastingChanges.Visibility = vis;
-        NavSystem.Visibility = vis;
+        var headers = rail ? Visibility.Collapsed : Visibility.Visible;
+        var separators = rail ? Visibility.Visible : Visibility.Collapsed;
+        NavHeaderGames.Visibility = headers;
+        NavHeaderOptimize.Visibility = headers;
+        NavHeaderInfo.Visibility = headers;
+        NavSeparatorGames.Visibility = separators;
+        NavSeparatorOptimize.Visibility = separators;
+        NavSeparatorInfo.Visibility = separators;
+        VersionLabel.Visibility = headers;
 
-        // Diagnostics group
-        NavHeaderDiagnostics.Visibility = vis;
-        NavDpcDoctor.Visibility = vis;
-        NavActivity.Visibility = vis;
+        foreach (var item in new[]
+                 {
+                     NavHome, NavLibrary, NavProfiles, NavDuringGames, NavLastingChanges,
+                     NavLatencyDoctor, NavSystem, NavActivity, NavSettings,
+                 })
+        {
+            item.ToolTip = rail ? item.Content : null;
+        }
     }
 
     /// <summary>

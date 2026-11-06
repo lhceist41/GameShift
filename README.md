@@ -45,7 +45,6 @@
 | Feature | Description |
 |:--------|:------------|
 | **One-Click Optimize** | Large "Optimize Now" button on the Dashboard applies all recommended system optimizations instantly. Shows a preview of what will be applied before clicking. Reverts with one click when done. |
-| **Easy Mode** | Toggle in the Dashboard top-right to simplify the UI. Hides advanced pages and settings, leaving only the Dashboard and Settings visible. Defaults to Advanced Mode (all pages) for new installs. |
 
 ### Session Optimizations
 
@@ -125,7 +124,7 @@ For games with kernel-level anti-cheat (EAC, EA Javelin, BattlEye, RICOCHET, Ten
 
 When you accept an update, the installed GameShift downloads the new installer into its own folder, checks it against the SHA-256 digest GitHub reports for the release, and runs it; the installer replaces the files and starts GameShift again.
 
-To uninstall, first undo GameShift's lasting changes: open GameShift, uncheck **Easy Mode** in Settings and click **Restore All GameShift Tweaks**. It undoes the changes GameShift recorded (system tweaks, DPC Doctor fixes, kernel boot settings and Memory Integrity) and asks separately about a CPU core reservation and startup apps turned off with a "~" in front of their name. If you used Background Mode in an earlier version and GameShift ever closed unexpectedly while it was on, the `GlobalTimerResolutionRequests` value in `HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\kernel` may still be set. GameShift did not record whether that value existed before, so it leaves it alone; delete it in Registry Editor if you did not set it yourself. Then remove GameShift in Windows Settings > Apps.
+To uninstall, first undo GameShift's lasting changes: open GameShift, go to **Lasting changes** and click **Restore All GameShift Tweaks**. It undoes the changes GameShift recorded (system tweaks, DPC Doctor fixes, kernel boot settings and Memory Integrity) and asks separately about a CPU core reservation and startup apps turned off with a "~" in front of their name. If you used Background Mode in an earlier version and GameShift ever closed unexpectedly while it was on, the `GlobalTimerResolutionRequests` value in `HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\kernel` may still be set. GameShift did not record whether that value existed before, so it leaves it alone; delete it in Registry Editor if you did not set it yourself. Then remove GameShift in Windows Settings > Apps.
 
 ### Portable exe
 

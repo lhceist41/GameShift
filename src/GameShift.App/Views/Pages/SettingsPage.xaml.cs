@@ -27,12 +27,6 @@ public partial class SettingsPage : Page
         var vm = new SettingsViewModel();
         vm.SetVbsHvciToggle(App.Services.VbsToggle);
 
-        vm.AdvancedModeChanged += advanced =>
-        {
-            var mainWindow = Window.GetWindow(this) as MainWindow;
-            mainWindow?.ApplyAdvancedMode(advanced);
-        };
-
         DataContext = vm;
         vm.LoadSettings();
         PopulateProfilesList();

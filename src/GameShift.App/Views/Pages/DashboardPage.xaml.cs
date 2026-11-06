@@ -1,5 +1,7 @@
+using System;
 using System.ComponentModel;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -7,7 +9,11 @@ using System.Windows.Media.Animation;
 using GameShift.App.Services;
 using GameShift.App.ViewModels;
 using GameShift.App.Views;
+using GameShift.Core.Config;
+using GameShift.Core.Monitoring;
+using GameShift.Core.Optimization;
 using GameShift.Core.Presentation;
+using GameShift.Core.SystemTweaks;
 
 namespace GameShift.App.Views.Pages;
 
@@ -26,6 +32,9 @@ public partial class DashboardPage : Page
         Unloaded += OnUnloaded;
     }
 
+    private Window? _window;
+    private bool _countingLastingChanges;
+
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
         if (DataContext != null)
@@ -36,6 +45,8 @@ public partial class DashboardPage : Page
             {
                 existing.Hero.PropertyChanged += OnHeroPropertyChanged;
                 existing.StartTimers();
+                WatchWindowWidth(existing);
+                RefreshLastingChangesCount(existing);
             }
             return;
         }
@@ -52,15 +63,51 @@ public partial class DashboardPage : Page
             App.Services.SessionStore,
             App.Services.SessionTrk);
 
-        vm.AdvancedModeChanged += advanced =>
-        {
-            var mainWindow = Window.GetWindow(this) as MainWindow;
-            mainWindow?.ApplyAdvancedMode(advanced);
-        };
-
         vm.Hero.PropertyChanged += OnHeroPropertyChanged;
 
         DataContext = vm;
+        WatchWindowWidth(vm);
+        RefreshLastingChangesCount(vm);
+    }
+
+    /// <summary>The notices fold by the window's width, not the page's, like the navigation pane.</summary>
+    private void WatchWindowWidth(DashboardViewModel vm)
+    {
+        if (_window != null) _window.SizeChanged -= OnWindowSizeChanged;
+        _window = Window.GetWindow(this);
+        if (_window == null) return;
+        _window.SizeChanged += OnWindowSizeChanged;
+        vm.SetWindowWidth(_window.ActualWidth);
+    }
+
+    private void OnWindowSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        (DataContext as DashboardViewModel)?.SetWindowWidth(e.NewSize.Width);
+    }
+
+    /// <summary>Counts the lasting changes for the Home notice. Listing only reads; it runs off the UI thread.</summary>
+    private async void RefreshLastingChangesCount(DashboardViewModel vm)
+    {
+        var tweaks = App.Services.TweaksMgr;
+        if (tweaks == null || _countingLastingChanges) return;
+
+        _countingLastingChanges = true;
+        try
+        {
+            var inventory = LastingChangesInventory.CreateForThisMachine(
+                tweaks, App.Services.DpcFix ?? new DpcFixEngine(), App.Services.VbsToggle ?? new VbsHvciToggle());
+            var list = await Task.Run(inventory.List);
+            vm.SetLastingChanges(list.Items.Count, someRecordsUnreadable: list.Warnings.Count > 0);
+        }
+        catch (Exception ex)
+        {
+            SettingsManager.Logger.Warning(ex, "[Dashboard] Could not count the lasting changes");
+            vm.SetLastingChanges(0, someRecordsUnreadable: true);
+        }
+        finally
+        {
+            _countingLastingChanges = false;
+        }
     }
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
@@ -70,6 +117,12 @@ public partial class DashboardPage : Page
         if (vm == null) return;
 
         vm.Hero.PropertyChanged -= OnHeroPropertyChanged;
+
+        if (_window != null)
+        {
+            _window.SizeChanged -= OnWindowSizeChanged;
+            _window = null;
+        }
 
         // When the MainWindow is actually closing (no tray to hide into), do a
         // full Cleanup so every subscription (SessionTracker, AllActivities,
@@ -83,6 +136,16 @@ public partial class DashboardPage : Page
         {
             vm.StopTimers();
         }
+    }
+
+    private void OnToggleNoticesClicked(object sender, RoutedEventArgs e)
+    {
+        (DataContext as DashboardViewModel)?.ToggleNotices();
+    }
+
+    private void OnReviewLastingChangesClicked(object sender, RoutedEventArgs e)
+    {
+        (Window.GetWindow(this) as MainWindow)?.NavigateTo(typeof(LastingChangesPage));
     }
 
     private void OnDismissVbsClicked(object sender, RoutedEventArgs e)
@@ -249,6 +312,12 @@ public partial class DashboardPage : Page
     private void OnUpdateDownloadClicked(object sender, RoutedEventArgs e)
     {
         (DataContext as DashboardViewModel)?.Update.DownloadAndApplyUpdateAsync();
+    }
+
+    /// <summary>Opens the release page of the offered update (its URL was checked when the update was found).</summary>
+    private void OnUpdateReleasePageClicked(object sender, RoutedEventArgs e)
+    {
+        (DataContext as DashboardViewModel)?.Update.OpenUpdateUrl();
     }
 
     /// <summary>

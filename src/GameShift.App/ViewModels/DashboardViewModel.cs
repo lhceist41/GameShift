@@ -13,6 +13,7 @@ using GameShift.Core.Config;
 using GameShift.Core.Detection;
 using GameShift.Core.Monitoring;
 using GameShift.Core.Optimization;
+using GameShift.Core.Presentation;
 using GameShift.Core.Profiles;
 using GameShift.Core.Updates;
 
@@ -50,8 +51,11 @@ public class DashboardViewModel : INotifyPropertyChanged
     // Optimization failure tracking
     private int _sessionFailedCount;
 
-    // Advanced Mode toggle
-    private bool _isAdvancedMode;
+    // Home notices
+    private HomeNotice? _lastingChanges;
+    private double _windowWidth;
+    private bool _noticesExpanded;
+    private NoticeAreaView _noticeArea = ShellLayout.Notices([], 0, expanded: false);
 
     // Stored handler for AllActivities.CollectionChanged so we can unsubscribe
     private readonly System.Collections.Specialized.NotifyCollectionChangedEventHandler _activitiesChangedHandler;
@@ -207,6 +211,12 @@ public class DashboardViewModel : INotifyPropertyChanged
         Vbs = new VbsAdvisoryViewModel(vbsHvciToggle);
         AmdTimer = new AmdTimerAdvisoryViewModel();
 
+        Vbs.PropertyChanged += OnNoticeSourceChanged;
+        AmdTimer.PropertyChanged += OnNoticeSourceChanged;
+        Dpc.PropertyChanged += OnNoticeSourceChanged;
+        Update.PropertyChanged += OnNoticeSourceChanged;
+        RefreshNoticeArea();
+
         // Subscribe to engine events for optimization state changes
         _engine.OptimizationApplied += OnOptimizationApplied;
         _engine.OptimizationReverted += OnOptimizationReverted;
@@ -235,9 +245,6 @@ public class DashboardViewModel : INotifyPropertyChanged
 
         // Populate HAGS / ReBAR status from hardware scan
         UpdateGpuFeatureStatus();
-
-        // Initialize Advanced Mode from persisted setting
-        _isAdvancedMode = SettingsManager.Load().AdvancedMode;
 
         // Set initial state
         RefreshStatus();
@@ -631,6 +638,11 @@ public class DashboardViewModel : INotifyPropertyChanged
         Ping.Cleanup();
         Vbs.Cleanup();
 
+        Vbs.PropertyChanged -= OnNoticeSourceChanged;
+        AmdTimer.PropertyChanged -= OnNoticeSourceChanged;
+        Dpc.PropertyChanged -= OnNoticeSourceChanged;
+        Update.PropertyChanged -= OnNoticeSourceChanged;
+
         AllActivities.CollectionChanged -= _activitiesChangedHandler;
     }
 
@@ -690,39 +702,65 @@ public class DashboardViewModel : INotifyPropertyChanged
         }
     }
 
-    // ── Advanced Mode ────────────────────────────────────────────────
+    // ── Home notices ────────────────────────────────────────────────
 
-    /// <summary>
-    /// Fired when Advanced Mode is toggled so MainWindow can rebuild navigation.
-    /// </summary>
-    public event Action<bool>? AdvancedModeChanged;
-
-    public bool IsEasyMode
+    /// <summary>Whether the notices or the "N notices" bar show, from the notice count and the window width.</summary>
+    public NoticeAreaView NoticeArea
     {
-        get => !_isAdvancedMode;
-        set
+        get => _noticeArea;
+        private set { _noticeArea = value; OnPropertyChanged(); }
+    }
+
+    public string NoticeToggleText => _noticesExpanded ? "Hide" : "Show";
+
+    public bool ShowLastingChangesNotice => _lastingChanges != null;
+    public string LastingChangesMessage => _lastingChanges?.Message ?? "";
+    public NoticeSeverity LastingChangesSeverity => _lastingChanges?.Severity ?? NoticeSeverity.Info;
+
+    /// <param name="someRecordsUnreadable">The listing reported records it could not read, or failed outright.</param>
+    public void SetLastingChanges(int itemCount, bool someRecordsUnreadable)
+    {
+        _lastingChanges = ShellLayout.LastingChangesNotice(itemCount, someRecordsUnreadable);
+        OnPropertyChanged(nameof(ShowLastingChangesNotice));
+        OnPropertyChanged(nameof(LastingChangesMessage));
+        OnPropertyChanged(nameof(LastingChangesSeverity));
+        RefreshNoticeArea();
+    }
+
+    public void SetWindowWidth(double width)
+    {
+        _windowWidth = width;
+        RefreshNoticeArea();
+    }
+
+    public void ToggleNotices()
+    {
+        _noticesExpanded = !_noticesExpanded;
+        OnPropertyChanged(nameof(NoticeToggleText));
+        RefreshNoticeArea();
+    }
+
+    private void OnNoticeSourceChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(VbsAdvisoryViewModel.ShowVbsBanner)
+            or nameof(AmdTimerAdvisoryViewModel.ShowBanner)
+            or nameof(DpcMonitoringViewModel.ShowDpcSpikeAlert)
+            or nameof(UpdateManagementViewModel.ShowUpdateBanner))
         {
-            IsAdvancedMode = !value;
-            OnPropertyChanged();
+            // The AMD advisory sets its flag on a pool thread; refreshing there could race a UI-thread refresh.
+            Application.Current.Dispatcher.BeginInvoke(RefreshNoticeArea);
         }
     }
 
-    public bool IsAdvancedMode
+    private void RefreshNoticeArea()
     {
-        get => _isAdvancedMode;
-        set
-        {
-            if (_isAdvancedMode == value) return;
-            _isAdvancedMode = value;
-            OnPropertyChanged();
-            OnPropertyChanged(nameof(IsEasyMode));
-
-            var settings = SettingsManager.Load();
-            settings.AdvancedMode = value;
-            SettingsManager.Save(settings);
-
-            AdvancedModeChanged?.Invoke(value);
-        }
+        var shown = new List<NoticeSeverity>();
+        if (Vbs.ShowVbsBanner) shown.Add(Vbs.VbsBannerSeverity == "error" ? NoticeSeverity.Error : NoticeSeverity.Warning);
+        if (AmdTimer.ShowBanner) shown.Add(NoticeSeverity.Warning);
+        if (Dpc.ShowDpcSpikeAlert) shown.Add(NoticeSeverity.Error);
+        if (Update.ShowUpdateBanner) shown.Add(NoticeSeverity.Info);
+        if (_lastingChanges != null) shown.Add(_lastingChanges.Severity);
+        NoticeArea = ShellLayout.Notices(shown, _windowWidth, _noticesExpanded);
     }
 
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null)

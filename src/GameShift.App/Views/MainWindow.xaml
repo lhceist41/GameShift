@@ -30,19 +30,20 @@
             PaneDisplayMode="LeftMinimal"
             IsBackButtonVisible="Collapsed"
             IsPaneToggleVisible="False"
-            OpenPaneLength="200"
-            CompactPaneLength="64"
+            OpenPaneLength="240"
             Transition="FadeInWithSlide"
             TransitionDuration="150">
             <ui:NavigationView.MenuItems>
-                <ui:NavigationViewItem Content="Dashboard" TargetPageType="{x:Type pages:DashboardPage}">
+                <ui:NavigationViewItem x:Name="NavHome" Content="Home" TargetPageType="{x:Type pages:DashboardPage}">
                     <ui:NavigationViewItem.Icon>
                         <ui:SymbolIcon Symbol="Home24"/>
                     </ui:NavigationViewItem.Icon>
                 </ui:NavigationViewItem>
 
+                <!-- In the icon rail the group headers would be cut off, so each group gets a separator instead -->
                 <ui:NavigationViewItemHeader x:Name="NavHeaderGames" Text="Games"/>
-                <ui:NavigationViewItem x:Name="NavGameLibrary" Content="Game Library" TargetPageType="{x:Type pages:GameLibraryPage}">
+                <ui:NavigationViewItemSeparator x:Name="NavSeparatorGames" Visibility="Collapsed"/>
+                <ui:NavigationViewItem x:Name="NavLibrary" Content="Library" TargetPageType="{x:Type pages:GameLibraryPage}">
                     <ui:NavigationViewItem.Icon>
                         <ui:SymbolIcon Symbol="Library24"/>
                     </ui:NavigationViewItem.Icon>
@@ -53,7 +54,8 @@
                     </ui:NavigationViewItem.Icon>
                 </ui:NavigationViewItem>
 
-                <ui:NavigationViewItemHeader x:Name="NavHeaderTuning" Text="Tuning"/>
+                <ui:NavigationViewItemHeader x:Name="NavHeaderOptimize" Text="Optimize"/>
+                <ui:NavigationViewItemSeparator x:Name="NavSeparatorOptimize" Visibility="Collapsed"/>
                 <ui:NavigationViewItem x:Name="NavDuringGames" Content="During games" TargetPageType="{x:Type pages:DuringGamesPage}">
                     <ui:NavigationViewItem.Icon>
                         <ui:SymbolIcon Symbol="Rocket24"/>
@@ -64,16 +66,17 @@
                         <ui:SymbolIcon Symbol="Wrench24"/>
                     </ui:NavigationViewItem.Icon>
                 </ui:NavigationViewItem>
-                <ui:NavigationViewItem x:Name="NavSystem" Content="System" TargetPageType="{x:Type pages:SystemPage}">
+                <ui:NavigationViewItem x:Name="NavLatencyDoctor" Content="Latency Doctor" TargetPageType="{x:Type pages:DpcDoctorPage}">
                     <ui:NavigationViewItem.Icon>
-                        <ui:SymbolIcon Symbol="Desktop24"/>
+                        <ui:SymbolIcon Symbol="HeartPulse24"/>
                     </ui:NavigationViewItem.Icon>
                 </ui:NavigationViewItem>
 
-                <ui:NavigationViewItemHeader x:Name="NavHeaderDiagnostics" Text="Diagnostics"/>
-                <ui:NavigationViewItem x:Name="NavDpcDoctor" Content="Latency Doctor" TargetPageType="{x:Type pages:DpcDoctorPage}">
+                <ui:NavigationViewItemHeader x:Name="NavHeaderInfo" Text="Info"/>
+                <ui:NavigationViewItemSeparator x:Name="NavSeparatorInfo" Visibility="Collapsed"/>
+                <ui:NavigationViewItem x:Name="NavSystem" Content="System" TargetPageType="{x:Type pages:SystemPage}">
                     <ui:NavigationViewItem.Icon>
-                        <ui:SymbolIcon Symbol="HeartPulse24"/>
+                        <ui:SymbolIcon Symbol="Desktop24"/>
                     </ui:NavigationViewItem.Icon>
                 </ui:NavigationViewItem>
                 <ui:NavigationViewItem x:Name="NavActivity" Content="Activity" TargetPageType="{x:Type pages:ActivityLogPage}">
@@ -83,7 +86,7 @@
                 </ui:NavigationViewItem>
             </ui:NavigationView.MenuItems>
             <ui:NavigationView.FooterMenuItems>
-                <ui:NavigationViewItem Content="Settings" TargetPageType="{x:Type pages:SettingsPage}">
+                <ui:NavigationViewItem x:Name="NavSettings" Content="Settings" TargetPageType="{x:Type pages:SettingsPage}">
                     <ui:NavigationViewItem.Icon>
                         <ui:SymbolIcon Symbol="Settings24"/>
                     </ui:NavigationViewItem.Icon>

@@ -43,45 +43,12 @@ public class SettingsViewModel : INotifyPropertyChanged
     // v2.3 network field
     private string _pingTarget = "8.8.8.8";
 
-    // App mode
-    private bool _advancedMode;
-
     private bool _isDirty;
     private string _statusMessage = "";
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
     // ── AppSettings properties ────────────────────────────────────────
-
-    public event Action<bool>? AdvancedModeChanged;
-
-    public bool IsEasyMode
-    {
-        get => !_advancedMode;
-        set
-        {
-            AdvancedMode = !value;
-            OnPropertyChanged();
-        }
-    }
-
-    public bool AdvancedMode
-    {
-        get => _advancedMode;
-        set
-        {
-            if (_advancedMode == value) return;
-            _advancedMode = value;
-            OnPropertyChanged();
-            OnPropertyChanged(nameof(IsEasyMode));
-
-            var settings = SettingsManager.Load();
-            settings.AdvancedMode = value;
-            SettingsManager.Save(settings);
-
-            AdvancedModeChanged?.Invoke(value);
-        }
-    }
 
     public bool StartWithWindows
     {
@@ -232,9 +199,6 @@ public class SettingsViewModel : INotifyPropertyChanged
         _globalHotkeyBinding = settings.GlobalHotkeyBinding;
         _pingTarget = settings.PingTarget;
 
-        // App mode
-        _advancedMode = settings.AdvancedMode;
-
         IsDirty = false;
         StatusMessage = "";
 
@@ -252,8 +216,6 @@ public class SettingsViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(SuppressNotificationsDuringGaming));
         OnPropertyChanged(nameof(GlobalHotkeyBinding));
         OnPropertyChanged(nameof(PingTarget));
-        OnPropertyChanged(nameof(AdvancedMode));
-        OnPropertyChanged(nameof(IsEasyMode));
     }
 
     /// <summary>

@@ -65,6 +65,17 @@ public class ActivityLogViewModel : INotifyPropertyChanged
     }
 
     /// <summary>
+    /// Subscribes again after <see cref="Cleanup"/> and catches up on entries added meanwhile.
+    /// Safe to call while subscribed: it never subscribes twice.
+    /// </summary>
+    public void Resume()
+    {
+        _allEntries.CollectionChanged -= _collectionHandler;
+        _allEntries.CollectionChanged += _collectionHandler;
+        ApplyFilters();
+    }
+
+    /// <summary>
     /// Unsubscribes from the shared collection to prevent memory leaks.
     /// Called by ActivityLogPage.Unloaded handler.
     /// </summary>

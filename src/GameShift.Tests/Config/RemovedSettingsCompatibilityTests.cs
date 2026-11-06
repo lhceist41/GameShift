@@ -68,6 +68,20 @@ public class RemovedSettingsCompatibilityTests
         AssertKeptFields(loaded);
     }
 
+    // Easy Mode is gone, but files from versions that had it still carry either value.
+    [Theory]
+    [InlineData("true", true)]
+    [InlineData("false", false)]
+    public void SettingsWithEitherAdvancedModeValue_Load_AndKeepTheOtherFields(string json, bool expected)
+    {
+        var loaded = JsonSerializer.Deserialize<AppSettings>(
+            $$"""{ "AdvancedMode": {{json}}, "LogLevel": "Debug", "PingTarget": "1.1.1.1" }""")!;
+
+        Assert.Equal(expected, loaded.AdvancedMode);
+        Assert.Equal("Debug", loaded.LogLevel);
+        Assert.Equal("1.1.1.1", loaded.PingTarget);
+    }
+
     [Fact]
     public void SettingsWithRemovedFields_Save_KeepsEveryOtherField_AndDropsTheRemovedOnes()
     {

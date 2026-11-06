@@ -23,7 +23,12 @@ public partial class ActivityLogPage : Page
     {
         UpdateLogRefresh();
 
-        if (DataContext != null) return;
+        // Unloaded unsubscribes, so a page instance shown again has to subscribe again.
+        if (DataContext is ActivityLogViewModel existing)
+        {
+            existing.Resume();
+            return;
+        }
 
         // Get activity entries from DashboardViewModel's static AllActivities collection
         var entries = DashboardViewModel.AllActivities;

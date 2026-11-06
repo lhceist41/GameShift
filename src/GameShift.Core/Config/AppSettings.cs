@@ -147,9 +147,7 @@ public class AppSettings
     public bool DpcDoctorSimpleMode { get; set; } = true;
 
     /// <summary>
-    /// Whether Advanced Mode is enabled. Default false (Easy Mode: only Dashboard and
-    /// Settings visible) so new users aren't overwhelmed on first launch. Users can toggle it
-    /// from the Dashboard or Settings.
+    /// The removed Easy Mode switch. Nothing reads it; it stays so settings files that carry it keep their value.
     /// </summary>
     public bool AdvancedMode { get; set; } = false;
 
