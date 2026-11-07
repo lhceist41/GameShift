@@ -109,7 +109,7 @@ WelcomeFontName=Bahnschrift
 [Messages]
 SetupWindowTitle=%1 Setup
 WelcomeLabel1=Install [name]
-WelcomeLabel2=This installs [name/ver] in Program Files, where only administrators can change it.%n%nIf [name] is already installed, Setup updates it in place. Your settings stay as they are.%n%nSetup copies the app and adds a Start menu shortcut. It does not change any Windows settings.
+WelcomeLabel2=This installs [name/ver]. A new install goes to Program Files, where only administrators can change it.%n%nIf [name] is already installed, Setup updates it in its current folder. Your settings stay as they are.%n%nSetup copies the app and adds a Start menu shortcut. It does not change any Windows settings.
 SetupAppRunningError=%1 is running.%n%nRight-click the %1 icon next to the clock (it may be behind the ^ arrow) and choose Exit. That ends any active session first.%n%nIf someone else is signed in to this PC, they need to exit %1 in their account too.%n%nThen click OK to continue, or Cancel to stop Setup.
 WizardPreparing=Close programs
 PreparingDesc=Setup checks for programs that use [name]'s files.
@@ -119,7 +119,7 @@ CloseApplications=&Close them for me
 DontCloseApplications=&Leave them open
 ErrorCloseApplications=Setup could not close every program. Close the programs listed on the Close programs page yourself, then click Try again.
 WizardInstalling=Installing
-InstallingLabel=Copying [name] to Program Files.
+InstallingLabel=Copying the [name] files.
 FinishedHeadingLabel=[name] is installed
 FinishedLabel=Find [name] in the Start menu.
 FinishedLabelNoIcons=[name] is ready.
@@ -195,11 +195,13 @@ begin
     end;
   end;
 
-  if not WizardSilent and not WaitForGameShiftToClose(SetupMessage(msgSetupAppRunningError)) then
-  begin
-    Result := False;
-    Exit;
-  end;
+  // Nested, so a silent run never shows the box whatever the evaluation order of "and".
+  if not WizardSilent then
+    if not WaitForGameShiftToClose(SetupMessage(msgSetupAppRunningError)) then
+    begin
+      Result := False;
+      Exit;
+    end;
 
   Result := True;
 end;
@@ -220,14 +222,28 @@ begin
 end;
 
 // A fresh install must land in the admin-only Program Files folder: everything in it runs elevated, and the
-// uninstaller deletes {app}\updates by path. An upgrade keeps the folder it already has.
+// uninstaller deletes {app}\updates by path. An upgrade stays in the folder it already has, or moves there.
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   ExpectedDir: String;
+  ChosenDir: String;
+  PrevDir: String;
 begin
   Result := '';
   if WizardForm.PrevAppDir <> '' then
+  begin
+    // /DIR takes precedence over the existing folder, so without this check an upgrade could move anywhere.
+    ExpectedDir := ExpandConstant('{autopf}\{#AppName}');
+    ChosenDir := RemoveBackslashUnlessRoot(ExpandFileName(WizardDirValue));
+    PrevDir := RemoveBackslashUnlessRoot(ExpandFileName(WizardForm.PrevAppDir));
+    if (CompareText(ChosenDir, PrevDir) <> 0) and (CompareText(ChosenDir, ExpectedDir) <> 0) then
+    begin
+      Log('Refusing to move the install from ' + PrevDir + ' to ' + ChosenDir);
+      Result := '{#AppName} is already installed in ' + PrevDir + '.' + #13#10#13#10 +
+        'Run Setup again without /DIR to update it there. {#AppName} installs only there or in ' + ExpectedDir + '.';
+    end;
     Exit;
+  end;
 
   ExpectedDir := ExpandConstant('{autopf}\{#AppName}');
   if CompareText(RemoveBackslashUnlessRoot(WizardDirValue), ExpectedDir) <> 0 then
@@ -283,15 +299,24 @@ procedure RunUninstallCommands();
 var
   ResultCode: Integer;
 begin
-  if RunGameShiftCommand('--remove-tasks') = 3 then
+  ResultCode := RunGameShiftCommand('--remove-tasks');
+  if ResultCode = 3 then
     Exit;
 
-  if not UninstallSilent and (SuppressibleMsgBox('Undo the lasting changes {#AppName} recorded for your Windows account?',
-    mbConfirmation, MB_YESNO, IDYES) <> IDYES) then
-  begin
-    Log('The user chose not to undo the recorded lasting changes');
-    Exit;
-  end;
+  if ResultCode <> 0 then
+    if not UninstallSilent then
+      SuppressibleMsgBox('{#AppName} could not remove its startup task, so Task Scheduler may still list it.' + #13#10#13#10 +
+        'To remove it, open Task Scheduler, open the GameShift folder and delete the Startup task, and BootRecovery if it is there. ' +
+        'Or run this in a command prompt opened as administrator:' + #13#10 + 'schtasks /Delete /TN "GameShift\Startup" /F',
+        mbInformation, MB_OK, IDOK);
+
+  if not UninstallSilent then
+    if SuppressibleMsgBox('Undo the lasting changes {#AppName} recorded for your Windows account?',
+      mbConfirmation, MB_YESNO, IDYES) <> IDYES then
+    begin
+      Log('The user chose not to undo the recorded lasting changes');
+      Exit;
+    end;
 
   ResultCode := RunGameShiftCommand('--restore-tweaks');
   if (ResultCode <> 0) and (ResultCode <> 3) and not UninstallSilent then
