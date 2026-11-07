@@ -6,236 +6,407 @@
       FontFamily="Segoe UI" FontSize="14">
     <Page.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
-    </Page.Resources>
-    <DockPanel Margin="20">
-        <!-- Header with save -->
-        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,20">
-            <TextBlock Text="Settings" FontSize="22" FontWeight="Bold"
-                       Foreground="{DynamicResource GS.Text.Primary}"
-                       DockPanel.Dock="Left" VerticalAlignment="Center"/>
-            <StackPanel Orientation="Horizontal" DockPanel.Dock="Right"
-                        HorizontalAlignment="Right">
-                <TextBlock Text="{Binding StatusMessage, Mode=OneWay}"
-                           VerticalAlignment="Center" Margin="0,0,10,0"
-                           Foreground="{DynamicResource GS.Accent.Primary}" FontSize="12"/>
-                <Button Content="Save" Padding="16,6"
-                        Background="{DynamicResource GS.Accent.Primary}"
-                        Foreground="White" BorderThickness="0"
-                        FontWeight="SemiBold" Cursor="Hand"
-                        IsEnabled="{Binding IsDirty, Mode=OneWay}"
-                        Click="OnSaveClicked"/>
-            </StackPanel>
-        </DockPanel>
 
-        <!-- Scrollable settings -->
+        <Style x:Key="SettingTitle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="{DynamicResource GS.Fg.Primary}"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+        </Style>
+        <Style x:Key="SettingText" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Foreground" Value="{DynamicResource GS.Fg.Secondary}"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="Margin" Value="0,2,0,0"/>
+        </Style>
+        <Style x:Key="GroupHeader" TargetType="TextBlock" BasedOn="{StaticResource GS.Text.Caps}">
+            <Setter Property="Margin" Value="0,0,0,8"/>
+        </Style>
+        <Style x:Key="GroupPanel" TargetType="Border" BasedOn="{StaticResource GS.Panel}">
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Margin" Value="0,0,0,24"/>
+        </Style>
+        <Style x:Key="SettingBox" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+            <Setter Property="Background" Value="{DynamicResource GS.Fill.Input}"/>
+            <Setter Property="Foreground" Value="{DynamicResource GS.Fg.Primary}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource GS.Line.Control}"/>
+            <Setter Property="Padding" Value="6,4"/>
+            <Setter Property="Margin" Value="0,6,0,0"/>
+        </Style>
+        <Style x:Key="SecondaryButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Padding" Value="16,6"/>
+            <Setter Property="MinHeight" Value="32"/>
+            <Setter Property="Background" Value="{DynamicResource GS.Fill.CardSecondary}"/>
+            <Setter Property="Foreground" Value="{DynamicResource GS.Fg.Primary}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource GS.Line.Strong}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Cursor" Value="Hand"/>
+        </Style>
+        <Style x:Key="TweakBadge" TargetType="Border" BasedOn="{StaticResource GS.Badge.State}">
+            <Setter Property="Margin" Value="0,0,4,4"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding InPlace}" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource GS.Tint.Active}"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="TweakWord" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="Foreground" Value="{DynamicResource GS.State.Idle}"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding InPlace}" Value="True">
+                    <Setter Property="Foreground" Value="{DynamicResource GS.State.Active}"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+    </Page.Resources>
+
+    <DockPanel Margin="24">
+        <!-- Header with save -->
+        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+            <Button Content="Save" DockPanel.Dock="Right" VerticalAlignment="Center" Margin="12,0,0,0"
+                    Style="{StaticResource GS.Button.Primary}"
+                    IsEnabled="{Binding IsDirty, Mode=OneWay}"
+                    Click="OnSaveClicked"/>
+            <TextBlock Text="Settings" Style="{DynamicResource GS.Text.Hero}" TextWrapping="Wrap"/>
+        </DockPanel>
+        <TextBlock DockPanel.Dock="Top" Text="{Binding StatusMessage, Mode=OneWay}"
+                   FontSize="13" Foreground="{DynamicResource GS.Fg.Primary}"
+                   TextWrapping="Wrap" Margin="0,0,0,8"/>
+        <TextBlock DockPanel.Dock="Top"
+                   Text="Your preferences for GameShift. Click Save to keep your changes."
+                   FontSize="13" Foreground="{DynamicResource GS.Fg.Secondary}"
+                   TextWrapping="Wrap" Margin="0,0,0,16"/>
+
         <ScrollViewer VerticalScrollBarVisibility="Auto"
                       helpers:ScrollHelper.FixScrolling="True">
             <StackPanel>
-                <!-- Startup Section -->
-                <TextBlock Text="STARTUP" FontSize="11" FontWeight="Bold"
-                           Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,0,0,8"/>
-
-                <Border Background="{DynamicResource GS.Surface.Card}" CornerRadius="8"
-                        Padding="15" Margin="0,0,0,15"
-                        BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1">
+                <!-- General -->
+                <TextBlock Text="GENERAL" Style="{StaticResource GroupHeader}"/>
+                <Border Style="{StaticResource GroupPanel}">
                     <StackPanel>
-                        <CheckBox Content="Start with Windows"
-                                  IsChecked="{Binding StartWithWindows, Mode=TwoWay}"
-                                  Foreground="{DynamicResource GS.Text.Primary}"
-                                  Margin="0,0,0,10"/>
-                        <CheckBox Content="Start minimized to tray"
-                                  IsChecked="{Binding StartMinimized, Mode=TwoWay}"
-                                  Foreground="{DynamicResource GS.Text.Primary}"/>
+                        <Border Style="{StaticResource GS.Row}">
+                            <StackPanel>
+                                <TextBlock Text="Theme" Style="{StaticResource SettingTitle}"/>
+                                <TextBlock Text="Shown at once. Windows high contrast always wins over this choice."
+                                           Style="{StaticResource SettingText}"/>
+                                <Grid Margin="0,6,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" MaxWidth="240"/>
+                                    </Grid.ColumnDefinitions>
+                                    <ComboBox ItemsSource="{Binding ThemeOptions}"
+                                              DisplayMemberPath="Label" SelectedValuePath="Value"
+                                              SelectedValue="{Binding Theme, Mode=TwoWay}"
+                                              AutomationProperties.Name="Theme"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+                        <Border Style="{StaticResource GS.Row}">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,0">
+                                    <TextBlock Text="Start with Windows" Style="{StaticResource SettingTitle}"/>
+                                    <TextBlock Text="Starts GameShift when you sign in to Windows."
+                                               Style="{StaticResource SettingText}"/>
+                                </StackPanel>
+                                <Grid Grid.Column="1" MinWidth="76" VerticalAlignment="Center">
+                                    <ui:ToggleSwitch IsChecked="{Binding StartWithWindows, Mode=TwoWay}"
+                                                     AutomationProperties.Name="Start with Windows"
+                                                     HorizontalAlignment="Right"/>
+                                </Grid>
+                            </Grid>
+                        </Border>
                     </StackPanel>
                 </Border>
 
-                <!-- Notifications Section -->
-                <TextBlock Text="NOTIFICATIONS" FontSize="11" FontWeight="Bold"
-                           Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,0,0,8"/>
-
-                <Border Background="{DynamicResource GS.Surface.Card}" CornerRadius="8"
-                        Padding="15" Margin="0,0,0,15"
-                        BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1">
+                <!-- Notifications -->
+                <TextBlock Text="NOTIFICATIONS" Style="{StaticResource GroupHeader}"/>
+                <TextBlock Text="Saved changes here take effect the next time GameShift starts."
+                           Style="{StaticResource SettingText}" Margin="0,0,0,8"/>
+                <Border Style="{StaticResource GroupPanel}">
                     <StackPanel>
-                        <CheckBox Content="Show desktop notifications"
-                                  IsChecked="{Binding ShowNotifications, Mode=TwoWay}"
-                                  Foreground="{DynamicResource GS.Text.Primary}"
-                                  Margin="0,0,0,12"/>
-
-                        <TextBlock Text="Notification Types" FontSize="11" FontWeight="SemiBold"
-                                   Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,0,0,8"/>
-
-                        <CheckBox Content="Game detected toast"
-                                  IsChecked="{Binding ShowGameDetectedToast, Mode=TwoWay}"
-                                  Foreground="{DynamicResource GS.Text.Primary}"
-                                  Margin="20,0,0,8"
-                                  IsEnabled="{Binding ShowNotifications}"/>
-
-                        <CheckBox Content="Post-session summary toast"
-                                  IsChecked="{Binding ShowSessionSummaryToast, Mode=TwoWay}"
-                                  Foreground="{DynamicResource GS.Text.Primary}"
-                                  Margin="20,0,0,8"
-                                  IsEnabled="{Binding ShowNotifications}"/>
-
-                        <CheckBox Content="DPC load alert toast"
-                                  IsChecked="{Binding ShowDpcAlertToast, Mode=TwoWay}"
-                                  Foreground="{DynamicResource GS.Text.Primary}"
-                                  Margin="20,0,0,12"
-                                  IsEnabled="{Binding ShowNotifications}"/>
-
-                        <CheckBox Content="Suppress notifications during gaming"
-                                  IsChecked="{Binding SuppressNotificationsDuringGaming, Mode=TwoWay}"
-                                  Foreground="{DynamicResource GS.Text.Primary}"
-                                  Margin="0,0,0,0"/>
-                        <TextBlock Text="When enabled, all non-critical notifications are held until the game exits."
-                                   FontSize="11" Foreground="{DynamicResource GS.Text.Secondary}" Margin="20,2,0,0"/>
+                        <Border Style="{StaticResource GS.Row}">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="Show desktop notifications" VerticalAlignment="Center"
+                                           Style="{StaticResource SettingTitle}" Margin="0,0,12,0"/>
+                                <Grid Grid.Column="1" MinWidth="76" VerticalAlignment="Center">
+                                    <ui:ToggleSwitch IsChecked="{Binding ShowNotifications, Mode=TwoWay}"
+                                                     AutomationProperties.Name="Show desktop notifications"
+                                                     HorizontalAlignment="Right"/>
+                                </Grid>
+                            </Grid>
+                        </Border>
+                        <Border Style="{StaticResource GS.Row}">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="Game detected toast" VerticalAlignment="Center"
+                                           Style="{StaticResource SettingTitle}" Margin="20,0,12,0"/>
+                                <Grid Grid.Column="1" MinWidth="76" VerticalAlignment="Center">
+                                    <ui:ToggleSwitch IsChecked="{Binding ShowGameDetectedToast, Mode=TwoWay}"
+                                                     IsEnabled="{Binding ShowNotifications}"
+                                                     AutomationProperties.Name="Game detected toast"
+                                                     HorizontalAlignment="Right"/>
+                                </Grid>
+                            </Grid>
+                        </Border>
+                        <Border Style="{StaticResource GS.Row}">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="Post-session summary toast" VerticalAlignment="Center"
+                                           Style="{StaticResource SettingTitle}" Margin="20,0,12,0"/>
+                                <Grid Grid.Column="1" MinWidth="76" VerticalAlignment="Center">
+                                    <ui:ToggleSwitch IsChecked="{Binding ShowSessionSummaryToast, Mode=TwoWay}"
+                                                     IsEnabled="{Binding ShowNotifications}"
+                                                     AutomationProperties.Name="Post-session summary toast"
+                                                     HorizontalAlignment="Right"/>
+                                </Grid>
+                            </Grid>
+                        </Border>
+                        <Border Style="{StaticResource GS.Row}">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="DPC load alert toast" VerticalAlignment="Center"
+                                           Style="{StaticResource SettingTitle}" Margin="20,0,12,0"/>
+                                <Grid Grid.Column="1" MinWidth="76" VerticalAlignment="Center">
+                                    <ui:ToggleSwitch IsChecked="{Binding ShowDpcAlertToast, Mode=TwoWay}"
+                                                     IsEnabled="{Binding ShowNotifications}"
+                                                     AutomationProperties.Name="DPC load alert toast"
+                                                     HorizontalAlignment="Right"/>
+                                </Grid>
+                            </Grid>
+                        </Border>
+                        <Border Style="{StaticResource GS.Row}" BorderThickness="0">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,0">
+                                    <TextBlock Text="Suppress notifications during gaming" Style="{StaticResource SettingTitle}"/>
+                                    <TextBlock Text="When enabled, all non-critical notifications are held until the game exits."
+                                               Style="{StaticResource SettingText}"/>
+                                </StackPanel>
+                                <Grid Grid.Column="1" MinWidth="76" VerticalAlignment="Center">
+                                    <ui:ToggleSwitch IsChecked="{Binding SuppressNotificationsDuringGaming, Mode=TwoWay}"
+                                                     AutomationProperties.Name="Suppress notifications during gaming"
+                                                     HorizontalAlignment="Right"/>
+                                </Grid>
+                            </Grid>
+                        </Border>
                     </StackPanel>
                 </Border>
 
-                <!-- Logging Section -->
-                <TextBlock Text="LOGGING" FontSize="11" FontWeight="Bold"
-                           Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,0,0,8"/>
-
-                <Border Background="{DynamicResource GS.Surface.Card}" CornerRadius="8"
-                        Padding="15" Margin="0,0,0,15"
-                        BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1">
-                    <StackPanel>
-                        <CheckBox Content="Enable logging"
-                                  IsChecked="{Binding EnableLogging, Mode=TwoWay}"
-                                  Foreground="{DynamicResource GS.Text.Primary}"
-                                  Margin="0,0,0,10"/>
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="Log Level:" VerticalAlignment="Center"
-                                       Foreground="{DynamicResource GS.Text.Primary}" Margin="0,0,10,0"/>
-                            <ComboBox ItemsSource="{Binding LogLevels}"
-                                      SelectedItem="{Binding LogLevel, Mode=TwoWay}"
-                                      Width="150"
-                                      Background="{DynamicResource GS.Surface.Card}"
-                                      Foreground="{DynamicResource GS.Text.Primary}"
-                                      BorderBrush="{DynamicResource GS.Surface.Border}"/>
+                <!-- Game detection and hotkey -->
+                <TextBlock Text="GAME DETECTION AND HOTKEY" Style="{StaticResource GroupHeader}"/>
+                <Border Style="{StaticResource GroupPanel}">
+                    <Border Style="{StaticResource GS.Row}" BorderThickness="0">
+                        <StackPanel>
+                            <TextBlock Text="Global toggle hotkey" Style="{StaticResource SettingTitle}"/>
+                            <TextBlock Text="Press this key combination anywhere to toggle optimizations on/off. Requires app restart to take effect."
+                                       Style="{StaticResource SettingText}"/>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" MaxWidth="240"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBox Text="{Binding GlobalHotkeyBinding, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                         Style="{StaticResource SettingBox}"
+                                         AutomationProperties.Name="Global toggle hotkey"/>
+                            </Grid>
                         </StackPanel>
-                    </StackPanel>
+                    </Border>
                 </Border>
 
-                <!-- Game Profiles Section -->
-                <TextBlock Text="GAME PROFILES" FontSize="11" FontWeight="Bold"
-                           Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,0,0,8"/>
-
-                <!-- Individual profiles rendered from code-behind -->
-                <ItemsControl x:Name="ProfilesList" Margin="0,0,0,15"/>
-
-                <!-- DPC Monitoring Section -->
-                <TextBlock Text="DPC MONITORING" FontSize="11" FontWeight="Bold"
-                           Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,0,0,8"/>
-
-                <Border Background="{DynamicResource GS.Surface.Card}" CornerRadius="8"
-                        Padding="15" Margin="0,0,0,15"
-                        BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1">
-                    <StackPanel>
-                        <TextBlock Text="Default DPC load alert (% of CPU time)" FontWeight="SemiBold"
-                                   Foreground="{DynamicResource GS.Text.Primary}"/>
-                        <TextBlock Text="Alerts when drivers spend more than this share of CPU time on deferred procedure calls (DPC). Global default. Per-game overrides in Profile Editor."
-                                   TextWrapping="Wrap"
-                                   FontSize="11" Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,2,0,6"/>
-                        <TextBox Text="{Binding DefaultDpcThresholdPercentText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                 Width="100" HorizontalAlignment="Left"
-                                 Background="{DynamicResource GS.Surface.Base}"
-                                 Foreground="{DynamicResource GS.Text.Primary}"
-                                 BorderBrush="{DynamicResource GS.Surface.Border}"
-                                 Padding="6,4"/>
-                    </StackPanel>
-                </Border>
-
-                <!-- Network Section -->
-                <TextBlock Text="NETWORK" FontSize="11" FontWeight="Bold"
-                           Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,0,0,8"/>
-
-                <Border Background="{DynamicResource GS.Surface.Card}" CornerRadius="8"
-                        Padding="15" Margin="0,0,0,15"
-                        BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1">
-                    <StackPanel>
-                        <TextBlock Text="Ping Monitor Target" FontWeight="SemiBold"
-                                   Foreground="{DynamicResource GS.Text.Primary}"/>
-                        <TextBlock Text="IP address or hostname for the network ping monitor. Requires app restart."
-                                   FontSize="11" Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,2,0,6"/>
-                        <TextBox Text="{Binding PingTarget, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                 Width="200" HorizontalAlignment="Left"
-                                 Background="{DynamicResource GS.Surface.Base}"
-                                 Foreground="{DynamicResource GS.Text.Primary}"
-                                 BorderBrush="{DynamicResource GS.Surface.Border}"
-                                 Padding="6,4"/>
-                    </StackPanel>
-                </Border>
-
-                <!-- Security Section -->
-                <TextBlock Text="SECURITY" FontSize="11" FontWeight="Bold"
-                           Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,0,0,8"/>
-
-                <Border Background="{DynamicResource GS.Surface.Card}" CornerRadius="8"
-                        Padding="15" Margin="0,0,0,15"
-                        BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1">
-                    <StackPanel>
-                        <TextBlock Text="VBS / Memory Integrity (HVCI)" FontWeight="SemiBold"
-                                   Foreground="{DynamicResource GS.Text.Primary}"/>
-                        <TextBlock Text="{Binding VbsHvciStatus, Mode=OneWay}"
-                                   FontSize="13" Margin="0,4,0,8"
-                                   Foreground="{DynamicResource GS.Accent.Primary}"/>
-                        <Button Content="Re-enable Memory Integrity" Padding="12,6"
-                                Background="{DynamicResource GS.Accent.Primary}"
-                                Foreground="White" BorderThickness="0"
-                                FontWeight="SemiBold" Cursor="Hand"
-                                HorizontalAlignment="Left"
-                                Visibility="{Binding ShowReEnableButton, Converter={StaticResource BoolToVisibility}}"
-                                Click="OnReEnableVbsClicked"/>
-                    </StackPanel>
-                </Border>
-
-                <!-- Hotkey Section -->
-                <TextBlock Text="HOTKEY" FontSize="11" FontWeight="Bold"
-                           Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,0,0,8"/>
-
-                <Border Background="{DynamicResource GS.Surface.Card}" CornerRadius="8"
-                        Padding="15" Margin="0,0,0,15"
-                        BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1">
-                    <StackPanel>
-                        <DockPanel Margin="0,0,0,8">
-                            <TextBlock Text="Global Toggle Hotkey" VerticalAlignment="Center"
-                                       Foreground="{DynamicResource GS.Text.Primary}"/>
-                            <TextBox Text="{Binding GlobalHotkeyBinding, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                     Width="180" HorizontalAlignment="Right"
-                                     Foreground="{DynamicResource GS.Text.Primary}"
-                                     Background="{DynamicResource GS.Surface.Base}"
-                                     BorderBrush="{DynamicResource GS.Surface.Border}"
-                                     Padding="6,4"/>
-                        </DockPanel>
-                        <TextBlock Text="Press this key combination anywhere to toggle optimizations on/off. Requires app restart to take effect."
-                                   FontSize="11" Foreground="{DynamicResource GS.Text.Secondary}" TextWrapping="Wrap"/>
-                    </StackPanel>
-                </Border>
-
-                <!-- Export / Import Section -->
-                <TextBlock Text="EXPORT / IMPORT" FontSize="11" FontWeight="Bold"
-                           Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,0,0,8"/>
-
-                <Border Background="{DynamicResource GS.Surface.Card}" CornerRadius="8"
-                        Padding="15" Margin="0,0,0,15"
-                        BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1">
-                    <StackPanel>
-                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" Margin="0,0,0,8">
-                            <Button Content="Export Settings" Click="OnExportClicked" Margin="0,0,12,0"
-                                    Padding="16,8" Background="{DynamicResource GS.Surface.Base}"
-                                    Foreground="{DynamicResource GS.Text.Primary}"
-                                    BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1"
-                                    Cursor="Hand"/>
-                            <Button Content="Import Settings" Click="OnImportClicked"
-                                    Padding="16,8" Background="{DynamicResource GS.Surface.Base}"
-                                    Foreground="{DynamicResource GS.Text.Primary}"
-                                    BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1"
-                                    Cursor="Hand"/>
+                <!-- DPC monitoring -->
+                <TextBlock Text="DPC MONITORING" Style="{StaticResource GroupHeader}"/>
+                <Border Style="{StaticResource GroupPanel}">
+                    <Border Style="{StaticResource GS.Row}" BorderThickness="0">
+                        <StackPanel>
+                            <TextBlock Text="Default DPC load alert (% of CPU time)" Style="{StaticResource SettingTitle}"/>
+                            <TextBlock Text="Alerts when drivers spend more than this share of CPU time on deferred procedure calls (DPC). Global default. Each game can override it on the Profiles page."
+                                       Style="{StaticResource SettingText}"/>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" MaxWidth="160"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBox Text="{Binding DefaultDpcThresholdPercentText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                         AutomationProperties.Name="Default DPC load alert, percent of CPU time"
+                                         AutomationProperties.HelpText="{Binding DefaultDpcThresholdError, Mode=OneWay}">
+                                    <TextBox.Style>
+                                        <Style TargetType="TextBox" BasedOn="{StaticResource SettingBox}">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding HasDefaultDpcThresholdError}" Value="True">
+                                                    <Setter Property="BorderBrush" Value="{DynamicResource GS.State.Error}"/>
+                                                    <Setter Property="BorderThickness" Value="2"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBox.Style>
+                                </TextBox>
+                            </Grid>
+                            <TextBlock Text="{Binding DefaultDpcThresholdError, Mode=OneWay}"
+                                       FontSize="12" Foreground="{DynamicResource GS.State.Error}"
+                                       TextWrapping="Wrap" Margin="0,4,0,0"
+                                       Visibility="{Binding HasDefaultDpcThresholdError, Converter={StaticResource BoolToVisibility}}"/>
                         </StackPanel>
-                        <TextBlock Text="Export saves all settings and profiles to a .gameshift file. Import restores from a previously exported file."
-                                   FontSize="11" Foreground="{DynamicResource GS.Text.Secondary}" TextWrapping="Wrap"/>
+                    </Border>
+                </Border>
+
+                <!-- Network -->
+                <TextBlock Text="NETWORK" Style="{StaticResource GroupHeader}"/>
+                <Border Style="{StaticResource GroupPanel}">
+                    <Border Style="{StaticResource GS.Row}" BorderThickness="0">
+                        <StackPanel>
+                            <TextBlock Text="Ping monitor target" Style="{StaticResource SettingTitle}"/>
+                            <TextBlock Text="IP address or hostname for the network ping monitor. Requires app restart."
+                                       Style="{StaticResource SettingText}"/>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" MaxWidth="240"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBox Text="{Binding PingTarget, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                         Style="{StaticResource SettingBox}"
+                                         AutomationProperties.Name="Ping monitor target"/>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+                </Border>
+
+                <!-- Security -->
+                <TextBlock Text="SECURITY" Style="{StaticResource GroupHeader}"/>
+                <Border Style="{StaticResource GroupPanel}">
+                    <Border Style="{StaticResource GS.Row}" BorderThickness="0">
+                        <StackPanel>
+                            <TextBlock Text="VBS / Memory Integrity (HVCI)" Style="{StaticResource SettingTitle}"/>
+                            <TextBlock Text="{Binding VbsHvciStatus, Mode=OneWay}"
+                                       FontSize="13" Foreground="{DynamicResource GS.Fg.Primary}"
+                                       TextWrapping="Wrap" Margin="0,4,0,0"/>
+                            <Button Content="Re-enable Memory Integrity" Margin="0,8,0,0"
+                                    Style="{StaticResource GS.Button.Restart}"
+                                    HorizontalAlignment="Left"
+                                    Visibility="{Binding ShowReEnableButton, Converter={StaticResource BoolToVisibility}}"
+                                    Click="OnReEnableVbsClicked"/>
+                        </StackPanel>
+                    </Border>
+                </Border>
+
+                <!-- Logging -->
+                <TextBlock Text="LOGGING" Style="{StaticResource GroupHeader}"/>
+                <Border Style="{StaticResource GroupPanel}">
+                    <StackPanel>
+                        <Border Style="{StaticResource GS.Row}">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="Enable logging" VerticalAlignment="Center"
+                                           Style="{StaticResource SettingTitle}" Margin="0,0,12,0"/>
+                                <Grid Grid.Column="1" MinWidth="76" VerticalAlignment="Center">
+                                    <ui:ToggleSwitch IsChecked="{Binding EnableLogging, Mode=TwoWay}"
+                                                     AutomationProperties.Name="Enable logging"
+                                                     HorizontalAlignment="Right"/>
+                                </Grid>
+                            </Grid>
+                        </Border>
+                        <Border Style="{StaticResource GS.Row}" BorderThickness="0">
+                            <StackPanel>
+                                <TextBlock Text="Log level" Style="{StaticResource SettingTitle}"/>
+                                <Grid Margin="0,6,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" MaxWidth="240"/>
+                                    </Grid.ColumnDefinitions>
+                                    <ComboBox ItemsSource="{Binding LogLevels}"
+                                              SelectedItem="{Binding LogLevel, Mode=TwoWay}"
+                                              AutomationProperties.Name="Log level"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
+                </Border>
+
+                <!-- Backup -->
+                <TextBlock Text="BACKUP" Style="{StaticResource GroupHeader}"/>
+                <Border Style="{StaticResource GroupPanel}">
+                    <Border Style="{StaticResource GS.Row}" BorderThickness="0">
+                        <StackPanel>
+                            <TextBlock Text="Export saves all settings and profiles to a .gameshift file. Import restores from a previously exported file."
+                                       Style="{StaticResource SettingText}" Margin="0,0,0,8"/>
+                            <WrapPanel>
+                                <Button Content="Export Settings" Click="OnExportClicked" Margin="0,0,12,4"
+                                        Style="{StaticResource SecondaryButton}"/>
+                                <Button Content="Import Settings" Click="OnImportClicked" Margin="0,0,0,4"
+                                        Style="{StaticResource SecondaryButton}"/>
+                            </WrapPanel>
+                        </StackPanel>
+                    </Border>
+                </Border>
+
+                <!-- Supported games: read-only, not a preference -->
+                <TextBlock Text="SUPPORTED GAMES" Style="{StaticResource GroupHeader}"/>
+                <TextBlock Text="Games GameShift recognizes by their process. These cards only show information. A tick marks a recommended tweak that is in place on this PC."
+                           Style="{StaticResource SettingText}" Margin="0,0,0,8"/>
+                <Border Style="{StaticResource GroupPanel}">
+                    <ItemsControl x:Name="SupportedGamesList" Focusable="False">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Style="{StaticResource GS.Row}">
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding DisplayName}" Style="{StaticResource SettingTitle}"/>
+                                        <TextBlock Text="{Binding ProcessesText}" Style="{StaticResource SettingText}"/>
+                                        <Expander Header="{Binding NotesHeader}" FontSize="12" Margin="0,6,0,0"
+                                                  Foreground="{DynamicResource GS.Fg.Secondary}"
+                                                  Visibility="{Binding HasNotes, Converter={StaticResource BoolToVisibility}}">
+                                            <ItemsControl ItemsSource="{Binding Notes}" Focusable="False">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <TextBlock Text="{Binding StringFormat='&#x2022; {0}'}"
+                                                                   Style="{StaticResource SettingText}"/>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </Expander>
+                                        <StackPanel Margin="0,6,0,0"
+                                                    Visibility="{Binding HasTweaks, Converter={StaticResource BoolToVisibility}}">
+                                            <TextBlock Text="Recommended tweaks" FontSize="11" FontWeight="SemiBold"
+                                                       Foreground="{DynamicResource GS.Fg.Secondary}"
+                                                       TextWrapping="Wrap" Margin="0,0,0,4"/>
+                                            <ItemsControl ItemsSource="{Binding Tweaks}" Focusable="False">
+                                                <ItemsControl.ItemsPanel>
+                                                    <ItemsPanelTemplate>
+                                                        <WrapPanel/>
+                                                    </ItemsPanelTemplate>
+                                                </ItemsControl.ItemsPanel>
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <Border Style="{StaticResource TweakBadge}">
+                                                            <TextBlock Text="{Binding Text}" Style="{StaticResource TweakWord}"/>
+                                                        </Border>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
                 </Border>
             </StackPanel>
         </ScrollViewer>

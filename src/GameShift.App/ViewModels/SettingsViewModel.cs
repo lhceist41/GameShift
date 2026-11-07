@@ -4,7 +4,9 @@ using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using GameShift.Core.Config;
 using GameShift.Core.Monitoring;
+using GameShift.App.Services;
 using GameShift.Core.Optimization;
+using GameShift.Core.Presentation;
 using GameShift.Core.Profiles;
 using GameShift.Core.System;
 using GameShift.Core.SystemTweaks;
@@ -20,13 +22,17 @@ namespace GameShift.App.ViewModels;
 public class SettingsViewModel : INotifyPropertyChanged
 {
     private bool _startWithWindows;
-    private bool _startMinimized;
+    // What the box showed at load: the startup task, not the stored setting.
+    private bool _startWithWindowsAtLoad;
+    private AppTheme _theme = AppTheme.System;
+    private AppTheme _themeAtLoad = AppTheme.System;
     private bool _showNotifications;
     private bool _enableLogging;
     private string _logLevel = "Information";
     // v2 fields
     private int _defaultDpcThresholdMicroseconds = 1000;
     private string _defaultDpcThresholdPercentText = DpcLoad.FormatThreshold(1000);
+    private string? _defaultDpcThresholdError;
     private string _vbsHvciStatus = "Unknown";
     private bool _showReEnableButton = false;
     private VbsHvciToggle? _vbsHvciToggle;
@@ -56,10 +62,23 @@ public class SettingsViewModel : INotifyPropertyChanged
         set { if (_startWithWindows != value) { _startWithWindows = value; IsDirty = true; OnPropertyChanged(); } }
     }
 
-    public bool StartMinimized
+    public IReadOnlyList<ThemeOption> ThemeOptions => SettingsChoices.Themes;
+
+    /// <summary>
+    /// The chosen theme. Applied at once so the choice can be seen; saved with Save, and undone
+    /// by <see cref="DiscardThemePreview"/> when the page is left unsaved.
+    /// </summary>
+    public AppTheme Theme
     {
-        get => _startMinimized;
-        set { if (_startMinimized != value) { _startMinimized = value; IsDirty = true; OnPropertyChanged(); } }
+        get => _theme;
+        set
+        {
+            if (_theme == value) return;
+            _theme = value;
+            IsDirty = true;
+            OnPropertyChanged();
+            ThemeService.Apply(value);
+        }
     }
 
     public bool ShowNotifications
@@ -137,8 +156,24 @@ public class SettingsViewModel : INotifyPropertyChanged
             OnPropertyChanged();
             if (DpcLoad.TryParseThreshold(value, out var threshold))
                 DefaultDpcThresholdMicroseconds = threshold;
+            DefaultDpcThresholdError = SettingsChoices.ThresholdError(value, DefaultDpcThresholdMicroseconds);
         }
     }
+
+    /// <summary>Why the typed threshold is rejected; null while it is valid.</summary>
+    public string? DefaultDpcThresholdError
+    {
+        get => _defaultDpcThresholdError;
+        private set
+        {
+            if (_defaultDpcThresholdError == value) return;
+            _defaultDpcThresholdError = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(HasDefaultDpcThresholdError));
+        }
+    }
+
+    public bool HasDefaultDpcThresholdError => _defaultDpcThresholdError != null;
 
     public string VbsHvciStatus
     {
@@ -178,15 +213,17 @@ public class SettingsViewModel : INotifyPropertyChanged
     public List<string> LogLevels { get; } = new() { "Verbose", "Debug", "Information", "Warning", "Error", "Fatal" };
 
     /// <summary>
-    /// Loads all settings from disk via SettingsManager.Load().
-    /// Populates properties and resets IsDirty.
+    /// Loads all settings from disk with one SettingsManager.Load(), including what the Memory
+    /// Integrity section reads. Populates properties and resets IsDirty.
     /// </summary>
     public void LoadSettings()
     {
         var settings = SettingsManager.Load();
-        // Sync with actual registry state (registry is source of truth for this setting)
+        // The startup task is the source of truth for this box.
         _startWithWindows = StartupManager.IsRegisteredForStartup();
-        _startMinimized = settings.StartMinimized;
+        _startWithWindowsAtLoad = _startWithWindows;
+        _theme = SettingsChoices.ShownTheme(settings.AppTheme);
+        _themeAtLoad = _theme;
         _showNotifications = settings.ShowNotifications;
         _enableLogging = settings.EnableLogging;
         _logLevel = settings.LogLevel;
@@ -198,13 +235,15 @@ public class SettingsViewModel : INotifyPropertyChanged
         _suppressNotificationsDuringGaming = settings.SuppressNotificationsDuringGaming;
         _globalHotkeyBinding = settings.GlobalHotkeyBinding;
         _pingTarget = settings.PingTarget;
+        DefaultDpcThresholdError = null;
+        UpdateVbsStatus(settings);
 
         IsDirty = false;
         StatusMessage = "";
 
         // Notify all properties changed
         OnPropertyChanged(nameof(StartWithWindows));
-        OnPropertyChanged(nameof(StartMinimized));
+        OnPropertyChanged(nameof(Theme));
         OnPropertyChanged(nameof(ShowNotifications));
         OnPropertyChanged(nameof(EnableLogging));
         OnPropertyChanged(nameof(LogLevel));
@@ -229,12 +268,13 @@ public class SettingsViewModel : INotifyPropertyChanged
 
         // A copy outside the registered install folder keeps the installed copy's choice, which its task follows.
         var startupInstallFolder = StartupManager.InstallFolderKeepingStartup();
-        var startupChangeRefused = startupInstallFolder != null && StartWithWindows != settings.StartWithWindows;
 
         // Overlay UI-managed fields
         if (startupInstallFolder == null)
             settings.StartWithWindows = StartWithWindows;
-        settings.StartMinimized = StartMinimized;
+        // An unchanged choice keeps the stored value, which may be a theme number this version does not know.
+        if (Theme != _themeAtLoad)
+            settings.AppTheme = Theme;
         settings.ShowNotifications = ShowNotifications;
         settings.EnableLogging = EnableLogging;
         settings.LogLevel = LogLevel;
@@ -251,16 +291,16 @@ public class SettingsViewModel : INotifyPropertyChanged
         // Apply startup registration change to Windows registry
         StartupManager.SetStartWithWindows(settings.StartWithWindows);
 
-        if (startupChangeRefused)
-        {
-            _startWithWindows = settings.StartWithWindows;
-            OnPropertyChanged(nameof(StartWithWindows));
-        }
+        // The stored value or a registration that failed silently can leave a task other than the one chosen.
+        var registered = StartupManager.IsRegisteredForStartup();
+        var status = SettingsChoices.SaveStatus(startupInstallFolder, _startWithWindowsAtLoad, StartWithWindows, registered);
+        _startWithWindows = registered;
+        _startWithWindowsAtLoad = registered;
+        OnPropertyChanged(nameof(StartWithWindows));
+        _themeAtLoad = Theme;
 
         IsDirty = false;
-        StatusMessage = startupChangeRefused
-            ? $"Settings saved. Start with Windows was not changed: GameShift is installed in {startupInstallFolder}, so change it in that copy."
-            : "Settings saved.";
+        StatusMessage = status;
     }
 
     // ── Export / Import ──────────────────────────────────────────────
@@ -363,6 +403,11 @@ public class SettingsViewModel : INotifyPropertyChanged
             if (importedSettings != null)
             {
                 SettingsManager.Save(importedSettings);
+                // The file holds the imported theme now, so a failing profile import below must not let leaving the page revert to the old one.
+                _theme = SettingsChoices.ShownTheme(importedSettings.AppTheme);
+                _themeAtLoad = _theme;
+                OnPropertyChanged(nameof(Theme));
+                ThemeService.Apply(_theme);
             }
 
             // Deserialize and apply profiles
@@ -379,6 +424,7 @@ public class SettingsViewModel : INotifyPropertyChanged
 
             // Reload ViewModel to reflect imported settings
             LoadSettings();
+            ThemeService.Apply(Theme);
             IsDirty = false;
 
             StatusMessage = $"Settings imported from {System.IO.Path.GetFileName(dialog.FileName)}";
@@ -403,15 +449,14 @@ public class SettingsViewModel : INotifyPropertyChanged
     // ── VBS/HVCI management ─────────────────────────────────────────
 
     /// <summary>
-    /// Receives the VbsHvciToggle instance (called from App.xaml.cs OnSettingsRequested).
+    /// Receives the VbsHvciToggle instance before <see cref="LoadSettings"/>, which shows its state.
     /// </summary>
     public void SetVbsHvciToggle(VbsHvciToggle? toggle)
     {
         _vbsHvciToggle = toggle;
-        UpdateVbsStatus();
     }
 
-    private void UpdateVbsStatus()
+    private void UpdateVbsStatus(AppSettings settings)
     {
         if (_vbsHvciToggle == null)
         {
@@ -421,8 +466,6 @@ public class SettingsViewModel : INotifyPropertyChanged
         }
 
         VbsHvciStatus = _vbsHvciToggle.StatusText;
-
-        var settings = SettingsManager.Load();
         ShowReEnableButton = VbsHvciToggle.IsDisabledByGameShift(settings) && !_vbsHvciToggle.IsEitherEnabled;
     }
 
@@ -437,9 +480,20 @@ public class SettingsViewModel : INotifyPropertyChanged
         {
             // The cached state still reflects the disable that was just undone.
             _vbsHvciToggle.CheckState();
-            UpdateVbsStatus();
+            UpdateVbsStatus(SettingsManager.Load());
         }
         return result;
+    }
+
+    /// <summary>
+    /// Puts back the saved theme when the page is left with a theme chosen but not saved.
+    /// </summary>
+    public void DiscardThemePreview()
+    {
+        if (_theme == _themeAtLoad) return;
+        _theme = _themeAtLoad;
+        ThemeService.Apply(_themeAtLoad);
+        OnPropertyChanged(nameof(Theme));
     }
 
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
