@@ -123,7 +123,7 @@ public class DashboardViewModel : INotifyPropertyChanged
 
         // Create sub-ViewModels
         Update = new UpdateManagementViewModel();
-        Hero = new HeroOptimizeViewModel(optimizations, engine, orchestrator);
+        Hero = new HeroOptimizeViewModel(optimizations, orchestrator, App.Services.ProfileMgr);
         Dpc = new DpcMonitoringViewModel(dpcMonitor);
         Perf = new PerformanceMonitorViewModel(perfMonitor);
         Ping = new PingMonitorViewModel(pingMonitor);
@@ -266,7 +266,13 @@ public class DashboardViewModel : INotifyPropertyChanged
         }
     }
 
-    private void OnHomeTimerTick(object? sender, EventArgs e) => RefreshHome();
+    private void OnHomeTimerTick(object? sender, EventArgs e)
+    {
+        RefreshHome();
+        // A game session's flags clear only after the engine reports the deactivation, so the
+        // button's refresh from that report can still see the session; this one catches up.
+        Hero.RefreshHeroState();
+    }
 
     private void OnSessionEvent(object? sender, EventArgs e)
     {

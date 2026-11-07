@@ -90,6 +90,11 @@ public class DetectionOrchestrator
         Volatile.Read(ref _sessionRequestedTicks) is var ticks and not 0 ? new DateTime(ticks, DateTimeKind.Utc) : null;
 
     /// <summary>
+    /// Whether a game session or a Quick Optimize session is open, whether or not anything applied.
+    /// </summary>
+    public bool IsSessionActive => SessionRequestedUtc != null || _engine.IsSessionActive;
+
+    /// <summary>
     /// Gets whether monitoring is paused (<see cref="PauseAsync"/>) and not yet resumed.
     /// </summary>
     public bool IsPaused => _isPaused;
@@ -551,6 +556,37 @@ public class DetectionOrchestrator
     });
 
     /// <summary>
+    /// Applies <paramref name="profile"/> as a Quick Optimize session, outside any game session.
+    /// Refused while GameShift is exiting or any session is open, since joining a game session would
+    /// relabel it and retry its failed modules without the game. A run that applied nothing is
+    /// closed again. Returns whether a Quick Optimize session is open afterwards.
+    /// </summary>
+    public async Task<bool> QuickOptimizeAsync(GameProfile profile)
+    {
+        var opened = false;
+        await RunExclusiveAsync(async () =>
+        {
+            if (_isShutDown || _isOptimizing || _engine.IsSessionActive)
+            {
+                _logger.Information("Quick Optimize refused: GameShift is exiting or a session is already active");
+                return;
+            }
+
+            await _engine.ActivateProfileAsync(profile).ConfigureAwait(false);
+
+            if (_engine.AppliedCount == 0)
+            {
+                await _engine.DeactivateProfileAsync().ConfigureAwait(false);
+                _logger.Information("Quick Optimize changed nothing; session closed");
+                return;
+            }
+
+            opened = true;
+        }).ConfigureAwait(false);
+        return opened;
+    }
+
+    /// <summary>
     /// Pauses monitoring: stops process monitoring and ends the game session. No session starts until
     /// <see cref="ResumeAsync"/>, including for start events already in flight. A Quick Optimize
     /// session is not part of monitoring and stays.
@@ -692,12 +728,12 @@ public class DetectionOrchestrator
     /// <summary>
     /// The one teardown for every way a session ends. Game-specific actions are reverted first, in
     /// reverse order, then DPC monitoring stops and the engine reverts its optimizations. Does nothing
-    /// when there is neither a game session nor an engine optimization to revert, which also leaves an
-    /// earlier run's journal untouched. The caller holds the semaphore.
+    /// when there is neither a game session nor an open engine session, which also leaves an earlier
+    /// run's journal untouched. The caller holds the semaphore.
     /// </summary>
     private async Task EndSessionCoreAsync(string reason)
     {
-        if (!_isOptimizing && _engine.AppliedCount == 0)
+        if (!_isOptimizing && !_engine.IsSessionActive)
             return;
 
         _logger.Information("Ending optimization session: {Reason}", reason);

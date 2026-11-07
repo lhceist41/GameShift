@@ -99,6 +99,13 @@ public class OptimizationEngine : IDisposable
     private SessionOutcome? _activeSession;
 
     /// <summary>
+    /// True from the start of an activation until the next deactivation ends, whether or not any
+    /// module applied. An activation while a session is open joins it instead of starting a new one.
+    /// </summary>
+    public bool IsSessionActive => Volatile.Read(ref _isSessionActive);
+    private bool _isSessionActive;
+
+    /// <summary>
     /// Creates a new OptimizationEngine with the specified optimizations.
     /// </summary>
     /// <param name="optimizations">Collection of optimizations to manage</param>
@@ -140,15 +147,29 @@ public class OptimizationEngine : IDisposable
             _logger.Information("Activating profile for game: {GameName} (PID: {ProcessId})",
                 profile.GameName, profile.ProcessId);
 
-            // Capture system state BEFORE applying any optimization
-            _snapshot = SystemStateSnapshot.Capture();
-            _logger.Debug("System state snapshot captured at {CaptureTime}", _snapshot.CaptureTime);
+            if (IsSessionActive)
+            {
+                // Joining keeps the open session's baseline and its journal: starting the journal
+                // again would drop the crash-recovery records of every change still in effect.
+                _logger.Information("A session is already active; {GameName} joins it", profile.GameName);
+                _snapshot ??= SystemStateSnapshot.Capture();
+            }
+            else
+            {
+                // Counted as active before anything is captured or applied, so an activation that
+                // fails part-way is still torn down when the session ends.
+                Volatile.Write(ref _isSessionActive, true);
+
+                // Capture system state BEFORE applying any optimization
+                _snapshot = SystemStateSnapshot.Capture();
+                _logger.Debug("System state snapshot captured at {CaptureTime}", _snapshot.CaptureTime);
+
+                // Open session journal
+                _journal.StartSession(profile, gameName);
+            }
 
             var startedUtc = DateTime.UtcNow;
             var outcomes = new List<ModuleOutcome>();
-
-            // Open session journal
-            _journal.StartSession(profile, gameName);
 
             // Apply available optimizations in order
             int skippedCount = 0;
@@ -298,6 +319,7 @@ public class OptimizationEngine : IDisposable
                 _appliedOptimizations.Clear(); // Clear in-memory tracking
                 Interlocked.Exchange(ref _appliedCount, 0);
                 _snapshot = null;
+                Volatile.Write(ref _isSessionActive, false);
             }
             else
             {
@@ -366,6 +388,7 @@ public class OptimizationEngine : IDisposable
 
                 // Clear snapshot after all reverts complete
                 _snapshot = null;
+                Volatile.Write(ref _isSessionActive, false);
                 _logger.Information("Profile deactivation complete.");
             }
 

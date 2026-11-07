@@ -68,9 +68,13 @@ public sealed class SessionOutcomeTests : IDisposable
         public bool RevertReturns { get; set; } = true;
         public Exception? RevertThrows { get; set; }
 
+        // The snapshot each ApplyAsync call received, in call order.
+        public List<SystemStateSnapshot> Snapshots { get; } = new();
+
         public Task<bool> ApplyAsync(SystemStateSnapshot snapshot, GameProfile profile)
         {
             _calls.Add($"apply {Name}");
+            Snapshots.Add(snapshot);
             if (ApplyThrows != null) throw ApplyThrows;
             IsApplied = ApplyReturns;
             return Task.FromResult(ApplyReturns);
@@ -320,5 +324,93 @@ public sealed class SessionOutcomeTests : IDisposable
         Assert.Empty(outcome.Modules);
         Assert.Empty(outcome.Reverts);
         Assert.NotNull(outcome.EndedUtc);
+    }
+
+    [Fact]
+    public async Task SecondActivation_KeepsTheOpenSessionsJournal()
+    {
+        var a = new JournaledModule("A", _calls);
+        var b = new JournaledModule("B", _calls) { CanApplyReturns = false };
+        var engine = NewEngine(a, b);
+
+        await engine.ActivateProfileAsync(Profile(), "First");
+        engine.Journal.RecordGameAction("registry", "{}");
+        b.CanApplyReturns = true;
+        await engine.ActivateProfileAsync(Profile(), "Second");
+
+        var journal = new JournalManager(JournalPath).PeekJournal()!;
+        Assert.True(journal.SessionActive);
+        Assert.Equal([("A", "Applied"), ("B", "Applied")], journal.Optimizations.Select(o => (o.Name, o.State)));
+        Assert.Equal([("registry", "{}")], journal.GameActions.Select(g => (g.Kind, g.Payload)));
+        Assert.Equal("First", journal.ActiveGame!.Name);
+        Assert.Equal("Second", engine.LastOutcome!.GameName);
+        Assert.Equal(
+            [("A", ModuleOutcomeKind.AlreadyApplied), ("B", ModuleOutcomeKind.Applied)],
+            engine.LastOutcome.Modules.Select(m => (m.ModuleName, m.Kind)));
+    }
+
+    [Fact]
+    public async Task SecondActivation_ReusesTheOpenSessionsBaseline()
+    {
+        var module = new Module("RetriedModule", _calls) { ApplyReturns = false };
+        var engine = NewEngine(module);
+
+        await engine.ActivateProfileAsync(Profile());
+        module.ApplyReturns = true;
+        await engine.ActivateProfileAsync(Profile());
+
+        Assert.Equal(2, module.Snapshots.Count);
+        Assert.Same(module.Snapshots[0], module.Snapshots[1]);
+    }
+
+    [Fact]
+    public async Task IsSessionActive_FromActivationUntilDeactivation_EvenWithNothingApplied()
+    {
+        var engine = NewEngine(new Module("Fails", _calls) { ApplyReturns = false });
+        Assert.False(engine.IsSessionActive);
+
+        await engine.ActivateProfileAsync(Profile());
+        Assert.Equal(0, engine.AppliedCount);
+        Assert.True(engine.IsSessionActive);
+
+        await engine.DeactivateProfileAsync();
+        Assert.False(engine.IsSessionActive);
+        Assert.False(engine.LastOutcome!.RevertedByRecovery);
+    }
+
+    [Fact]
+    public async Task IsSessionActive_IsClearedWhenTheWatchdogAlreadyRecoveredTheSession()
+    {
+        var journal = new JournalManager(JournalPath);
+        var engine = NewEngine(journal, new JournaledModule("Declines", _calls) { CanApplyReturns = false });
+
+        await engine.ActivateProfileAsync(Profile());
+        Assert.True(engine.IsSessionActive);
+
+        journal.RecordRecoveryTimestamp(DateTime.UtcNow.AddSeconds(1));
+        await engine.DeactivateProfileAsync();
+
+        Assert.True(engine.LastOutcome!.RevertedByRecovery);
+        Assert.False(engine.IsSessionActive);
+    }
+
+    [Fact]
+    public async Task JoinedSession_EndsOnce_RevertingEverythingInReverseOrder()
+    {
+        var a = new JournaledModule("A", _calls);
+        var b = new JournaledModule("B", _calls) { CanApplyReturns = false };
+        var engine = NewEngine(a, b);
+
+        await engine.ActivateProfileAsync(Profile());
+        b.CanApplyReturns = true;
+        await engine.ActivateProfileAsync(Profile());
+        _calls.Clear();
+
+        await engine.DeactivateProfileAsync();
+
+        Assert.Equal(["revert B", "revert A"], _calls);
+        var journal = new JournalManager(JournalPath).PeekJournal()!;
+        Assert.False(journal.SessionActive);
+        Assert.Equal([("A", "Reverted"), ("B", "Reverted")], journal.Optimizations.Select(o => (o.Name, o.State)));
     }
 }

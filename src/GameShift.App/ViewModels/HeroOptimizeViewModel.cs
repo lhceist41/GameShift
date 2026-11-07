@@ -21,8 +21,8 @@ namespace GameShift.App.ViewModels;
 public class HeroOptimizeViewModel : INotifyPropertyChanged
 {
     private readonly IReadOnlyList<IOptimization> _optimizations;
-    private readonly OptimizationEngine _engine;
     private readonly DetectionOrchestrator _orchestrator;
+    private readonly ProfileManager? _profileManager;
 
     private string _heroButtonText = "Optimize now";
     private bool _isApplyingHero;
@@ -67,14 +67,12 @@ public class HeroOptimizeViewModel : INotifyPropertyChanged
 
     public ICommand OptimizeNowCommand { get; }
 
-    private bool IsHeroOptimized => _optimizations.Any(o => o.IsApplied);
-
     public HeroOptimizeViewModel(
-        IReadOnlyList<IOptimization> optimizations, OptimizationEngine engine, DetectionOrchestrator orchestrator)
+        IReadOnlyList<IOptimization> optimizations, DetectionOrchestrator orchestrator, ProfileManager? profileManager)
     {
         _optimizations = optimizations;
-        _engine = engine;
         _orchestrator = orchestrator;
+        _profileManager = profileManager;
         OptimizeNowCommand = new RelayCommand(ExecuteOptimizeNow);
         RefreshHeroState();
     }
@@ -85,7 +83,7 @@ public class HeroOptimizeViewModel : INotifyPropertyChanged
         {
             if (_isApplyingHero) return;
 
-            if (IsHeroOptimized)
+            if (_orchestrator.IsSessionActive)
             {
                 HeroButtonText = "End session";
                 ShowHeroPreview = false;
@@ -99,24 +97,30 @@ public class HeroOptimizeViewModel : INotifyPropertyChanged
         });
     }
 
+    // The saved default profile is what the "During games" page edits.
+    private GameProfile QuickOptimizeProfile() => _profileManager?.GetDefaultProfile() ?? GameProfile.CreateDefault();
+
     private void BuildPreviewList()
     {
-        var profile = GameProfile.CreateDefault();
+        var profile = QuickOptimizeProfile();
         var items = new List<string>();
 
         foreach (var opt in _optimizations.Where(o => o.IsAvailable))
         {
             if (profile.IsOptimizationEnabled(opt.Name))
-                items.Add(SessionModuleText.For(opt.Name, opt.Description).Title);
+                items.Add($"• {SessionModuleText.For(opt.Name, opt.Description).Title}");
         }
 
         HeroPreviewText = items.Count == 1
             ? "Optimize now applies 1 change"
             : $"Optimize now applies {items.Count} changes";
 
+        // Refreshed on the home timer, so an unchanged list is left alone instead of redrawn.
+        if (HeroPreviewItems.SequenceEqual(items)) return;
+
         HeroPreviewItems.Clear();
         foreach (var item in items)
-            HeroPreviewItems.Add($"• {item}");
+            HeroPreviewItems.Add(item);
     }
 
     private async void ExecuteOptimizeNow()
@@ -126,7 +130,7 @@ public class HeroOptimizeViewModel : INotifyPropertyChanged
 
         try
         {
-            if (IsHeroOptimized)
+            if (_orchestrator.IsSessionActive)
             {
                 HeroButtonText = "Undoing...";
                 // Through the orchestrator: during a game this ends the game session as a whole,
@@ -137,9 +141,9 @@ public class HeroOptimizeViewModel : INotifyPropertyChanged
             {
                 HeroButtonText = "Applying...";
                 ShowHeroPreview = false;
-                var profile = GameProfile.CreateDefault();
+                var profile = QuickOptimizeProfile();
                 profile.GameName = "Quick Optimize";
-                await _engine.ActivateProfileAsync(profile);
+                await _orchestrator.QuickOptimizeAsync(profile);
             }
         }
         catch (Exception ex)

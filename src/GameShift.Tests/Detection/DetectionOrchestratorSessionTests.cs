@@ -52,6 +52,10 @@ public sealed class DetectionOrchestratorSessionTests : IAsyncLifetime
 
     // Applied after _optimization. Unavailable, and so skipped, unless a test makes it throw.
     private readonly AvailabilityCheckOptimization _laterOptimization = new();
+
+    // Journaled modules applied last. Unavailable, and so skipped, unless a test makes them available.
+    private readonly JournaledFake _systemWide;
+    private readonly JournaledFake _processTargeted;
     private readonly GameDetector _detector;
     private readonly OptimizationEngine _engine;
     private readonly DetectionOrchestrator _orchestrator;
@@ -65,6 +69,9 @@ public sealed class DetectionOrchestratorSessionTests : IAsyncLifetime
 
         _optimization.OnApply = () => _calls.Add("apply engine");
         _optimization.OnRevert = () => _calls.Add("revert engine");
+        _systemWide = new JournaledFake("System-wide module", _calls);
+        // Like priority or CPU sets, it needs a game process to target.
+        _processTargeted = new JournaledFake("Process-targeted module", _calls) { CanApplyWhen = c => c.Profile.ProcessId != 0 };
 
         var scanners = new ILibraryScanner[]
         {
@@ -83,7 +90,8 @@ public sealed class DetectionOrchestratorSessionTests : IAsyncLifetime
 
         _detector = new GameDetector(scanners, ProcessProbe.Default, sweepProcessNameProbe: RunningProcessName);
         _engine = new OptimizationEngine(
-            new IOptimization[] { _optimization, _laterOptimization }, new JournalManager(JournalPath));
+            new IOptimization[] { _optimization, _laterOptimization, _systemWide, _processTargeted },
+            new JournalManager(JournalPath));
         _orchestrator = new DetectionOrchestrator(
             _detector, _engine, new KnownGamesStore(), scanners, new ProfileManager(),
             dpcMonitor: null,
@@ -488,6 +496,135 @@ public sealed class DetectionOrchestratorSessionTests : IAsyncLifetime
         Assert.Equal(1, _leftoverCleanups);
     }
 
+    [Fact]
+    public async Task QuickOptimize_DuringAGameSession_IsRefused()
+    {
+        var activations = 0;
+        _engine.ActivationCompleted += (_, _) => Interlocked.Increment(ref activations);
+        await StartGameAsync(5000, PresetPath);
+        var gameSession = _engine.LastOutcome;
+
+        Assert.False(await _orchestrator.QuickOptimizeAsync(QuickOptimizeProfile()));
+
+        Assert.Equal(1, activations);
+        Assert.Same(gameSession, _engine.LastOutcome);
+        Assert.True(_orchestrator.IsSessionActive);
+        Assert.Equal(SessionApplied, _calls);
+    }
+
+    [Fact]
+    public async Task QuickOptimize_WhileItsSessionIsOpen_OrAfterExit_IsRefused()
+    {
+        Assert.True(await _orchestrator.QuickOptimizeAsync(QuickOptimizeProfile()));
+        var quickOptimize = _engine.LastOutcome;
+
+        Assert.False(await _orchestrator.QuickOptimizeAsync(QuickOptimizeProfile()));
+        Assert.Same(quickOptimize, _engine.LastOutcome);
+
+        await _orchestrator.ShutdownAsync();
+        Assert.False(await _orchestrator.QuickOptimizeAsync(QuickOptimizeProfile()));
+
+        Assert.False(_engine.IsSessionActive);
+        Assert.Equal(new[] { "apply engine", "revert engine" }, _calls);
+    }
+
+    [Fact]
+    public async Task QuickOptimize_ThatAppliedNothing_ClosesItsSession()
+    {
+        _optimization.IsAvailable = false;
+        _systemWide.IsAvailable = true;
+        _systemWide.Fails = true;
+        _processTargeted.IsAvailable = true;
+        var deactivations = 0;
+        _engine.DeactivationCompleted += (_, _) => Interlocked.Increment(ref deactivations);
+
+        Assert.False(await _orchestrator.QuickOptimizeAsync(QuickOptimizeProfile()));
+
+        Assert.Equal(1, deactivations);
+        Assert.False(_engine.IsSessionActive);
+        Assert.False(_orchestrator.IsSessionActive);
+        Assert.False(new JournalManager(JournalPath).PeekJournal()!.SessionActive);
+        Assert.Equal(new[] { "apply System-wide module" }, _calls);
+    }
+
+    [Fact]
+    public async Task GameAfterQuickOptimize_JoinsItsSession_AndTheGameExitRevertsBoth()
+    {
+        _systemWide.IsAvailable = true;
+        _processTargeted.IsAvailable = true;
+
+        Assert.True(await _orchestrator.QuickOptimizeAsync(QuickOptimizeProfile()));
+        await StartGameAsync(5000, PresetPath);
+
+        var during = new JournalManager(JournalPath).PeekJournal()!;
+        Assert.True(during.SessionActive);
+        Assert.Equal(
+            new[] { ("System-wide module", "Applied"), ("Process-targeted module", "Applied") },
+            during.Optimizations.Select(o => (o.Name, o.State)));
+
+        await StopGameAsync(5000);
+
+        Assert.False(_orchestrator.IsSessionActive);
+        Assert.False(new JournalManager(JournalPath).PeekJournal()!.SessionActive);
+        Assert.Equal(
+            new[]
+            {
+                "apply engine", "apply System-wide module",
+                "apply Process-targeted module", "apply Defender exclusion", "apply Firewall rule",
+                "revert Firewall rule", "revert Defender exclusion",
+                "revert Process-targeted module", "revert System-wide module", "revert engine",
+            },
+            _calls);
+    }
+
+    [Fact]
+    public async Task GameSession_WhoseModulesAllFail_IsActiveWhileItsGameActionsAreInEffect_AndEndSessionEndsIt()
+    {
+        _optimization.IsAvailable = false;
+        _systemWide.IsAvailable = true;
+        _systemWide.Fails = true;
+
+        await StartGameAsync(5000, PresetPath);
+
+        Assert.Equal(0, _engine.AppliedCount);
+        Assert.Equal(2, _orchestrator.GameActionsInEffect);
+        Assert.True(_orchestrator.IsSessionActive);
+
+        await _orchestrator.EndSessionAsync();
+
+        Assert.False(_orchestrator.IsSessionActive);
+        Assert.False(new JournalManager(JournalPath).PeekJournal()!.SessionActive);
+        Assert.Equal(
+            new[]
+            {
+                "apply System-wide module", "apply Defender exclusion", "apply Firewall rule",
+                "revert Firewall rule", "revert Defender exclusion",
+            },
+            _calls);
+    }
+
+    [Fact]
+    public async Task Shutdown_ClosesAnOpenEngineSessionWithNothingApplied()
+    {
+        _optimization.IsAvailable = false;
+        _systemWide.IsAvailable = true;
+        _systemWide.Fails = true;
+        await _engine.ActivateProfileAsync(QuickOptimizeProfile());
+        Assert.True(new JournalManager(JournalPath).PeekJournal()!.SessionActive);
+
+        await _orchestrator.ShutdownAsync();
+
+        Assert.False(_engine.IsSessionActive);
+        Assert.False(new JournalManager(JournalPath).PeekJournal()!.SessionActive);
+    }
+
+    private static GameProfile QuickOptimizeProfile()
+    {
+        var profile = GameProfile.CreateDefault();
+        profile.GameName = "Quick Optimize";
+        return profile;
+    }
+
     private async Task StartGameAsync(int processId, string path)
     {
         _running[processId] = Path.GetFileNameWithoutExtension(path);
@@ -550,6 +687,56 @@ public sealed class DetectionOrchestratorSessionTests : IAsyncLifetime
         public Task<bool> ApplyAsync(SystemStateSnapshot snapshot, GameProfile profile) => Task.FromResult(false);
 
         public Task<bool> RevertAsync(SystemStateSnapshot snapshot) => Task.FromResult(false);
+    }
+
+    /// <summary>A journaled module that records its applies and reverts; changes nothing.</summary>
+    private sealed class JournaledFake : IOptimization, IJournaledOptimization
+    {
+        private readonly List<string> _calls;
+
+        public JournaledFake(string name, List<string> calls)
+        {
+            Name = name;
+            _calls = calls;
+        }
+
+        public string Name { get; }
+
+        public string Description => "Records its applies and reverts";
+
+        public bool IsApplied { get; private set; }
+
+        public bool IsAvailable { get; set; }
+
+        public Func<SystemContext, bool> CanApplyWhen { get; init; } = _ => true;
+
+        public bool Fails { get; set; }
+
+        public bool CanApply(SystemContext context) => CanApplyWhen(context);
+
+        public OptimizationResult Apply()
+        {
+            _calls.Add("apply " + Name);
+            IsApplied = !Fails;
+            return new OptimizationResult(Name, "original", "applied",
+                Fails ? OptimizationState.Failed : OptimizationState.Applied, Fails ? "denied" : null);
+        }
+
+        public OptimizationResult Revert()
+        {
+            _calls.Add("revert " + Name);
+            IsApplied = false;
+            return new OptimizationResult(Name, "original", "applied", OptimizationState.Reverted, null);
+        }
+
+        public bool Verify() => true;
+
+        public OptimizationResult RevertFromRecord(string originalValueJson) => throw new NotSupportedException();
+
+        // The engine applies and reverts journaled modules through Apply and Revert.
+        public Task<bool> ApplyAsync(SystemStateSnapshot snapshot, GameProfile profile) => throw new NotSupportedException();
+
+        public Task<bool> RevertAsync(SystemStateSnapshot snapshot) => throw new NotSupportedException();
     }
 
     /// <summary>Records its applies and reverts; changes nothing.</summary>
