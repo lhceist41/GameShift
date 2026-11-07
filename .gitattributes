@@ -1,0 +1,2 @@
+# Wizard image masters are kept byte for byte (one has CRLF, one LF line endings).
+installer/wizard/*.svg binary

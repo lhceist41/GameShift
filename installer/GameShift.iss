@@ -21,6 +21,9 @@
 ; Single-instance mutex GameShift holds while it runs (App.OnStartup).
 #define AppMutexName "Global\GameShift_SingleInstance"
 #define RepoUrl "https://github.com/lhceist41/GameShift"
+; One file per DPI step; Setup picks the best match. Used for both light and dark.
+#define WizImages "wizard\wizard-large-202x386.png,wizard\wizard-large-269x515.png,wizard\wizard-large-336x643.png,wizard\wizard-large-403x772.png,wizard\wizard-large-430x824.png,wizard\wizard-large-498x953.png,wizard\wizard-large-534x1022.png"
+#define WizSmallImages "wizard\wizard-small-58x58.png,wizard\wizard-small-77x77.png,wizard\wizard-small-97x97.png,wizard\wizard-small-116x116.png,wizard\wizard-small-124x124.png,wizard\wizard-small-143x143.png,wizard\wizard-small-159x159.png"
 
 #ifndef PublishDir
   #define PublishDir AddBackslash(SourcePath) + "..\artifacts\installer-publish"
@@ -85,12 +88,51 @@ OutputDir=..\artifacts\installer
 OutputBaseFilename=GameShift-Setup
 Compression=lzma2/max
 SolidCompression=yes
-WizardStyle=modern
+; Naming windows11 and excludelightcontrols spells out what WizardBackColor switches on anyway.
+WizardStyle=modern dynamic windows11 excludelightcontrols
+WizardBackColor=#EEF1F4
+WizardBackColorDynamicDark=#0B0D10
+; Set for dark too: Inno does not say whether dynamic dark falls back to the light images or its own.
+WizardImageFile={#WizImages}
+WizardImageFileDynamicDark={#WizImages}
+WizardSmallImageFile={#WizSmallImages}
+WizardSmallImageFileDynamicDark={#WizSmallImages}
+WizardSmallImageBackColor=none
+WizardSmallImageBackColorDynamicDark=none
+DisableWelcomePage=no
+; Ready lists nothing to change here. CurPageChanged gives the page before the install an Install button.
+DisableReadyPage=yes
+
+[LangOptions]
+WelcomeFontName=Bahnschrift
 
 [Messages]
-SetupAppRunningError=%1 is running.%n%nRight-click the %1 icon next to the clock (it may be behind the ^ arrow) and choose Exit. That ends any active session first.%n%nThen click OK to continue, or Cancel to stop Setup.
-ConfirmUninstall=Remove %1?%n%nUninstalling removes the %1 startup task and offers to undo the lasting changes %1 recorded for your Windows account. Changes that need your own choice are listed, not undone. For changes recorded in another Windows account, use Restore All in %1 in that account first.%n%nYour settings stay in your user folder, so installing %1 again picks them up.
-UninstallAppRunningError=%1 is running.%n%nRight-click the %1 icon next to the clock (it may be behind the ^ arrow) and choose Exit. That ends any active session first.%n%nThen click OK to continue, or Cancel to keep %1 installed.
+SetupWindowTitle=%1 Setup
+WelcomeLabel1=Install [name]
+WelcomeLabel2=This installs [name/ver] in Program Files, where only administrators can change it.%n%nIf [name] is already installed, Setup updates it in place. Your settings stay as they are.%n%nSetup copies the app and adds a Start menu shortcut. It does not change any Windows settings.
+SetupAppRunningError=%1 is running.%n%nRight-click the %1 icon next to the clock (it may be behind the ^ arrow) and choose Exit. That ends any active session first.%n%nIf someone else is signed in to this PC, they need to exit %1 in their account too.%n%nThen click OK to continue, or Cancel to stop Setup.
+WizardPreparing=Close programs
+PreparingDesc=Setup checks for programs that use [name]'s files.
+ApplicationsFound=These programs are using files that Setup needs to replace:
+ApplicationsFound2=These programs are using files that Setup needs to replace:
+CloseApplications=&Close them for me
+DontCloseApplications=&Leave them open
+ErrorCloseApplications=Setup could not close every program. Close the programs listed on the Close programs page yourself, then click Try again.
+WizardInstalling=Installing
+InstallingLabel=Copying [name] to Program Files.
+FinishedHeadingLabel=[name] is installed
+FinishedLabel=Find [name] in the Start menu.
+FinishedLabelNoIcons=[name] is ready.
+ClickFinish=Click Finish to close Setup.
+ExitSetupMessage=Setup is not finished. If you exit now, {#AppName} is not installed or updated.%n%nExit Setup?
+ConfirmUninstall=Remove %1?%n%nUninstalling removes the %1 startup task and offers to undo the lasting changes %1 recorded for your Windows account. Changes that need your own choice are listed, not undone. For changes recorded in another Windows account, use Restore All on the Lasting changes page of %1 in that account first.%n%nYour settings stay in your user folder, so installing %1 again picks them up.
+UninstallAppRunningError=%1 is running.%n%nRight-click the %1 icon next to the clock (it may be behind the ^ arrow) and choose Exit. That ends any active session first.%n%nIf someone else is signed in to this PC, they need to exit %1 in their account too.%n%nThen click OK to continue, or Cancel to keep %1 installed.
+UninstallStatusLabel=Removing %1.
+UninstalledAll=%1 is removed. Your settings are still in your user folder.
+UninstalledMost=%1 is removed, but some files could not be deleted. You can delete them yourself.
+
+[CustomMessages]
+LaunchProgram=Start %1 now
 
 [Files]
 Source: "{#PublishFolder}{#AppExeName}"; DestDir: "{app}"; Flags: ignoreversion
@@ -160,6 +202,16 @@ begin
   end;
 
   Result := True;
+end;
+
+// The Ready page is off, so the page before the install says Install.
+// Preparing keeps Inno's button when a restart is needed (Finish ends Setup) or the install was refused.
+procedure CurPageChanged(CurPageID: Integer);
+begin
+  if (CurPageID = wpWelcome) or
+    ((CurPageID = wpPreparing) and WizardForm.NextButton.Enabled and
+     (WizardForm.NextButton.Caption = SetupMessage(msgButtonNext))) then
+    WizardForm.NextButton.Caption := SetupMessage(msgButtonInstall);
 end;
 
 function RelaunchRequested(): Boolean;
@@ -245,7 +297,8 @@ begin
   if (ResultCode <> 0) and (ResultCode <> 3) and not UninstallSilent then
     SuppressibleMsgBox('Some lasting changes {#AppName} recorded are not undone. ' +
       ExpandConstant('{commonappdata}\{#AppName}\logs\restore-tweaks.txt') + ' lists them when that file exists.' + #13#10#13#10 +
-      'To undo them, start {#AppName} again (installed or portable) and use Restore All in Settings.',
+      'To undo them, start {#AppName} again (installed or portable) and use Restore All on the Lasting changes page.' + #13#10#13#10 +
+      'If the list names a settings.unreadable file, move it out of your {#AppName} settings folder after reading it, or every undo reports it again.',
       mbInformation, MB_OK, IDOK);
 end;
 
