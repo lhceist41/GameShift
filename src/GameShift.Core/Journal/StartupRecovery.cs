@@ -6,7 +6,7 @@ namespace GameShift.Core.Journal;
 
 public enum StartupRecoveryOutcome
 {
-    /// <summary>No journal, an unreadable or unknown-version one, or the last session ended normally.</summary>
+    /// <summary>No journal, an unknown-version one, or the last session ended normally.</summary>
     NothingToDo,
 
     /// <summary>Every recorded change of the session was undone.</summary>
@@ -22,12 +22,16 @@ public enum StartupRecoveryOutcome
     GaveUp,
 
     /// <summary>The journal folder could not be made a plain folder; nothing in it was read.</summary>
-    FolderUnavailable
+    FolderUnavailable,
+
+    /// <summary>The journal could not be read or parsed, so whether the last session ended is unknown; nothing was replayed.</summary>
+    Unreadable
 }
 
 /// <param name="Items">One entry per record, replayed or left; empty when nothing was read from a trusted journal.</param>
 /// <param name="GameName">From a trusted journal only.</param>
 /// <param name="SessionStarted">From a trusted journal only.</param>
+/// <param name="EvidencePath">The kept copy of the records, or for <see cref="StartupRecoveryOutcome.Unreadable"/> the file the journal was renamed to.</param>
 /// <param name="JournalFolder">The refused folder, for <see cref="StartupRecoveryOutcome.FolderUnavailable"/> only.</param>
 public sealed record StartupRecoveryResult(
     bool WasSessionActive,
@@ -83,9 +87,11 @@ public static class StartupRecovery
 
             // Look first without adopting the file, so an untrusted journal never becomes this
             // instance's state (a later metadata save would write it back under the journal name).
-            var peeked = journal.PeekJournal();
-            if (peeked == null)
+            var peek = journal.PeekJournalFile();
+            if (peek.Status == JournalPeekStatus.Missing)
                 return Nothing(wasActive);
+            if (peek.Data is not { } peeked)
+                return ReportUnreadable(journal.JournalPath, peek.Status, trust, logger, repairFolder);
 
             wasActive = peeked.SessionActive;
             if (!wasActive)
@@ -100,16 +106,7 @@ public static class StartupRecovery
                 return Nothing(wasActive);
             }
 
-            JournalTrustResult verdict;
-            try
-            {
-                verdict = trust(journal.JournalPath);
-            }
-            catch (Exception ex)
-            {
-                verdict = JournalTrustResult.Untrusted($"the trust check failed: {ex.Message}");
-            }
-
+            var verdict = CheckTrust(trust, journal.JournalPath);
             if (!verdict.Trusted)
                 return SetAsideUntrusted(journal.JournalPath, verdict, logger, repairFolder);
 
@@ -180,6 +177,65 @@ public static class StartupRecovery
         SessionJournalData? trusted, string? evidence) =>
         new(wasActive, outcome, items, trusted?.ActiveGame?.Name, trusted?.ActiveGame?.StartTime ?? trusted?.Timestamp, evidence);
 
+    private static JournalTrustResult CheckTrust(Func<string, JournalTrustResult> trust, string journalPath)
+    {
+        try
+        {
+            return trust(journalPath);
+        }
+        catch (Exception ex)
+        {
+            return JournalTrustResult.Untrusted($"the trust check failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Whether the last session ended is unknown, so it counts as not ended, as for a refused folder.
+    /// A record that does not parse is renamed aside, so the next save cannot overwrite it and the
+    /// next start is clean.
+    /// </summary>
+    private static StartupRecoveryResult ReportUnreadable(
+        string journalPath, JournalPeekStatus status, Func<string, JournalTrustResult> trust,
+        ILogger logger, Func<string, ILogger, bool> repairFolder)
+    {
+        var unreadable = new StartupRecoveryResult(WasSessionActive: true, StartupRecoveryOutcome.Unreadable, Array.Empty<JournalRevertItem>());
+
+        // A failed read may be transient (other readers share the file), so nothing is moved and
+        // every start reports it until the file can be read.
+        if (status != JournalPeekStatus.NotParsed)
+        {
+            logger.Warning("[StartupRecovery] The journal at {Path} could not be read; nothing was undone and the last session may still be active",
+                journalPath);
+            return unreadable;
+        }
+
+        var verdict = CheckTrust(trust, journalPath);
+        if (!verdict.Trusted)
+            return SetAsideUntrusted(journalPath, verdict, logger, repairFolder);
+
+        var newName = $"state.{EvidenceSuffix("unreadable")}.json";
+        bool renamed = false;
+        try
+        {
+            renamed = WindowsJournalSecurity.RenameInPlace(journalPath, newName);
+        }
+        catch (Exception ex)
+        {
+            logger.Warning(ex, "[StartupRecovery] Could not rename the unparsable journal");
+        }
+
+        if (!renamed)
+        {
+            logger.Warning("[StartupRecovery] The journal at {Path} could not be parsed or set aside; nothing was undone and the last session may still be active",
+                journalPath);
+            return unreadable;
+        }
+
+        logger.Warning("[StartupRecovery] The journal at {Path} could not be parsed; nothing was undone and it was kept as {Name}",
+            journalPath, newName);
+        return unreadable with { EvidencePath = Path.Combine(Path.GetDirectoryName(journalPath) ?? string.Empty, newName) };
+    }
+
     private static StartupRecoveryResult SetAsideUntrusted(
         string journalPath, JournalTrustResult verdict, ILogger logger, Func<string, ILogger, bool> repairFolder)
     {
@@ -243,6 +299,15 @@ public static class StartupRecovery
         "Crash recovery is off until it can, and nothing from an earlier session was undone. " +
         "Restart Windows, then start GameShift again.";
 
+    /// <summary>Formatted with the name the record was kept under, which GameShift chose.</summary>
+    internal const string UnreadableKeptNotice =
+        "GameShift found a session record it could not read, so it cannot tell whether the last game session ended normally. " +
+        "Nothing from that session was undone. GameShift kept the record as {0} in its data folder.";
+
+    internal const string UnreadableNotice =
+        "GameShift could not read its session record, so it cannot tell whether the last game session ended normally. " +
+        "Nothing from that session was undone. GameShift's log has the details.";
+
     internal const string NotUndoneAdvice = "GameShift kept a copy of that session's record, and its log lists what is left.";
 
     internal const string TaskReEnabledAdvice =
@@ -261,6 +326,10 @@ public static class StartupRecovery
             return UntrustedNotice;
         if (result.Outcome == StartupRecoveryOutcome.FolderUnavailable)
             return string.Format(CultureInfo.InvariantCulture, FolderUnavailableNotice, result.JournalFolder);
+        if (result.Outcome == StartupRecoveryOutcome.Unreadable)
+            return result.EvidencePath is { } kept
+                ? string.Format(CultureInfo.InvariantCulture, UnreadableKeptNotice, Path.GetFileName(kept))
+                : UnreadableNotice;
 
         var game = string.IsNullOrWhiteSpace(result.GameName) ? "a game session" : result.GameName;
         var when = result.SessionStarted is { } started

@@ -218,6 +218,19 @@ public class HeadlessRestoreTests
     }
 
     [Fact]
+    public void UnreadableSessionRecord_ExitsWithOne_AndTheNoticeIsInTheSummary()
+    {
+        var recovery = new StartupRecoveryResult(true, StartupRecoveryOutcome.Unreadable, Array.Empty<JournalRevertItem>(),
+            EvidencePath: @"C:\ProgramData\GameShift\state.unreadable-20261107T120000000Z.json");
+        var run = new Run { Recovery = recovery };
+
+        Assert.Equal(HeadlessExitCode.SomethingLeft, run.Restore());
+        Assert.NotNull(recovery.Notice);
+        Assert.Contains(recovery.Notice, run.Summary);
+        Assert.Contains("state.unreadable-20261107T120000000Z.json", run.Summary);
+    }
+
+    [Fact]
     public void FullyRecoveredSession_ExitsWithZero_AndIsInTheSummary()
     {
         var run = new Run { Recovery = new(true, StartupRecoveryOutcome.Recovered, Array.Empty<JournalRevertItem>(), GameName: "Valorant") };

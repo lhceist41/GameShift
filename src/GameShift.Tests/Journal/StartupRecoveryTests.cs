@@ -88,16 +88,97 @@ public class StartupRecoveryTests : IDisposable
         Assert.Null(result.Notice);
     }
 
-    [Fact]
-    public void UnparsableJournal_IsNothingToDo()
+    // ── Unreadable ────────────────────────────────────────────────────────
+
+    // Whether the last session ended is unknown, so it must not be reported as clean.
+    [Theory]
+    [InlineData("{ not json")]
+    [InlineData("null")]
+    [InlineData("")]
+    public void UnparsableJournal_IsUnreadable_AndKeptUnderANewName(string content)
     {
-        File.WriteAllText(JournalPath, "{ not json");
+        File.WriteAllText(JournalPath, content);
 
         var result = Run(Engine(Recording()));
 
-        Assert.Equal(StartupRecoveryOutcome.NothingToDo, result.Outcome);
+        Assert.Equal(StartupRecoveryOutcome.Unreadable, result.Outcome);
+        Assert.True(result.WasSessionActive);
+        Assert.Equal(1, _trustChecks);
+        Assert.Empty(_sequence);
+        Assert.Empty(_repaired);
+        Assert.False(File.Exists(JournalPath));
+        var kept = Assert.Single(Evidence("unreadable"));
+        Assert.Equal(content, File.ReadAllText(kept));
+        Assert.Equal(kept, result.EvidencePath);
+        Assert.Equal(string.Format(StartupRecovery.UnreadableKeptNotice, Path.GetFileName(kept)), result.Notice);
+        Assert.Matches(@"^state\.unreadable-\d{8}T\d{9}Z\.json$", Path.GetFileName(kept));
+    }
+
+    [Fact]
+    public void UnparsableJournal_IsReportedOnce()
+    {
+        File.WriteAllText(JournalPath, "{ not json");
+        Run(Engine(Recording()));
+
+        var second = Run(Engine(Recording()));
+
+        Assert.Equal(StartupRecoveryOutcome.NothingToDo, second.Outcome);
+        Assert.False(second.WasSessionActive);
+        Assert.Null(second.Notice);
+        Assert.Single(Evidence("unreadable"));
+    }
+
+    [Fact]
+    public void UnparsableUntrustedJournal_IsSetAsideAsUntrusted()
+    {
+        File.WriteAllText(JournalPath, "{ not json");
+
+        var result = Run(Engine(Recording()), _ => JournalTrustResult.Untrusted("owned by a user"));
+
+        Assert.Equal(StartupRecoveryOutcome.Untrusted, result.Outcome);
+        Assert.True(result.WasSessionActive);
+        Assert.Equal("{ not json", File.ReadAllText(Assert.Single(Evidence("untrusted"))));
+        Assert.Empty(Evidence("unreadable"));
+        Assert.Equal(new[] { _temp.Path }, _repaired);
+        Assert.Equal(StartupRecovery.UntrustedNotice, result.Notice);
+    }
+
+    // A read can fail while another process holds the file, so nothing is moved. The handle shares
+    // delete, so a rename would still succeed if the code tried one.
+    [Fact]
+    public void JournalThatCannotBeRead_IsUnreadable_AndLeftInPlace()
+    {
+        CrashedSession("Overwatch", "Opt1");
+        var text = File.ReadAllText(JournalPath);
+
+        StartupRecoveryResult result;
+        using (new FileStream(JournalPath, FileMode.Open, FileAccess.Read, FileShare.Delete))
+            result = Run(Engine(Recording("Opt1")));
+
+        Assert.Equal(StartupRecoveryOutcome.Unreadable, result.Outcome);
+        Assert.True(result.WasSessionActive);
         Assert.Equal(0, _trustChecks);
+        Assert.Empty(_sequence);
+        Assert.Equal(text, File.ReadAllText(JournalPath));
+        Assert.Empty(Directory.GetFiles(_temp.Path, "state.*-*.json"));
+        Assert.Null(result.EvidencePath);
+        Assert.Equal(StartupRecovery.UnreadableNotice, result.Notice);
+    }
+
+    [Fact]
+    public void UnparsableJournalThatCannotBeRenamed_IsUnreadable_AndSaysSo()
+    {
+        File.WriteAllText(JournalPath, "{ not json");
+
+        StartupRecoveryResult result;
+        using (new FileStream(JournalPath, FileMode.Open, FileAccess.Read, FileShare.Read))
+            result = Run(Engine(Recording()));
+
+        Assert.Equal(StartupRecoveryOutcome.Unreadable, result.Outcome);
+        Assert.True(result.WasSessionActive);
         Assert.Equal("{ not json", File.ReadAllText(JournalPath));
+        Assert.Empty(Evidence("unreadable"));
+        Assert.Equal(StartupRecovery.UnreadableNotice, result.Notice);
     }
 
     [Fact]

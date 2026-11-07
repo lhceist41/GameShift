@@ -119,6 +119,21 @@ public class SessionJournalData
     public int RecoveryAttempts { get; set; }
 }
 
+internal enum JournalPeekStatus
+{
+    Missing,
+    Parsed,
+
+    /// <summary>The content is not a session record: invalid JSON, or JSON that deserializes to null.</summary>
+    NotParsed,
+
+    /// <summary>The file exists but could not be read, for example while another process holds it.</summary>
+    NotRead
+}
+
+/// <param name="Data">Set only for <see cref="JournalPeekStatus.Parsed"/>.</param>
+internal readonly record struct JournalPeek(JournalPeekStatus Status, SessionJournalData? Data);
+
 // ── JournalManager ────────────────────────────────────────────────────────────
 
 /// <summary>
@@ -604,13 +619,52 @@ public class JournalManager
 
     /// <summary>
     /// Reads the journal file without making it this instance's state, so a caller can look at a
-    /// file before deciding to trust it. Null when it is missing or cannot be parsed.
+    /// file before deciding to trust it. Null when it is missing, cannot be read or cannot be parsed.
     /// </summary>
-    public SessionJournalData? PeekJournal()
+    public SessionJournalData? PeekJournal() => PeekJournalFile().Data;
+
+    /// <summary>
+    /// Like <see cref="PeekJournal"/>, but tells a missing file apart from one that could not be
+    /// parsed and one that could not be read.
+    /// </summary>
+    internal JournalPeek PeekJournalFile()
     {
         lock (_lock)
         {
-            return ReadFromDisk();
+            string json;
+            try
+            {
+                json = File.ReadAllText(_journalPath);
+            }
+            catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
+            {
+                return new JournalPeek(JournalPeekStatus.Missing, null);
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning(ex, "[JournalManager] Could not read the journal at {Path}", _journalPath);
+                return new JournalPeek(JournalPeekStatus.NotRead, null);
+            }
+
+            try
+            {
+                var data = JsonSerializer.Deserialize<SessionJournalData>(json, _writeOptions);
+                if (data != null)
+                    return new JournalPeek(JournalPeekStatus.Parsed, data);
+                _logger.Warning("[JournalManager] The journal at {Path} holds no session record", _journalPath);
+                return new JournalPeek(JournalPeekStatus.NotParsed, null);
+            }
+            catch (JsonException ex)
+            {
+                _logger.Warning(ex, "[JournalManager] Could not parse the journal at {Path}", _journalPath);
+                return new JournalPeek(JournalPeekStatus.NotParsed, null);
+            }
+            catch (Exception ex)
+            {
+                // Not known to be damaged content, so it is treated like a failed read: nothing is moved.
+                _logger.Warning(ex, "[JournalManager] Could not read the journal at {Path}", _journalPath);
+                return new JournalPeek(JournalPeekStatus.NotRead, null);
+            }
         }
     }
 
