@@ -40,17 +40,14 @@ public class TrayIconManager : IDisposable
 
     // Session tracking for post-session toast
     private DateTime? _sessionStartTime;
-    private DateTime _sessionStartUtc;
     private string? _sessionGameName;
     private double _sessionPeakDpc;
     private double _sessionDpcSum;
     private int _sessionDpcSampleCount;
 
     // The toast needs the game session's figures, taken when the last game exits, and the
-    // deactivation outcome that says what was undone. The two arrive in either order, so each
-    // waits here for the other.
-    private PendingSessionToast? _pendingToast;
-    private SessionOutcome? _lastDeactivation;
+    // deactivation outcome that says what that session undid.
+    private readonly SessionToastPairing<PendingSessionToast> _toastPairing = new();
 
     // Session-stat fields above are written from the DPC-sample timer, the optimization-engine
     // thread, and the detector thread, and read when building the summary toast. Guard them all
@@ -58,7 +55,7 @@ public class TrayIconManager : IDisposable
     private readonly object _statsLock = new();
 
     private sealed record PendingSessionToast(
-        string GameName, DateTime StartUtc, TimeSpan Duration, double AvgDpc, double PeakDpc);
+        string GameName, TimeSpan Duration, double AvgDpc, double PeakDpc);
 
     /// <summary>
     /// Gets whether game monitoring is currently paused by the user.
@@ -370,8 +367,9 @@ public class TrayIconManager : IDisposable
     {
         try
         {
-            // A new activation means an earlier deactivation no longer says how the session ends.
-            lock (_statsLock) { _lastDeactivation = null; }
+            // The engine raises this inside the activation, after the orchestrator marked a game
+            // session as optimizing, so IsOptimizing tells a game activation from Quick Optimize.
+            lock (_statsLock) { _toastPairing.OnActivation(e.Outcome, _orchestrator.IsOptimizing); }
             QueueTrayStateUpdate();
         }
         catch (Exception ex)
@@ -386,8 +384,7 @@ public class TrayIconManager : IDisposable
         {
             lock (_statsLock)
             {
-                _lastDeactivation = e.Outcome;
-                ShowPendingToastLocked();
+                ShowToast(_toastPairing.OnDeactivation(e.Outcome));
             }
             QueueTrayStateUpdate();
         }
@@ -440,11 +437,11 @@ public class TrayIconManager : IDisposable
                 if (_sessionStartTime == null)
                 {
                     _sessionStartTime = DateTime.Now;
-                    _sessionStartUtc = DateTime.UtcNow;
                     _sessionGameName = e.GameName;
                     _sessionPeakDpc = 0;
                     _sessionDpcSum = 0;
                     _sessionDpcSampleCount = 0;
+                    _toastPairing.OnGameStarted();
                 }
             }
 
@@ -511,21 +508,13 @@ public class TrayIconManager : IDisposable
         }
     }
 
-    /// <summary>
-    /// Shows the waiting toast once the deactivation that ended its game session has reported. A
-    /// deactivation from before the game started is not this session's. The caller holds _statsLock.
-    /// </summary>
-    private void ShowPendingToastLocked()
+    private void ShowToast(SessionToastPairing<PendingSessionToast>.Ready? ready)
     {
-        if (_pendingToast is not { } pending
-            || _lastDeactivation is not { EndedUtc: DateTime endedUtc } outcome
-            || endedUtc < pending.StartUtc)
+        if (ready is null)
             return;
 
-        _pendingToast = null;
-        _lastDeactivation = null;
-        var summary = SessionSummary.For(outcome);
-        Application.Current.Dispatcher.InvokeAsync(() => ShowSessionSummaryToast(pending, summary));
+        var summary = SessionSummary.For(ready.Deactivation);
+        Application.Current.Dispatcher.InvokeAsync(() => ShowSessionSummaryToast(ready.Session, summary));
     }
 
     private void ShowSessionSummaryToast(PendingSessionToast session, SessionSummary? summary)
@@ -579,22 +568,16 @@ public class TrayIconManager : IDisposable
                 if (_sessionStartTime is DateTime startTime)
                 {
                     var avgDpc = _sessionDpcSampleCount > 0 ? _sessionDpcSum / _sessionDpcSampleCount : 0;
-                    _pendingToast = new PendingSessionToast(
-                        _sessionGameName ?? "Unknown Game", _sessionStartUtc, DateTime.Now - startTime,
-                        avgDpc, _sessionPeakDpc);
+                    var pending = new PendingSessionToast(
+                        _sessionGameName ?? "Unknown Game", DateTime.Now - startTime, avgDpc, _sessionPeakDpc);
 
                     // The engine raises DeactivationCompleted before the orchestrator stops optimizing,
-                    // so with neither a reported nor a running session no deactivation is coming.
-                    var reported = _lastDeactivation is { EndedUtc: DateTime endedUtc } && endedUtc >= _sessionStartUtc;
-                    if (!reported && !_orchestrator.IsOptimizing)
-                    {
+                    // so with neither a reported nor a running game session no deactivation is coming.
+                    var isOptimizing = _orchestrator.IsOptimizing;
+                    var ready = _toastPairing.OnAllGamesStopped(pending, isOptimizing);
+                    if (ready is null && !isOptimizing)
                         _logger.Debug("Post-session toast skipped: no deactivation reports on this game session");
-                        _pendingToast = null;
-                    }
-                    else
-                    {
-                        ShowPendingToastLocked();
-                    }
+                    ShowToast(ready);
                 }
 
                 _sessionStartTime = null;

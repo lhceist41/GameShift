@@ -158,4 +158,21 @@ public class SessionSummaryTests
         Assert.Equal("1 applied", recovered.CountsLine);
         Assert.Equal("0 applied, 1 failed", nothingReverted.CountsLine);
     }
+
+    [Fact]
+    public void KeepOpen_OnlyWhileChangesAreStillActive()
+    {
+        var partial = SessionSummary.For(Deactivation([
+            Revert("B", ModuleRevertKind.Reverted),
+            Revert("A", ModuleRevertKind.RevertFailed, "did not revert")]))!;
+        var allUndone = SessionSummary.For(Deactivation([Revert("A", ModuleRevertKind.Reverted)]))!;
+        var nothingToUndo = SessionSummary.For(Deactivation([]))!;
+        var recovered = SessionSummary.For(Deactivation(
+            [Revert("A", ModuleRevertKind.RevertFailed)], recovered: true))!;
+
+        Assert.True(partial.KeepOpen);
+        Assert.False(allUndone.KeepOpen);
+        Assert.False(nothingToUndo.KeepOpen);
+        Assert.False(recovered.KeepOpen);
+    }
 }

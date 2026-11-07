@@ -10,12 +10,13 @@ namespace GameShift.App.Views;
 /// <summary>
 /// Post-session summary toast window.
 /// Positioned above the taskbar near the tray area.
-/// Auto-closes after 5 seconds. User can click X to close early.
+/// Auto-closes after 5 seconds unless it lists changes still active. User can click X to close.
 /// ShowActivated=False prevents stealing focus.
 /// </summary>
 public partial class ToastNotificationWindow : Window
 {
     private readonly DispatcherTimer _autoCloseTimer;
+    private bool _keepOpen;
 
     public ToastNotificationWindow()
     {
@@ -38,7 +39,8 @@ public partial class ToastNotificationWindow : Window
         Left = workArea.Right - ActualWidth - 8;
         Top = workArea.Bottom - ActualHeight - 8;
 
-        _autoCloseTimer.Start();
+        if (!_keepOpen)
+            _autoCloseTimer.Start();
     }
 
     /// <summary>
@@ -54,6 +56,7 @@ public partial class ToastNotificationWindow : Window
         double peakDpcMicroseconds)
     {
         GameNameText.Text = gameName;
+        _keepOpen = summary?.KeepOpen == true;
 
         // Format duration as "Xh Ym" or "Xm Ys"
         if (duration.TotalHours >= 1)

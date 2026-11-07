@@ -19,6 +19,9 @@ public sealed record SessionSummary(SessionSummaryTone Tone, string Text, IReadO
 
     internal const string NothingToUndoText = "No changes were active, so there was nothing to undo.";
 
+    /// <summary>The toast stays until closed while it lists changes that are still active.</summary>
+    public bool KeepOpen => StillActive.Count > 0;
+
     /// <summary>
     /// The end-of-session text, built only from the deactivation's own revert results. Null for an
     /// outcome that has not ended (an activation outcome is not a summary of anything undone).
