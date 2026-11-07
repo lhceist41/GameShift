@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
-using System.Windows.Media;
+using System.Windows.Shapes;
 using GameShift.Core.Config;
 using GameShift.Core.System;
 using Serilog;
@@ -64,9 +64,8 @@ public partial class FirstRunWizardWindow : Window
             GamesCountText.Text = gameCount == 0
                 ? "No games found - you can add them manually in Game Library"
                 : $"Found {gameCount} game{(gameCount == 1 ? "" : "s")}";
-            GamesCountText.Foreground = gameCount > 0
-                ? new SolidColorBrush(Color.FromRgb(0x4A, 0xDE, 0x80)) // green
-                : new SolidColorBrush(Color.FromRgb(0x8B, 0x94, 0x9E)); // gray
+            GamesCountText.SetResourceReference(TextBlock.ForegroundProperty,
+                gameCount > 0 ? "GS.State.Active" : "GS.Fg.Secondary");
             GamesCountText.Visibility = Visibility.Visible;
 
             ScanNowButton.Content = "Scan Complete";
@@ -76,7 +75,7 @@ public partial class FirstRunWizardWindow : Window
         {
             Log.Warning(ex, "FirstRunWizard: Library scan failed");
             GamesCountText.Text = "Scan failed - you can retry from the Game Library page";
-            GamesCountText.Foreground = new SolidColorBrush(Color.FromRgb(0xF8, 0x71, 0x71)); // red
+            GamesCountText.SetResourceReference(TextBlock.ForegroundProperty, "GS.State.Error");
             GamesCountText.Visibility = Visibility.Visible;
             ScanNowButton.IsEnabled = true;
             ScanNowButton.Content = "Retry Scan";
@@ -171,15 +170,9 @@ public partial class FirstRunWizardWindow : Window
         Step3Panel.Visibility = _currentStep == 2 ? Visibility.Visible : Visibility.Collapsed;
 
         // Step indicator dots (active = accent, inactive = dim)
-        Dot1.Fill = new SolidColorBrush(_currentStep == 0
-            ? Color.FromRgb(0x58, 0xA6, 0xFF)
-            : Color.FromRgb(0x30, 0x36, 0x3D));
-        Dot2.Fill = new SolidColorBrush(_currentStep == 1
-            ? Color.FromRgb(0x58, 0xA6, 0xFF)
-            : Color.FromRgb(0x30, 0x36, 0x3D));
-        Dot3.Fill = new SolidColorBrush(_currentStep == 2
-            ? Color.FromRgb(0x58, 0xA6, 0xFF)
-            : Color.FromRgb(0x30, 0x36, 0x3D));
+        Dot1.SetResourceReference(Shape.FillProperty, _currentStep == 0 ? "GS.Interactive.Fill" : "GS.Line.Strong");
+        Dot2.SetResourceReference(Shape.FillProperty, _currentStep == 1 ? "GS.Interactive.Fill" : "GS.Line.Strong");
+        Dot3.SetResourceReference(Shape.FillProperty, _currentStep == 2 ? "GS.Interactive.Fill" : "GS.Line.Strong");
 
         // Navigation button visibility
         // Step 1: no bottom buttons (uses Get Started in panel)

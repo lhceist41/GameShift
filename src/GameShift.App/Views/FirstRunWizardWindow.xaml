@@ -1,19 +1,11 @@
 <Window x:Class="GameShift.App.Views.FirstRunWizardWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="GameShift Setup" Width="520" Height="490"
+        Title="GameShift Setup" Width="520" MinHeight="490" SizeToContent="Height"
         WindowStartupLocation="CenterScreen"
         ResizeMode="NoResize"
-        Background="#0D1117"
+        Background="{DynamicResource GS.Fill.Window}"
         FontFamily="Segoe UI">
-    <Window.Resources>
-        <ResourceDictionary>
-            <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary Source="/Themes/GameShiftTheme.xaml"/>
-            </ResourceDictionary.MergedDictionaries>
-        </ResourceDictionary>
-    </Window.Resources>
-
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="*"/>
@@ -26,72 +18,44 @@
                 <!-- App name hero -->
                 <TextBlock Text="GameShift"
                            FontSize="36" FontWeight="Bold"
-                           Foreground="#58A6FF"
+                           Foreground="{DynamicResource GS.Fg.Primary}"
                            HorizontalAlignment="Center"
+                           TextWrapping="Wrap"
                            Margin="0,0,0,12"/>
 
                 <!-- Version badge -->
                 <TextBlock x:Name="VersionBadge"
                            Text="v3.0"
                            FontSize="14"
-                           Foreground="#8B949E"
+                           Foreground="{DynamicResource GS.Fg.Secondary}"
                            HorizontalAlignment="Center"
                            Margin="0,0,0,24"/>
 
                 <!-- Description -->
                 <TextBlock Text="System optimizer for competitive gaming."
                            FontSize="16"
-                           Foreground="#E6EDF3"
+                           Foreground="{DynamicResource GS.Fg.Primary}"
                            HorizontalAlignment="Center"
                            TextAlignment="Center"
+                           TextWrapping="Wrap"
                            Margin="0,0,0,40"/>
 
                 <!-- Step indicator -->
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,32">
-                    <Ellipse Width="8" Height="8" Fill="#58A6FF" Margin="4,0"/>
-                    <Ellipse Width="8" Height="8" Fill="#30363D" Margin="4,0"/>
-                    <Ellipse Width="8" Height="8" Fill="#30363D" Margin="4,0"/>
+                    <Ellipse Width="8" Height="8" Fill="{DynamicResource GS.Interactive.Fill}" Margin="4,0"/>
+                    <Ellipse Width="8" Height="8" Fill="{DynamicResource GS.Line.Strong}" Margin="4,0"/>
+                    <Ellipse Width="8" Height="8" Fill="{DynamicResource GS.Line.Strong}" Margin="4,0"/>
                 </StackPanel>
 
                 <!-- Get Started button -->
                 <Button x:Name="GetStartedButton"
                         Content="Get Started"
-                        Width="160" Height="40"
-                        Background="#58A6FF"
-                        Foreground="#0D1117"
-                        FontSize="14" FontWeight="SemiBold"
-                        BorderThickness="0"
+                        Style="{StaticResource GS.Button.Primary}"
+                        MinWidth="160" MinHeight="40"
+                        FontSize="14"
                         Cursor="Hand"
                         HorizontalAlignment="Center"
-                        Click="OnGetStartedClicked">
-                    <Button.Style>
-                        <Style TargetType="Button">
-                            <Setter Property="Background" Value="#58A6FF"/>
-                            <Setter Property="Foreground" Value="#0D1117"/>
-                            <Setter Property="BorderThickness" Value="0"/>
-                            <Setter Property="Cursor" Value="Hand"/>
-                            <Setter Property="Template">
-                                <Setter.Value>
-                                    <ControlTemplate TargetType="Button">
-                                        <Border Background="{TemplateBinding Background}"
-                                                CornerRadius="6"
-                                                Padding="{TemplateBinding Padding}">
-                                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                        </Border>
-                                        <ControlTemplate.Triggers>
-                                            <Trigger Property="IsMouseOver" Value="True">
-                                                <Setter Property="Background" Value="#79B8FF"/>
-                                            </Trigger>
-                                            <Trigger Property="IsPressed" Value="True">
-                                                <Setter Property="Background" Value="#388BFD"/>
-                                            </Trigger>
-                                        </ControlTemplate.Triggers>
-                                    </ControlTemplate>
-                                </Setter.Value>
-                            </Setter>
-                        </Style>
-                    </Button.Style>
-                </Button>
+                        Click="OnGetStartedClicked"/>
             </StackPanel>
         </Grid>
 
@@ -101,79 +65,58 @@
                 <!-- Header -->
                 <TextBlock Text="Scan Game Libraries"
                            FontSize="22" FontWeight="SemiBold"
-                           Foreground="#E6EDF3"
+                           Foreground="{DynamicResource GS.Fg.Primary}"
+                           TextWrapping="Wrap"
                            Margin="0,0,0,8"/>
 
                 <!-- Divider -->
-                <Rectangle Height="1" Fill="#30363D" Margin="0,0,0,16"/>
+                <Rectangle Height="1" Fill="{DynamicResource GS.Line.Hairline}" Margin="0,0,0,16"/>
 
                 <!-- Description -->
                 <TextBlock Text="GameShift will scan Steam, Epic Games, and GOG Galaxy for installed games."
                            FontSize="14"
-                           Foreground="#8B949E"
+                           Foreground="{DynamicResource GS.Fg.Secondary}"
                            TextWrapping="Wrap"
                            Margin="0,0,0,24"/>
 
                 <!-- Scan card -->
-                <Border Background="#161B22" CornerRadius="8" Padding="20" Margin="0,0,0,16">
+                <Border Style="{StaticResource GS.Panel}" Padding="20" Margin="0,0,0,16">
                     <StackPanel>
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
-                            <TextBlock Text="Libraries:" FontSize="13" Foreground="#8B949E" Width="80"/>
-                            <TextBlock Text="Steam, Epic Games, GOG Galaxy" FontSize="13" Foreground="#E6EDF3"/>
-                        </StackPanel>
+                        <Grid Margin="0,0,0,16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="Libraries:" FontSize="13" Foreground="{DynamicResource GS.Fg.Secondary}"
+                                       Margin="0,0,12,0"/>
+                            <TextBlock Grid.Column="1" Text="Steam, Epic Games, GOG Galaxy" FontSize="13"
+                                       Foreground="{DynamicResource GS.Fg.Primary}" TextWrapping="Wrap"/>
+                        </Grid>
 
                         <!-- Games count result -->
                         <TextBlock x:Name="GamesCountText"
                                    Text=""
                                    FontSize="14" FontWeight="SemiBold"
-                                   Foreground="#4ADE80"
+                                   Foreground="{DynamicResource GS.State.Active}"
+                                   TextWrapping="Wrap"
                                    Visibility="Collapsed"
                                    Margin="0,0,0,8"/>
 
                         <!-- Scan button -->
                         <Button x:Name="ScanNowButton"
                                 Content="Scan Now"
-                                Width="120" Height="36"
+                                MinWidth="120" MinHeight="36"
+                                FontSize="13"
                                 HorizontalAlignment="Left"
-                                Click="OnScanClicked">
-                            <Button.Style>
-                                <Style TargetType="Button">
-                                    <Setter Property="Background" Value="#21262D"/>
-                                    <Setter Property="Foreground" Value="#E6EDF3"/>
-                                    <Setter Property="BorderBrush" Value="#30363D"/>
-                                    <Setter Property="BorderThickness" Value="1"/>
-                                    <Setter Property="FontSize" Value="13"/>
-                                    <Setter Property="Cursor" Value="Hand"/>
-                                    <Setter Property="Template">
-                                        <Setter.Value>
-                                            <ControlTemplate TargetType="Button">
-                                                <Border Background="{TemplateBinding Background}"
-                                                        BorderBrush="{TemplateBinding BorderBrush}"
-                                                        BorderThickness="{TemplateBinding BorderThickness}"
-                                                        CornerRadius="6" Padding="12,6">
-                                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                </Border>
-                                                <ControlTemplate.Triggers>
-                                                    <Trigger Property="IsMouseOver" Value="True">
-                                                        <Setter Property="Background" Value="#30363D"/>
-                                                    </Trigger>
-                                                    <Trigger Property="IsEnabled" Value="False">
-                                                        <Setter Property="Foreground" Value="#8B949E"/>
-                                                    </Trigger>
-                                                </ControlTemplate.Triggers>
-                                            </ControlTemplate>
-                                        </Setter.Value>
-                                    </Setter>
-                                </Style>
-                            </Button.Style>
-                        </Button>
+                                Click="OnScanClicked"/>
                     </StackPanel>
                 </Border>
 
                 <!-- Skip note -->
                 <TextBlock Text="You can re-scan at any time from the Game Library page."
                            FontSize="12"
-                           Foreground="#8B949E"
+                           Foreground="{DynamicResource GS.Fg.Secondary}"
+                           TextWrapping="Wrap"
                            Margin="0,0,0,0"/>
             </StackPanel>
         </Grid>
@@ -184,57 +127,62 @@
                 <!-- Header -->
                 <TextBlock Text="Quick Configuration"
                            FontSize="22" FontWeight="SemiBold"
-                           Foreground="#E6EDF3"
+                           Foreground="{DynamicResource GS.Fg.Primary}"
+                           TextWrapping="Wrap"
                            Margin="0,0,0,8"/>
 
                 <!-- Divider -->
-                <Rectangle Height="1" Fill="#30363D" Margin="0,0,0,16"/>
+                <Rectangle Height="1" Fill="{DynamicResource GS.Line.Hairline}" Margin="0,0,0,16"/>
 
                 <!-- Description -->
                 <TextBlock Text="Set your preferences. These can be changed later in Settings."
                            FontSize="14"
-                           Foreground="#8B949E"
+                           Foreground="{DynamicResource GS.Fg.Secondary}"
                            TextWrapping="Wrap"
                            Margin="0,0,0,24"/>
 
                 <!-- Settings card -->
-                <Border Background="#161B22" CornerRadius="8" Padding="20">
+                <Border Style="{StaticResource GS.Panel}" Padding="20">
                     <StackPanel>
                         <!-- Start with Windows -->
                         <DockPanel Margin="0,0,0,16">
-                            <StackPanel DockPanel.Dock="Left">
-                                <TextBlock Text="Start with Windows"
-                                           FontSize="14"
-                                           Foreground="#E6EDF3"/>
-                                <TextBlock Text="Launch GameShift when Windows starts"
-                                           FontSize="12"
-                                           Foreground="#8B949E"/>
-                            </StackPanel>
                             <CheckBox x:Name="StartWithWindowsCheckBox"
                                       DockPanel.Dock="Right"
-                                      HorizontalAlignment="Right"
                                       VerticalAlignment="Center"
+                                      Margin="12,0,0,0"
                                       IsChecked="True"/>
+                            <StackPanel>
+                                <TextBlock Text="Start with Windows"
+                                           FontSize="14"
+                                           Foreground="{DynamicResource GS.Fg.Primary}"
+                                           TextWrapping="Wrap"/>
+                                <TextBlock Text="Launch GameShift when Windows starts"
+                                           FontSize="12"
+                                           Foreground="{DynamicResource GS.Fg.Secondary}"
+                                           TextWrapping="Wrap"/>
+                            </StackPanel>
                         </DockPanel>
 
                         <!-- Divider -->
-                        <Rectangle Height="1" Fill="#30363D" Margin="0,0,0,16"/>
+                        <Rectangle Height="1" Fill="{DynamicResource GS.Line.Hairline}" Margin="0,0,0,16"/>
 
                         <!-- Enable notifications -->
                         <DockPanel>
-                            <StackPanel DockPanel.Dock="Left">
-                                <TextBlock Text="Enable Notifications"
-                                           FontSize="14"
-                                           Foreground="#E6EDF3"/>
-                                <TextBlock Text="Show session summary and alerts"
-                                           FontSize="12"
-                                           Foreground="#8B949E"/>
-                            </StackPanel>
                             <CheckBox x:Name="NotificationsCheckBox"
                                       DockPanel.Dock="Right"
-                                      HorizontalAlignment="Right"
                                       VerticalAlignment="Center"
+                                      Margin="12,0,0,0"
                                       IsChecked="True"/>
+                            <StackPanel>
+                                <TextBlock Text="Enable Notifications"
+                                           FontSize="14"
+                                           Foreground="{DynamicResource GS.Fg.Primary}"
+                                           TextWrapping="Wrap"/>
+                                <TextBlock Text="Show session summary and alerts"
+                                           FontSize="12"
+                                           Foreground="{DynamicResource GS.Fg.Secondary}"
+                                           TextWrapping="Wrap"/>
+                            </StackPanel>
                         </DockPanel>
                     </StackPanel>
                 </Border>
@@ -242,13 +190,14 @@
         </Grid>
 
         <!-- Bottom navigation bar -->
-        <Border Grid.Row="1" Background="#161B22" BorderBrush="#30363D" BorderThickness="0,1,0,0" Padding="24,12">
+        <Border Grid.Row="1" Background="{DynamicResource GS.Fill.Pane}" BorderBrush="{DynamicResource GS.Line.Hairline}"
+                BorderThickness="0,1,0,0" Padding="24,12">
             <DockPanel>
                 <!-- Step indicator dots -->
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center" DockPanel.Dock="Left">
-                    <Ellipse x:Name="Dot1" Width="8" Height="8" Fill="#58A6FF" Margin="4,0"/>
-                    <Ellipse x:Name="Dot2" Width="8" Height="8" Fill="#30363D" Margin="4,0"/>
-                    <Ellipse x:Name="Dot3" Width="8" Height="8" Fill="#30363D" Margin="4,0"/>
+                    <Ellipse x:Name="Dot1" Width="8" Height="8" Fill="{DynamicResource GS.Interactive.Fill}" Margin="4,0"/>
+                    <Ellipse x:Name="Dot2" Width="8" Height="8" Fill="{DynamicResource GS.Line.Strong}" Margin="4,0"/>
+                    <Ellipse x:Name="Dot3" Width="8" Height="8" Fill="{DynamicResource GS.Line.Strong}" Margin="4,0"/>
                 </StackPanel>
 
                 <!-- Navigation buttons -->
@@ -256,111 +205,31 @@
                     <!-- Skip/Back button (hidden on step 1) -->
                     <Button x:Name="SkipButton"
                             Content="Skip"
-                            Width="80" Height="32"
+                            MinWidth="80" MinHeight="32"
+                            FontSize="13"
                             Visibility="Collapsed"
                             Margin="0,0,8,0"
-                            Click="OnSkipClicked">
-                        <Button.Style>
-                            <Style TargetType="Button">
-                                <Setter Property="Background" Value="Transparent"/>
-                                <Setter Property="Foreground" Value="#8B949E"/>
-                                <Setter Property="BorderBrush" Value="#30363D"/>
-                                <Setter Property="BorderThickness" Value="1"/>
-                                <Setter Property="FontSize" Value="13"/>
-                                <Setter Property="Cursor" Value="Hand"/>
-                                <Setter Property="Template">
-                                    <Setter.Value>
-                                        <ControlTemplate TargetType="Button">
-                                            <Border Background="{TemplateBinding Background}"
-                                                    BorderBrush="{TemplateBinding BorderBrush}"
-                                                    BorderThickness="{TemplateBinding BorderThickness}"
-                                                    CornerRadius="6" Padding="10,6">
-                                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                            </Border>
-                                            <ControlTemplate.Triggers>
-                                                <Trigger Property="IsMouseOver" Value="True">
-                                                    <Setter Property="Foreground" Value="#E6EDF3"/>
-                                                    <Setter Property="BorderBrush" Value="#8B949E"/>
-                                                </Trigger>
-                                            </ControlTemplate.Triggers>
-                                        </ControlTemplate>
-                                    </Setter.Value>
-                                </Setter>
-                            </Style>
-                        </Button.Style>
-                    </Button>
+                            Click="OnSkipClicked"/>
 
                     <!-- Next/Finish button (hidden on step 1 - step 1 uses Get Started in panel) -->
                     <Button x:Name="NextButton"
                             Content="Next"
-                            Width="100" Height="32"
+                            Style="{StaticResource GS.Button.Primary}"
+                            MinWidth="100" MinHeight="32"
+                            FontSize="13"
+                            Cursor="Hand"
                             Visibility="Collapsed"
-                            Click="OnNextClicked">
-                        <Button.Style>
-                            <Style TargetType="Button">
-                                <Setter Property="Background" Value="#58A6FF"/>
-                                <Setter Property="Foreground" Value="#0D1117"/>
-                                <Setter Property="BorderThickness" Value="0"/>
-                                <Setter Property="FontSize" Value="13"/>
-                                <Setter Property="FontWeight" Value="SemiBold"/>
-                                <Setter Property="Cursor" Value="Hand"/>
-                                <Setter Property="Template">
-                                    <Setter.Value>
-                                        <ControlTemplate TargetType="Button">
-                                            <Border Background="{TemplateBinding Background}"
-                                                    CornerRadius="6" Padding="10,6">
-                                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                            </Border>
-                                            <ControlTemplate.Triggers>
-                                                <Trigger Property="IsMouseOver" Value="True">
-                                                    <Setter Property="Background" Value="#79B8FF"/>
-                                                </Trigger>
-                                                <Trigger Property="IsPressed" Value="True">
-                                                    <Setter Property="Background" Value="#388BFD"/>
-                                                </Trigger>
-                                            </ControlTemplate.Triggers>
-                                        </ControlTemplate>
-                                    </Setter.Value>
-                                </Setter>
-                            </Style>
-                        </Button.Style>
-                    </Button>
+                            Click="OnNextClicked"/>
 
                     <!-- Finish button (shown only on step 3) -->
                     <Button x:Name="FinishButton"
                             Content="Finish"
-                            Width="100" Height="32"
+                            Style="{StaticResource GS.Button.Primary}"
+                            MinWidth="100" MinHeight="32"
+                            FontSize="13"
+                            Cursor="Hand"
                             Visibility="Collapsed"
-                            Click="OnFinishClicked">
-                        <Button.Style>
-                            <Style TargetType="Button">
-                                <Setter Property="Background" Value="#4ADE80"/>
-                                <Setter Property="Foreground" Value="#0D1117"/>
-                                <Setter Property="BorderThickness" Value="0"/>
-                                <Setter Property="FontSize" Value="13"/>
-                                <Setter Property="FontWeight" Value="SemiBold"/>
-                                <Setter Property="Cursor" Value="Hand"/>
-                                <Setter Property="Template">
-                                    <Setter.Value>
-                                        <ControlTemplate TargetType="Button">
-                                            <Border Background="{TemplateBinding Background}"
-                                                    CornerRadius="6" Padding="10,6">
-                                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                            </Border>
-                                            <ControlTemplate.Triggers>
-                                                <Trigger Property="IsMouseOver" Value="True">
-                                                    <Setter Property="Background" Value="#6EE7A0"/>
-                                                </Trigger>
-                                                <Trigger Property="IsPressed" Value="True">
-                                                    <Setter Property="Background" Value="#22C55E"/>
-                                                </Trigger>
-                                            </ControlTemplate.Triggers>
-                                        </ControlTemplate>
-                                    </Setter.Value>
-                                </Setter>
-                            </Style>
-                        </Button.Style>
-                    </Button>
+                            Click="OnFinishClicked"/>
                 </StackPanel>
             </DockPanel>
         </Border>

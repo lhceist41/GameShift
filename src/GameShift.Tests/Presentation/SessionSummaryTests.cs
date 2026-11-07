@@ -112,4 +112,50 @@ public class SessionSummaryTests
         Assert.Null(SessionSummary.For(Activation(Module("A", ModuleOutcomeKind.Applied))));
         Assert.Null(SessionSummary.For(null));
     }
+
+    [Fact]
+    public void CountsLine_CountsAppliedAndLeftAsItWas_AndFailed_ButNotSkipped()
+    {
+        var summary = SessionSummary.For(Deactivation([
+            Revert("B", ModuleRevertKind.Reverted),
+            Revert("A", ModuleRevertKind.Reverted)], false,
+            Module("A", ModuleOutcomeKind.Applied),
+            Module("B", ModuleOutcomeKind.AlreadyApplied),
+            Module("C", ModuleOutcomeKind.Failed, "did not apply"),
+            Module("D", ModuleOutcomeKind.SkippedDisabled),
+            Module("E", ModuleOutcomeKind.NotApplicable),
+            Module("F", ModuleOutcomeKind.Unavailable)))!;
+
+        Assert.Equal("2 applied, 1 failed", summary.CountsLine);
+    }
+
+    [Fact]
+    public void CountsLine_LeavesOutFailedWhenNoneFailed()
+    {
+        var summary = SessionSummary.For(Deactivation([Revert("A", ModuleRevertKind.Reverted)], false,
+            Module("A", ModuleOutcomeKind.Applied),
+            Module("B", ModuleOutcomeKind.SkippedDisabled)))!;
+
+        Assert.Equal("1 applied", summary.CountsLine);
+    }
+
+    [Fact]
+    public void CountsLine_IsNullWhenTheActivationListedNoModules()
+    {
+        Assert.Null(SessionSummary.For(Deactivation([Revert("A", ModuleRevertKind.Reverted)]))!.CountsLine);
+    }
+
+    [Fact]
+    public void CountsLine_StaysBesideARevertWarningAndCrashRecovery()
+    {
+        var module = Module("A", ModuleOutcomeKind.Applied);
+
+        var partial = SessionSummary.For(Deactivation([Revert("A", ModuleRevertKind.RevertFailed)], false, module))!;
+        var recovered = SessionSummary.For(Deactivation([], recovered: true, module))!;
+        var nothingReverted = SessionSummary.For(Deactivation([], false, Module("A", ModuleOutcomeKind.Failed)))!;
+
+        Assert.Equal("1 applied", partial.CountsLine);
+        Assert.Equal("1 applied", recovered.CountsLine);
+        Assert.Equal("0 applied, 1 failed", nothingReverted.CountsLine);
+    }
 }

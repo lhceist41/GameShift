@@ -1,7 +1,9 @@
 using System;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Threading;
 using GameShift.Core.Monitoring;
+using GameShift.Core.Presentation;
 
 namespace GameShift.App.Views;
 
@@ -33,8 +35,8 @@ public partial class ToastNotificationWindow : Window
     {
         // Position above the taskbar, near the right side (tray area)
         var workArea = SystemParameters.WorkArea;
-        Left = workArea.Right - Width - 8;
-        Top = workArea.Bottom - Height - 8;
+        Left = workArea.Right - ActualWidth - 8;
+        Top = workArea.Bottom - ActualHeight - 8;
 
         _autoCloseTimer.Start();
     }
@@ -43,11 +45,11 @@ public partial class ToastNotificationWindow : Window
     /// Populates the toast with session summary data.
     /// Call this before Show().
     /// </summary>
+    /// <param name="summary">What the session's end undid, from its deactivation outcome; null hides it.</param>
     public void SetSessionData(
         string gameName,
         TimeSpan duration,
-        int optimizationCount,
-        int failedCount,
+        SessionSummary? summary,
         double avgDpcMicroseconds,
         double peakDpcMicroseconds)
     {
@@ -61,16 +63,19 @@ public partial class ToastNotificationWindow : Window
         else
             DurationText.Text = $"{duration.Seconds}s";
 
-        var total = optimizationCount + failedCount;
-        if (failedCount > 0)
+        if (summary == null)
         {
-            OptCountText.Text = $"{optimizationCount}/{total}";
-            OptCountText.Foreground = new System.Windows.Media.SolidColorBrush(
-                System.Windows.Media.Color.FromRgb(0xF5, 0x9E, 0x0B)); // Amber
+            OutcomePanel.Visibility = Visibility.Collapsed;
         }
         else
         {
-            OptCountText.Text = total > 0 ? $"{optimizationCount}/{total}" : optimizationCount.ToString();
+            CountsText.Text = summary.CountsLine;
+            CountsText.Visibility = summary.CountsLine == null ? Visibility.Collapsed : Visibility.Visible;
+            SummaryText.Text = summary.Text;
+            SummaryText.SetResourceReference(TextBlock.ForegroundProperty,
+                summary.Tone == SessionSummaryTone.Warning ? "GS.State.Warning" : "GS.Fg.Primary");
+            StillActiveList.ItemsSource = summary.StillActive;
+            StillActiveList.Visibility = summary.StillActive.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
         }
 
         AvgDpcText.Text = avgDpcMicroseconds > 0 ? DpcLoad.Format(avgDpcMicroseconds) : "N/A";

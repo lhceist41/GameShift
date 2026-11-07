@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="GameShift Session Summary"
-        Width="320" Height="180"
+        Width="320" SizeToContent="Height"
         WindowStyle="None"
         AllowsTransparency="True"
         ShowInTaskbar="False"
@@ -11,16 +11,8 @@
         ResizeMode="NoResize"
         Background="Transparent"
         FontFamily="Segoe UI">
-    <Window.Resources>
-        <ResourceDictionary>
-            <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary Source="/Themes/GameShiftTheme.xaml"/>
-            </ResourceDictionary.MergedDictionaries>
-        </ResourceDictionary>
-    </Window.Resources>
-
-    <Border Background="{DynamicResource GS.Surface.Card}"
-            BorderBrush="{DynamicResource GS.Surface.Border}"
+    <Border Background="{DynamicResource GS.Fill.Card}"
+            BorderBrush="{DynamicResource GS.Line.Hairline}"
             BorderThickness="1" CornerRadius="8"
             Margin="4">
         <Border.Effect>
@@ -33,70 +25,79 @@
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
             <!-- Title -->
             <DockPanel Grid.Row="0" Margin="0,0,0,4">
-                <TextBlock Text="Session Summary" FontSize="13" FontWeight="SemiBold"
-                           Foreground="{DynamicResource GS.Accent.Primary}"
-                           VerticalAlignment="Center"/>
                 <Button x:Name="CloseButton" Content="X" DockPanel.Dock="Right"
                         HorizontalAlignment="Right" VerticalAlignment="Center"
                         Background="Transparent" BorderThickness="0"
-                        Foreground="{DynamicResource GS.Text.Secondary}"
+                        Foreground="{DynamicResource GS.Fg.Secondary}"
                         FontSize="11" Cursor="Hand" Padding="4,2"
                         Click="OnCloseClicked"/>
+                <TextBlock Text="Session ended" FontSize="13" FontWeight="SemiBold"
+                           Foreground="{DynamicResource GS.Fg.Secondary}"
+                           TextWrapping="Wrap" VerticalAlignment="Center"/>
             </DockPanel>
 
             <!-- Game Name -->
             <TextBlock x:Name="GameNameText" Grid.Row="1" FontSize="15" FontWeight="SemiBold"
-                       Foreground="{DynamicResource GS.Text.Primary}"
-                       TextTrimming="CharacterEllipsis" Margin="0,0,0,8"/>
+                       Foreground="{DynamicResource GS.Fg.Primary}"
+                       TextWrapping="Wrap" Margin="0,0,0,8"/>
+
+            <!-- What the session applied and what its end undid, from the session's own outcome -->
+            <StackPanel x:Name="OutcomePanel" Grid.Row="2" Margin="0,0,0,8">
+                <TextBlock x:Name="CountsText" FontSize="13"
+                           Foreground="{DynamicResource GS.Fg.Primary}"
+                           TextWrapping="Wrap" Margin="0,0,0,2"/>
+                <TextBlock x:Name="SummaryText" FontSize="13"
+                           Foreground="{DynamicResource GS.Fg.Primary}"
+                           TextWrapping="Wrap"/>
+                <ItemsControl x:Name="StillActiveList" Margin="0,4,0,0">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding}" FontSize="12"
+                                       Foreground="{DynamicResource GS.Fg.Secondary}"
+                                       TextWrapping="Wrap"/>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
 
             <!-- Separator -->
-            <Rectangle Grid.Row="2" Height="1" Fill="{DynamicResource GS.Surface.Border}" Margin="0,0,0,8"/>
+            <Rectangle Grid.Row="3" Height="1" Fill="{DynamicResource GS.Line.Hairline}" Margin="0,0,0,8"/>
 
-            <!-- Stats Grid: 2 columns x 2 rows -->
-            <Grid Grid.Row="3">
+            <!-- Stats: one row of three -->
+            <Grid Grid.Row="4">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                </Grid.RowDefinitions>
 
                 <!-- Duration -->
-                <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,8,8">
-                    <TextBlock Text="Duration" FontSize="11"
-                               Foreground="{DynamicResource GS.Text.Secondary}"/>
+                <StackPanel Grid.Column="0" Margin="0,0,8,0">
+                    <TextBlock Text="Duration" FontSize="11" TextWrapping="Wrap"
+                               Foreground="{DynamicResource GS.Fg.Secondary}"/>
                     <TextBlock x:Name="DurationText" FontSize="14" FontWeight="SemiBold"
-                               Foreground="{DynamicResource GS.Text.Primary}"/>
-                </StackPanel>
-
-                <!-- Optimizations Applied -->
-                <StackPanel Grid.Row="0" Grid.Column="1" Margin="8,0,0,8">
-                    <TextBlock Text="Opts Applied" FontSize="11"
-                               Foreground="{DynamicResource GS.Text.Secondary}"/>
-                    <TextBlock x:Name="OptCountText" FontSize="14" FontWeight="SemiBold"
-                               Foreground="{DynamicResource GS.Text.Primary}"/>
+                               Foreground="{DynamicResource GS.Fg.Primary}"/>
                 </StackPanel>
 
                 <!-- Avg DPC -->
-                <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,0,8,0">
-                    <TextBlock Text="Avg DPC load" FontSize="11"
-                               Foreground="{DynamicResource GS.Text.Secondary}"/>
+                <StackPanel Grid.Column="1" Margin="0,0,8,0">
+                    <TextBlock Text="Avg DPC load" FontSize="11" TextWrapping="Wrap"
+                               Foreground="{DynamicResource GS.Fg.Secondary}"/>
                     <TextBlock x:Name="AvgDpcText" FontSize="14" FontWeight="SemiBold"
-                               Foreground="{DynamicResource GS.Text.Primary}"/>
+                               Foreground="{DynamicResource GS.Fg.Primary}"/>
                 </StackPanel>
 
                 <!-- Peak DPC -->
-                <StackPanel Grid.Row="1" Grid.Column="1" Margin="8,0,0,0">
-                    <TextBlock Text="Peak DPC load" FontSize="11"
-                               Foreground="{DynamicResource GS.Text.Secondary}"/>
+                <StackPanel Grid.Column="2">
+                    <TextBlock Text="Peak DPC load" FontSize="11" TextWrapping="Wrap"
+                               Foreground="{DynamicResource GS.Fg.Secondary}"/>
                     <TextBlock x:Name="PeakDpcText" FontSize="14" FontWeight="SemiBold"
-                               Foreground="{DynamicResource GS.Text.Primary}"/>
+                               Foreground="{DynamicResource GS.Fg.Primary}"/>
                 </StackPanel>
             </Grid>
         </Grid>
