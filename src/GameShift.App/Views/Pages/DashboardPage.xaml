@@ -7,7 +7,6 @@
       FontFamily="Segoe UI" FontSize="14">
     <Page.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
-        <helpers:DpcLoadTextConverter x:Key="DpcLoadText"/>
 
         <!-- Card Text Crossfade Animation (300ms, CubicEase) - Feature #5 -->
         <Style x:Key="AnimatedTextStyle" TargetType="TextBlock">
@@ -60,22 +59,105 @@
             </Style.Triggers>
         </Style>
 
-        <!-- Activity Feed Fade-In Animation (150ms, CubicEase) -->
-        <Style x:Key="FadeInItemStyle" TargetType="ContentPresenter">
-            <Setter Property="Opacity" Value="0"/>
+        <!-- Status strip: the icon and headline colour follow HomeStatus kind and tone; the word always says it -->
+        <Style x:Key="HomeStatusIcon" TargetType="ui:SymbolIcon">
+            <Setter Property="FontSize" Value="20"/>
+            <Setter Property="Margin" Value="0,2,10,0"/>
+            <Setter Property="VerticalAlignment" Value="Top"/>
+            <Setter Property="Symbol" Value="Circle16"/>
+            <Setter Property="Foreground" Value="{DynamicResource GS.State.Idle}"/>
             <Style.Triggers>
-                <EventTrigger RoutedEvent="Loaded">
-                    <BeginStoryboard>
-                        <Storyboard>
-                            <DoubleAnimation Storyboard.TargetProperty="Opacity"
-                                From="0" To="1" Duration="0:0:0.15">
-                                <DoubleAnimation.EasingFunction>
-                                    <CubicEase EasingMode="EaseOut"/>
-                                </DoubleAnimation.EasingFunction>
-                            </DoubleAnimation>
-                        </Storyboard>
-                    </BeginStoryboard>
-                </EventTrigger>
+                <DataTrigger Binding="{Binding HomeStatus.Kind}" Value="Optimizing">
+                    <Setter Property="Symbol" Value="Flash16"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding HomeStatus.Kind}" Value="Paused">
+                    <Setter Property="Symbol" Value="Pause16"/>
+                    <Setter Property="Foreground" Value="{DynamicResource GS.State.Paused}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding HomeStatus.Tone}" Value="Active">
+                    <Setter Property="Foreground" Value="{DynamicResource GS.State.Active}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding HomeStatus.Tone}" Value="Warning">
+                    <Setter Property="Symbol" Value="Warning16"/>
+                    <Setter Property="Foreground" Value="{DynamicResource GS.State.Warning}"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="HomeHeadline" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="20"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="Foreground" Value="{DynamicResource GS.Fg.Primary}"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding HomeStatus.Tone}" Value="Active">
+                    <Setter Property="Foreground" Value="{DynamicResource GS.State.Active}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding HomeStatus.Tone}" Value="Warning">
+                    <Setter Property="Foreground" Value="{DynamicResource GS.State.Warning}"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Module badges, as on During games: colour follows the ModuleStatus kind -->
+        <Style x:Key="ModuleBadge" TargetType="Border" BasedOn="{StaticResource GS.Badge.State}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding StatusKind}" Value="Applied">
+                    <Setter Property="Background" Value="{DynamicResource GS.Tint.Active}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding StatusKind}" Value="Failed">
+                    <Setter Property="Background" Value="{DynamicResource GS.Tint.Error}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding StatusKind}" Value="Paused">
+                    <Setter Property="Background" Value="{DynamicResource GS.Tint.Paused}"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="ModuleBadgeIcon" TargetType="ui:SymbolIcon">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Margin" Value="0,0,4,0"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Symbol" Value="Circle16"/>
+            <Setter Property="Foreground" Value="{DynamicResource GS.State.Idle}"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding StatusKind}" Value="Applied">
+                    <Setter Property="Symbol" Value="CheckmarkCircle16"/>
+                    <Setter Property="Foreground" Value="{DynamicResource GS.State.Active}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding StatusKind}" Value="Failed">
+                    <Setter Property="Symbol" Value="ErrorCircle16"/>
+                    <Setter Property="Foreground" Value="{DynamicResource GS.State.Error}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding StatusKind}" Value="Off">
+                    <Setter Property="Symbol" Value="SubtractCircle16"/>
+                    <Setter Property="Foreground" Value="{DynamicResource GS.State.Off}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding StatusKind}" Value="NotAvailable">
+                    <Setter Property="Symbol" Value="DismissCircle16"/>
+                    <Setter Property="Foreground" Value="{DynamicResource GS.State.Off}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding StatusKind}" Value="Paused">
+                    <Setter Property="Symbol" Value="Pause16"/>
+                    <Setter Property="Foreground" Value="{DynamicResource GS.State.Paused}"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <!-- Off and Not available keep the Idle word colour: GS.State.Off is under 4.5:1 on the tint in Dark -->
+        <Style x:Key="ModuleBadgeWord" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="Foreground" Value="{DynamicResource GS.State.Idle}"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding StatusKind}" Value="Applied">
+                    <Setter Property="Foreground" Value="{DynamicResource GS.State.Active}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding StatusKind}" Value="Failed">
+                    <Setter Property="Foreground" Value="{DynamicResource GS.State.Error}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding StatusKind}" Value="Paused">
+                    <Setter Property="Foreground" Value="{DynamicResource GS.State.Paused}"/>
+                </DataTrigger>
             </Style.Triggers>
         </Style>
 
@@ -395,40 +477,30 @@
 
             </StackPanel> <!-- End notices -->
 
-            <!-- ═══════════════════════════════════════════════════════════
-                 Hero Section - One-Click Optimize
-                 ═══════════════════════════════════════════════════════════ -->
-            <Border Background="{DynamicResource GS.Surface.Card}"
-                    CornerRadius="12" Padding="32,28"
-                    BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1"
-                    Margin="0,0,0,24">
+            <!-- Status strip: what GameShift did in the session running now (HomeSnapshot) -->
+            <Border Style="{StaticResource GS.Panel}" Margin="0,0,0,16">
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
 
-                    <!-- Left: Status + preview -->
-                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                            <Ellipse Width="12" Height="12" Margin="0,0,10,0"
-                                     VerticalAlignment="Center"
-                                     Fill="{Binding Hero.HeroStatusBrush}"/>
-                            <TextBlock Text="{Binding Hero.HeroStatusText}"
-                                       Style="{DynamicResource GS.Text.Hero}"
-                                       FontSize="24"
-                                       Foreground="{DynamicResource GS.Text.Primary}"/>
-                        </StackPanel>
-                        <TextBlock Text="{Binding Hero.HeroSubtitleText}"
-                                   FontSize="13"
-                                   Foreground="{DynamicResource GS.Text.Secondary}"
-                                   Margin="22,0,0,0"/>
-                        <!-- Preview: clickable line showing what will be applied -->
+                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,16,0">
+                        <DockPanel>
+                            <ui:SymbolIcon DockPanel.Dock="Left" Style="{StaticResource HomeStatusIcon}"/>
+                            <TextBlock Text="{Binding HomeStatus.Headline}" Style="{StaticResource HomeHeadline}"/>
+                        </DockPanel>
+                        <TextBlock Text="{Binding HomeStatus.CountsLine}"
+                                   Style="{StaticResource GS.Text.Numeric}" FontSize="13"
+                                   Foreground="{DynamicResource GS.Fg.Secondary}"
+                                   TextWrapping="Wrap" Margin="0,4,0,0"
+                                   Visibility="{Binding HasCountsLine, Converter={StaticResource BoolToVisibility}}"/>
+                        <!-- What Quick Optimize applies: a link that opens the list -->
                         <TextBlock x:Name="OptimizationPreviewLink"
                                    Text="{Binding Hero.HeroPreviewText}"
-                                   FontSize="12" Cursor="Hand"
-                                   Foreground="{DynamicResource GS.Status.Info}"
-                                   Margin="22,8,0,0"
+                                   FontSize="12" Cursor="Hand" TextWrapping="Wrap"
+                                   Foreground="{DynamicResource GS.Fg.Link}"
+                                   Margin="0,8,0,0"
                                    MouseLeftButtonUp="OnOptimizationPreviewClicked"
                                    Visibility="{Binding Hero.ShowHeroPreview, Converter={StaticResource BoolToVisibility}}">
                             <TextBlock.TextDecorations>
@@ -437,101 +509,30 @@
                                 </TextDecorationCollection>
                             </TextBlock.TextDecorations>
                         </TextBlock>
-                        <!-- Expandable preview list -->
                         <ItemsControl x:Name="PreviewList"
                                       ItemsSource="{Binding Hero.HeroPreviewItems}"
-                                      Margin="22,6,0,0"
+                                      Margin="0,6,0,0" Focusable="False"
                                       Visibility="Collapsed">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
-                                    <TextBlock Text="{Binding}" FontSize="12"
-                                               Foreground="{DynamicResource GS.Text.Secondary}"
+                                    <TextBlock Text="{Binding}" FontSize="12" TextWrapping="Wrap"
+                                               Foreground="{DynamicResource GS.Fg.Secondary}"
                                                Margin="0,2,0,0"/>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
                     </StackPanel>
 
-                    <!-- Right: CTA button with pulse animation during optimize -->
-                    <Grid Grid.Column="1" VerticalAlignment="Center">
-                        <!-- Glow layer behind button - visible only while applying -->
-                        <Border x:Name="HeroGlow" CornerRadius="10"
-                                MinWidth="180" Height="48" Opacity="0"
-                                IsHitTestVisible="False">
-                            <Border.Background>
-                                <SolidColorBrush Color="#4ADE80"/>
-                            </Border.Background>
-                            <Border.Effect>
-                                <BlurEffect Radius="20"/>
-                            </Border.Effect>
-                        </Border>
-
-                        <Button x:Name="HeroButton"
-                                Command="{Binding Hero.OptimizeNowCommand}"
-                                VerticalAlignment="Center"
-                                MinWidth="180" Height="48"
-                                FontSize="15" FontWeight="SemiBold"
-                                Cursor="Hand"
-                                Style="{DynamicResource GS.Button.Hero}">
-                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                                <!-- Spinning icon during apply/revert -->
-                                <TextBlock x:Name="HeroSpinner" Text="&#x21BB;"
-                                           FontSize="16" Margin="0,0,8,0"
-                                           VerticalAlignment="Center"
-                                           Visibility="Collapsed"
-                                           RenderTransformOrigin="0.5,0.5">
-                                    <TextBlock.RenderTransform>
-                                        <RotateTransform x:Name="SpinnerRotation" Angle="0"/>
-                                    </TextBlock.RenderTransform>
-                                </TextBlock>
-                                <TextBlock Text="{Binding Hero.HeroButtonText}"
-                                           VerticalAlignment="Center"/>
-                            </StackPanel>
-                        </Button>
-                    </Grid>
+                    <!-- Busy: disabled, and the text says what it is doing -->
+                    <Button Grid.Column="1"
+                            Command="{Binding Hero.OptimizeNowCommand}"
+                            IsEnabled="{Binding Hero.CanPressButton}"
+                            VerticalAlignment="Center" MinWidth="140"
+                            Style="{StaticResource GS.Button.Primary}">
+                        <TextBlock Text="{Binding Hero.HeroButtonText}" TextWrapping="Wrap"/>
+                    </Button>
                 </Grid>
             </Border>
-
-            <!-- ═══════════════════════════════════════════════════════════
-                 Card Grid - 2x2 UniformGrid
-                 Each card Border has Margin=8 (8+8=16px gaps between cards).
-                 UniformGrid has Margin="-8" to compensate outer edges.
-                 ═══════════════════════════════════════════════════════════ -->
-            <UniformGrid Rows="1" Columns="2" Margin="-8,0,-8,0">
-
-                <!-- Card 1: Game Status -->
-                <Border Background="{DynamicResource GS.Surface.Card}"
-                        CornerRadius="8" Padding="16" Margin="8"
-                        BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1">
-                    <StackPanel>
-                        <TextBlock Text="Game Status" FontSize="12"
-                                   Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,0,0,6"/>
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
-                            <Ellipse Width="10" Height="10" Margin="0,0,8,0" VerticalAlignment="Center"
-                                     Fill="{Binding StatusBrush, Mode=OneWay}"/>
-                            <TextBlock Text="{Binding StatusText, Mode=OneWay, NotifyOnTargetUpdated=True}" FontSize="22" FontWeight="Bold"
-                                       Foreground="{DynamicResource GS.Text.Primary}" Style="{StaticResource AnimatedTextStyle}"/>
-                        </StackPanel>
-                        <TextBlock Text="{Binding ActiveGameNames, Mode=OneWay}" FontSize="13"
-                                   Foreground="{DynamicResource GS.Text.Secondary}"/>
-                    </StackPanel>
-                </Border>
-
-                <!-- Card 2: Optimizations -->
-                <Border Background="{DynamicResource GS.Surface.Card}"
-                        CornerRadius="8" Padding="16" Margin="8"
-                        BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1">
-                    <StackPanel>
-                        <TextBlock Text="Optimizations" FontSize="12"
-                                   Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,0,0,6"/>
-                        <TextBlock Text="{Binding OptimizationSummary, Mode=OneWay, NotifyOnTargetUpdated=True}" FontSize="22" FontWeight="Bold"
-                                   Foreground="{DynamicResource GS.Text.Primary}" Margin="0,0,0,4" Style="{StaticResource AnimatedTextStyle}"/>
-                        <TextBlock Text="System optimizations" FontSize="13"
-                                   Foreground="{DynamicResource GS.Text.Secondary}"/>
-                    </StackPanel>
-                </Border>
-
-            </UniformGrid>
 
             <!-- Live monitoring cards -->
             <UniformGrid Rows="1" Columns="4" Margin="-8,8,-8,0">
@@ -649,63 +650,6 @@
             </UniformGrid>
 
             <!-- ═══════════════════════════════════════════════════════════
-                 Hardware Advisories Section
-                 ═══════════════════════════════════════════════════════════ -->
-            <StackPanel Margin="0,12,0,0">
-                <!-- HAGS status + advisory -->
-                <Border Background="{DynamicResource GS.Surface.Card}" CornerRadius="8"
-                        Padding="14" Margin="0,0,0,8"
-                        BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1">
-                    <DockPanel>
-                        <StackPanel DockPanel.Dock="Right" VerticalAlignment="Center" HorizontalAlignment="Right">
-                            <Border CornerRadius="4" Padding="8,3"
-                                    Background="#1E293B">
-                                <TextBlock Text="{Binding HagsStatus}" FontSize="11" FontWeight="SemiBold"
-                                           Foreground="#94A3B8"/>
-                            </Border>
-                        </StackPanel>
-                        <StackPanel>
-                            <TextBlock Text="Hardware Accelerated GPU Scheduling (HAGS)"
-                                       Foreground="{DynamicResource GS.Text.Primary}"
-                                       FontWeight="SemiBold" FontSize="13"/>
-                            <!-- Advisory banner (only shown when HAGS is off on a supported GPU) -->
-                            <Border Visibility="{Binding ShowHagsAdvisory, Converter={StaticResource BoolToVisibility}}"
-                                    Background="#2D2006" CornerRadius="4" Padding="10,6" Margin="0,6,0,0">
-                                <TextBlock Text="{Binding HagsAdvisory}" Foreground="#F59E0B"
-                                           FontSize="11" TextWrapping="Wrap"/>
-                            </Border>
-                        </StackPanel>
-                    </DockPanel>
-                </Border>
-
-                <!-- ReBAR / SAM status + advisory -->
-                <Border Background="{DynamicResource GS.Surface.Card}" CornerRadius="8"
-                        Padding="14" Margin="0,0,0,8"
-                        BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1">
-                    <DockPanel>
-                        <StackPanel DockPanel.Dock="Right" VerticalAlignment="Center" HorizontalAlignment="Right">
-                            <Border CornerRadius="4" Padding="8,3"
-                                    Background="#1E293B">
-                                <TextBlock Text="{Binding ReBarStatus}" FontSize="11" FontWeight="SemiBold"
-                                           Foreground="#94A3B8"/>
-                            </Border>
-                        </StackPanel>
-                        <StackPanel>
-                            <TextBlock Text="Resizable BAR / Smart Access Memory"
-                                       Foreground="{DynamicResource GS.Text.Primary}"
-                                       FontWeight="SemiBold" FontSize="13"/>
-                            <!-- Advisory banner (only shown when ReBAR supported but not enabled) -->
-                            <Border Visibility="{Binding ShowReBarAdvisory, Converter={StaticResource BoolToVisibility}}"
-                                    Background="#2D2006" CornerRadius="4" Padding="10,6" Margin="0,6,0,0">
-                                <TextBlock Text="{Binding ReBarAdvisory}" Foreground="#F59E0B"
-                                           FontSize="11" TextWrapping="Wrap"/>
-                            </Border>
-                        </StackPanel>
-                    </DockPanel>
-                </Border>
-            </StackPanel>
-
-            <!-- ═══════════════════════════════════════════════════════════
                  Performance Graphs Section
                  ═══════════════════════════════════════════════════════════ -->
             <TextBlock Text="PERFORMANCE GRAPHS" FontSize="11" FontWeight="Bold"
@@ -755,283 +699,78 @@
                 </Border>
             </UniformGrid>
 
-            <!-- ═══════════════════════════════════════════════════════════
-                 Session History Section
-                 ═══════════════════════════════════════════════════════════ -->
-            <TextBlock Text="RECENT SESSIONS" FontSize="11" FontWeight="Bold"
-                       Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,0,0,8"/>
-            <ItemsControl ItemsSource="{Binding RecentSessions}" Margin="0,0,0,20">
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                        <Border Background="{DynamicResource GS.Surface.Card}" CornerRadius="6"
-                                Padding="12" Margin="0,0,0,6"
-                                BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1">
-                            <DockPanel>
-                                <StackPanel DockPanel.Dock="Left">
-                                    <TextBlock Text="{Binding GameName}" FontWeight="SemiBold"
-                                               Foreground="{DynamicResource GS.Text.Primary}" FontSize="13"/>
-                                    <TextBlock FontSize="11" Foreground="{DynamicResource GS.Text.Secondary}" Margin="0,2,0,0">
-                                        <Run Text="{Binding Duration, StringFormat={}{0:hh\\:mm\\:ss}, Mode=OneWay}"/>
-                                        <Run Text=" | "/>
-                                        <Run Text="{Binding OptimizationsApplied, Mode=OneWay}"/>
-                                        <Run Text=" optimizations"/>
-                                    </TextBlock>
-                                </StackPanel>
-                                <StackPanel DockPanel.Dock="Right" HorizontalAlignment="Right" VerticalAlignment="Center">
-                                    <TextBlock FontSize="11" Foreground="{DynamicResource GS.Text.Secondary}" HorizontalAlignment="Right">
-                                        <Run Text="DPC load: "/>
-                                        <Run Text="{Binding AvgDpcDuring, Converter={StaticResource DpcLoadText}, Mode=OneWay}"/>
-                                    </TextBlock>
-                                    <TextBlock FontSize="10" Foreground="{DynamicResource GS.Text.Secondary}" HorizontalAlignment="Right"
-                                               Text="{Binding StartTime, StringFormat={}{0:MMM d h:mm tt}, Mode=OneWay}"/>
-                                </StackPanel>
-                            </DockPanel>
-                        </Border>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
-
-            <!-- ═══════════════════════════════════════════════════════════
-                 Active Optimizations Section
-                 Expandable rows with toggle switch and before/after detail
-                 ═══════════════════════════════════════════════════════════ -->
-            <TextBlock Text="Active Optimizations"
-                       Style="{DynamicResource GS.Text.SectionHeader}"
-                       Margin="0,32,0,12"/>
-
-            <ItemsControl ItemsSource="{Binding Optimizations}">
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                        <!-- Outer border - entire row is clickable for expand/collapse -->
-                        <Border Background="{DynamicResource GS.Surface.Card}"
-                                CornerRadius="8"
-                                Margin="0,0,0,8"
-                                BorderBrush="{DynamicResource GS.Surface.Border}"
-                                BorderThickness="1"
-                                Cursor="Hand"
-                                MouseLeftButtonUp="OnOptimizationRowClicked">
-                            <StackPanel>
-
-                                <!-- Compact row: 44px height -->
-                                <Grid Height="44" Margin="16,0">
+            <!-- This session's changes: each module's own result, failed first (HomeSnapshot) -->
+            <TextBlock Text="THIS SESSION" Style="{StaticResource GS.Text.Caps}" Margin="0,0,0,8"/>
+            <Border Style="{StaticResource GS.Panel}" Padding="0" Margin="0,0,0,24">
+                <ItemsControl ItemsSource="{Binding SessionModules}" Focusable="False">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Style="{StaticResource GS.Row}">
+                                <Grid>
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
-
-                                    <!-- Status dot -->
-                                    <Ellipse Grid.Column="0" Width="10" Height="10"
-                                             Margin="0,0,10,0" VerticalAlignment="Center"
-                                             Fill="{Binding StatusBrush}"/>
-
-                                    <!-- Name + plain-language description (status is shown by the dot colour) -->
-                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                        <TextBlock Text="{Binding Name}"
-                                                   FontSize="14" FontWeight="SemiBold"
-                                                   Foreground="{DynamicResource GS.Text.Primary}"/>
-                                        <TextBlock Text="{Binding Description}"
-                                                   FontSize="12"
-                                                   Foreground="{DynamicResource GS.Text.Secondary}"
-                                                   TextTrimming="CharacterEllipsis"/>
+                                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,0">
+                                        <TextBlock Text="{Binding Title}" FontSize="14" FontWeight="SemiBold"
+                                                   Foreground="{DynamicResource GS.Fg.Primary}" TextWrapping="Wrap"/>
+                                        <TextBlock Text="{Binding StatusReason}" FontSize="12"
+                                                   Foreground="{DynamicResource GS.Fg.Secondary}"
+                                                   TextWrapping="Wrap" Margin="0,2,0,0"
+                                                   Visibility="{Binding HasStatusReason, Converter={StaticResource BoolToVisibility}}"/>
                                     </StackPanel>
-
-                                    <!-- Per-profile enable/disable toggle -->
-                                    <!-- CheckBox styled as toggle switch; stops row click from expanding -->
-                                    <CheckBox Grid.Column="2"
-                                              IsChecked="{Binding IsEnabled, Mode=TwoWay}"
-                                              IsEnabled="{Binding CanToggle}"
-                                              VerticalAlignment="Center"
-                                              Margin="8,0"
-                                              Checked="OnOptimizationToggleChanged"
-                                              Unchecked="OnOptimizationToggleChanged"/>
-
-                                    <!-- Expand/collapse chevron -->
-                                    <TextBlock Grid.Column="3"
-                                               VerticalAlignment="Center"
-                                               Margin="4,0,0,0"
-                                               FontSize="12"
-                                               Foreground="{DynamicResource GS.Text.Secondary}">
-                                        <TextBlock.Style>
-                                            <Style TargetType="TextBlock">
-                                                <Setter Property="Text" Value="&#x25BC;"/>
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding IsExpanded}" Value="True">
-                                                        <Setter Property="Text" Value="&#x25B2;"/>
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </TextBlock.Style>
-                                    </TextBlock>
+                                    <Border Grid.Column="1" Style="{StaticResource ModuleBadge}">
+                                        <StackPanel Orientation="Horizontal">
+                                            <ui:SymbolIcon Style="{StaticResource ModuleBadgeIcon}"/>
+                                            <TextBlock Text="{Binding StatusWord}" Style="{StaticResource ModuleBadgeWord}"/>
+                                        </StackPanel>
+                                    </Border>
                                 </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </Border>
 
-                                <!-- Expanded detail panel - animated expand/collapse (200ms, CubicEase) -->
-                                <Border ClipToBounds="True"
-                                        BorderBrush="{DynamicResource GS.Surface.Border}"
-                                        BorderThickness="0,1,0,0">
-                                    <Border.Style>
-                                        <Style TargetType="Border">
-                                            <Setter Property="MaxHeight" Value="0"/>
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding IsExpanded}" Value="True">
-                                                    <DataTrigger.EnterActions>
-                                                        <BeginStoryboard>
-                                                            <Storyboard>
-                                                                <DoubleAnimation Storyboard.TargetProperty="MaxHeight"
-                                                                    To="300" Duration="0:0:0.2">
-                                                                    <DoubleAnimation.EasingFunction>
-                                                                        <CubicEase EasingMode="EaseOut"/>
-                                                                    </DoubleAnimation.EasingFunction>
-                                                                </DoubleAnimation>
-                                                            </Storyboard>
-                                                        </BeginStoryboard>
-                                                    </DataTrigger.EnterActions>
-                                                    <DataTrigger.ExitActions>
-                                                        <BeginStoryboard>
-                                                            <Storyboard>
-                                                                <DoubleAnimation Storyboard.TargetProperty="MaxHeight"
-                                                                    To="0" Duration="0:0:0.2">
-                                                                    <DoubleAnimation.EasingFunction>
-                                                                        <CubicEase EasingMode="EaseIn"/>
-                                                                    </DoubleAnimation.EasingFunction>
-                                                                </DoubleAnimation>
-                                                            </Storyboard>
-                                                        </BeginStoryboard>
-                                                    </DataTrigger.ExitActions>
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </Border.Style>
-                                    <StackPanel Margin="16,10,16,12">
-
-                                        <TextBlock Text="{Binding Description}"
-                                                   FontSize="12"
-                                                   Foreground="{DynamicResource GS.Text.Secondary}"
-                                                   TextWrapping="Wrap"
-                                                   Margin="0,0,0,8"/>
-
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="*"/>
-                                            </Grid.ColumnDefinitions>
-
-                                            <!-- Before -->
-                                            <StackPanel Grid.Column="0" Margin="0,0,8,0">
-                                                <TextBlock Text="Before:" FontSize="11" FontWeight="SemiBold"
-                                                           Foreground="{DynamicResource GS.Text.Secondary}"
-                                                           Margin="0,0,0,2"/>
-                                                <TextBlock Text="{Binding BeforeValue}"
-                                                           FontSize="12"
-                                                           Foreground="{DynamicResource GS.Text.Secondary}"
-                                                           TextWrapping="Wrap"/>
-                                            </StackPanel>
-
-                                            <!-- After -->
-                                            <StackPanel Grid.Column="1" Margin="8,0,0,0">
-                                                <TextBlock Text="After:" FontSize="11" FontWeight="SemiBold"
-                                                           Foreground="{DynamicResource GS.Text.Secondary}"
-                                                           Margin="0,0,0,2"/>
-                                                <TextBlock Text="{Binding AfterValue}"
-                                                           FontSize="12"
-                                                           Foreground="{DynamicResource GS.Text.Primary}"
-                                                           TextWrapping="Wrap"/>
-                                            </StackPanel>
-                                        </Grid>
-                                    </StackPanel>
+            <!-- The last five sessions from the session history -->
+            <TextBlock Text="RECENT SESSIONS" Style="{StaticResource GS.Text.Caps}" Margin="0,0,0,8"/>
+            <Border Style="{StaticResource GS.Panel}" Padding="0">
+                <StackPanel>
+                    <ItemsControl ItemsSource="{Binding RecentSessions}" Focusable="False">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Style="{StaticResource GS.Row}">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,0">
+                                            <TextBlock Text="{Binding Game}" FontSize="14" FontWeight="SemiBold"
+                                                       Foreground="{DynamicResource GS.Fg.Primary}" TextWrapping="Wrap"/>
+                                            <TextBlock Text="{Binding Counts}" FontSize="12"
+                                                       Foreground="{DynamicResource GS.Fg.Secondary}"
+                                                       TextWrapping="Wrap" Margin="0,2,0,0"/>
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding When}" Style="{StaticResource GS.Text.Numeric}"
+                                                       FontSize="12" Foreground="{DynamicResource GS.Fg.Secondary}"
+                                                       HorizontalAlignment="Right" TextWrapping="Wrap"/>
+                                            <TextBlock Text="{Binding Length}" Style="{StaticResource GS.Text.Numeric}"
+                                                       FontSize="12" Foreground="{DynamicResource GS.Fg.Secondary}"
+                                                       HorizontalAlignment="Right" TextWrapping="Wrap" Margin="0,2,0,0"/>
+                                        </StackPanel>
+                                    </Grid>
                                 </Border>
-
-                            </StackPanel>
-                        </Border>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
-
-            <!-- ═══════════════════════════════════════════════════════════
-                 Recent Activity Section
-                 Shows last 5 events; "View All" navigates to ActivityLogPage
-                 ═══════════════════════════════════════════════════════════ -->
-
-            <!-- Section header row: title + View All link -->
-            <Grid Margin="0,32,0,4">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-
-                <TextBlock Grid.Column="0"
-                           Text="Recent Activity"
-                           Style="{DynamicResource GS.Text.SectionHeader}"/>
-
-                <TextBlock Grid.Column="1"
-                           Text="View All &#x2192;"
-                           FontSize="12"
-                           Foreground="{DynamicResource GS.Accent.Primary}"
-                           VerticalAlignment="Center"
-                           Cursor="Hand"
-                           MouseLeftButtonUp="OnViewAllActivityClicked"/>
-            </Grid>
-
-            <!-- Activity feed: 5 most recent entries -->
-            <ItemsControl ItemsSource="{Binding RecentActivities}" Margin="0,8,0,0"
-                          ItemContainerStyle="{StaticResource FadeInItemStyle}">
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                        <Border Background="{DynamicResource GS.Surface.Card}"
-                                CornerRadius="6"
-                                Padding="12,8"
-                                Margin="0,0,0,6"
-                                BorderBrush="{DynamicResource GS.Surface.Border}"
-                                BorderThickness="1">
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
-
-                                <TextBlock Grid.Column="0"
-                                           Text="{Binding TypeIcon}"
-                                           FontSize="16"
-                                           Foreground="{DynamicResource GS.Text.Secondary}"
-                                           VerticalAlignment="Center"/>
-
-                                <TextBlock Grid.Column="1"
-                                           Text="{Binding Description}"
-                                           FontSize="13"
-                                           Foreground="{DynamicResource GS.Text.Primary}"
-                                           VerticalAlignment="Center"
-                                           Margin="10,0,10,0"
-                                           TextWrapping="Wrap"/>
-
-                                <TextBlock Grid.Column="2"
-                                           Text="{Binding TimeAgo}"
-                                           FontSize="11"
-                                           Foreground="{DynamicResource GS.Text.Secondary}"
-                                           VerticalAlignment="Center"/>
-                            </Grid>
-                        </Border>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
-
-            <!-- Empty state when no activities -->
-            <TextBlock Text="No activity yet. Start a game to see events here."
-                       FontSize="12"
-                       Foreground="{DynamicResource GS.Text.Secondary}"
-                       Margin="0,8,0,0">
-                <TextBlock.Style>
-                    <Style TargetType="TextBlock">
-                        <Setter Property="Visibility" Value="Collapsed"/>
-                        <Style.Triggers>
-                            <DataTrigger Binding="{Binding RecentActivities.Count}" Value="0">
-                                <Setter Property="Visibility" Value="Visible"/>
-                            </DataTrigger>
-                        </Style.Triggers>
-                    </Style>
-                </TextBlock.Style>
-            </TextBlock>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBlock Text="No sessions yet. They appear here after a game closes."
+                               FontSize="12" Foreground="{DynamicResource GS.Fg.Secondary}"
+                               TextWrapping="Wrap" Margin="12,12"
+                               Visibility="{Binding HasNoRecentSessions, Converter={StaticResource BoolToVisibility}}"/>
+                </StackPanel>
+            </Border>
 
         </StackPanel>
     </ScrollViewer>

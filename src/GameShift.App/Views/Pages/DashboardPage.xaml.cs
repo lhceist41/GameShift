@@ -1,11 +1,9 @@
 using System;
-using System.ComponentModel;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
-using System.Windows.Media.Animation;
 using GameShift.App.Services;
 using GameShift.App.ViewModels;
 using GameShift.App.Views;
@@ -18,9 +16,8 @@ using GameShift.Core.SystemTweaks;
 namespace GameShift.App.Views.Pages;
 
 /// <summary>
-/// Dashboard page: live optimization status, active game count, optimization list,
-/// DPC latency indicator, VBS/HVCI warning banner, expandable optimization rows,
-/// and recent activity feed with View All navigation.
+/// Home: notices, the session status strip with "Optimize now", the live cards, this session's
+/// changes and recent sessions.
 /// ViewModel is created in the Loaded event using App static service properties.
 /// </summary>
 public partial class DashboardPage : Page
@@ -43,7 +40,6 @@ public partial class DashboardPage : Page
             var existing = DataContext as DashboardViewModel;
             if (existing != null)
             {
-                existing.Hero.PropertyChanged += OnHeroPropertyChanged;
                 existing.StartTimers();
                 WatchWindowWidth(existing);
                 RefreshLastingChangesCount(existing);
@@ -62,8 +58,6 @@ public partial class DashboardPage : Page
             App.Services.PingMon,
             App.Services.SessionStore,
             App.Services.SessionTrk);
-
-        vm.Hero.PropertyChanged += OnHeroPropertyChanged;
 
         DataContext = vm;
         WatchWindowWidth(vm);
@@ -115,8 +109,6 @@ public partial class DashboardPage : Page
         // Stop event subscriptions when the page is not visible
         var vm = DataContext as DashboardViewModel;
         if (vm == null) return;
-
-        vm.Hero.PropertyChanged -= OnHeroPropertyChanged;
 
         if (_window != null)
         {
@@ -250,45 +242,6 @@ public partial class DashboardPage : Page
     }
 
     /// <summary>
-    /// Handles clicking anywhere on an optimization row to toggle expand/collapse.
-    /// Skips the toggle when the click originated from the CheckBox (the toggle
-    /// has its own Checked/Unchecked handler and should not also expand/collapse).
-    /// </summary>
-    private void OnOptimizationRowClicked(object sender, MouseButtonEventArgs e)
-    {
-        // If the click came from the CheckBox or a child of a CheckBox, ignore it
-        if (e.OriginalSource is DependencyObject source)
-        {
-            var parent = source;
-            while (parent != null)
-            {
-                if (parent is CheckBox) return;
-                parent = System.Windows.Media.VisualTreeHelper.GetParent(parent);
-            }
-        }
-
-        if (sender is FrameworkElement element && element.DataContext is ExpandableOptimizationItem item)
-        {
-            item.IsExpanded = !item.IsExpanded;
-        }
-    }
-
-    /// <summary>
-    /// Handles CheckBox Checked/Unchecked for the optimization enable/disable toggle.
-    /// The TwoWay binding has already updated IsEnabled on the item.
-    /// Invokes the OnToggled callback to persist the change to the default GameProfile.
-    /// </summary>
-    private void OnOptimizationToggleChanged(object sender, RoutedEventArgs e)
-    {
-        if (sender is FrameworkElement element && element.DataContext is ExpandableOptimizationItem item)
-        {
-            item.OnToggled?.Invoke(item);
-        }
-        // Stop bubbling so the row's click handler (expand/collapse) does not fire
-        e.Handled = true;
-    }
-
-    /// <summary>
     /// Handles the "Troubleshoot" button on the DPC spike banner.
     /// Runs DPC driver analysis and shows inline results.
     /// </summary>
@@ -355,71 +308,10 @@ public partial class DashboardPage : Page
         mainWindow?.NavigateTo(typeof(DpcDoctorPage));
     }
 
-    /// <summary>
-    /// Handles "View All" link click - navigates to the full ActivityLogPage.
-    /// </summary>
-    private void OnViewAllActivityClicked(object sender, MouseButtonEventArgs e)
-    {
-        var mainWindow = Window.GetWindow(this) as MainWindow;
-        mainWindow?.NavigateTo(typeof(ActivityLogPage));
-    }
-
     private void OnOptimizationPreviewClicked(object sender, MouseButtonEventArgs e)
     {
         PreviewList.Visibility = PreviewList.Visibility == Visibility.Visible
             ? Visibility.Collapsed
             : Visibility.Visible;
-    }
-
-    private Storyboard? _heroAnimationStoryboard;
-
-    private void OnHeroPropertyChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        if (e.PropertyName != nameof(HeroOptimizeViewModel.IsApplyingHero)) return;
-        var hero = sender as HeroOptimizeViewModel;
-        if (hero == null) return;
-
-        if (hero.IsApplyingHero)
-            StartHeroAnimation();
-        else
-            StopHeroAnimation();
-    }
-
-    private void StartHeroAnimation()
-    {
-        HeroSpinner.Visibility = Visibility.Visible;
-
-        var sb = new Storyboard { RepeatBehavior = RepeatBehavior.Forever };
-
-        // Spin the arrow icon
-        var spin = new DoubleAnimation(0, 360, new Duration(System.TimeSpan.FromSeconds(1)))
-        {
-            RepeatBehavior = RepeatBehavior.Forever
-        };
-        Storyboard.SetTarget(spin, HeroSpinner);
-        Storyboard.SetTargetProperty(spin, new PropertyPath("(UIElement.RenderTransform).(RotateTransform.Angle)"));
-        sb.Children.Add(spin);
-
-        // Pulse the glow behind the button
-        var glowIn = new DoubleAnimation(0, 0.4, new Duration(System.TimeSpan.FromSeconds(0.8)))
-        {
-            AutoReverse = true,
-            RepeatBehavior = RepeatBehavior.Forever,
-            EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut }
-        };
-        Storyboard.SetTarget(glowIn, HeroGlow);
-        Storyboard.SetTargetProperty(glowIn, new PropertyPath("Opacity"));
-        sb.Children.Add(glowIn);
-
-        _heroAnimationStoryboard = sb;
-        sb.Begin();
-    }
-
-    private void StopHeroAnimation()
-    {
-        _heroAnimationStoryboard?.Stop();
-        _heroAnimationStoryboard = null;
-        HeroSpinner.Visibility = Visibility.Collapsed;
-        HeroGlow.Opacity = 0;
     }
 }

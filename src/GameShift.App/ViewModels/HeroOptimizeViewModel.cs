@@ -6,17 +6,17 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Input;
-using System.Windows.Media;
 using GameShift.Core.Detection;
 using GameShift.Core.GameProfiles;
 using GameShift.Core.Optimization;
+using GameShift.Core.Presentation;
 using GameShift.Core.Profiles;
 
 namespace GameShift.App.ViewModels;
 
 /// <summary>
-/// Manages the hero one-click optimize section on the dashboard.
-/// Listens to engine events to refresh state after apply/revert.
+/// Home's "Optimize now" / "End session" button and the list of what Quick Optimize applies.
+/// The status itself comes from <see cref="GameShift.Core.Presentation.HomeSnapshot"/>.
 /// </summary>
 public class HeroOptimizeViewModel : INotifyPropertyChanged
 {
@@ -24,30 +24,12 @@ public class HeroOptimizeViewModel : INotifyPropertyChanged
     private readonly OptimizationEngine _engine;
     private readonly DetectionOrchestrator _orchestrator;
 
-    private string _heroStatusText = "Ready to Optimize";
-    private string _heroSubtitleText = "Apply recommended system optimizations for gaming";
-    private string _heroButtonText = "Optimize Now";
-    private Brush _heroStatusBrush = new SolidColorBrush(Color.FromRgb(0x80, 0x80, 0x80));
+    private string _heroButtonText = "Optimize now";
     private bool _isApplyingHero;
     private bool _showHeroPreview = true;
     private string _heroPreviewText = "";
 
     public event PropertyChangedEventHandler? PropertyChanged;
-
-    /// <summary>Raised on the UI thread right before a Quick Optimize session is activated.</summary>
-    public event EventHandler? QuickOptimizeStarting;
-
-    public string HeroStatusText
-    {
-        get => _heroStatusText;
-        private set { _heroStatusText = value; OnPropertyChanged(); }
-    }
-
-    public string HeroSubtitleText
-    {
-        get => _heroSubtitleText;
-        private set { _heroSubtitleText = value; OnPropertyChanged(); }
-    }
 
     public string HeroButtonText
     {
@@ -55,17 +37,19 @@ public class HeroOptimizeViewModel : INotifyPropertyChanged
         private set { _heroButtonText = value; OnPropertyChanged(); }
     }
 
-    public Brush HeroStatusBrush
-    {
-        get => _heroStatusBrush;
-        private set { _heroStatusBrush = value; OnPropertyChanged(); }
-    }
-
     public bool IsApplyingHero
     {
         get => _isApplyingHero;
-        private set { _isApplyingHero = value; OnPropertyChanged(); }
+        private set
+        {
+            _isApplyingHero = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(CanPressButton));
+        }
     }
+
+    /// <summary>The button is disabled while it applies or undoes; its text says which.</summary>
+    public bool CanPressButton => !_isApplyingHero;
 
     public bool ShowHeroPreview
     {
@@ -103,19 +87,12 @@ public class HeroOptimizeViewModel : INotifyPropertyChanged
 
             if (IsHeroOptimized)
             {
-                int appliedCount = _optimizations.Count(o => o.IsApplied);
-                HeroStatusText = "Optimized";
-                HeroSubtitleText = $"{appliedCount} optimization{(appliedCount != 1 ? "s" : "")} currently active";
-                HeroButtonText = "Revert Optimizations";
-                HeroStatusBrush = new SolidColorBrush(Color.FromRgb(0x4A, 0xDE, 0x80));
+                HeroButtonText = "End session";
                 ShowHeroPreview = false;
             }
             else
             {
-                HeroStatusText = "Ready to Optimize";
-                HeroSubtitleText = "Apply recommended system optimizations for gaming";
-                HeroButtonText = "Optimize Now";
-                HeroStatusBrush = new SolidColorBrush(Color.FromRgb(0x80, 0x80, 0x80));
+                HeroButtonText = "Optimize now";
                 ShowHeroPreview = true;
                 BuildPreviewList();
             }
@@ -130,14 +107,16 @@ public class HeroOptimizeViewModel : INotifyPropertyChanged
         foreach (var opt in _optimizations.Where(o => o.IsAvailable))
         {
             if (profile.IsOptimizationEnabled(opt.Name))
-                items.Add(opt.Name);
+                items.Add(SessionModuleText.For(opt.Name, opt.Description).Title);
         }
 
-        HeroPreviewText = $"{items.Count} optimizations will be applied";
+        HeroPreviewText = items.Count == 1
+            ? "Optimize now applies 1 change"
+            : $"Optimize now applies {items.Count} changes";
 
         HeroPreviewItems.Clear();
         foreach (var item in items)
-            HeroPreviewItems.Add($"\u2022 {item}");
+            HeroPreviewItems.Add($"• {item}");
     }
 
     private async void ExecuteOptimizeNow()
@@ -149,22 +128,17 @@ public class HeroOptimizeViewModel : INotifyPropertyChanged
         {
             if (IsHeroOptimized)
             {
-                HeroStatusText = "Reverting...";
-                HeroButtonText = "Reverting...";
-                HeroStatusBrush = new SolidColorBrush(Color.FromRgb(0xFF, 0xC1, 0x07));
+                HeroButtonText = "Undoing...";
                 // Through the orchestrator: during a game this ends the game session as a whole,
                 // including the game's own changes; a Quick Optimize session reverts through the engine.
                 await _orchestrator.EndSessionAsync();
             }
             else
             {
-                HeroStatusText = "Optimizing...";
-                HeroButtonText = "Optimizing...";
-                HeroStatusBrush = new SolidColorBrush(Color.FromRgb(0xFF, 0xC1, 0x07));
+                HeroButtonText = "Applying...";
                 ShowHeroPreview = false;
                 var profile = GameProfile.CreateDefault();
                 profile.GameName = "Quick Optimize";
-                QuickOptimizeStarting?.Invoke(this, EventArgs.Empty);
                 await _engine.ActivateProfileAsync(profile);
             }
         }

@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Linq;
 using System.Threading.Tasks;
+using GameShift.Core.Detection;
 using GameShift.Core.Presentation;
 using GameShift.Core.System;
 
@@ -63,6 +64,24 @@ public class SystemViewModel : INotifyPropertyChanged
     private bool _gameBarEnabled;
     public bool GameBarEnabled { get => _gameBarEnabled; set { _gameBarEnabled = value; OnPropertyChanged(); } }
 
+    // ── Graphics features (from the hardware scan at start) ────────────────
+    private string _hagsStatus = "Unknown";
+    private string _hagsAdvisory = "";
+    private bool _showHagsAdvisory;
+    private string _reBarStatus = "Unknown";
+    private string _reBarAdvisory = "";
+    private bool _showReBarAdvisory;
+
+    /// <summary>HAGS state: "Enabled", "Disabled", or "Unknown".</summary>
+    public string HagsStatus { get => _hagsStatus; private set { _hagsStatus = value; OnPropertyChanged(); } }
+    public string HagsAdvisory { get => _hagsAdvisory; private set { _hagsAdvisory = value; OnPropertyChanged(); } }
+    public bool ShowHagsAdvisory { get => _showHagsAdvisory; private set { _showHagsAdvisory = value; OnPropertyChanged(); } }
+
+    /// <summary>ReBAR/SAM state: "Enabled", "Not detected", or "Unknown".</summary>
+    public string ReBarStatus { get => _reBarStatus; private set { _reBarStatus = value; OnPropertyChanged(); } }
+    public string ReBarAdvisory { get => _reBarAdvisory; private set { _reBarAdvisory = value; OnPropertyChanged(); } }
+    public bool ShowReBarAdvisory { get => _showReBarAdvisory; private set { _showReBarAdvisory = value; OnPropertyChanged(); } }
+
     // ── Top Processes ──────────────────────────────────────────────────────
     public ObservableCollection<ProcessItem> TopProcesses { get; } = new();
 
@@ -76,7 +95,61 @@ public class SystemViewModel : INotifyPropertyChanged
 
     public SystemViewModel()
     {
+        UpdateGpuFeatureStatus(App.Services.HardwareScan);
         _ = RefreshAsync();
+    }
+
+    /// <summary>
+    /// Reads HAGS and ReBAR state from the hardware scan, when it ran, and sets the status lines
+    /// and advisory messages.
+    /// </summary>
+    private void UpdateGpuFeatureStatus(HardwareScanResult? scan)
+    {
+        try
+        {
+            if (scan == null) return;
+
+            // ── HAGS ──
+            HagsStatus = scan.IsHagsEnabled ? "Enabled" : "Disabled";
+
+            if (!scan.IsHagsEnabled)
+            {
+                // Recommend HAGS for modern GPUs (RTX 30/40/50, RX 7000+, RDNA4)
+                bool shouldRecommend = scan.GpuGeneration is
+                    GpuGeneration.NvidiaRtx30 or GpuGeneration.NvidiaRtx40 or GpuGeneration.NvidiaRtx50 or
+                    GpuGeneration.AmdRdna3 or GpuGeneration.AmdRdna4;
+
+                if (shouldRecommend)
+                {
+                    ShowHagsAdvisory = true;
+                    HagsAdvisory = "HAGS is off but recommended for your GPU. " +
+                        "Required for DLSS 3.5+ Frame Generation and AMD Fluid Motion. " +
+                        "Enable in Settings > Display > Graphics > Change default graphics settings.";
+                }
+            }
+
+            // ── ReBAR ──
+            ReBarStatus = scan.IsReBarEnabled ? "Enabled" : "Not detected";
+
+            if (!scan.IsReBarEnabled && scan.GpuVendor != GpuVendor.Unknown)
+            {
+                bool gpuSupportsReBar = scan.GpuGeneration is
+                    GpuGeneration.NvidiaRtx30 or GpuGeneration.NvidiaRtx40 or GpuGeneration.NvidiaRtx50 or
+                    GpuGeneration.AmdRdna2 or GpuGeneration.AmdRdna3 or GpuGeneration.AmdRdna4;
+
+                if (gpuSupportsReBar)
+                {
+                    ShowReBarAdvisory = true;
+                    ReBarAdvisory = "Resizable BAR / Smart Access Memory is supported by your GPU but not detected. " +
+                        "Enable in BIOS (may require Above 4G Decoding + Re-Size BAR Support). " +
+                        "Can improve performance 5-10% in some titles.";
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            GameShift.Core.Config.SettingsManager.Logger.Warning(ex, "[SystemViewModel] Failed to update GPU feature status");
+        }
     }
 
     // ── Public Methods ─────────────────────────────────────────────────────

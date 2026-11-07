@@ -32,6 +32,24 @@
             <Setter Property="TextWrapping" Value="Wrap"/>
             <Setter Property="Foreground" Value="{DynamicResource GS.Fg.Primary}"/>
         </Style>
+
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
+
+        <!-- A hardware advice line: warning tint and icon, the text itself stays in the text colour -->
+        <Style x:Key="GraphicsAdvisory" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource GS.Tint.Warning}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource GS.Line.Badge}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="Padding" Value="10,6"/>
+            <Setter Property="Margin" Value="0,8,0,0"/>
+        </Style>
+        <Style x:Key="GraphicsAdvisoryIcon" TargetType="ui:SymbolIcon">
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Margin" Value="0,0,8,0"/>
+            <Setter Property="VerticalAlignment" Value="Top"/>
+            <Setter Property="Foreground" Value="{DynamicResource GS.State.Warning}"/>
+        </Style>
     </Page.Resources>
 
     <ScrollViewer VerticalScrollBarVisibility="Auto"
@@ -173,6 +191,51 @@
                             </Border>
                             <TextBlock Text="Game Bar" Style="{StaticResource RowValue}" VerticalAlignment="Center"/>
                         </DockPanel>
+                    </Border>
+                </StackPanel>
+            </Border>
+
+            <!-- Graphics features: read from the hardware scan when GameShift started -->
+            <TextBlock Text="GRAPHICS FEATURES" Style="{StaticResource GS.Text.Caps}" Margin="0,0,0,8"/>
+            <Border Style="{StaticResource GS.Panel}" Padding="0" Margin="0,0,0,24">
+                <StackPanel>
+                    <Border Style="{StaticResource GS.Row}">
+                        <StackPanel VerticalAlignment="Center">
+                            <DockPanel>
+                                <Border DockPanel.Dock="Right" Style="{StaticResource GS.Badge.State}" Margin="12,0,0,0">
+                                    <TextBlock Text="{Binding HagsStatus}" Style="{StaticResource FeatureWord}"/>
+                                </Border>
+                                <TextBlock Text="Hardware Accelerated GPU Scheduling (HAGS)" Style="{StaticResource RowValue}"
+                                           VerticalAlignment="Center"/>
+                            </DockPanel>
+                            <Border Style="{StaticResource GraphicsAdvisory}"
+                                    Visibility="{Binding ShowHagsAdvisory, Converter={StaticResource BoolToVisibility}}">
+                                <DockPanel>
+                                    <ui:SymbolIcon Symbol="Warning16" Style="{StaticResource GraphicsAdvisoryIcon}"/>
+                                    <TextBlock Text="{Binding HagsAdvisory}" Style="{StaticResource RowText}" Margin="0"
+                                               Foreground="{DynamicResource GS.Fg.Primary}"/>
+                                </DockPanel>
+                            </Border>
+                        </StackPanel>
+                    </Border>
+                    <Border Style="{StaticResource GS.Row}" BorderThickness="0">
+                        <StackPanel VerticalAlignment="Center">
+                            <DockPanel>
+                                <Border DockPanel.Dock="Right" Style="{StaticResource GS.Badge.State}" Margin="12,0,0,0">
+                                    <TextBlock Text="{Binding ReBarStatus}" Style="{StaticResource FeatureWord}"/>
+                                </Border>
+                                <TextBlock Text="Resizable BAR / Smart Access Memory" Style="{StaticResource RowValue}"
+                                           VerticalAlignment="Center"/>
+                            </DockPanel>
+                            <Border Style="{StaticResource GraphicsAdvisory}"
+                                    Visibility="{Binding ShowReBarAdvisory, Converter={StaticResource BoolToVisibility}}">
+                                <DockPanel>
+                                    <ui:SymbolIcon Symbol="Warning16" Style="{StaticResource GraphicsAdvisoryIcon}"/>
+                                    <TextBlock Text="{Binding ReBarAdvisory}" Style="{StaticResource RowText}" Margin="0"
+                                               Foreground="{DynamicResource GS.Fg.Primary}"/>
+                                </DockPanel>
+                            </Border>
+                        </StackPanel>
                     </Border>
                 </StackPanel>
             </Border>
