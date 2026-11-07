@@ -79,6 +79,11 @@ public class DpcLatencyMonitor : IDisposable
     /// </summary>
     public bool IsMonitoring => _isMonitoring;
 
+    /// <summary>
+    /// Whether this PC has the "% DPC Time" counter. Without it the monitor never samples.
+    /// </summary>
+    public bool IsCounterAvailable => _counterAvailable;
+
     // -- Events ─────────────────────────────────────────────────────────────
 
     /// <summary>

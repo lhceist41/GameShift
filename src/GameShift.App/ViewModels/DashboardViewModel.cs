@@ -21,7 +21,7 @@ using GameShift.Core.Updates;
 namespace GameShift.App.ViewModels;
 
 /// <summary>
-/// Home: the session status strip, this session's changes, recent sessions, notices and the live cards.
+/// Home: the session status strip, this session's changes, recent sessions, notices and the live tiles.
 /// All event handlers dispatch to UI thread since core events fire on background threads.
 /// </summary>
 public class DashboardViewModel : INotifyPropertyChanged
@@ -35,13 +35,12 @@ public class DashboardViewModel : INotifyPropertyChanged
     private const int MaxActivityEntries = 50;
 
     private HomeStatus _homeStatus = new(HomeStatusKind.Idle, HomeStatusTone.Neutral, "Waiting for a game", null);
-    private string _gpuInfo = "Unknown";
 
     // Session history state
     private readonly SessionHistoryStore? _sessionStore;
     private readonly SessionTracker? _sessionTracker;
 
-    // Pausing raises no event, so Home reads the session state on a timer while it is shown.
+    // Pausing raises no event, so Home reads the session state on a timer while it is seen.
     private readonly DispatcherTimer _homeTimer;
 
     // Home notices
@@ -78,15 +77,6 @@ public class DashboardViewModel : INotifyPropertyChanged
 
     /// <summary>This session's changes, failed first.</summary>
     public ObservableCollection<HomeModuleRow> SessionModules { get; } = new();
-
-    /// <summary>
-    /// GPU name from <see cref="GpuDetector"/>, or "Unknown".
-    /// </summary>
-    public string GpuInfo
-    {
-        get => _gpuInfo;
-        private set { _gpuInfo = value; OnPropertyChanged(); }
-    }
 
     // ── Session History properties ────────────────────────────────────────
     public ObservableCollection<RecentSessionLine> RecentSessions { get; } = new();
@@ -147,7 +137,7 @@ public class DashboardViewModel : INotifyPropertyChanged
         _detector.GameStarted += OnGameStarted;
         _detector.GameStopped += OnGameStopped;
 
-        // Start sub-VM event subscriptions
+        // The tiles' sample feeds start when the page is first seen (ResumeFeed)
         Dpc.Start();
         Perf.Start();
         Ping.Start();
@@ -161,12 +151,8 @@ public class DashboardViewModel : INotifyPropertyChanged
         // Load recent sessions
         LoadRecentSessions();
 
-        // Set GPU info from live WMI detection (single source of truth)
-        _gpuInfo = GpuDetector.GetGpuName();
-
         _homeTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
         _homeTimer.Tick += OnHomeTimerTick;
-        _homeTimer.Start();
 
         RefreshStatus();
     }
@@ -241,7 +227,32 @@ public class DashboardViewModel : INotifyPropertyChanged
             HomeStatus = snapshot.Status;
         ShowModules(snapshot.Modules);
 
-        Dpc.RefreshIndicatorVisibility();
+        Dpc.RefreshState(RunningGameHasDpcOff);
+    }
+
+    private (string GameId, bool DpcOff, DateTime ReadUtc)? _dpcSwitch;
+
+    /// <summary>
+    /// Whether the one running game's profile has DPC monitoring off, the switch the orchestrator reads
+    /// at game start. Re-read at most every 10 s: it is a profile file read.
+    /// </summary>
+    private bool RunningGameHasDpcOff()
+    {
+        var ids = _detector.GetActiveGames().Values.Select(g => g.Id).Distinct().ToList();
+        var profiles = App.Services.ProfileMgr;
+        if (ids.Count != 1 || profiles == null)
+        {
+            _dpcSwitch = null;
+            return false;
+        }
+
+        var now = DateTime.UtcNow;
+        if (_dpcSwitch is not { } cached || cached.GameId != ids[0] || now - cached.ReadUtc > TimeSpan.FromSeconds(10))
+        {
+            cached = (ids[0], !profiles.GetProfileForGame(ids[0]).EnableDpcMonitoring, now);
+            _dpcSwitch = cached;
+        }
+        return cached.DpcOff;
     }
 
     /// <summary>The detected game's name when exactly one runs; otherwise the session's own game name is shown.</summary>
@@ -272,6 +283,10 @@ public class DashboardViewModel : INotifyPropertyChanged
         // A game session's flags clear only after the engine reports the deactivation, so the
         // button's refresh from that report can still see the session; this one catches up.
         Hero.RefreshHeroState();
+
+        bool gameRunning = _detector.GetActiveGames().Count > 0;
+        Perf.RefreshStale(DateTime.UtcNow, gameRunning);
+        Ping.RefreshStale(DateTime.UtcNow, gameRunning);
     }
 
     private void OnSessionEvent(object? sender, EventArgs e)
@@ -358,13 +373,12 @@ public class DashboardViewModel : INotifyPropertyChanged
     }
 
     /// <summary>
-    /// Stops the sparkline data feed by unsubscribing from all events.
-    /// Called when DashboardPage navigates away to reduce idle RAM/CPU usage.
-    /// Events are re-subscribed via StartTimers() when the page becomes visible again.
+    /// Releases the engine, detector and monitor subscriptions and stops the CPU and ping monitors.
+    /// Called when Home is navigated away from; <see cref="StartTimers"/> undoes it.
     /// </summary>
     public void StopTimers()
     {
-        _homeTimer.Stop();
+        PauseFeed();
         _engine.OptimizationApplied -= OnOptimizationApplied;
         _engine.OptimizationReverted -= OnOptimizationReverted;
         _engine.OptimizationFailed -= OnOptimizationFailed;
@@ -379,9 +393,8 @@ public class DashboardViewModel : INotifyPropertyChanged
     }
 
     /// <summary>
-    /// Restarts the sparkline data feed by re-subscribing to all events.
-    /// Called when DashboardPage navigates back.
-    /// Refreshes status immediately to show current state after navigate-back.
+    /// Re-subscribes after navigate-back. The live feed itself resumes through <see cref="ResumeFeed"/>
+    /// once the page is seen.
     /// </summary>
     public void StartTimers()
     {
@@ -401,9 +414,27 @@ public class DashboardViewModel : INotifyPropertyChanged
         Perf.Start();
         Ping.Start();
         LoadRecentSessions();
+    }
 
-        // Refresh immediately to show current state after navigate-back
-        RefreshStatus();
+    /// <summary>
+    /// Stops what only serves a Home the user sees: the 2 s refresh timer and the tiles' sample
+    /// subscriptions. Engine and detector events stay subscribed: they feed Activity and are rare.
+    /// </summary>
+    public void PauseFeed()
+    {
+        _homeTimer.Stop();
+        Dpc.StopFeed();
+        Perf.StopFeed();
+        Ping.StopFeed();
+    }
+
+    /// <summary>Restarts the feed with one immediate refresh of the status, the button and the tiles.</summary>
+    public void ResumeFeed()
+    {
+        Dpc.StartFeed();
+        Perf.StartFeed();
+        Ping.StartFeed();
+        RefreshHome();
         Hero.RefreshHeroState();
         _homeTimer.Start();
     }
@@ -507,7 +538,7 @@ public class DashboardViewModel : INotifyPropertyChanged
 
 /// <summary>
 /// Represents a single activity event entry (game event or optimization action).
-/// Used in both the dashboard activity feed and the full ActivityLogPage.
+/// Shown on the Activity page.
 /// </summary>
 public class ActivityEntry
 {

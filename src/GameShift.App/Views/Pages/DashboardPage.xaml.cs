@@ -16,8 +16,8 @@ using GameShift.Core.SystemTweaks;
 namespace GameShift.App.Views.Pages;
 
 /// <summary>
-/// Home: notices, the session status strip with "Optimize now", the live cards, this session's
-/// changes and recent sessions.
+/// Home: notices, the session status strip with "Optimize now", the live tiles, this session's
+/// changes and recent sessions. The live feed runs only while Home is seen (<see cref="HomeFeedGate"/>).
 /// ViewModel is created in the Loaded event using App static service properties.
 /// </summary>
 public partial class DashboardPage : Page
@@ -27,10 +27,12 @@ public partial class DashboardPage : Page
         InitializeComponent();
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
+        IsVisibleChanged += OnIsVisibleChanged;
     }
 
     private Window? _window;
     private bool _countingLastingChanges;
+    private readonly HomeFeedGate _feed = new();
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
@@ -40,8 +42,12 @@ public partial class DashboardPage : Page
             var existing = DataContext as DashboardViewModel;
             if (existing != null)
             {
+                // WPF can raise Loaded again without Unloaded; StartTimers pauses the feed, so the gate
+                // has to see it stopped first or it would not resume it.
+                ApplyFeed(_feed.SetLoaded(false));
                 existing.StartTimers();
                 WatchWindowWidth(existing);
+                ApplyFeed(_feed.SetLoaded(true));
                 RefreshLastingChangesCount(existing);
             }
             return;
@@ -61,17 +67,57 @@ public partial class DashboardPage : Page
 
         DataContext = vm;
         WatchWindowWidth(vm);
+        ApplyFeed(_feed.SetLoaded(true));
         RefreshLastingChangesCount(vm);
     }
 
-    /// <summary>The notices fold by the window's width, not the page's, like the navigation pane.</summary>
+    /// <summary>
+    /// The notices fold by the window's width, not the page's, like the navigation pane. The window's
+    /// state tells the live feed about a minimize.
+    /// </summary>
     private void WatchWindowWidth(DashboardViewModel vm)
     {
-        if (_window != null) _window.SizeChanged -= OnWindowSizeChanged;
+        UnwatchWindow();
         _window = Window.GetWindow(this);
+        ApplyFeed(_feed.SetVisible(IsVisible));
         if (_window == null) return;
         _window.SizeChanged += OnWindowSizeChanged;
+        _window.StateChanged += OnWindowStateChanged;
+        ApplyFeed(_feed.SetMinimized(_window.WindowState == WindowState.Minimized));
         vm.SetWindowWidth(_window.ActualWidth);
+    }
+
+    private void UnwatchWindow()
+    {
+        if (_window == null) return;
+        _window.SizeChanged -= OnWindowSizeChanged;
+        _window.StateChanged -= OnWindowStateChanged;
+        _window = null;
+    }
+
+    // Hiding to the tray (minimize or close) hides the window, which this page sees as
+    // IsVisible turning false; a minimize without a tray only changes the window state.
+    private void OnIsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
+    {
+        ApplyFeed(_feed.SetVisible((bool)e.NewValue));
+    }
+
+    private void OnWindowStateChanged(object? sender, EventArgs e)
+    {
+        if (_window != null) ApplyFeed(_feed.SetMinimized(_window.WindowState == WindowState.Minimized));
+    }
+
+    private void ApplyFeed(FeedChange change)
+    {
+        if (DataContext is not DashboardViewModel vm) return;
+        if (change == FeedChange.Resume) vm.ResumeFeed();
+        else if (change == FeedChange.Stop) vm.PauseFeed();
+    }
+
+    private void OnLiveTilesSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        int columns = LiveTileLayout.Columns(e.NewSize.Width);
+        if (LiveTilePanel.Columns != columns) LiveTilePanel.Columns = columns;
     }
 
     private void OnWindowSizeChanged(object sender, SizeChangedEventArgs e)
@@ -110,16 +156,15 @@ public partial class DashboardPage : Page
         var vm = DataContext as DashboardViewModel;
         if (vm == null) return;
 
-        if (_window != null)
-        {
-            _window.SizeChanged -= OnWindowSizeChanged;
-            _window = null;
-        }
+        ApplyFeed(_feed.SetLoaded(false));
+
+        // Read before the window is let go: the closing flag lives on it.
+        var mainWindow = Window.GetWindow(this) as MainWindow ?? _window as MainWindow;
+        UnwatchWindow();
 
         // When the MainWindow is actually closing (no tray to hide into), do a
         // full Cleanup so every subscription (SessionTracker, AllActivities,
         // sub-VMs, engine/detector events) is released - not just the live timers.
-        var mainWindow = Window.GetWindow(this) as MainWindow;
         if (mainWindow != null && mainWindow.IsClosingForReal)
         {
             vm.Cleanup();

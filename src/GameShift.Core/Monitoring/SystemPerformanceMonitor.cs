@@ -59,6 +59,15 @@ public class SystemPerformanceMonitor : IDisposable
     /// <summary>Whether the monitor is currently sampling.</summary>
     public bool IsMonitoring => _isMonitoring;
 
+    /// <summary>Whether the CPU counter can be read. Without it samples carry 0 for the CPU.</summary>
+    public bool IsCpuAvailable => _cpuAvailable;
+
+    /// <summary>Whether memory use can be read. Without it samples carry 0 for the RAM.</summary>
+    public bool IsRamAvailable => _ramAvailable && _totalRamMB > 0;
+
+    /// <summary>Installed memory in MB, read once at construction; 0 when unknown.</summary>
+    public double TotalRamMB => _totalRamMB;
+
     // -- Events ─────────────────────────────────────────────────────────────
 
     /// <summary>

@@ -25,6 +25,7 @@ public class HeroOptimizeViewModel : INotifyPropertyChanged
     private readonly ProfileManager? _profileManager;
 
     private string _heroButtonText = "Optimize now";
+    private bool _labelSaysEndSession;
     private bool _isApplyingHero;
     private bool _showHeroPreview = true;
     private string _heroPreviewText = "";
@@ -83,7 +84,8 @@ public class HeroOptimizeViewModel : INotifyPropertyChanged
         {
             if (_isApplyingHero) return;
 
-            if (_orchestrator.IsSessionActive)
+            _labelSaysEndSession = _orchestrator.IsSessionActive;
+            if (_labelSaysEndSession)
             {
                 HeroButtonText = "End session";
                 ShowHeroPreview = false;
@@ -126,11 +128,19 @@ public class HeroOptimizeViewModel : INotifyPropertyChanged
     private async void ExecuteOptimizeNow()
     {
         if (_isApplyingHero) return;
+
+        var action = HomeButton.OnClick(_labelSaysEndSession, _orchestrator.IsSessionActive);
+        if (action == HomeButtonAction.RefreshOnly)
+        {
+            RefreshHeroState();
+            return;
+        }
+
         IsApplyingHero = true;
 
         try
         {
-            if (_orchestrator.IsSessionActive)
+            if (action == HomeButtonAction.EndSession)
             {
                 HeroButtonText = "Undoing...";
                 // Through the orchestrator: during a game this ends the game session as a whole,

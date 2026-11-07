@@ -1,34 +1,37 @@
-using System.Collections.Generic;
+using System;
 using System.ComponentModel;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Windows;
-using System.Windows.Media;
 using GameShift.Core.Config;
 using GameShift.Core.Monitoring;
+using GameShift.Core.Presentation;
 
 namespace GameShift.App.ViewModels;
 
 /// <summary>
-/// Manages network ping display with sparkline graph.
-/// Subscribes to PingMonitor.PingUpdated events.
+/// Home's ping tile, fed by <see cref="PingMonitor.PingUpdated"/>.
+/// The monitor only serves Home: it runs while Home is loaded and is paused during games.
 /// </summary>
 public class PingMonitorViewModel : INotifyPropertyChanged
 {
     private readonly PingMonitor? _pingMonitor;
-    private readonly Queue<long> _pingSparklineSamples = new();
 
-    private string _pingText = "--";
-    private Brush _pingBrush = new SolidColorBrush(Color.FromRgb(0x80, 0x80, 0x80));
-    private PointCollection _pingSparklinePoints = new();
-    private string _pingStats = "";
+    private TileReading _reading = LiveTiles.Ping(monitoring: false, target: "", sample: null);
+    private bool _feedOn;
+    private DateTime _lastSampleUtc;
+    private bool _stale;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    public string PingText { get => _pingText; private set { _pingText = value; OnPropertyChanged(); } }
-    public Brush PingBrush { get => _pingBrush; private set { _pingBrush = value; OnPropertyChanged(); } }
-    public PointCollection PingSparklinePoints { get => _pingSparklinePoints; private set { _pingSparklinePoints = value; OnPropertyChanged(); } }
-    public string PingStats { get => _pingStats; private set { _pingStats = value; OnPropertyChanged(); } }
+    public TileReading Reading
+    {
+        get => _reading;
+        private set { if (value != _reading) { _reading = value; OnPropertyChanged(); } }
+    }
+
+    /// <summary>Round-trip times; a ping without a reply is a gap in the line.</summary>
+    public SparklineBuffer History { get; } = new();
 
     public PingMonitorViewModel(PingMonitor? pingMonitor)
     {
@@ -39,71 +42,72 @@ public class PingMonitorViewModel : INotifyPropertyChanged
     {
         Application.Current.Dispatcher.BeginInvoke(() =>
         {
-            if (e.Success)
-            {
-                PingText = $"{e.RttMilliseconds}ms";
-                if (e.RttMilliseconds < 50)
-                    PingBrush = new SolidColorBrush(Color.FromRgb(0x4A, 0xDE, 0x80));
-                else if (e.RttMilliseconds <= 100)
-                    PingBrush = new SolidColorBrush(Color.FromRgb(0xFB, 0xBF, 0x24));
-                else
-                    PingBrush = new SolidColorBrush(Color.FromRgb(0xF8, 0x71, 0x71));
-            }
-            else
-            {
-                PingText = "Timeout";
-                PingBrush = new SolidColorBrush(Color.FromRgb(0xF8, 0x71, 0x71));
-            }
+            if (!_feedOn || _pingMonitor == null) return;
 
-            PingStats = $"Avg: {e.AverageRtt:F0}ms | Jitter: {e.JitterMs:F0}ms | Loss: {e.PacketLossPercent:F0}%";
+            if (_stale)
+            {
+                History.Clear();
+                _stale = false;
+            }
+            _lastSampleUtc = DateTime.UtcNow;
 
-            _pingSparklineSamples.Enqueue(e.Success ? e.RttMilliseconds : -1);
-            while (_pingSparklineSamples.Count > 60) _pingSparklineSamples.Dequeue();
-            UpdatePingSparkline();
+            History.Push(e.Success ? e.RttMilliseconds : double.NaN);
+            Reading = LiveTiles.Ping(_pingMonitor.IsMonitoring, _pingMonitor.Target, e, RepliesInLine());
         });
     }
 
-    private void UpdatePingSparkline()
+    // The line holds at most the monitor's 60-sample window, so this never counts a reply the
+    // monitor's jitter has already dropped.
+    private int RepliesInLine() => History.Snapshot().Count(double.IsFinite);
+
+    /// <summary>Called on Home's refresh: a tile with no sample for a while says so instead of keeping its last value.</summary>
+    public void RefreshStale(DateTime utcNow, bool gameRunning)
     {
-        var samples = _pingSparklineSamples.Where(s => s >= 0).ToArray();
-        if (samples.Length == 0) { PingSparklinePoints = new PointCollection(); return; }
+        if (!_feedOn || _pingMonitor?.IsMonitoring != true || !LiveTiles.IsStale(_lastSampleUtc, utcNow)) return;
 
-        var points = new PointCollection(samples.Length);
-        double max = System.Math.Max(100, samples.Max());
-
-        for (int i = 0; i < samples.Length; i++)
-        {
-            double x = samples.Length == 1 ? 0 : i * (120.0 / (samples.Length - 1));
-            double y = 32.0 - (samples[i] / max) * 32.0;
-            points.Add(new System.Windows.Point(x, y));
-        }
-        PingSparklinePoints = points;
+        _stale = true;
+        Reading = LiveTiles.Stale(gameRunning);
     }
 
+    /// <summary>Starts the monitor on the saved target; Home loaded.</summary>
     public void Start()
     {
-        if (_pingMonitor != null)
-        {
-            var settings = SettingsManager.Load();
-            _pingMonitor.PingUpdated += OnPingUpdated;
-            _pingMonitor.Start(settings.PingTarget);
-        }
+        _pingMonitor?.Start(SettingsManager.Load().PingTarget);
     }
 
+    /// <summary>Stops the monitor; Home left. Nothing else uses it.</summary>
     public void Stop()
     {
-        if (_pingMonitor != null)
-        {
-            _pingMonitor.PingUpdated -= OnPingUpdated;
-            _pingMonitor.Stop();
-        }
+        StopFeed();
+        _pingMonitor?.Stop();
     }
 
-    public void Cleanup()
+    /// <summary>Starts the tile's sample feed with an empty line.</summary>
+    public void StartFeed()
     {
-        if (_pingMonitor != null)
-            _pingMonitor.PingUpdated -= OnPingUpdated;
+        StopFeed();
+        _feedOn = true;
+        _stale = false;
+        _lastSampleUtc = DateTime.UtcNow;
+        History.Clear();
+
+        if (_pingMonitor == null)
+        {
+            Reading = LiveTiles.Ping(monitoring: false, target: "", sample: null);
+            return;
+        }
+
+        Reading = LiveTiles.Ping(_pingMonitor.IsMonitoring, _pingMonitor.Target, sample: null);
+        _pingMonitor.PingUpdated += OnPingUpdated;
     }
+
+    public void StopFeed()
+    {
+        _feedOn = false;
+        if (_pingMonitor != null) _pingMonitor.PingUpdated -= OnPingUpdated;
+    }
+
+    public void Cleanup() => StopFeed();
 
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
     {

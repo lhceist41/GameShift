@@ -1,35 +1,27 @@
 using System;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
-using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Windows;
-using System.Windows.Media;
 using GameShift.Core.Config;
 using GameShift.Core.Monitoring;
+using GameShift.Core.Presentation;
 
 namespace GameShift.App.ViewModels;
 
 /// <summary>
-/// Manages DPC load monitoring, sparkline display, spike alerts,
-/// and inline troubleshooter results on the dashboard.
+/// Home's DPC load tile, the spike notice and the inline troubleshooter results.
 /// </summary>
 public class DpcMonitoringViewModel : INotifyPropertyChanged
 {
     private readonly DpcLatencyMonitor? _dpcMonitor;
 
-    // Sparkline data: max 120 samples = 60 seconds at 500ms intervals
-    private readonly System.Collections.Generic.Queue<double> _sparklineSamples = new();
-    private const int MaxSparklineSamples = 120;
-    private const double SparklineWidth = 120.0;
-    private const double SparklineHeight = 32.0;
-
-    private string _dpcLatencyText = "";
-    private Brush _dpcLatencyBrush = new SolidColorBrush(Color.FromRgb(0x4C, 0xAF, 0x50));
-    private bool _showDpcIndicator;
-    private PointCollection _sparklinePoints = new();
-    private Brush _sparklineBrush = new SolidColorBrush(Color.FromRgb(0x4A, 0xDE, 0x80));
-    private string _averageDpcLoadText = "";
+    private TileReading _reading = LiveTiles.Dpc(counterReadable: true, monitoring: false, latest: null, average: 0);
+    private double? _latest;
+    private bool _feedOn;
+    private DateTime _lastSampleUtc;
+    private bool _stale;
+    private bool _runningGameHasDpcOff;
     private bool _showDpcSpikeAlert;
     private string _dpcSpikeAlertMessage = "";
     private bool _showTroubleshooter;
@@ -38,41 +30,20 @@ public class DpcMonitoringViewModel : INotifyPropertyChanged
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    public string DpcLatencyText
+    /// <summary>The DPC load tile, from <see cref="LiveTiles.Dpc"/>.</summary>
+    public TileReading Reading
     {
-        get => _dpcLatencyText;
-        private set { _dpcLatencyText = value; OnPropertyChanged(); }
+        get => _reading;
+        private set
+        {
+            if (value == _reading) return;
+            _reading = value;
+            OnPropertyChanged();
+        }
     }
 
-    public Brush DpcLatencyBrush
-    {
-        get => _dpcLatencyBrush;
-        private set { _dpcLatencyBrush = value; OnPropertyChanged(); }
-    }
-
-    public bool ShowDpcIndicator
-    {
-        get => _showDpcIndicator;
-        private set { _showDpcIndicator = value; OnPropertyChanged(); }
-    }
-
-    public PointCollection SparklinePoints
-    {
-        get => _sparklinePoints;
-        private set { _sparklinePoints = value; OnPropertyChanged(); }
-    }
-
-    public Brush SparklineBrush
-    {
-        get => _sparklineBrush;
-        private set { _sparklineBrush = value; OnPropertyChanged(); }
-    }
-
-    public string AverageDpcLoadText
-    {
-        get => _averageDpcLoadText;
-        private set { _averageDpcLoadText = value; OnPropertyChanged(); }
-    }
+    /// <summary>The tile's line: one sample per reading while Home is seen; 120 half-second samples make a minute like the other tiles.</summary>
+    public SparklineBuffer History { get; } = new(120);
 
     public bool ShowDpcSpikeAlert
     {
@@ -114,81 +85,55 @@ public class DpcMonitoringViewModel : INotifyPropertyChanged
     }
 
     /// <summary>
-    /// Updates DPC indicator visibility. Called by parent VM on status refresh.
+    /// Re-reads whether the monitor samples. It runs only during a game session, so the tile says
+    /// "Not measuring" between sessions instead of keeping the last value, and "No new reading" when
+    /// samples stop while it still runs (the counter can start failing mid-session).
     /// </summary>
-    public void RefreshIndicatorVisibility()
+    /// <param name="runningGameHasDpcOff">Asked only while not measuring: a game runs and its profile has DPC monitoring off.</param>
+    public void RefreshState(Func<bool>? runningGameHasDpcOff = null)
     {
-        ShowDpcIndicator = _dpcMonitor?.IsMonitoring == true;
-        if (!ShowDpcIndicator)
+        bool monitoring = _dpcMonitor?.IsMonitoring == true;
+        var now = DateTime.UtcNow;
+        if (!monitoring)
         {
-            DpcLatencyText = "";
+            if (runningGameHasDpcOff != null) _runningGameHasDpcOff = runningGameHasDpcOff();
+            _latest = null;
+            // Staleness counts from when sampling could have started, not from an earlier session.
+            _lastSampleUtc = now;
+            if (History.Count > 0) History.Clear();
         }
+        else if (_feedOn && _dpcMonitor?.IsCounterAvailable == true && LiveTiles.IsStale(_lastSampleUtc, now))
+        {
+            _stale = true;
+            Reading = LiveTiles.Stale(gameRunning: false);
+            return;
+        }
+        Reading = Read(monitoring);
     }
 
-    private void OnLatencySampled(object? sender, double latencyUs)
+    private TileReading Read(bool monitoring) => LiveTiles.Dpc(
+        counterReadable: _dpcMonitor?.IsCounterAvailable == true,
+        monitoring: monitoring,
+        latest: _latest,
+        average: _latest == null ? 0 : _dpcMonitor?.AverageLatencyMicroseconds ?? 0,
+        runningGameHasDpcOff: _runningGameHasDpcOff);
+
+    private void OnLatencySampled(object? sender, double load)
     {
         Application.Current.Dispatcher.BeginInvoke(() =>
         {
-            ShowDpcIndicator = _dpcMonitor?.IsMonitoring == true;
-
-            if (!ShowDpcIndicator) return;
-
-            string label;
-            Brush brush;
-            if (latencyUs < 500)
+            // A sample queued before the feed stopped is dropped, so a hidden Home does no work.
+            if (!_feedOn) return;
+            if (_stale)
             {
-                label = "Good";
-                brush = new SolidColorBrush(Color.FromRgb(0x4A, 0xDE, 0x80));
+                History.Clear();
+                _stale = false;
             }
-            else if (latencyUs <= 1000)
-            {
-                label = "Warning";
-                brush = new SolidColorBrush(Color.FromRgb(0xFB, 0xBF, 0x24));
-            }
-            else
-            {
-                label = "High";
-                brush = new SolidColorBrush(Color.FromRgb(0xF8, 0x71, 0x71));
-            }
-
-            DpcLatencyText = $"{DpcLoad.Format(latencyUs)} ({label})";
-            DpcLatencyBrush = brush;
-            SparklineBrush = brush;
-
-            if (_dpcMonitor != null)
-                AverageDpcLoadText = DpcLoad.Format(_dpcMonitor.AverageLatencyMicroseconds);
-
-            _sparklineSamples.Enqueue(latencyUs);
-            while (_sparklineSamples.Count > MaxSparklineSamples)
-                _sparklineSamples.Dequeue();
-
-            UpdateSparklinePoints();
+            _lastSampleUtc = DateTime.UtcNow;
+            _latest = load;
+            Reading = Read(_dpcMonitor?.IsMonitoring == true);
+            History.Push(load);
         });
-    }
-
-    private void UpdateSparklinePoints()
-    {
-        var samples = _sparklineSamples.ToArray();
-        if (samples.Length == 0)
-        {
-            SparklinePoints = new PointCollection();
-            return;
-        }
-
-        var maxSample = samples.Max();
-        if (maxSample < 100.0) maxSample = 100.0;
-
-        var points = new PointCollection(samples.Length);
-        int count = samples.Length;
-
-        for (int i = 0; i < count; i++)
-        {
-            double x = count == 1 ? 0 : i * (SparklineWidth / (count - 1));
-            double y = SparklineHeight - (samples[i] / maxSample) * SparklineHeight;
-            points.Add(new System.Windows.Point(x, y));
-        }
-
-        SparklinePoints = points;
     }
 
     private void OnDpcSpikeDetected(object? sender, DpcSpikeEventArgs e)
@@ -257,32 +202,43 @@ public class DpcMonitoringViewModel : INotifyPropertyChanged
         }
     }
 
+    /// <summary>Listens for spikes, which set the Home notice even while Home is hidden.</summary>
     public void Start()
     {
-        if (_dpcMonitor != null)
-        {
-            _dpcMonitor.LatencySampled += OnLatencySampled;
-            _dpcMonitor.DpcSpikeDetected += OnDpcSpikeDetected;
-        }
+        if (_dpcMonitor == null) return;
+        _dpcMonitor.DpcSpikeDetected -= OnDpcSpikeDetected;
+        _dpcMonitor.DpcSpikeDetected += OnDpcSpikeDetected;
     }
 
     public void Stop()
     {
-        if (_dpcMonitor != null)
-        {
-            _dpcMonitor.LatencySampled -= OnLatencySampled;
-            _dpcMonitor.DpcSpikeDetected -= OnDpcSpikeDetected;
-        }
+        StopFeed();
+        if (_dpcMonitor != null) _dpcMonitor.DpcSpikeDetected -= OnDpcSpikeDetected;
     }
 
-    public void Cleanup()
+    /// <summary>
+    /// Starts the tile's sample feed with an empty line, so it never joins readings across the time
+    /// Home was not seen. The monitor itself is the session's and is left as it is.
+    /// </summary>
+    public void StartFeed()
     {
-        if (_dpcMonitor != null)
-        {
-            _dpcMonitor.LatencySampled -= OnLatencySampled;
-            _dpcMonitor.DpcSpikeDetected -= OnDpcSpikeDetected;
-        }
+        StopFeed();
+        _feedOn = true;
+        _latest = null;
+        _stale = false;
+        _lastSampleUtc = DateTime.UtcNow;
+        History.Clear();
+        RefreshState();
+        if (_dpcMonitor != null) _dpcMonitor.LatencySampled += OnLatencySampled;
     }
+
+    public void StopFeed()
+    {
+        _feedOn = false;
+        if (_dpcMonitor != null) _dpcMonitor.LatencySampled -= OnLatencySampled;
+    }
+
+    public void Cleanup() => Stop();
 
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
     {

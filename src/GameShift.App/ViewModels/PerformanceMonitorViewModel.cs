@@ -1,41 +1,51 @@
 using System;
-using System.Collections.Generic;
 using System.ComponentModel;
-using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Windows;
-using System.Windows.Media;
 using GameShift.Core.Monitoring;
+using GameShift.Core.Presentation;
 
 namespace GameShift.App.ViewModels;
 
 /// <summary>
-/// Manages CPU, RAM, and GPU utilization display with sparkline graphs.
-/// Subscribes to SystemPerformanceMonitor.SampleUpdated events.
+/// Home's CPU / GPU and memory tiles, fed by <see cref="SystemPerformanceMonitor.SampleUpdated"/>.
+/// The monitor only serves Home: it runs while Home is loaded and is paused during games.
 /// </summary>
 public class PerformanceMonitorViewModel : INotifyPropertyChanged
 {
     private readonly SystemPerformanceMonitor? _perfMonitor;
-    private readonly Queue<double> _cpuSparklineSamples = new();
-    private readonly Queue<double> _ramSparklineSamples = new();
-    private readonly Queue<double> _gpuSparklineSamples = new();
 
-    private string _cpuText = "0%";
-    private string _ramText = "0%";
-    private string _gpuUtilText = "N/A";
-    private PointCollection _cpuSparklinePoints = new();
-    private PointCollection _ramSparklinePoints = new();
-    private PointCollection _gpuSparklinePoints = new();
+    private TileReading _cpuGpu = LiveTiles.Measuring("CPU / GPU");
+    private TileReading _memory = LiveTiles.Measuring("in use");
+    private bool _hasGpu = true;
+    private bool _feedOn;
+    private DateTime _lastSampleUtc;
+    private bool _stale;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    public string CpuText { get => _cpuText; private set { _cpuText = value; OnPropertyChanged(); } }
-    public string RamText { get => _ramText; private set { _ramText = value; OnPropertyChanged(); } }
-    public string GpuUtilText { get => _gpuUtilText; private set { _gpuUtilText = value; OnPropertyChanged(); } }
+    public TileReading CpuGpu
+    {
+        get => _cpuGpu;
+        private set { if (value != _cpuGpu) { _cpuGpu = value; OnPropertyChanged(); } }
+    }
 
-    public PointCollection CpuSparklinePoints { get => _cpuSparklinePoints; private set { _cpuSparklinePoints = value; OnPropertyChanged(); } }
-    public PointCollection RamSparklinePoints { get => _ramSparklinePoints; private set { _ramSparklinePoints = value; OnPropertyChanged(); } }
-    public PointCollection GpuSparklinePoints { get => _gpuSparklinePoints; private set { _gpuSparklinePoints = value; OnPropertyChanged(); } }
+    public TileReading Memory
+    {
+        get => _memory;
+        private set { if (value != _memory) { _memory = value; OnPropertyChanged(); } }
+    }
+
+    /// <summary>False once a sample shows the GPU counters are missing; the GPU line is then hidden.</summary>
+    public bool HasGpu
+    {
+        get => _hasGpu;
+        private set { if (value != _hasGpu) { _hasGpu = value; OnPropertyChanged(); } }
+    }
+
+    public SparklineBuffer CpuHistory { get; } = new();
+    public SparklineBuffer GpuHistory { get; } = new();
+    public SparklineBuffer MemoryHistory { get; } = new();
 
     public PerformanceMonitorViewModel(SystemPerformanceMonitor? perfMonitor)
     {
@@ -46,58 +56,88 @@ public class PerformanceMonitorViewModel : INotifyPropertyChanged
     {
         Application.Current.Dispatcher.BeginInvoke(() =>
         {
-            CpuText = $"{e.CpuPercent:F0}%";
-            RamText = $"{e.RamPercent:F0}%";
-            GpuUtilText = e.GpuPercent >= 0 ? $"{e.GpuPercent:F0}%" : "N/A";
+            if (!_feedOn) return;
 
-            EnqueueAndUpdateSparkline(_cpuSparklineSamples, e.CpuPercent, 100, v => CpuSparklinePoints = v);
-            EnqueueAndUpdateSparkline(_ramSparklineSamples, e.RamPercent, 100, v => RamSparklinePoints = v);
-            if (e.GpuPercent >= 0)
-                EnqueueAndUpdateSparkline(_gpuSparklineSamples, e.GpuPercent, 100, v => GpuSparklinePoints = v);
+            // The monitor reports 0 for a counter it cannot read; those are not shown as 0.
+            double? cpu = _perfMonitor?.IsCpuAvailable == true ? e.CpuPercent : null;
+            double? ram = _perfMonitor?.IsRamAvailable == true ? e.RamPercent : null;
+            double? gpu = e.GpuPercent >= 0 ? e.GpuPercent : null;
+
+            if (_stale)
+            {
+                ClearHistory();
+                _stale = false;
+            }
+            _lastSampleUtc = DateTime.UtcNow;
+
+            CpuGpu = LiveTiles.CpuGpu(cpu, gpu);
+            Memory = LiveTiles.Memory(ram, _perfMonitor?.TotalRamMB ?? 0);
+            HasGpu = gpu != null;
+
+            CpuHistory.Push(cpu ?? double.NaN);
+            GpuHistory.Push(gpu ?? double.NaN);
+            MemoryHistory.Push(ram ?? double.NaN);
         });
     }
 
-    private void EnqueueAndUpdateSparkline(Queue<double> queue, double value, double maxValue, Action<PointCollection> setter)
+    /// <summary>Called on Home's refresh: a tile with no sample for a while says so instead of keeping its last value.</summary>
+    public void RefreshStale(DateTime utcNow, bool gameRunning)
     {
-        queue.Enqueue(value);
-        while (queue.Count > 60) queue.Dequeue();
+        if (!_feedOn || _perfMonitor == null || !LiveTiles.IsStale(_lastSampleUtc, utcNow)) return;
 
-        var samples = queue.ToArray();
-        var points = new PointCollection(samples.Length);
-        double max = Math.Max(maxValue, samples.Max());
-        if (max < 1) max = 1;
-
-        for (int i = 0; i < samples.Length; i++)
-        {
-            double x = samples.Length == 1 ? 0 : i * (120.0 / (samples.Length - 1));
-            double y = 48.0 - (samples[i] / max) * 48.0;
-            points.Add(new System.Windows.Point(x, y));
-        }
-        setter(points);
+        _stale = true;
+        CpuGpu = LiveTiles.Stale(gameRunning);
+        Memory = LiveTiles.Stale(gameRunning);
     }
 
+    /// <summary>Starts the monitor; Home loaded.</summary>
     public void Start()
     {
-        if (_perfMonitor != null)
-        {
-            _perfMonitor.SampleUpdated += OnPerformanceSampled;
-            _perfMonitor.Start();
-        }
+        _perfMonitor?.Start();
     }
 
+    /// <summary>Stops the monitor; Home left. Nothing else uses it.</summary>
     public void Stop()
     {
-        if (_perfMonitor != null)
-        {
-            _perfMonitor.SampleUpdated -= OnPerformanceSampled;
-            _perfMonitor.Stop();
-        }
+        StopFeed();
+        _perfMonitor?.Stop();
     }
 
-    public void Cleanup()
+    /// <summary>Starts the tiles' sample feed with empty lines.</summary>
+    public void StartFeed()
     {
-        if (_perfMonitor != null)
-            _perfMonitor.SampleUpdated -= OnPerformanceSampled;
+        StopFeed();
+        _feedOn = true;
+        _stale = false;
+        _lastSampleUtc = DateTime.UtcNow;
+        ClearHistory();
+
+        if (_perfMonitor == null)
+        {
+            CpuGpu = LiveTiles.CpuGpu(null, null);
+            Memory = LiveTiles.Memory(null, 0);
+            HasGpu = false;
+            return;
+        }
+
+        CpuGpu = LiveTiles.Measuring("CPU / GPU");
+        Memory = _perfMonitor.IsRamAvailable ? LiveTiles.Measuring("in use") : LiveTiles.Memory(null, 0);
+        _perfMonitor.SampleUpdated += OnPerformanceSampled;
+    }
+
+    public void StopFeed()
+    {
+        _feedOn = false;
+        if (_perfMonitor != null) _perfMonitor.SampleUpdated -= OnPerformanceSampled;
+    }
+
+    public void Cleanup() => StopFeed();
+
+    private void ClearHistory()
+    {
+        CpuHistory.Clear();
+        GpuHistory.Clear();
+        MemoryHistory.Clear();
     }
 
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
