@@ -293,7 +293,8 @@ public class SettingsViewModel : INotifyPropertyChanged
 
         // The stored value or a registration that failed silently can leave a task other than the one chosen.
         var registered = StartupManager.IsRegisteredForStartup();
-        var status = SettingsChoices.SaveStatus(startupInstallFolder, _startWithWindowsAtLoad, StartWithWindows, registered);
+        var status = SettingsChoices.SaveStatus(
+            startupInstallFolder, _startWithWindowsAtLoad, StartWithWindows, registered, SettingsManager.IsDataFolderRefused());
         _startWithWindows = registered;
         _startWithWindowsAtLoad = registered;
         OnPropertyChanged(nameof(StartWithWindows));

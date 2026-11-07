@@ -56,7 +56,7 @@ public class DpcFixEngine
             {
                 Success = false,
                 Message = "An earlier version of GameShift already made this change from System Tweaks. " +
-                          "Undo it with Restore All in Settings before applying it here."
+                          "Undo it with Restore All on the Lasting changes page before applying it here."
             };
 
         try

@@ -67,4 +67,25 @@ public class SettingsManagerUpdateTests
             SettingsManager.SettingsFilePathOverride = null;
         }
     }
+
+    [Fact]
+    public void RecordFirstRunSkipped_EndsFirstRun_WithStartWithWindowsOff()
+    {
+        using var temp = new TempPath();
+        var previous = SettingsManager.SettingsFilePathOverride;
+        SettingsManager.SettingsFilePathOverride = temp.GetFile("settings.json");
+        try
+        {
+            Assert.True(SettingsManager.IsFirstRun());
+
+            SettingsManager.RecordFirstRunSkipped();
+
+            Assert.False(SettingsManager.IsFirstRun());
+            Assert.False(SettingsManager.Load().StartWithWindows);
+        }
+        finally
+        {
+            SettingsManager.SettingsFilePathOverride = previous;
+        }
+    }
 }

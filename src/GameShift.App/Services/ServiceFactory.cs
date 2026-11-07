@@ -41,7 +41,8 @@ public static class ServiceFactory
         StartupManager.DeleteLegacyBootRecoveryTask();
 
         // Reconcile startup registration without spawning schtasks.exe on every launch.
-        // Only (re)registers when the scheduled task is missing, stale or lacks the logon argument.
+        // Only (re)registers when the scheduled task is missing, stale or lacks the logon argument,
+        // and leaves it alone under a refused settings folder and before the first-run choice.
         StartupManager.ReconcileAtLaunch(settings, install.RegisteredInstallDirectory);
 
         // Check VBS/HVCI state (advisory)

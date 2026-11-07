@@ -172,21 +172,7 @@ public class KernelTuningManager
             if (!success || string.IsNullOrEmpty(output))
                 return false;
 
-            foreach (var line in output.Split('\n'))
-            {
-                var trimmed = line.Trim();
-                if (string.IsNullOrEmpty(trimmed)) continue;
-
-                // BCD output format: "key                     value"
-                var parts = trimmed.Split(new[] { ' ' }, 2, StringSplitOptions.RemoveEmptyEntries);
-                if (parts.Length != 2) continue;
-
-                var key = parts[0].Trim();
-                var val = parts[1].Trim();
-
-                if (values.ContainsKey(key))
-                    values[key] = val;
-            }
+            ParseEnumOutput(output, values);
         }
         catch (Exception ex)
         {
@@ -195,6 +181,30 @@ public class KernelTuningManager
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// Sets each key already in <paramref name="values"/> that <c>bcdedit /enum</c> output lists.
+    /// bcdedit translates the entry title and the "identifier" heading but not the element names, so
+    /// a translated heading matches no key.
+    /// </summary>
+    internal static void ParseEnumOutput(string output, Dictionary<string, string?> values)
+    {
+        foreach (var line in output.Split('\n'))
+        {
+            var trimmed = line.Trim();
+            if (string.IsNullOrEmpty(trimmed)) continue;
+
+            // BCD output format: "key                     value"
+            var parts = trimmed.Split(new[] { ' ' }, 2, StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length != 2) continue;
+
+            var key = parts[0].Trim();
+            var val = parts[1].Trim();
+
+            if (values.ContainsKey(key))
+                values[key] = val;
+        }
     }
 
     // ── Revert ────────────────────────────────────────────────────────────────

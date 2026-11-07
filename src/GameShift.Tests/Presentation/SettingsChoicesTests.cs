@@ -90,13 +90,13 @@ public class SettingsChoicesTests
     [InlineData(@"C:\Program Files\GameShift", false, false)]
     public void SaveStatus_IsPlainWhenTheTaskMatchesTheChoice(string? installFolder, bool shownAtLoad, bool chosen)
     {
-        Assert.Equal("Settings saved.", SettingsChoices.SaveStatus(installFolder, shownAtLoad, chosen, registeredAfterSave: chosen));
+        Assert.Equal("Settings saved.", SettingsChoices.SaveStatus(installFolder, shownAtLoad, chosen, registeredAfterSave: chosen, settingsFolderRefused: false));
     }
 
     [Fact]
     public void SaveStatus_NamesTheInstalledCopyWhenAChangeWasRefused()
     {
-        var status = SettingsChoices.SaveStatus(@"C:\Program Files\GameShift", shownAtLoad: false, chosen: true, registeredAfterSave: false);
+        var status = SettingsChoices.SaveStatus(@"C:\Program Files\GameShift", shownAtLoad: false, chosen: true, registeredAfterSave: false, settingsFolderRefused: false);
 
         Assert.Equal(@"Settings saved. Start with Windows was not changed: GameShift is installed in C:\Program Files\GameShift, so change it in that copy.", status);
     }
@@ -105,7 +105,7 @@ public class SettingsChoicesTests
     public void SaveStatus_SaysTheBoxTurnedOff_WhenSaveRemovedATaskTheBoxStillShowed()
     {
         // A copy outside the install folder whose stored setting is off removes a leftover task for this exe.
-        var status = SettingsChoices.SaveStatus(@"C:\Program Files\GameShift", shownAtLoad: true, chosen: true, registeredAfterSave: false);
+        var status = SettingsChoices.SaveStatus(@"C:\Program Files\GameShift", shownAtLoad: true, chosen: true, registeredAfterSave: false, settingsFolderRefused: false);
 
         Assert.Equal("Settings saved. Start with Windows is now off in this copy.", status);
     }
@@ -115,9 +115,25 @@ public class SettingsChoicesTests
     [InlineData(false, "on")]
     public void SaveStatus_SaysWhatTheTaskIs_WhenRegistrationDidNotFollowTheChoice(bool chosen, string nowWord)
     {
-        var status = SettingsChoices.SaveStatus(null, shownAtLoad: !chosen, chosen, registeredAfterSave: !chosen);
+        var status = SettingsChoices.SaveStatus(null, shownAtLoad: !chosen, chosen, registeredAfterSave: !chosen, settingsFolderRefused: false);
 
         Assert.Equal($"Settings saved. Start with Windows is now {nowWord} in this copy.", status);
+    }
+
+    private const string NotSaved =
+        "Settings not saved: GameShift could not use its settings folder.";
+
+    [Fact]
+    public void SaveStatus_UnderARefusedFolder_SaysNothingWasSaved_InEachBranch()
+    {
+        const string installFolder = @"C:\Program Files\GameShift";
+
+        Assert.Equal(NotSaved,
+            SettingsChoices.SaveStatus(null, shownAtLoad: true, chosen: true, registeredAfterSave: true, settingsFolderRefused: true));
+        Assert.Equal($"{NotSaved} Start with Windows was not changed: GameShift is installed in {installFolder}, so change it in that copy.",
+            SettingsChoices.SaveStatus(installFolder, shownAtLoad: false, chosen: true, registeredAfterSave: false, settingsFolderRefused: true));
+        Assert.Equal($"{NotSaved} Start with Windows is now off in this copy.",
+            SettingsChoices.SaveStatus(null, shownAtLoad: false, chosen: true, registeredAfterSave: false, settingsFolderRefused: true));
     }
 
     [Fact]

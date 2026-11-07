@@ -234,7 +234,16 @@ public partial class App : Application
                 }
                 else
                 {
-                    WriteDiag("Setup wizard cancelled - using defaults");
+                    try
+                    {
+                        SettingsManager.RecordFirstRunSkipped();
+                        settings = SettingsManager.Load();
+                        WriteDiag("Setup wizard closed - defaults saved with Start with Windows off");
+                    }
+                    catch (Exception ex)
+                    {
+                        WriteDiag($"Setup wizard closed - saving defaults failed: {ex.Message}");
+                    }
                 }
             }
 

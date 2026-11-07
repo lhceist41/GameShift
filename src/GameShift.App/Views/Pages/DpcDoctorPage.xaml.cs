@@ -78,7 +78,7 @@ public partial class DpcDoctorPage : Page
 
         System.Diagnostics.Process.Start(
             System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "shutdown.exe"),
-            "/r /t 10 /c \"GameShift DPC Doctor: Applying fix - restarting in 10 seconds\"");
+            "/r /t 10 /c \"GameShift Latency Doctor: restarting in 10 seconds to finish applying fixes\"");
     }
 
     private void OnDismissRebootPrompt(object sender, RoutedEventArgs e) =>

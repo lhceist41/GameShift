@@ -432,6 +432,13 @@ public static class SettingsManager
     }
 
     /// <summary>
+    /// The first-run setup was closed without finishing. Saves the defaults with Start with Windows
+    /// off, so the elevated logon task never appears without a choice, and the setup counts as done.
+    /// Keeps nothing when the data folder was refused. Throws like <see cref="Update"/>.
+    /// </summary>
+    public static void RecordFirstRunSkipped() => Update(s => s.StartWithWindows = false);
+
+    /// <summary>
     /// Whether the data folder was refused for this run, so <see cref="Load"/> returns defaults and
     /// <see cref="Save"/> keeps nothing. True as well when the folder could not be checked.
     /// </summary>

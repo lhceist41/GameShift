@@ -65,14 +65,19 @@ public static class SettingsChoices
     /// <summary>
     /// The status after Save. <paramref name="registeredAfterSave"/> is the startup task read back
     /// after Save, which the box then shows; when it differs from <paramref name="chosen"/>, the
-    /// status says why the box changed instead of only that the settings were saved.
+    /// status says why the box changed instead of only that the settings were saved. With
+    /// <paramref name="settingsFolderRefused"/>, Save kept nothing, and the status says so first.
     /// </summary>
-    public static string SaveStatus(string? installFolderKeepingStartup, bool shownAtLoad, bool chosen, bool registeredAfterSave)
+    public static string SaveStatus(
+        string? installFolderKeepingStartup, bool shownAtLoad, bool chosen, bool registeredAfterSave, bool settingsFolderRefused)
     {
-        if (registeredAfterSave == chosen) return "Settings saved.";
+        var saved = settingsFolderRefused
+            ? "Settings not saved: GameShift could not use its settings folder."
+            : "Settings saved.";
+        if (registeredAfterSave == chosen) return saved;
         if (StartupChangeRefused(installFolderKeepingStartup, shownAtLoad, chosen))
-            return $"Settings saved. Start with Windows was not changed: GameShift is installed in {installFolderKeepingStartup}, so change it in that copy.";
-        return $"Settings saved. Start with Windows is now {(registeredAfterSave ? "on" : "off")} in this copy.";
+            return $"{saved} Start with Windows was not changed: GameShift is installed in {installFolderKeepingStartup}, so change it in that copy.";
+        return $"{saved} Start with Windows is now {(registeredAfterSave ? "on" : "off")} in this copy.";
     }
 
     /// <summary>
