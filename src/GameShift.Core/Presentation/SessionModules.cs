@@ -25,7 +25,7 @@ public sealed record SessionModuleText(string Title, string Effect)
             "Keeps the game on the performance cores (P-cores) or the V-Cache CCD."),
         [EfficiencyModeController.OptimizationId] = new(
             "Put background apps in efficiency mode",
-            "Applies Windows Efficiency Mode to background apps, which keeps them on E-cores on hybrid CPUs."),
+            "Applies Windows Efficiency Mode to background apps, which on hybrid CPUs lets Windows prefer the E-cores for them."),
         [CpuSchedulingOptimizer.OptimizationId] = new(
             "Keep the game at full speed",
             "Keeps the game at full speed while background apps are in efficiency mode, and keeps background apps off a pinned game's cores."),

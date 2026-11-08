@@ -1,6 +1,7 @@
 using GameShift.Core.Config;
 using GameShift.Core.GameProfiles;
 using GameShift.Core.Monitoring;
+using GameShift.Core.SystemTweaks;
 
 namespace GameShift.Core.Presentation;
 
@@ -84,6 +85,7 @@ public static class SettingsChoices
     /// The read-only cards for the built-in games. <paramref name="detect"/> gives a tweak's display
     /// name and whether its change is in place, or null for a name it does not know; it runs once per
     /// distinct tweak, since many games share the same tweaks and each check reads the machine.
+    /// Retired tweaks are left off the cards: they can no longer be applied.
     /// </summary>
     public static IReadOnlyList<SupportedGameCard> SupportedGames(
         IEnumerable<BuiltInGame> games, Func<string, (string Name, bool InPlace)?> detect)
@@ -95,6 +97,9 @@ public static class SettingsChoices
             var tweaks = new List<SupportedGameTweak>();
             foreach (var className in game.RecommendedTweaks)
             {
+                if (SystemTweaksManager.IsRetired(className))
+                    continue;
+
                 if (!checkedTweaks.TryGetValue(className, out var tweak))
                 {
                     var found = detect(className);

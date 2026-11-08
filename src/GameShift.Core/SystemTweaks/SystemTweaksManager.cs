@@ -42,7 +42,10 @@ public class SystemTweaksManager
     /// <summary>The tweaks that can still be applied.</summary>
     public IReadOnlyList<ISystemTweak> OfferedTweaks => _tweaks.Where(t => !IsRetired(t)).ToList();
 
-    public static bool IsRetired(ISystemTweak tweak) => RetiredTweaks.Contains(tweak.GetType().Name);
+    public static bool IsRetired(ISystemTweak tweak) => IsRetired(tweak.GetType().Name);
+
+    /// <summary>Whether the tweak with this class name is retired, without creating the tweak.</summary>
+    public static bool IsRetired(string tweakClassName) => RetiredTweaks.Contains(tweakClassName);
 
     public SystemTweaksManager()
     {

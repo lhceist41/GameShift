@@ -2,6 +2,7 @@ using System.Text.Json;
 using GameShift.Core.Config;
 using GameShift.Core.GameProfiles;
 using GameShift.Core.Presentation;
+using GameShift.Core.SystemTweaks;
 using Xunit;
 
 namespace GameShift.Tests.Presentation;
@@ -148,13 +149,41 @@ public class SettingsChoicesTests
             return (name, false);
         });
 
-        var references = games.Sum(g => g.RecommendedTweaks.Length);
-        var distinct = games.SelectMany(g => g.RecommendedTweaks).Distinct().Count();
+        var offered = games.SelectMany(g => g.RecommendedTweaks).Where(n => !SystemTweaksManager.IsRetired(n)).ToList();
+        var references = offered.Count;
+        var distinct = offered.Distinct().Count();
         Assert.True(references > distinct);
         Assert.Equal(distinct, calls.Count);
         Assert.All(calls.Values, count => Assert.Equal(1, count));
         Assert.Equal(games.Count, cards.Count);
         Assert.Equal(references, cards.Sum(c => c.Tweaks.Count));
+    }
+
+    [Fact]
+    public void SupportedGames_NeverShowsOrDetectsARetiredTweak()
+    {
+        var retired = new[] { "DisableGameDvr", "DisableMpo", "OptimizeMmcss", "OptimizeWin32PrioritySeparation", "DisablePowerThrottling" };
+        Assert.All(retired, n => Assert.True(SystemTweaksManager.IsRetired(n)));
+        var games = new[]
+        {
+            new BuiltInGame { DisplayName = "Game A", ProcessNames = ["a.exe"], RecommendedTweaks = [.. retired, "DisableHags"] },
+            new BuiltInGame { DisplayName = "Game B", ProcessNames = ["b.exe"], RecommendedTweaks = retired },
+        };
+        var asked = new List<string>();
+
+        var cards = SettingsChoices.SupportedGames(games, name =>
+        {
+            asked.Add(name);
+            return (name, false);
+        });
+
+        Assert.Equal(new[] { "DisableHags" }, asked);
+        Assert.Equal(new[] { new SupportedGameTweak("DisableHags", false) }, cards[0].Tweaks);
+        Assert.False(cards[1].HasTweaks);
+
+        // The real built-in data reaches no retired tweak either, also not through the class-name fallback.
+        var builtInCards = SettingsChoices.SupportedGames(BuiltInProfiles.GetAll(), _ => null);
+        Assert.DoesNotContain(builtInCards.SelectMany(c => c.Tweaks), t => SystemTweaksManager.IsRetired(t.Name));
     }
 
     [Fact]
