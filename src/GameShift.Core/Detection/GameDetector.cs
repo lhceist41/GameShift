@@ -30,6 +30,9 @@ public class ProcessSpawnedEventArgs : EventArgs
 /// </summary>
 public class GameDetector : IDisposable
 {
+    // LauncherSource of the runtime record created when a process matches a built-in profile by name.
+    private const string BuiltInLauncherSource = "BuiltIn";
+
     private readonly IEnumerable<ILibraryScanner> _scanners;
     private readonly List<GameInfo> _knownGames;
     // Install folders of launcher games the user removed, normalized with a trailing '\'. Guarded by _lock.
@@ -668,8 +671,11 @@ public class GameDetector : IDisposable
 
         foreach (var game in snapshot)
         {
-            // Primary matching strategy: check if executable is under install directory
-            if (!string.IsNullOrEmpty(game.InstallDirectory))
+            // Primary matching strategy: check if executable is under install directory.
+            // A built-in record's folder comes from one observed exe and is no evidence that
+            // another exe there (a launcher, a helper) is the game; it matches by path or name only.
+            if (!string.IsNullOrEmpty(game.InstallDirectory)
+                && !string.Equals(game.LauncherSource, BuiltInLauncherSource, StringComparison.OrdinalIgnoreCase))
             {
                 var installDir = game.InstallDirectory.TrimEnd('\\') + '\\';
                 if (normalizedPath.StartsWith(installDir, StringComparison.OrdinalIgnoreCase))
@@ -879,7 +885,7 @@ public class GameDetector : IDisposable
                     InstallDirectory = observedRootedPath != null
                         ? Path.GetDirectoryName(observedRootedPath) ?? ""
                         : "",
-                    LauncherSource = "BuiltIn"
+                    LauncherSource = BuiltInLauncherSource
                 };
                 _knownGames.Add(existing);
             }

@@ -916,4 +916,136 @@ public class GameDetectorMatchingTests
 
         Assert.Single(events.Started);
     }
+
+    /// <summary>
+    /// A25: A built-in record comes from one observed executable, so its folder is not the game's.
+    /// Another executable in that folder (a launcher, a helper) must not join the session.
+    /// </summary>
+    [Fact]
+    public void OnProcessStarted_UnlistedExeBesideBuiltInGame_DoesNotJoinSession()
+    {
+        var builtIn = BuiltInProfiles.Overwatch2();
+        const string installDir = @"C:\Games\Overwatch\_retail_";
+
+        using var detector = CreateDetector();
+        var events = new EventRecorder(detector);
+
+        detector.OnProcessStarted(Started(5900, Path.Combine(installDir, builtIn.ProcessNames.First())));
+        detector.OnProcessStarted(Started(5901, Path.Combine(installDir, "Helper.exe")));
+
+        var started = Assert.Single(events.Started);
+        Assert.Equal(5900, started.ProcessId);
+        Assert.Equal(GameInfo.GenerateId("builtin", builtIn.Id), started.GameId);
+        Assert.Equal(new[] { 5900 }, detector.GetActiveGames().Keys);
+    }
+
+    /// <summary>
+    /// A26: When the built-in game exits, the session ends although an unlisted executable from
+    /// the same folder still runs.
+    /// </summary>
+    [Fact]
+    public void OnProcessStopped_BuiltInGameExits_AllGamesStoppedDespiteUnlistedExeBeside()
+    {
+        var builtIn = BuiltInProfiles.Overwatch2();
+        const string installDir = @"C:\Games\Overwatch\_retail_";
+
+        using var detector = CreateDetector();
+        var events = new EventRecorder(detector);
+
+        detector.OnProcessStarted(Started(5910, Path.Combine(installDir, builtIn.ProcessNames.First())));
+        detector.OnProcessStarted(Started(5911, Path.Combine(installDir, "Helper.exe")));
+        detector.OnProcessStopped(Stopped(5910));
+
+        Assert.Equal(1, events.AllStoppedCount);
+        Assert.Empty(detector.GetActiveGames());
+
+        // The helper's own exit is not a game event.
+        detector.OnProcessStopped(Stopped(5911));
+        Assert.Single(events.Stopped);
+        Assert.Equal(1, events.AllStoppedCount);
+    }
+
+    /// <summary>
+    /// A27: Positive control for A25: another listed process name of the same built-in in that
+    /// folder still joins the same game.
+    /// </summary>
+    [Fact]
+    public void OnProcessStarted_SecondListedNameBesideBuiltInGame_JoinsSameGame()
+    {
+        var builtIn = BuiltInProfiles.ApexLegends();
+        Assert.True(builtIn.ProcessNames.Length >= 2);
+        const string installDir = @"C:\Games\Apex";
+        var expectedId = GameInfo.GenerateId("builtin", builtIn.Id);
+
+        using var detector = CreateDetector();
+        var events = new EventRecorder(detector);
+
+        detector.OnProcessStarted(Started(5920, Path.Combine(installDir, builtIn.ProcessNames[0])));
+        detector.OnProcessStarted(Started(5921, Path.Combine(installDir, builtIn.ProcessNames[1])));
+
+        Assert.Equal(2, events.Started.Count);
+        Assert.All(events.Started, e => Assert.Equal(expectedId, e.GameId));
+        Assert.Single(detector.GetKnownGames());
+
+        detector.OnProcessStopped(Stopped(5920));
+        Assert.Equal(0, events.AllStoppedCount);
+        detector.OnProcessStopped(Stopped(5921));
+        Assert.Equal(1, events.AllStoppedCount);
+    }
+
+    /// <summary>
+    /// A28: Launcher and manual records keep the folder match: their folder comes from the
+    /// launcher or the user, so any executable under it is the game.
+    /// </summary>
+    [Theory]
+    [InlineData("Steam")]
+    [InlineData("Epic")]
+    [InlineData("Manual")]
+    public void OnProcessStarted_UnlistedExeUnderLauncherOrManualFolder_StillMatches(string launcherSource)
+    {
+        const string installDir = @"C:\Games\Overwatch\_retail_";
+        var game = new GameInfo
+        {
+            Id = GameInfo.GenerateId(launcherSource, "folder-game"),
+            GameName = "Folder Game",
+            ExecutablePath = Path.Combine(installDir, "Game.exe"),
+            InstallDirectory = installDir,
+            LauncherSource = launcherSource
+        };
+
+        using var detector = CreateDetector(game);
+        var events = new EventRecorder(detector);
+
+        detector.OnProcessStarted(Started(5930, Path.Combine(installDir, "Helper.exe")));
+
+        var started = Assert.Single(events.Started);
+        Assert.Equal(game.Id, started.GameId);
+        Assert.Equal(launcherSource, started.LauncherSource);
+    }
+
+    /// <summary>
+    /// A29: A later launch of the built-in's own executable still matches the same record, which
+    /// keeps its observed path and folder.
+    /// </summary>
+    [Fact]
+    public void OnProcessStarted_BuiltInExeStartedAgain_MatchesSameRecord()
+    {
+        var builtIn = BuiltInProfiles.Overwatch2();
+        const string installDir = @"C:\Games\Overwatch\_retail_";
+        var exePath = Path.Combine(installDir, builtIn.ProcessNames.First());
+
+        using var detector = CreateDetector();
+        var events = new EventRecorder(detector);
+
+        detector.OnProcessStarted(Started(5940, exePath));
+        detector.OnProcessStopped(Stopped(5940));
+        detector.OnProcessStarted(Started(5941, exePath));
+
+        Assert.Equal(2, events.Started.Count);
+        Assert.Equal(events.Started[0].GameId, events.Started[1].GameId);
+        var record = Assert.Single(detector.GetKnownGames());
+        Assert.Equal("BuiltIn", record.LauncherSource);
+        Assert.Equal(exePath, record.ExecutablePath);
+        Assert.Equal(installDir, record.InstallDirectory);
+    }
 }
