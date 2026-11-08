@@ -91,7 +91,10 @@ public static class StartupRecovery
             if (peek.Status == JournalPeekStatus.Missing)
                 return Nothing(wasActive);
             if (peek.Data is not { } peeked)
+            {
+                wasActive = true;
                 return ReportUnreadable(journal.JournalPath, peek.Status, trust, logger, repairFolder);
+            }
 
             wasActive = peeked.SessionActive;
             if (!wasActive)
@@ -112,7 +115,14 @@ public static class StartupRecovery
 
             // Read again now that the file is known to be writable only by administrators.
             trusted = journal.LoadJournal();
-            if (trusted == null || !trusted.SessionActive || trusted.Version != 2)
+            if (trusted == null)
+            {
+                logger.Warning("[StartupRecovery] The journal at {Path} could not be read again after the trust check; nothing was undone and the last session may still be active",
+                    journal.JournalPath);
+                return new StartupRecoveryResult(WasSessionActive: true, StartupRecoveryOutcome.Unreadable, Array.Empty<JournalRevertItem>());
+            }
+
+            if (!trusted.SessionActive || trusted.Version != 2)
             {
                 trusted = null;
                 return Nothing(wasActive);
@@ -286,7 +296,7 @@ public static class StartupRecovery
     }
 
     private static string EvidenceSuffix(string kind) =>
-        $"{kind}-{DateTime.UtcNow.ToString("yyyyMMdd'T'HHmmssfff'Z'", CultureInfo.InvariantCulture)}";
+        $"{kind}-{DateTime.UtcNow.ToString(JournalManager.EvidenceStampFormat, CultureInfo.InvariantCulture)}";
 
     // ── What the user is told ─────────────────────────────────────────────────
 

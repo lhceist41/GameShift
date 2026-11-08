@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -158,6 +159,15 @@ public class JournalManager
     private static string? _sharedFolderRefusal;
     private readonly string? _writeRefusal;
     private SessionJournalData _current = new();
+    // The session this instance started or adopted, by its start time: a save may replace that
+    // record on disk, but an active record of any other session is kept aside first.
+    private bool _ownsSession;
+    private DateTime? _ownedSessionStart;
+
+    internal const string EvidenceStampFormat = "yyyyMMdd'T'HHmmssfff'Z'";
+
+    /// <summary>The UTC time in the name of a record kept aside.</summary>
+    internal Func<DateTime> EvidenceClock { get; set; } = () => DateTime.UtcNow;
 
     private static readonly JsonSerializerOptions _writeOptions = new()
     {
@@ -342,7 +352,8 @@ public class JournalManager
 
     /// <summary>
     /// Opens a new session journal entry for the given profile.
-    /// Overwrites any previous journal (new session always starts fresh).
+    /// Overwrites any previous journal (new session always starts fresh), except that an active
+    /// record of a session this instance does not own is kept aside first (see <see cref="Save"/>).
     /// </summary>
     /// <param name="profile">The profile being applied.</param>
     /// <param name="gameName">
@@ -373,6 +384,9 @@ public class JournalManager
                 Optimizations = new List<JournalEntry>()
             };
             bool saved = Save(SaveScope.SessionState);
+            // Only after the save, so the save judges the disk record against the previous session.
+            _ownsSession = true;
+            _ownedSessionStart = _current.SessionStartTime;
 
             // Crash recovery for journaled optimizations depends on this write landing. If it did
             // not persist (disk full, ProgramData not writable, AV lock), the watchdog/boot recovery
@@ -714,7 +728,11 @@ public class JournalManager
                 var json = File.ReadAllText(_journalPath);
                 var data = JsonSerializer.Deserialize<SessionJournalData>(json, _writeOptions);
                 if (data != null && !_current.SessionActive)
+                {
                     _current = data;
+                    _ownsSession = true;
+                    _ownedSessionStart = data.SessionStartTime;
+                }
                 return data;
             }
             catch (Exception ex)
@@ -781,21 +799,64 @@ public class JournalManager
         }
     }
 
-    /// <summary>The same through the folder handle a save writes through.</summary>
-    private SessionJournalData? ReadFromDisk(JournalFolder folder)
+    /// <summary>The same through the folder handle a save writes through, telling the cases apart.</summary>
+    private JournalPeek ReadFromDisk(JournalFolder folder)
     {
+        byte[]? content;
         try
         {
-            var content = folder.ReadFile(Path.GetFileName(_journalPath));
-            return content == null
-                ? null
-                : JsonSerializer.Deserialize<SessionJournalData>(Encoding.UTF8.GetString(content).TrimStart('\uFEFF'), _writeOptions);
+            content = folder.ReadFile(Path.GetFileName(_journalPath));
         }
         catch (Exception ex)
         {
-            _logger.Debug(ex, "[JournalManager] Could not re-read journal for merge at {Path}", _journalPath);
-            return null;
+            _logger.Warning(ex, "[JournalManager] Could not re-read journal for merge at {Path}", _journalPath);
+            return new JournalPeek(JournalPeekStatus.NotRead, null);
         }
+
+        if (content == null)
+            return new JournalPeek(JournalPeekStatus.Missing, null);
+
+        try
+        {
+            var data = JsonSerializer.Deserialize<SessionJournalData>(Encoding.UTF8.GetString(content).TrimStart('\uFEFF'), _writeOptions);
+            return data != null ? new JournalPeek(JournalPeekStatus.Parsed, data) : new JournalPeek(JournalPeekStatus.NotParsed, null);
+        }
+        catch (JsonException ex)
+        {
+            _logger.Warning(ex, "[JournalManager] Could not parse the journal at {Path} for merge", _journalPath);
+            return new JournalPeek(JournalPeekStatus.NotParsed, null);
+        }
+        catch (Exception ex)
+        {
+            _logger.Warning(ex, "[JournalManager] Could not re-read journal for merge at {Path}", _journalPath);
+            return new JournalPeek(JournalPeekStatus.NotRead, null);
+        }
+    }
+
+    private bool OwnsSession(SessionJournalData onDisk) => _ownsSession && onDisk.SessionStartTime == _ownedSessionStart;
+
+    /// <summary>
+    /// Renames the journal file to <c>state.{kind}-{UTC time}.json</c> through the folder handle,
+    /// never over an existing file. False when it could not be kept; the caller then writes nothing.
+    /// </summary>
+    private bool KeepAside(JournalFolder folder, string kind)
+    {
+        var keptName = $"state.{kind}-{EvidenceClock().ToString(EvidenceStampFormat, CultureInfo.InvariantCulture)}.json";
+        bool kept = false;
+        try
+        {
+            kept = folder.RenameAside(Path.GetFileName(_journalPath), keptName);
+        }
+        catch (Exception ex)
+        {
+            _logger.Warning(ex, "[JournalManager] Could not rename {Path} to {Name}", _journalPath, keptName);
+        }
+
+        if (kept)
+            _logger.Warning("[JournalManager] Kept the session record at {Path} as {Name} before writing over it", _journalPath, keptName);
+        else
+            _logger.Warning("[JournalManager] Not writing the state journal: the record at {Path} could not be kept as {Name}", _journalPath, keptName);
+        return kept;
     }
 
     /// <summary>
@@ -822,6 +883,9 @@ public class JournalManager
     /// half of the document this write does not own so a concurrent instance's write is not lost.
     /// The caller holds the static <see cref="_lock"/>, which makes this read-modify-write atomic
     /// against the other instances sharing the same file.
+    /// A save never destroys a session record it cannot account for: a file that does not parse, or
+    /// in a session save an active record of a session this instance does not own, is renamed aside
+    /// first; a file that cannot be read is not written over at all.
     /// </summary>
     /// <returns>True when the journal was written.</returns>
     private bool Save(SaveScope scope)
@@ -834,20 +898,36 @@ public class JournalManager
 
             var toWrite = _current;
             var disk = ReadFromDisk(folder);
-            if (disk != null)
+            switch (disk.Status)
             {
-                if (scope == SaveScope.SessionState)
-                {
-                    // This write owns the session; keep any recovery metadata another instance set.
-                    CopyRecoveryMetadata(from: disk, to: _current);
-                }
-                else
-                {
-                    // This write owns the recovery metadata; keep the session another instance owns
-                    // by writing the on-disk document with only our metadata overlaid onto it.
-                    CopyRecoveryMetadata(from: _current, to: disk);
-                    toWrite = disk;
-                }
+                case JournalPeekStatus.NotRead:
+                    // It may hold a session this instance does not own; the next save tries again.
+                    _logger.Warning("[JournalManager] Not writing the state journal: {Path} could not be read, so it is not written over", _journalPath);
+                    return false;
+
+                case JournalPeekStatus.NotParsed:
+                    if (!KeepAside(folder, "unreadable"))
+                        return false;
+                    break;
+
+                case JournalPeekStatus.Parsed when disk.Data is { } onDisk:
+                    if (scope == SaveScope.SessionState)
+                    {
+                        // A crashed session nothing recovered, or one this version does not replay.
+                        if (onDisk.SessionActive && !OwnsSession(onDisk) && !KeepAside(folder, "unrecovered"))
+                            return false;
+
+                        // This write owns the session; keep any recovery metadata another instance set.
+                        CopyRecoveryMetadata(from: onDisk, to: _current);
+                    }
+                    else
+                    {
+                        // This write owns the recovery metadata; keep the session another instance owns
+                        // by writing the on-disk document with only our metadata overlaid onto it.
+                        CopyRecoveryMetadata(from: _current, to: onDisk);
+                        toWrite = onDisk;
+                    }
+                    break;
             }
 
             var json = JsonSerializer.Serialize(toWrite, _writeOptions);

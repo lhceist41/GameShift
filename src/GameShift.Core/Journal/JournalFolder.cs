@@ -125,6 +125,17 @@ internal sealed class JournalFolder : IDisposable
         return ownerSet;
     }
 
+    /// <summary>
+    /// Renames <paramref name="name"/> to <paramref name="newName"/> in this folder, never over an
+    /// existing entry. A link is renamed itself, never what it points at. False when either fails.
+    /// </summary>
+    public bool RenameAside(string name, string newName)
+    {
+        using var file = OpenRelative(name, NativeInterop.DELETE | NativeInterop.SYNCHRONIZE, ShareAll,
+            NativeInterop.FILE_OPEN, extraOptions: 0, out _);
+        return file != null && WindowsJournalSecurity.RenameRelative(file, _handle, newName, replaceIfExists: false) == 0;
+    }
+
     private int Replace(SafeFileHandle file, string name) =>
         HandleRelative.Replace(file, _handle, name, WaitBeforeReplaceRetry);
 

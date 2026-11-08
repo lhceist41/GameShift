@@ -181,6 +181,83 @@ public class StartupRecoveryTests : IDisposable
         Assert.Equal(StartupRecovery.UnreadableNotice, result.Notice);
     }
 
+    // The file can change between the trusted peek and the second read; unknown is not clean.
+    [Fact]
+    public void TrustedJournalThatCannotBeReadAgain_IsUnreadable_AndLeftInPlace()
+    {
+        CrashedSession("Overwatch", "Opt1");
+        var text = File.ReadAllText(JournalPath);
+        FileStream? held = null;
+
+        StartupRecoveryResult result;
+        try
+        {
+            result = Run(Engine(Recording("Opt1")), path =>
+            {
+                held = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Delete);
+                return Trusted;
+            });
+        }
+        finally
+        {
+            held?.Dispose();
+        }
+
+        Assert.Equal(StartupRecoveryOutcome.Unreadable, result.Outcome);
+        Assert.True(result.WasSessionActive);
+        Assert.Equal(1, _trustChecks);
+        Assert.Empty(_sequence);
+        Assert.Equal(text, File.ReadAllText(JournalPath));
+        Assert.Empty(Directory.GetFiles(_temp.Path, "state.*-*.json"));
+        Assert.Null(result.EvidencePath);
+        Assert.Equal(StartupRecovery.UnreadableNotice, result.Notice);
+    }
+
+    [Fact]
+    public void TrustedJournalThatEndedBeforeTheSecondRead_KeepsTheNothingToDoMapping()
+    {
+        CrashedSession("Overwatch", "Opt1");
+
+        var result = Run(Engine(Recording("Opt1")), path =>
+        {
+            var other = new JournalManager(path);
+            other.LoadJournal();
+            other.EndSession();
+            return Trusted;
+        });
+
+        Assert.Equal(StartupRecoveryOutcome.NothingToDo, result.Outcome);
+        Assert.True(result.WasSessionActive);
+        Assert.Empty(_sequence);
+    }
+
+    // An unexpected failure while reporting an unreadable record must not turn into "clean".
+    [Fact]
+    public void FailureWhileReportingAnUnreadableJournal_CountsTheSessionAsActive()
+    {
+        CrashedSession("Overwatch", "Opt1");
+        var logger = new Serilog.LoggerConfiguration().MinimumLevel.Verbose().AuditTo.Sink(new ThrowOnWarning()).CreateLogger();
+
+        StartupRecoveryResult result;
+        using (new FileStream(JournalPath, FileMode.Open, FileAccess.Read, FileShare.Delete))
+            result = StartupRecovery.Run(new JournalManager(JournalPath), _ => Trusted, Engine(Recording("Opt1")), logger, (_, _) => true);
+
+        Assert.Equal(StartupRecoveryOutcome.Partial, result.Outcome);
+        Assert.True(result.WasSessionActive);
+        Assert.NotNull(result.Notice);
+        Assert.Empty(_sequence);
+    }
+
+    /// <summary>An audit sink, so the exception reaches the caller instead of being swallowed.</summary>
+    private sealed class ThrowOnWarning : Serilog.Core.ILogEventSink
+    {
+        public void Emit(Serilog.Events.LogEvent logEvent)
+        {
+            if (logEvent.Level == Serilog.Events.LogEventLevel.Warning)
+                throw new InvalidOperationException("logging failed");
+        }
+    }
+
     [Fact]
     public void SessionThatEndedNormally_IsNothingToDo_AndStillLoadsTheWarnings()
     {
