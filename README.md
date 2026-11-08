@@ -44,11 +44,11 @@
 
 | Feature | Description |
 |:--------|:------------|
-| **One-Click Optimize** | Large "Optimize Now" button on the Dashboard applies all recommended system optimizations instantly. Shows a preview of what will be applied before clicking. Reverts with one click when done. |
+| **One-Click Optimize** | The **Optimize now** button on Home applies the session optimizations switched on in **During games** without waiting for a game (Quick Optimize); a link beside it lists what it applies. **End session** reverts them. |
 
 ### Session Optimizations
 
-These activate when a game launches and revert when the game closes.
+These activate when a game launches and revert when the game closes. The **During games** page shows each one with its default switch and its result in the running session.
 
 | Optimization | What it does |
 |:-------------|:-------------|
@@ -57,33 +57,33 @@ These activate when a game launches and revert when the game closes.
 | **Timer Resolution** | Advanced, off by default. Requests a 1 ms system timer resolution during gameplay. Runs on a dedicated windowless thread immune to minimize/occlusion resets. |
 | **Power Plan Switching** | Switches from Balanced to the High Performance plan during gaming, if Windows has it, and back afterwards. Any other plan you chose is left alone, and Ryzen X3D processors with two CCDs stay on Balanced, which AMD's chipset driver needs to keep games on the V-Cache CCD. |
 | **Core Pinning** | Advanced, off by default. One switch pins the game to the P-cores on Intel 12th-15th gen and AMD hybrid CPUs, or to the V-Cache CCD on Ryzen X3D processors with two CCDs, via the CPU Sets API. On hybrid CPUs it also keeps background processes on the E-cores, using soft affinity that cooperates with Intel Thread Director. |
-| **Efficiency Mode Control** | One switch puts background processes in Windows 11 efficiency mode (EcoQoS), which keeps them on E-cores on hybrid CPUs, and turns off power throttling for the game (HighQoS). Rescans every 30 seconds to catch newly spawned processes. |
+| **Efficiency Mode Control** | One switch puts background processes in Windows 11 efficiency mode (EcoQoS), which on hybrid CPUs lets Windows prefer the E-cores for them, and turns off power throttling for the game (HighQoS). Rescans every 30 seconds to catch newly spawned processes. |
 
 ### Monitoring & Diagnostics
 
 | Feature | Description |
 |:--------|:------------|
-| **Real-time Performance** | Live CPU, GPU, RAM, VRAM, and network ping telemetry with sparkline graphs. Pauses during gaming to eliminate polling overhead. |
-| **DPC Latency Doctor** | ETW-based per-driver DPC/ISR attribution and a known problematic driver database. One-click fixes with rollback: turn off multi-plane overlay (MPO) for multi-monitor flicker, turn off USB selective suspend, switch the GPU to MSI mode, and network adapter settings. It no longer changes Windows boot settings (BCDEdit); values an earlier version set are undone by Restore All. If a CPU core reservation is set, DPC Doctor can remove it. |
+| **Live readings** | Home shows DPC load (measured while a game runs), ping, CPU and GPU use, and memory in use, each with a small graph. A reading your PC cannot provide says "not available" instead of showing 0. The CPU, GPU, memory and ping readings pause while a game runs, and Home stops updating while its window is hidden. |
+| **Latency Doctor** | ETW-based per-driver DPC/ISR attribution and a known problematic driver database. One-click fixes with rollback: turn off multi-plane overlay (MPO) for multi-monitor flicker, turn off USB selective suspend, switch the GPU to MSI mode, and network adapter settings. It no longer changes Windows boot settings (BCDEdit); values an earlier version set are undone by Restore All. If a CPU core reservation is set, Latency Doctor can remove it. |
 | **DPC Load Monitor** | Passive sampling of DPC load (the share of CPU time spent in deferred procedure calls) during gaming, with configurable spike thresholds and toast notifications. |
-| **GPU Advisories** | Detects HAGS (Hardware Accelerated GPU Scheduling) and Resizable BAR/SAM status. Shows recommendations if performance features are available but not enabled. |
-| **Session History** | Post-session summary toast with duration, applied/failed optimization counts, and DPC statistics. Per-game tracking and statistics. |
+| **GPU Advisories** | The System page shows HAGS (Hardware Accelerated GPU Scheduling) and Resizable BAR/SAM status, with recommendations if performance features are available but not enabled. |
+| **Session History** | After each game, a message shows the session length, how many changes were applied and failed, whether all of them were undone (or which ones are still active), and the DPC load. Home lists your last five sessions, and per-game statistics are kept. |
 
 ### Persistent System Tweaks
 
-Changes that persist across reboots and can be reverted at any time.
+Changes that persist across reboots and can be reverted at any time. The **Lasting changes** page lists them.
 
 | Tweak | What it does |
 |:------|:-------------|
 | **GPU Scheduling (HAGS)** | Turns hardware-accelerated GPU scheduling on or off as recommended for your graphics card, and warns before turning it off where Frame Generation needs it. Requires a reboot. |
-| **Memory Integrity (VBS/HVCI)** | The Dashboard banner can turn Memory Integrity off, which can cost a few percent of FPS on average when it is on. Not offered while FACEIT Anti-Cheat or Riot Vanguard is installed: FACEIT and Vanguard's On-Demand mode require it. Windows does not turn it back on for you; use Windows Security > Device security > Core isolation, or Restore All. Requires a reboot. |
+| **Memory Integrity (VBS/HVCI)** | A notice on Home can turn Memory Integrity off, which can cost a few percent of FPS on average when it is on. Not offered while FACEIT Anti-Cheat or Riot Vanguard is installed: FACEIT and Vanguard's On-Demand mode require it. Windows does not turn it back on for you; use **Re-enable Memory Integrity** in Settings, Windows Security > Device security > Core isolation, or Restore All. Requires a reboot. |
 
-Earlier versions also offered Game DVR, NTFS, kernel memory, page file, power throttling, memory compression, large pages, multimedia scheduler, kernel boot (BCDEdit) and CPU core reservation tweaks. They can no longer be applied: we found no measurement that shows a benefit on current Windows, or Microsoft documents the boot settings as debugging options. The multi-plane overlay, USB selective suspend and MSI mode fixes moved to DPC Doctor. Anything you applied with an earlier version can still be undone with **Restore All GameShift Tweaks** in Settings.
+Earlier versions also offered Game DVR, NTFS, kernel memory, page file, power throttling, memory compression, large pages, multimedia scheduler, kernel boot (BCDEdit) and CPU core reservation tweaks. They can no longer be applied: we found no measurement that shows a benefit on current Windows, or Microsoft documents the boot settings as debugging options. The multi-plane overlay, USB selective suspend and MSI mode fixes moved to Latency Doctor. Anything you applied with an earlier version can still be undone with **Restore All GameShift Tweaks** on the **Lasting changes** page.
 
 ### Game Library & Profiles
 
-- **Auto-detection** from Steam, Epic Games, GOG Galaxy, and Xbox/Game Pass install directories, plus a built-in database of 80+ popular game executables as fallback
-- **19 built-in games** with anti-cheat metadata, notes and recommended tweaks for titles including Overwatch, Valorant, CS2, Fortnite, Apex Legends, Deadlock, osu!, Elden Ring, Arknights: Endfield, Wuthering Waves, and more
+- **Auto-detection** from Steam, Epic Games, GOG Galaxy, and Xbox/Game Pass install directories; the built-in games are also recognised by their executable names wherever they are installed
+- **19 built-in games** with anti-cheat metadata and notes for titles including Overwatch, Valorant, CS2, Fortnite, Apex Legends, Deadlock, osu!, Elden Ring, Arknights: Endfield, Wuthering Waves, and more; the Overwatch, CS2, Apex Legends and Final Fantasy XIV cards in Settings also show whether GPU scheduling (HAGS) is set as GameShift recommends for your PC
 - **Per-game toggle control** for every optimization
 - **Game-specific tips** for Overwatch, Valorant, League of Legends, Deadlock and osu!, each shown once as a toast notification (performance settings, anti-cheat quirks, and common pitfalls)
 - **Manual game adding** for any executable not in a scanned library
@@ -107,8 +107,6 @@ GameShift uses ETW (Event Tracing for Windows) kernel process events to detect g
 
 The journal is written to `%ProgramData%\GameShift\state.json` with atomic writes, and GameShift reverts every change when your game exits. If GameShift did not close normally during a session (an app crash, a blue screen, a power loss or a sign-out that cut it off), it undoes that session's recorded changes the next time it starts, before it can start another session, and tells you what it did. It does this only when the journal file and its folder can be written by administrators alone; a journal a standard user could have changed is set aside and never acted on.
 
-Registry changes are monitored in real time via `RegNotifyChangeKeyValue`. If an external process (Windows Update, group policy, another tool) modifies a managed setting during a gaming session, GameShift detects and re-applies it automatically.
-
 For games with kernel-level anti-cheat (EAC, EA Javelin, BattlEye, RICOCHET, TencentACE), GameShift automatically falls back to IFEO (Image File Execution Options) registry-based settings instead of runtime API calls that the anti-cheat would block.
 
 ---
@@ -124,11 +122,13 @@ For games with kernel-level anti-cheat (EAC, EA Javelin, BattlEye, RICOCHET, Ten
 
 When you accept an update, the installed GameShift downloads the new installer into its own folder, checks it against the SHA-256 digest GitHub reports for the release, and runs it; the installer replaces the files and starts GameShift again.
 
-To uninstall, first undo GameShift's lasting changes: open GameShift, go to **Lasting changes** and click **Restore All GameShift Tweaks**. It undoes the changes GameShift recorded (system tweaks, DPC Doctor fixes, kernel boot settings and Memory Integrity) and asks separately about a CPU core reservation and startup apps turned off with a "~" in front of their name. If you used Background Mode in an earlier version and GameShift ever closed unexpectedly while it was on, the `GlobalTimerResolutionRequests` value in `HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\kernel` may still be set. GameShift did not record whether that value existed before, so it leaves it alone; delete it in Registry Editor if you did not set it yourself. Then remove GameShift in Windows Settings > Apps.
+To uninstall, remove GameShift in Windows Settings > Apps. The uninstaller removes GameShift's startup task and asks whether to undo the lasting changes GameShift recorded for your Windows account: system tweaks, Latency Doctor fixes, kernel boot settings and Memory Integrity. A CPU core reservation and startup apps turned off with a "~" in front of their name need your own choice, so the uninstaller does not undo them; for those, and for changes recorded in another Windows account, use **Restore All GameShift Tweaks** on the **Lasting changes** page of GameShift before you uninstall. If something could not be undone, the uninstaller says so and `%ProgramData%\GameShift\logs\restore-tweaks.txt` lists it. If you used Background Mode in an earlier version and GameShift ever closed unexpectedly while it was on, the `GlobalTimerResolutionRequests` value in `HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\kernel` may still be set. GameShift did not record whether that value existed before, so it leaves it alone; delete it in Registry Editor if you did not set it yourself.
 
 ### Portable exe
 
-The Releases page also has `GameShift.App.exe`, which runs without installing. Put it in a folder only administrators can change, such as `C:\Program Files\GameShift` (not Downloads, the Desktop, or a folder you created directly under `C:\`). GameShift runs with administrator rights, so anyone who can change files in its folder could run code with those rights. A portable copy updates by replacing its own file, and suggests switching to the installer once.
+The Releases page also has `GameShift.App.exe`, which runs without installing. Put it in a folder only administrators can change, such as a folder you create under `C:\Program Files` (not Downloads, the Desktop, or a folder you created directly under `C:\`). GameShift runs with administrator rights, so anyone who can change files in its folder could run code with those rights.
+
+A portable copy offers once to install GameShift. When you accept that offer or an update, it downloads the installer into `C:\Program Files\GameShift`, checks it the same way, and runs it; GameShift is then installed there with your settings and game library, and the installed copy starts. GameShift does not delete the portable file; you can delete it yourself. If GameShift is already installed, a portable copy offers to start the installed copy instead.
 
 ### Build from Source
 
@@ -177,11 +177,11 @@ dotnet run --project src/GameShift.App
 - **Process priority & scheduling**  - Elevates game priority and assigns CPU sets. All released on game exit.
 - **Firewall**  - GameShift adds no firewall rules. At startup it removes the allow rules earlier versions added for Overwatch 2, Valorant, League of Legends and Deadlock.
 - **BCD settings**  - Only turning Memory Integrity off changes a boot setting (`hypervisorlaunchtype`), and turning it back on restores it. Kernel tuning values an earlier version set are undone by Restore All while they still have the value GameShift set.
-- **Interrupt settings**  - DPC Doctor can switch the GPU to MSI mode, with rollback. Interrupt changes an earlier version made are undone by Restore All.
+- **Interrupt settings**  - Latency Doctor can switch the GPU to MSI mode, with rollback. Interrupt changes an earlier version made are undone by Restore All.
 
 ### Why administrator privileges are required
 
-Windows protects service configuration, `HKLM` registry access, timer resolution, ETW sessions, and power plan management behind administrator permissions. GameShift makes **no network calls** except to check for updates on GitHub, collects **no telemetry**, and stores **all data locally**.
+Windows protects service configuration, `HKLM` registry access, timer resolution, ETW sessions, and power plan management behind administrator permissions. GameShift's only network activity is checking GitHub for updates (and downloading one when you accept it) and the ping reading on Home, which pings a host you can change in Settings (`8.8.8.8` by default). It collects **no telemetry** and stores **all data locally**.
 
 ### Transparency
 
@@ -217,7 +217,7 @@ GameShift does **not** inject into game processes, does **not** modify game file
 <details>
 <summary><strong>Will this get me banned?</strong></summary>
 <br/>
-No. GameShift modifies Windows system settings - power plans, timer resolution, service configuration, memory management. It does not touch game files, game memory, or game processes in ways that anti-cheat systems flag. The same underlying techniques (standby list management, timer resolution, interrupt affinity) are used by thousands of competitive players through standalone tools like ISLC, Process Lasso, and Timer Resolution.
+No. GameShift modifies Windows system settings - power plans, timer resolution, service configuration, process priority. It does not touch game files, game memory, or game processes in ways that anti-cheat systems flag. The same underlying techniques (process priority, timer resolution) are used by thousands of competitive players through standalone tools like Process Lasso and Timer Resolution.
 </details>
 
 <details>
@@ -235,7 +235,7 @@ Yes. GameShift is particularly effective on laptops where Windows aggressively t
 <details>
 <summary><strong>What happens if my PC crashes during optimization?</strong></summary>
 <br/>
-GameShift reverts every change when your game exits, and records all original values in <code>%ProgramData%\GameShift\state.json</code> using atomic writes, so the journal is never corrupted even during a hard shutdown. If GameShift itself crashes or the PC loses power mid-session, GameShift undoes that session's recorded changes the next time you start it, and tells you if anything could not be undone. It does not run a separate watchdog service or boot task for this, so the changes stay until GameShift is started again. As an extra safety net, create a System Restore point before first use, and the lasting changes GameShift recorded (system tweaks, DPC Doctor fixes, kernel boot settings and Memory Integrity) can be undone any time from Settings via "Restore All GameShift Tweaks".
+GameShift reverts every change when your game exits, and records all original values in <code>%ProgramData%\GameShift\state.json</code> using atomic writes, so the journal is never corrupted even during a hard shutdown. If GameShift itself crashes or the PC loses power mid-session, GameShift undoes that session's recorded changes the next time you start it, and tells you if anything could not be undone. It does not run a separate watchdog service or boot task for this, so the changes stay until GameShift is started again. As an extra safety net, create a System Restore point before first use, and the lasting changes GameShift recorded (system tweaks, Latency Doctor fixes, kernel boot settings and Memory Integrity) can be undone any time with "Restore All GameShift Tweaks" on the Lasting changes page.
 </details>
 
 <details>
@@ -247,7 +247,7 @@ Earlier versions created it for Background Mode, which has been removed. When yo
 <details>
 <summary><strong>Do I need an Intel hybrid CPU to benefit?</strong></summary>
 <br/>
-No. CPU Sets scheduling is a hybrid-only feature, but everything else - timer resolution, service suppression, power plan switching, DPC Doctor - works on any modern CPU from Intel or AMD.
+No. CPU Sets scheduling is a hybrid-only feature, but everything else - timer resolution, service suppression, power plan switching, Latency Doctor - works on any modern CPU from Intel or AMD.
 </details>
 
 <details>

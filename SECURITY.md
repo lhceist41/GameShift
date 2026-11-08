@@ -17,7 +17,7 @@ Helpful things to include:
 - What the vulnerability is
 - How to reproduce it
 - What an attacker could actually do with it
-- Which part it affects (main app, updater, state journal, DPC Doctor, etc.)
+- Which part it affects (main app, updater, state journal, Latency Doctor, etc.)
 - A suggested fix, if you have one
 
 It's just me here, so I can't promise a corporate-style response time. But I read every report, and I'll get back to you as soon as I reasonably can. Security stuff jumps the queue.
@@ -30,7 +30,7 @@ GameShift operates with administrator privileges and modifies system-level setti
 
 - **GameShift.App**  - Main WPF application (runs as administrator)
 - **Installer**  - `GameShift-Setup.exe`, a per-machine Inno Setup installer that installs to `C:\Program Files\GameShift`
-- **Updater**  - Checks GitHub Releases for a newer version at startup. When you accept an update, an installed copy downloads `GameShift-Setup.exe` into `<install folder>\updates`, verifies its SHA-256 against GitHub's digest, verifies it again right before running it, and runs it silently. A portable copy downloads a new `GameShift.App.exe`, verifies its SHA-256, and replaces the running exe
+- **Updater**  - Checks GitHub Releases for a newer version at startup. When you accept an update, an installed copy downloads `GameShift-Setup.exe` into `<install folder>\updates`, verifies its SHA-256 against GitHub's digest, verifies it again right before running it, and runs it silently. A portable copy downloads `GameShift-Setup.exe` into `C:\Program Files\GameShift` after checking that folder is admin-only, verifies it the same way, and runs it; GameShift is then installed there and the installed copy starts
 - **State Journal**  - Optimization state persisted to `%ProgramData%\GameShift\state.json`
 
 The source also contains **GameShift.Watchdog** (a Windows service that would run as SYSTEM) and a **boot-recovery scheduled task** (would also run as SYSTEM). Neither ships in releases or is installed by the app yet. Reports about them are still welcome, since they're meant to ship later.
@@ -44,19 +44,18 @@ The source also contains **GameShift.Watchdog** (a Windows service that would ru
 - State journal tampering leading to incorrect system state restoration
 - ETW session abuse or information disclosure
 - Data exfiltration or unintended network activity
-- Vulnerabilities in third-party dependencies (TraceEvent)
+- Vulnerabilities in third-party dependencies (for example TraceEvent, WPF-UI or Serilog)
 
 ## Security Design
 
-- GameShift's only network activity is checking GitHub Releases for updates (and downloading one when you accept it) and the dashboard's latency monitor, which pings a configurable host (`8.8.8.8` by default)
+- GameShift's only network activity is checking GitHub Releases for updates (and downloading one when you accept it) and the ping reading on Home, which pings a configurable host (`8.8.8.8` by default)
 - No telemetry is collected or transmitted
 - Use the installer, which puts GameShift in `C:\Program Files\GameShift`. If you run the portable `GameShift.App.exe`, keep it in a folder only administrators can change. GameShift runs elevated, so a folder standard users can write to (Downloads, the Desktop, or a folder created directly under `C:\`) lets them influence what runs with admin rights
 - Application data is stored locally in `%AppData%\GameShift\` (user settings and profiles). If that folder or a folder inside your user profile on the way to it has been redirected through a link, or it is on a network path, GameShift does not use it and saves nothing for that run
 - System recovery data is stored in `%ProgramData%\GameShift\` (state journal), and GameShift sets that folder's permissions so standard users can only read it
 - Logs are stored in `%ProgramData%\GameShift\logs\`, which only administrators can change and every local user can read
 - All system modifications are recorded in an atomic state journal with original values for deterministic rollback
-- Every change is reverted, with verification, when your game exits. Automatic recovery after an app crash or blue screen (the watchdog service and boot-recovery task) is still in development and not enabled in releases
-- Registry changes are monitored via `RegNotifyChangeKeyValue` to detect external tampering during sessions
+- Every change is reverted, with verification, when your game exits. If GameShift did not close normally during a session, it undoes that session's recorded changes the next time it starts, acting only on a journal that administrators alone can write. A watchdog service and a boot-recovery task that would recover without starting GameShift are not part of releases
 - The watchdog named pipe accepts only heartbeat signals - it does not accept or execute commands
 - GameShift no longer applies kernel tuning BCDEdit values. Its only BCD change is `hypervisorlaunchtype off` when the user confirms turning Memory Integrity off. Reverting values an earlier version set is limited to the known settings, and Restore All only touches a value that still has the value GameShift set
 - Turning VBS/HVCI off is blocked while Riot Vanguard or FACEIT Anti-Cheat is installed (FACEIT and Vanguard's On-Demand mode require it)
