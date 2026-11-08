@@ -698,15 +698,12 @@ public partial class App : Application
                 return;
             }
 
-            var exePath = Environment.ProcessPath;
-            SettingsManager.Update(s => s.MigratedPortableExePath = exePath);
-            if (UpdateCoordinator.Apply(download.Staged))
+            if (UpdateCoordinator.ApplyRememberingPortableCopy(download.Staged))
             {
                 Shutdown();
                 return;
             }
 
-            SettingsManager.Update(s => { if (s.MigratedPortableExePath == exePath) s.MigratedPortableExePath = null; });
             ShowInstallFailed("The installer could not be started.", release);
         }
         catch (Exception ex)

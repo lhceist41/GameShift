@@ -45,6 +45,9 @@
     <!-- Application icon (shown in Explorer and taskbar) -->
     <ApplicationIcon>Assets\Icons\app-icon.ico</ApplicationIcon>
 
+    <!-- requireAdministrator: Windows shows its own elevation prompt at start. -->
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+
     <!-- Assembly metadata (shown in exe file properties) -->
     <AssemblyTitle>GameShift</AssemblyTitle>
     <Product>GameShift</Product>

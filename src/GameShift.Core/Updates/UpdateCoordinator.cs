@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using GameShift.Core.Config;
 using Serilog;
 
 namespace GameShift.Core.Updates;
@@ -122,6 +123,52 @@ public static class UpdateCoordinator
         }
 
         return launch(staged.Path, installDir, staged.ExpectedSha256);
+    }
+
+    /// <summary>
+    /// <see cref="Apply(StagedUpdate)"/>, and on a portable copy the running exe is recorded first, so
+    /// the installed copy names the old file once. The caller MUST shut the app down when this returns true.
+    /// </summary>
+    public static bool ApplyRememberingPortableCopy(StagedUpdate staged) =>
+        ApplyRememberingPortableCopy(InstallationDetector.Current, Environment.ProcessPath, () => Apply(staged));
+
+    /// <summary>
+    /// Records <paramref name="exePath"/> before <paramref name="apply"/> on a portable copy and removes
+    /// the record again when the installer did not start or <paramref name="apply"/> threw; the exception
+    /// still reaches the caller.
+    /// </summary>
+    internal static bool ApplyRememberingPortableCopy(InstallationInfo install, string? exePath, Func<bool> apply)
+    {
+        if (install.Mode != InstallMode.Portable || string.IsNullOrWhiteSpace(exePath))
+            return apply();
+
+        // The record only feeds a note, so a settings file that cannot be written does not stop the update.
+        var recorded = TryUpdateSettings(s => s.MigratedPortableExePath = exePath);
+        var started = false;
+        try
+        {
+            started = apply();
+            return started;
+        }
+        finally
+        {
+            if (!started && recorded)
+                TryUpdateSettings(s => { if (s.MigratedPortableExePath == exePath) s.MigratedPortableExePath = null; });
+        }
+    }
+
+    private static bool TryUpdateSettings(Action<AppSettings> mutate)
+    {
+        try
+        {
+            SettingsManager.Update(mutate);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "UpdateCoordinator: Could not save the portable copy's path for the old-copy note");
+            return false;
+        }
     }
 
     /// <summary>

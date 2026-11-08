@@ -207,7 +207,7 @@ public class UpdateManagementViewModel : INotifyPropertyChanged
     {
         if (!IsUpdateReady || _staged == null) return;
 
-        if (UpdateCoordinator.Apply(_staged))
+        if (UpdateCoordinator.ApplyRememberingPortableCopy(_staged))
         {
             Application.Current.Shutdown();
         }

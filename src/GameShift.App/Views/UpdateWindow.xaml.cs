@@ -219,7 +219,7 @@ public partial class UpdateWindow : Window
     {
         if (!_isUpdateReady || _staged == null) return;
 
-        if (UpdateCoordinator.Apply(_staged))
+        if (UpdateCoordinator.ApplyRememberingPortableCopy(_staged))
         {
             Application.Current.Shutdown();
         }
