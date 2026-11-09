@@ -598,13 +598,16 @@ public class JournalTrustTests
     }
 
     // A user re-plants state.json before the repair locks the folder: the file keeps its owner and
-    // DACL, so it still fails the trust check afterwards.
+    // DACL, so it still fails the trust check afterwards. The planted DACL is explicit and protected:
+    // an inherited one depends on TEMP, and for one that is not auto-inherited Windows reports the
+    // protected flag relative to the parent folder, which the repair changes.
     [Fact]
     public void Repair_LeavesAFileNamedLikeTheJournalAsItWas()
     {
         using var temp = new TempPath();
         var planted = temp.GetFile("state.json");
         global::System.IO.File.WriteAllText(planted, "{}");
+        PlantUserWritableDacl(planted);
         var before = DescribeEntry(planted);
 
         try
@@ -619,6 +622,7 @@ public class JournalTrustTests
 
             var verdict = JournalTrust.Check(planted);
             Assert.False(verdict.Trusted);
+            Assert.Contains(verdict.Reasons, r => r.StartsWith("the file grants write rights ") && r.EndsWith(" to " + Users));
             if (before.OwnerSid != Admins)
                 Assert.Contains(verdict.Reasons, r => r.Contains("file is owned by " + before.OwnerSid));
         }
@@ -626,6 +630,17 @@ public class JournalTrustTests
         {
             OpenUp(temp.Path, planted);
         }
+    }
+
+    // Full control for the caller keeps the cleanup possible; Modify for Users is the standard user's plant.
+    private static void PlantUserWritableDacl(string file)
+    {
+        using var identity = WindowsIdentity.GetCurrent();
+        var security = new FileSecurity();
+        security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+        security.AddAccessRule(new FileSystemAccessRule(identity.User!, FileSystemRights.FullControl, AccessControlType.Allow));
+        security.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(Users), FileSystemRights.Modify, AccessControlType.Allow));
+        new FileInfo(file).SetAccessControl(security);
     }
 
     // ── Rename under a DACL that shuts the caller out ─────────────────────

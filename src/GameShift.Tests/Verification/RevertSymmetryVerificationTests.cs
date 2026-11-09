@@ -1,5 +1,6 @@
 using System.Security.Principal;
 using GameShift.Core.Optimization;
+using GameShift.Core.System;
 using GameShift.Core.Verification;
 using Serilog.Core;
 using Xunit;
@@ -178,15 +179,75 @@ public class RevertSymmetryVerificationTests
             return;
         }
 
+        var planBefore = SystemStateSnapshot.Capture().OriginalPowerPlan;
         var result = await RevertVerificationRunner.RunAsync(Logger.None);
 
+        _output.WriteLine($"power plan before the session: {planBefore}");
         _output.WriteLine(result.FormatReport());
 
         Assert.True(result.Error == null, "harness error: " + result.Error);
-        Assert.True(result.AppliedChangeCount >= 5,
-            $"only {result.AppliedChangeCount} probed changes during the session; the run was not meaningful");
+        var notMeaningful = WhyTheRunIsNotMeaningful(planBefore, result.AppliedChanges);
+        Assert.True(notMeaningful == null, notMeaningful);
         Assert.True(result.Failures.Count == 0,
             "persistent residue after revert:" + Environment.NewLine + result.FormatReport());
+    }
+
+    private static readonly Guid BalancedPlan = new("381b4222-f694-41f0-9685-ff5bb260df2e");
+
+    // A residue-free revert only proves something when the session changed probed state. From
+    // Balanced the session must also switch the plan, so the plan revert is part of the proof.
+    private static string? WhyTheRunIsNotMeaningful(Guid planBefore, IReadOnlyCollection<StateDifference> appliedChanges)
+    {
+        if (appliedChanges.Count == 0)
+            return "no probed changes during the session; the run was not meaningful";
+
+        if (planBefore == BalancedPlan
+            && !appliedChanges.Any(d => string.Equals(d.Key, "pcfg:active-scheme", StringComparison.OrdinalIgnoreCase)))
+            return $"the power plan switch from Balanced did not happen ({appliedChanges.Count} other probed changes); "
+                + "the plan revert was not exercised";
+
+        return null;
+    }
+
+    [Fact]
+    public void MeaningfulRun_NoChanges_IsRejected()
+    {
+        var problem = WhyTheRunIsNotMeaningful(Guid.Empty, Array.Empty<StateDifference>());
+
+        Assert.NotNull(problem);
+        Assert.Contains("no probed changes", problem);
+    }
+
+    [Fact]
+    public void MeaningfulRun_FromBalancedWithoutThePlanSwitch_IsRejected()
+    {
+        var changes = new[] { new StateDifference("svc:status:UsoSvc", "Running", "Stopped") };
+
+        var problem = WhyTheRunIsNotMeaningful(BalancedPlan, changes);
+
+        Assert.NotNull(problem);
+        Assert.Contains("power plan switch from Balanced did not happen", problem);
+    }
+
+    [Fact]
+    public void MeaningfulRun_FromBalancedWithThePlanSwitch_IsAccepted()
+    {
+        var changes = new[]
+        {
+            new StateDifference("pcfg:active-scheme", "381b4222-f694-41f0-9685-ff5bb260df2e", "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c"),
+        };
+
+        Assert.Null(WhyTheRunIsNotMeaningful(BalancedPlan, changes));
+    }
+
+    // Any other plan is left alone by design, so one probed change is enough there.
+    [Fact]
+    public void MeaningfulRun_FromHighPerformanceWithOneChange_IsAccepted()
+    {
+        var highPerformance = new Guid("8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c");
+        var changes = new[] { new StateDifference("svc:status:UsoSvc", "Running", "Stopped") };
+
+        Assert.Null(WhyTheRunIsNotMeaningful(highPerformance, changes));
     }
 
     // ── Single-instance mutex ────────────────────────────────────────────────

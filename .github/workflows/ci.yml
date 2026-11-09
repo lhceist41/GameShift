@@ -66,6 +66,11 @@ jobs:
       - name: Build
         run: dotnet build --nologo --verbosity minimal
 
+      # The session switches the power plan only from Balanced, so start there whatever plan the
+      # runner image uses; the plan switch and its revert are then part of the check.
+      - name: Activate the Balanced power plan
+        run: powercfg /setactive 381b4222-f694-41f0-9685-ff5bb260df2e
+
       - name: Run live revert-symmetry cycle
         env:
           GAMESHIFT_VERIFY_REVERT: '1'
