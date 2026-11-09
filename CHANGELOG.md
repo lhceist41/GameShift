@@ -4,7 +4,7 @@ All notable changes to GameShift are documented here.
 
 ## [Unreleased]
 
-## [3.10.0] - 2026-11-13
+## [3.10.0] - 2026-11-09
 
 ### Security
 
