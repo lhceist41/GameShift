@@ -1,6 +1,7 @@
 using System;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using GameShift.Core.Config;
@@ -24,6 +25,7 @@ public class DpcMonitoringViewModel : INotifyPropertyChanged
     private bool _runningGameHasDpcOff;
     private bool _showDpcSpikeAlert;
     private string _dpcSpikeAlertMessage = "";
+    private DateTime _dpcSpikeUtc;
     private bool _showTroubleshooter;
     private bool _isAnalyzing;
     private string _analysisSummary = "";
@@ -90,10 +92,18 @@ public class DpcMonitoringViewModel : INotifyPropertyChanged
     /// samples stop while it still runs (the counter can start failing mid-session).
     /// </summary>
     /// <param name="runningGameHasDpcOff">Asked only while not measuring: a game runs and its profile has DPC monitoring off.</param>
-    public void RefreshState(Func<bool>? runningGameHasDpcOff = null)
+    /// <param name="sessionStartedUtc">When the running game session was asked for, null without one.</param>
+    public void RefreshState(Func<bool>? runningGameHasDpcOff = null, DateTime? sessionStartedUtc = null)
     {
         bool monitoring = _dpcMonitor?.IsMonitoring == true;
         var now = DateTime.UtcNow;
+        // The spike notice reports its session, also after it ended, until a later session's monitoring
+        // runs. Compared by time, so a later session counts even when Home first refreshes after it started.
+        if (_showDpcSpikeAlert && monitoring && _dpcSpikeUtc < sessionStartedUtc)
+        {
+            ShowDpcSpikeAlert = false;
+            ShowTroubleshooter = false;
+        }
         if (!monitoring)
         {
             if (runningGameHasDpcOff != null) _runningGameHasDpcOff = runningGameHasDpcOff();
@@ -138,12 +148,16 @@ public class DpcMonitoringViewModel : INotifyPropertyChanged
 
     private void OnDpcSpikeDetected(object? sender, DpcSpikeEventArgs e)
     {
+        // Taken on the monitor's thread, where the event is raised as the sample is read.
+        var atUtc = DateTime.UtcNow;
         Application.Current.Dispatcher.BeginInvoke(() =>
         {
             var settings = SettingsManager.Load();
             if (settings.DpcSpikeAlertDismissed) return;
 
-            DpcSpikeAlertMessage = $"Drivers used {DpcLoad.Format(e.LatencyMicroseconds)} of CPU time for deferred procedure calls (DPC load).";
+            var at = atUtc.ToLocalTime().ToString("HH:mm", CultureInfo.InvariantCulture);
+            _dpcSpikeUtc = atUtc;
+            DpcSpikeAlertMessage = $"Drivers used {DpcLoad.Format(e.LatencyMicroseconds)} of CPU time for deferred procedure calls (DPC load) at {at}.";
             ShowDpcSpikeAlert = true;
         });
     }

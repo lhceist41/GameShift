@@ -18,7 +18,12 @@ public partial class DpcDoctorPage : Page
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
-        if (DataContext != null) return;
+        if (DataContext != null)
+        {
+            // The navigation view keeps this page, and leaving it detached the view model.
+            (DataContext as DpcDoctorViewModel)?.Attach();
+            return;
+        }
 
         var vm = new DpcDoctorViewModel(
             App.Services.DpcTrace,
@@ -34,7 +39,7 @@ public partial class DpcDoctorPage : Page
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
     {
-        (DataContext as DpcDoctorViewModel)?.Cleanup();
+        (DataContext as DpcDoctorViewModel)?.Detach();
     }
 
     private void OnStartClicked(object sender, RoutedEventArgs e) =>

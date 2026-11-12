@@ -227,7 +227,7 @@ public class DashboardViewModel : INotifyPropertyChanged
             HomeStatus = snapshot.Status;
         ShowModules(snapshot.Modules);
 
-        Dpc.RefreshState(RunningGameHasDpcOff);
+        Dpc.RefreshState(RunningGameHasDpcOff, _orchestrator.SessionRequestedUtc);
     }
 
     private (string GameId, bool DpcOff, DateTime ReadUtc)? _dpcSwitch;

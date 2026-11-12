@@ -166,6 +166,7 @@ public class DpcDoctorViewModel : INotifyPropertyChanged
     private readonly Dispatcher _dispatcher;
 
     private DispatcherTimer? _countdownTimer;
+    private bool _attached;
     private readonly Dictionary<string, FixAttempt> _attempts = new(StringComparer.Ordinal);
     private int _countdownSeconds;
 
@@ -284,12 +285,7 @@ public class DpcDoctorViewModel : INotifyPropertyChanged
         IsAdmin = AdminHelper.IsRunningAsAdmin();
         _isSimpleMode = snapshot.DpcDoctorSimpleMode;
 
-        if (_traceEngine != null)
-            _traceEngine.DriversUpdated += OnDriversUpdated;
-
-        // Subscribe to fallback DPC monitor for non-admin mode
-        if (_dpcMon != null)
-            _dpcMon.LatencySampled += OnFallbackLatencySampled;
+        Attach();
 
         InitializeQuickFixes(snapshot);
         InitializeCoreReservation();
@@ -687,7 +683,25 @@ public class DpcDoctorViewModel : INotifyPropertyChanged
         _dispatcher.BeginInvoke(() => FallbackDpcValue = value);
     }
 
-    public void Cleanup()
+    /// <summary>
+    /// Subscribes to the trace and fallback monitor. Called again each time the cached page is shown;
+    /// WPF can raise Loaded without Unloaded, so a second call while attached does nothing.
+    /// </summary>
+    public void Attach()
+    {
+        if (_attached) return;
+        _attached = true;
+
+        if (_traceEngine != null)
+            _traceEngine.DriversUpdated += OnDriversUpdated;
+
+        // Subscribe to fallback DPC monitor for non-admin mode
+        if (_dpcMon != null)
+            _dpcMon.LatencySampled += OnFallbackLatencySampled;
+    }
+
+    /// <summary>Undoes <see cref="Attach"/> when the page is left.</summary>
+    public void Detach()
     {
         // Stop any active ETW kernel trace before tearing down, otherwise a manually-started
         // capture keeps a system-wide DPC/ISR trace + its processing thread running after the
@@ -700,6 +714,8 @@ public class DpcDoctorViewModel : INotifyPropertyChanged
 
         if (_dpcMon != null)
             _dpcMon.LatencySampled -= OnFallbackLatencySampled;
+
+        _attached = false;
 
         _countdownTimer?.Stop();
         _successBannerTimer?.Stop();
