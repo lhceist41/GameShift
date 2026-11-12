@@ -781,6 +781,9 @@ public partial class App : Application
     {
         Log.Information("GameShift shutting down normally");
 
+        // Before the session ends below, so its deactivation shows no summary toast.
+        _trayManager?.BeginExit();
+
         // Unsubscribe the static tip-toast handler so it does not outlive the App instance.
         if (_tipTriggeredHandler != null)
         {
