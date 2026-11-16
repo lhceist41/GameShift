@@ -42,7 +42,8 @@ public enum RevertOutcome
 public sealed record GameActionRevertResult(RevertOutcome Outcome, string? Message = null);
 
 /// <param name="Name">The optimization name, or the game action kind.</param>
-public sealed record JournalRevertItem(bool IsGameAction, string Name, RevertOutcome Outcome, string? Message);
+/// <param name="InProgress">The record was written while its module was still applying.</param>
+public sealed record JournalRevertItem(bool IsGameAction, string Name, RevertOutcome Outcome, string? Message, bool InProgress = false);
 
 /// <summary>Per-record outcome of a journal replay, in the order the records were replayed.</summary>
 public sealed record JournalRevertResult(IReadOnlyList<JournalRevertItem> Items)

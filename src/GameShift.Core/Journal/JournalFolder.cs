@@ -34,6 +34,12 @@ internal sealed class JournalFolder : IDisposable
     /// <summary>Waits before replace attempt <c>n + 1</c>; 20, 40, 80 and 160 ms, 300 ms in all.</summary>
     internal Action<int> WaitBeforeReplaceRetry { get; set; } = attempt => Thread.Sleep(20 << (attempt - 1));
 
+    /// <summary>
+    /// Writes a file's data and metadata from the system cache to the disk (FlushFileBuffers on
+    /// Windows). A seam so a failing flush can be tested.
+    /// </summary>
+    internal Action<SafeFileHandle> FlushToDisk { get; set; } = RandomAccess.FlushToDisk;
+
     private JournalFolder(SafeFileHandle handle) => _handle = handle;
 
     /// <summary>Opens <paramref name="folder"/>; null with the reason when it is not a plain folder or cannot be opened.</summary>
@@ -89,8 +95,9 @@ internal sealed class JournalFolder : IDisposable
 
     /// <summary>
     /// Writes <paramref name="name"/> atomically: <c>name.tmp</c> is created as a new file, filled,
-    /// given Administrators as owner, then renamed over <paramref name="name"/>, even while another
-    /// process reads it. Throws, leaving no temp file, when the file cannot be written or renamed.
+    /// given Administrators as owner, flushed to the disk, then renamed over <paramref name="name"/>,
+    /// even while another process reads it. Throws, leaving no temp file, when the file cannot be
+    /// written, flushed or renamed.
     /// </summary>
     /// <returns>Whether Administrators could be made the owner.</returns>
     public bool WriteFileAtomically(string name, ReadOnlySpan<byte> content)
@@ -109,16 +116,30 @@ internal sealed class JournalFolder : IDisposable
             shareAccess: 0, NativeInterop.FILE_CREATE, extraOptions: 0, out var status)
             ?? throw new IOException($"Could not create {tempName} (status 0x{status:X8})");
 
-        RandomAccess.Write(file, content, 0);
-        // A new file gets the token's default owner, which policy can make the admin user; the trust
-        // check accepts only Administrators. On failure the write still completes and the next start
-        // reports the journal as not trusted.
-        bool ownerSet = WindowsJournalSecurity.TrySetAdministratorsOwner(file);
+        bool ownerSet;
+        try
+        {
+            RandomAccess.Write(file, content, 0);
+            // A new file gets the token's default owner, which policy can make the admin user; the trust
+            // check accepts only Administrators. On failure the write still completes and the next start
+            // reports the journal as not trusted.
+            ownerSet = WindowsJournalSecurity.TrySetAdministratorsOwner(file);
+
+            // NTFS logs the rename but not the file's data, so a power cut after an unflushed rename can
+            // leave the journal empty or zero-filled. Flushed first, the name holds the old file or the
+            // whole new one.
+            FlushToDisk(file);
+        }
+        catch
+        {
+            DeleteOnClose(file);
+            throw;
+        }
 
         status = Replace(file, name);
         if (status != 0)
         {
-            NativeInterop.NtSetInformationFile(file, out _, new byte[] { 1 }, 1, NativeInterop.FileDispositionInformation);
+            DeleteOnClose(file);
             throw new IOException($"Could not rename {tempName} to {name} (status 0x{status:X8})");
         }
 
@@ -135,6 +156,9 @@ internal sealed class JournalFolder : IDisposable
             NativeInterop.FILE_OPEN, extraOptions: 0, out _);
         return file != null && WindowsJournalSecurity.RenameRelative(file, _handle, newName, replaceIfExists: false) == 0;
     }
+
+    private static void DeleteOnClose(SafeFileHandle file) =>
+        NativeInterop.NtSetInformationFile(file, out _, new byte[] { 1 }, 1, NativeInterop.FileDispositionInformation);
 
     private int Replace(SafeFileHandle file, string name) =>
         HandleRelative.Replace(file, _handle, name, WaitBeforeReplaceRetry);

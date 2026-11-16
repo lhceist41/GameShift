@@ -27,10 +27,25 @@ public class ActiveGameInfo
 public class JournalEntry
 {
     public string Name { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Applied means replayable: recovery undoes the entry. <see cref="InProgress"/> says whether the
+    /// apply had finished.
+    /// </summary>
     public string State { get; set; } = nameof(OptimizationState.Pending);
+
     public string OriginalValue { get; set; } = string.Empty;
     public string AppliedValue { get; set; } = string.Empty;
     public DateTimeOffset AppliedAt { get; set; }
+
+    /// <summary>
+    /// True while the module is still applying: <see cref="OriginalValue"/> covers the changes it
+    /// recorded before making them, some of which may not have happened. Left out of the file when
+    /// false, so a finished entry reads the same as in versions without it, which also replay an
+    /// unfinished one because its <see cref="State"/> is Applied.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool InProgress { get; set; }
 }
 
 /// <summary>
@@ -420,22 +435,87 @@ public class JournalManager
     }
 
     /// <summary>
+    /// An entry recorded while its module was still applying. Only this class can reach the entry, so
+    /// no caller can change it without a save.
+    /// </summary>
+    public sealed class EntryHandle
+    {
+        private readonly JournalEntry _entry;
+
+        internal EntryHandle(JournalEntry entry) => _entry = entry;
+
+        internal static JournalEntry Of(EntryHandle handle) => handle._entry;
+    }
+
+    /// <summary>
     /// Appends a successful apply result to the journal.
     /// </summary>
-    public void RecordApplied(OptimizationResult result)
+    public void RecordApplied(OptimizationResult result) => RecordApplied(result, inProgress: null);
+
+    /// <summary>
+    /// Records a finished apply: with <paramref name="inProgress"/> the entry it names is completed in
+    /// place, otherwise a new entry is appended.
+    /// </summary>
+    internal void RecordApplied(OptimizationResult result, EntryHandle? inProgress)
     {
         lock (_lock)
         {
-            _current.Optimizations.Add(new JournalEntry
+            var entry = CurrentEntry(inProgress, result.Name);
+            if (entry == null)
             {
-                Name = result.Name,
-                State = result.State.ToString(),
-                OriginalValue = result.OriginalValue,
-                AppliedValue = result.AppliedValue,
-                AppliedAt = DateTimeOffset.UtcNow
-            });
+                entry = new JournalEntry { Name = result.Name, AppliedAt = DateTimeOffset.UtcNow };
+                _current.Optimizations.Add(entry);
+            }
+
+            entry.State = result.State.ToString();
+            entry.OriginalValue = result.OriginalValue;
+            entry.AppliedValue = result.AppliedValue;
+            entry.InProgress = false;
             Save(SaveScope.SessionState);
         }
+    }
+
+    /// <summary>
+    /// Records what a module is about to change before it changes it. The first call appends an
+    /// Applied entry marked in progress; a call with the returned handle replaces that entry's
+    /// <see cref="JournalEntry.OriginalValue"/>, which must cover every change recorded so far.
+    /// A save that fails is logged only: the next successful save writes the entry.
+    /// </summary>
+    internal EntryHandle RecordInProgress(string name, string originalValueJson, EntryHandle? handle = null)
+    {
+        lock (_lock)
+        {
+            var entry = CurrentEntry(handle, name);
+            if (entry == null)
+            {
+                entry = new JournalEntry { Name = name, AppliedAt = DateTimeOffset.UtcNow };
+                _current.Optimizations.Add(entry);
+            }
+
+            entry.State = nameof(OptimizationState.Applied);
+            entry.OriginalValue = originalValueJson;
+            entry.InProgress = true;
+            Save(SaveScope.SessionState);
+            return new EntryHandle(entry);
+        }
+    }
+
+    /// <summary>
+    /// The entry a handle names while it still belongs to the current session, or null. A handle from
+    /// an earlier session or a reloaded list is not followed: the caller appends instead, so the
+    /// record lands in the session that is being written.
+    /// </summary>
+    private JournalEntry? CurrentEntry(EntryHandle? handle, string name)
+    {
+        if (handle == null)
+            return null;
+
+        var entry = EntryHandle.Of(handle);
+        if (_current.Optimizations.Any(e => ReferenceEquals(e, entry)))
+            return entry;
+
+        _logger.Warning("[JournalManager] The entry for {Name} is not in the current session; recording it as a new entry", name);
+        return null;
     }
 
     /// <summary>
@@ -470,6 +550,7 @@ public class JournalManager
                 if (_current.Optimizations[i].Name == name)
                 {
                     _current.Optimizations[i].State = state.ToString();
+                    _current.Optimizations[i].InProgress = false;
                     break;
                 }
             }

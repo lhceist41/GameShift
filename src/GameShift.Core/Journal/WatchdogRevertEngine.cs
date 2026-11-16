@@ -125,13 +125,16 @@ public class WatchdogRevertEngine
 
         foreach (var entry in toRevert)
         {
+            // Read before RecordReverted resolves the entry, which clears it.
+            bool inProgress = entry.InProgress;
+
             if (!_factories.TryGetValue(entry.Name, out var factory))
             {
                 _logger.Warning(
                     "[WatchdogRevertEngine] No factory registered for '{Name}' - skipping",
                     entry.Name);
                 items.Add(new JournalRevertItem(
-                    IsGameAction: false, entry.Name, RevertOutcome.Skipped, "No recovery path for this optimization"));
+                    IsGameAction: false, entry.Name, RevertOutcome.Skipped, "No recovery path for this optimization", inProgress));
                 continue;
             }
 
@@ -150,12 +153,12 @@ public class WatchdogRevertEngine
                 items.Add(new JournalRevertItem(
                     IsGameAction: false, entry.Name,
                     result.State == OptimizationState.Reverted ? RevertOutcome.Reverted : RevertOutcome.Failed,
-                    result.ErrorMessage));
+                    result.ErrorMessage, inProgress));
             }
             catch (Exception ex)
             {
                 _logger.Error(ex, "[WatchdogRevertEngine] Exception reverting '{Name}'", entry.Name);
-                items.Add(new JournalRevertItem(IsGameAction: false, entry.Name, RevertOutcome.Failed, ex.Message));
+                items.Add(new JournalRevertItem(IsGameAction: false, entry.Name, RevertOutcome.Failed, ex.Message, inProgress));
             }
         }
 

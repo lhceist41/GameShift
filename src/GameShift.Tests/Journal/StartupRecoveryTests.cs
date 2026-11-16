@@ -564,7 +564,9 @@ public class StartupRecoveryTests : IDisposable
     public void GameNameMissing_IsDescribedAsAGameSession()
     {
         var notice = StartupRecovery.DescribeForUser(new StartupRecoveryResult(
-            true, StartupRecoveryOutcome.Recovered, Array.Empty<JournalRevertItem>(), GameName: "", SessionStarted: null));
+            true, StartupRecoveryOutcome.Recovered,
+            new[] { new JournalRevertItem(false, PowerPlanSwitcher.OptimizationId, RevertOutcome.Reverted, null) },
+            GameName: "", SessionStarted: null));
 
         Assert.Equal("GameShift did not close normally during a game session. It has now undone the changes it made then.", notice);
     }

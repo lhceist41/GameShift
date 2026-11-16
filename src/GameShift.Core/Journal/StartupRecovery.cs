@@ -318,6 +318,11 @@ public static class StartupRecovery
         "GameShift could not read its session record, so it cannot tell whether the last game session ended normally. " +
         "Nothing from that session was undone. GameShift's log has the details.";
 
+    internal const string InProgressRecoveredSentence =
+        "It was still making its changes then. It has now undone every change it had recorded.";
+
+    internal const string NothingRecordedSentence = "It found no recorded changes to undo.";
+
     internal const string NotUndoneAdvice = "GameShift kept a copy of that session's record, and its log lists what is left.";
 
     internal const string TaskReEnabledAdvice =
@@ -355,10 +360,14 @@ public static class StartupRecovery
         if (notUndone.Count == 0 && result.Outcome != StartupRecoveryOutcome.Recovered)
             notUndone.Add("some of the recorded changes");
 
+        // A record written while a module was still applying may name changes that never happened,
+        // and an empty replay undid nothing, so neither claims more than what was recorded.
         var parts = new List<string>
         {
             result.Outcome switch
             {
+                StartupRecoveryOutcome.Recovered when result.Items.Count == 0 => $"{opening} {NothingRecordedSentence}",
+                StartupRecoveryOutcome.Recovered when result.Items.Any(i => i.InProgress) => $"{opening} {InProgressRecoveredSentence}",
                 StartupRecoveryOutcome.Recovered => $"{opening} It has now undone the changes it made then.",
                 StartupRecoveryOutcome.Partial => $"{opening} It has undone what it could.",
                 _ => $"{opening} It could not undo those changes automatically.",
