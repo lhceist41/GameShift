@@ -22,6 +22,7 @@ namespace GameShift.App.ViewModels;
 public class SettingsViewModel : INotifyPropertyChanged
 {
     private bool _startWithWindows;
+    private bool _startInTray;
     // What the box showed at load: the startup task, not the stored setting.
     private bool _startWithWindowsAtLoad;
     private AppTheme _theme = AppTheme.System;
@@ -60,6 +61,13 @@ public class SettingsViewModel : INotifyPropertyChanged
     {
         get => _startWithWindows;
         set { if (_startWithWindows != value) { _startWithWindows = value; IsDirty = true; OnPropertyChanged(); } }
+    }
+
+    /// <summary>A start at Windows sign-in shows only the tray icon. Stored as AppSettings.StartMinimized.</summary>
+    public bool StartInTray
+    {
+        get => _startInTray;
+        set { if (_startInTray != value) { _startInTray = value; IsDirty = true; OnPropertyChanged(); } }
     }
 
     public IReadOnlyList<ThemeOption> ThemeOptions => SettingsChoices.Themes;
@@ -222,6 +230,7 @@ public class SettingsViewModel : INotifyPropertyChanged
         // The startup task is the source of truth for this box.
         _startWithWindows = StartupManager.IsRegisteredForStartup();
         _startWithWindowsAtLoad = _startWithWindows;
+        _startInTray = settings.StartMinimized;
         _theme = SettingsChoices.ShownTheme(settings.AppTheme);
         _themeAtLoad = _theme;
         _showNotifications = settings.ShowNotifications;
@@ -243,6 +252,7 @@ public class SettingsViewModel : INotifyPropertyChanged
 
         // Notify all properties changed
         OnPropertyChanged(nameof(StartWithWindows));
+        OnPropertyChanged(nameof(StartInTray));
         OnPropertyChanged(nameof(Theme));
         OnPropertyChanged(nameof(ShowNotifications));
         OnPropertyChanged(nameof(EnableLogging));
@@ -272,6 +282,7 @@ public class SettingsViewModel : INotifyPropertyChanged
         // Overlay UI-managed fields
         if (startupInstallFolder == null)
             settings.StartWithWindows = StartWithWindows;
+        settings.StartMinimized = StartInTray;
         // An unchanged choice keeps the stored value, which may be a theme number this version does not know.
         if (Theme != _themeAtLoad)
             settings.AppTheme = Theme;

@@ -32,6 +32,11 @@ public partial class App : Application
 
     private TrayIconManager? _trayManager;
     private MainWindow? _mainWindow;
+
+    // A tray start keeps the window hidden, and WPF refuses a window that was never shown as an owner.
+    private bool _mainWindowShown;
+    private bool _mainWindowClosed;
+
     private GlobalHotkeyService? _hotkeyService;
     private SingleInstancePipe? _singleInstancePipe;
     private WatchdogHeartbeatClient? _watchdogHeartbeat;
@@ -156,17 +161,22 @@ public partial class App : Application
             WriteDiag("Step b: Crash recovery check...");
             CrashRecoveryHandler.RecoverIfNeeded();
 
-            ThemeService.Apply(SettingsManager.Load().AppTheme);
+            var startupSettings = SettingsManager.Load();
+            ThemeService.Apply(startupSettings.AppTheme);
+            bool startedAtLogon = Program.LaunchOptions.StartedAtLogon;
+            bool startInTray = startupSettings.StartMinimized;
 
             // Step c: Show the window IMMEDIATELY with a loading overlay, before the heavy
             // service initialization. The user sees GameShift within a fraction of a second
             // instead of a blank screen while WMI / performance-counter / registry work runs.
             // The window stays responsive because the service construction itself happens on a
             // background thread (Step d) - the overlay's progress ring keeps spinning.
-            WriteDiag("Step c: Showing MainWindow (loading state)...");
-            _mainWindow = new MainWindow();
-            _mainWindow.Show();
-            WriteDiag("MainWindow shown (loading overlay visible)");
+            // A start that may stay in the tray keeps it hidden until the tray is set up (Step e1).
+            WriteDiag("Step c: Creating MainWindow (loading state)...");
+            _mainWindow = CreateMainWindow();
+            if (!StartupWindowPolicy.MayStartInTray(startedAtLogon, startInTray))
+                ShowMainWindow();
+            WriteDiag($"MainWindow created, shown={_mainWindowShown}");
 
             // Step d: Build all core services OFF the UI thread so the window never freezes.
             // CreateAll constructs only plain, background-safe objects (no WPF UI elements), so it
@@ -217,10 +227,23 @@ public partial class App : Application
             TrayAvailable = _trayManager != null;
             WriteDiag($"TrayAvailable={TrayAvailable}");
 
+            // Step e1: A tray start still shows the window when there is no tray icon to reach it from,
+            // or when the recovery notice, the installed-copy notice or the first-run wizard below needs it.
+            bool firstRun = SettingsManager.IsFirstRun();
+            if (!_mainWindowShown && StartupWindowPolicy.ShouldShowWindow(
+                    startedAtLogon, startInTray, TrayAvailable,
+                    recoveryNoticeDue: !string.IsNullOrEmpty(Services.StartupRecovery?.Notice),
+                    installNoticeDue: _installRefusedMessage != null,
+                    wizardDue: firstRun))
+            {
+                ShowMainWindow();
+            }
+            WriteDiag($"Step e1: MainWindow shown={_mainWindowShown}");
+
             // Step e2: First-run wizard check
             // Shown AFTER services and tray are wired (wizard's Scan button needs App.Services.Detector),
             // BEFORE navigating to the dashboard. The loading overlay sits behind the modal wizard.
-            if (SettingsManager.IsFirstRun())
+            if (firstRun)
             {
                 WriteDiag("Step e2: First launch detected - showing setup wizard...");
                 var wizard = new FirstRunWizardWindow { Owner = _mainWindow };
@@ -248,11 +271,23 @@ public partial class App : Application
             }
 
             // Step f: Services are ready - navigate to the dashboard and drop the loading overlay.
-            // The window itself has been visible since Step c.
+            // A window still hidden for a tray start navigates when it is first shown.
             WriteDiag("Step f: Navigating to dashboard...");
-            _mainWindow.NavigateTo(typeof(DashboardPage));
+            if (_mainWindowShown)
+                _mainWindow.NavigateTo(typeof(DashboardPage));
             _mainWindow.HideLoadingOverlay();
             WriteDiag("Dashboard shown OK");
+
+            // Start named pipe server for single-instance bring-to-front. Started before the startup
+            // notices and the update check, which can take many seconds at a busy logon: a tray start
+            // has no window, so a second start in that time must still be able to open it.
+            _singleInstancePipe = new SingleInstancePipe();
+            _singleInstancePipe.ShowRequested += () =>
+            {
+                Dispatcher.Invoke(() => ShowAndNavigate(typeof(DashboardPage)));
+            };
+            _singleInstancePipe.StartServer();
+            WriteDiag("Single-instance pipe server started");
 
             // Step f1: Startup notices, shown one after another once the dashboard has rendered while
             // the rest of startup carries on. Later dialogs wait for them so none opens over another.
@@ -265,6 +300,8 @@ public partial class App : Application
             {
                 _hotkeyService = new GlobalHotkeyService();
                 _hotkeyService.HotkeyPressed += OnGlobalHotkeyPressed;
+                // A hidden window has no handle until one is made; it still receives WM_HOTKEY.
+                new System.Windows.Interop.WindowInteropHelper(_mainWindow!).EnsureHandle();
                 _hotkeyService.Register(_mainWindow!, settings.GlobalHotkeyBinding);
                 WriteDiag("Global hotkey registered OK");
             }
@@ -289,15 +326,6 @@ public partial class App : Application
             {
                 Services.DpcMon.DpcSpikeDetected += OnDpcSpikeDetected;
             }
-
-            // Start named pipe server for single-instance bring-to-front
-            _singleInstancePipe = new SingleInstancePipe();
-            _singleInstancePipe.ShowRequested += () =>
-            {
-                Dispatcher.Invoke(() => ShowAndNavigate(typeof(DashboardPage)));
-            };
-            _singleInstancePipe.StartServer();
-            WriteDiag("Single-instance pipe server started");
 
             // Start watchdog heartbeat - best-effort, silent if watchdog service not installed
             _watchdogHeartbeat = new WatchdogHeartbeatClient();
@@ -349,18 +377,47 @@ public partial class App : Application
     /// </summary>
     private void ShowAndNavigate(Type pageType)
     {
-        if (_mainWindow == null || !_mainWindow.IsLoaded)
+        if (_mainWindow == null || _mainWindowClosed)
         {
-            _mainWindow = new MainWindow();
-            _mainWindow.Show();
+            _mainWindow = CreateMainWindow();
+            ShowMainWindow();
         }
         else
         {
-            _mainWindow.Show();
+            ShowMainWindow();
             _mainWindow.Activate();
         }
 
         _mainWindow.NavigateTo(pageType);
+    }
+
+    private MainWindow CreateMainWindow()
+    {
+        var window = new MainWindow();
+        window.Closed += (_, _) => { if (ReferenceEquals(window, _mainWindow)) _mainWindowClosed = true; };
+        _mainWindowShown = false;
+        _mainWindowClosed = false;
+        return window;
+    }
+
+    private void ShowMainWindow()
+    {
+        _mainWindow!.Show();
+        _mainWindowShown = true;
+    }
+
+    /// <summary>
+    /// The owner for a startup dialog. A window a tray start left hidden is shown first, on the
+    /// dashboard, so the dialog is seen together with the app it is about.
+    /// </summary>
+    private Window DialogOwner()
+    {
+        if (!_mainWindowShown)
+        {
+            ShowMainWindow();
+            _mainWindow!.NavigateTo(typeof(DashboardPage));
+        }
+        return _mainWindow!;
     }
 
     /// <summary>
@@ -416,7 +473,7 @@ public partial class App : Application
                           "\n\nHas the system been rebooted since?";
 
                 var result = MessageBox.Show(
-                    _mainWindow!,
+                    DialogOwner(),
                     msg,
                     "Pending DPC Fixes",
                     MessageBoxButton.YesNo,
@@ -431,7 +488,7 @@ public partial class App : Application
             if (!string.IsNullOrEmpty(buildWarning))
             {
                 MessageBox.Show(
-                    _mainWindow!,
+                    DialogOwner(),
                     "Windows was updated since your last GameShift session:\n\n" + buildWarning +
                     "\n\nSome optimizations may need to be reapplied.",
                     "Windows Build Changed",
@@ -465,7 +522,7 @@ public partial class App : Application
             _ => ("Changes Not Fully Undone", MessageBoxImage.Warning),
         };
 
-        MessageBox.Show(_mainWindow!, message, title, MessageBoxButton.OK, icon);
+        MessageBox.Show(DialogOwner(), message, title, MessageBoxButton.OK, icon);
     }
 
     private void ShowBackgroundModeRetirementNotice()
@@ -474,7 +531,7 @@ public partial class App : Application
         if (string.IsNullOrEmpty(message)) return;
 
         MessageBox.Show(
-            _mainWindow!,
+            DialogOwner(),
             message,
             "Background Mode Removed",
             MessageBoxButton.OK,
@@ -511,7 +568,8 @@ public partial class App : Application
             WriteDiag($"Step f3: Update available v{update.LatestVersion}, showing popup");
             await startupNotices;
             var popup = new UpdateWindow(update);
-            if (_mainWindow != null) popup.Owner = _mainWindow;
+            // A tray start shows the update offer on its own rather than opening the window for it.
+            if (_mainWindow != null && _mainWindowShown) popup.Owner = _mainWindow;
             popup.ShowDialog();
             return true;
         }
@@ -636,7 +694,7 @@ public partial class App : Application
             {
                 await startupNotices;
                 MessageBox.Show(
-                    _mainWindow!,
+                    DialogOwner(),
                     "GameShift is now installed and installs its own updates. The copy you used before is no longer needed:\n\n" +
                     note.PathToMention + "\n\n" +
                     "You can delete that file. GameShift does not delete it for you.",
@@ -654,7 +712,7 @@ public partial class App : Application
 
             WriteDiag("Step f4: Portable copy - showing the one-time install offer");
             var result = MessageBox.Show(
-                _mainWindow!,
+                DialogOwner(),
                 "GameShift now comes with an installer, and it is the recommended way to run it.\n\n" +
                 "Installing puts GameShift in C:\\Program Files\\GameShift, where only administrators can " +
                 "change its files, and installs future updates for you. Your settings and game library are kept.\n\n" +
@@ -718,7 +776,7 @@ public partial class App : Application
         try
         {
             var answer = MessageBox.Show(
-                _mainWindow!,
+                DialogOwner(),
                 "GameShift could not be installed from here. " + (reason ?? "The download failed or could not be verified.") +
                 "\n\nOpen the release page to download the installer yourself?",
                 "Install GameShift",

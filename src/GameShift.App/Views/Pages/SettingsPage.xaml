@@ -120,6 +120,25 @@
                                 </Grid>
                             </Grid>
                         </Border>
+                        <Border Style="{StaticResource GS.Row}">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,0">
+                                    <TextBlock Text="Start in the tray" Style="{StaticResource SettingTitle}"/>
+                                    <TextBlock Text="When GameShift starts with Windows, it shows only its tray icon. Starting it yourself always opens the window."
+                                               Style="{StaticResource SettingText}"/>
+                                </StackPanel>
+                                <Grid Grid.Column="1" MinWidth="76" VerticalAlignment="Center">
+                                    <ui:ToggleSwitch IsChecked="{Binding StartInTray, Mode=TwoWay}"
+                                                     IsEnabled="{Binding StartWithWindows, Mode=OneWay}"
+                                                     AutomationProperties.Name="Start in the tray"
+                                                     HorizontalAlignment="Right"/>
+                                </Grid>
+                            </Grid>
+                        </Border>
                     </StackPanel>
                 </Border>
 

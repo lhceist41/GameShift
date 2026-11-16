@@ -17,6 +17,12 @@ namespace GameShift.App.Services;
 public class SingleInstancePipe : IDisposable
 {
     private const string PipeName = "GameShift_SingleInstance_Pipe";
+
+    // The first instance starts its server only once its services and tray exist, which can take this
+    // long at a busy logon. Connect keeps retrying until the server appears, so a start made meanwhile
+    // is held, not dropped.
+    private const int ShowConnectTimeoutMs = 30_000;
+
     private CancellationTokenSource? _cts;
     private bool _disposed;
 
@@ -93,7 +99,7 @@ public class SingleInstancePipe : IDisposable
         try
         {
             using var client = new NamedPipeClientStream(".", PipeName, PipeDirection.Out);
-            client.Connect(timeout: 2000); // 2 second timeout
+            client.Connect(ShowConnectTimeoutMs);
 
             using var writer = new StreamWriter(client) { AutoFlush = true };
             writer.WriteLine("show");
