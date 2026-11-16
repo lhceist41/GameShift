@@ -16,7 +16,7 @@ namespace GameShift.Core.Optimization;
 /// Earlier versions also overrode plan sub-settings through powercfg. RevertFromRecord still restores
 /// them from a journal record that carries them.
 /// </summary>
-public class PowerPlanSwitcher : IOptimization, IJournaledOptimization
+public class PowerPlanSwitcher : IOptimization, IWriteAheadJournaledOptimization
 {
     private static readonly Guid HighPerformanceGuid = new("8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c");
     private static readonly Guid BalancedGuid = new("381b4222-f694-41f0-9685-ff5bb260df2e");
@@ -111,13 +111,25 @@ public class PowerPlanSwitcher : IOptimization, IJournaledOptimization
     /// <summary>
     /// Activates High Performance and journals the plan it replaced.
     /// </summary>
-    public OptimizationResult Apply()
+    public OptimizationResult Apply() => Apply(NoOpApplyRecorder.Instance);
+
+    /// <summary>
+    /// Activates High Performance, recording the plan it replaces before the switch.
+    /// </summary>
+    public OptimizationResult Apply(IApplyRecorder recorder)
     {
         if (_planToLeave == Guid.Empty)
             return Fail("CanApply did not allow a plan switch");
 
         try
         {
+            var serialized = JsonSerializer.Serialize(new
+            {
+                originalPlanGuid = _planToLeave.ToString(),
+                targetPlanGuid = HighPerformanceGuid.ToString()
+            });
+            recorder.BeforeChange(serialized);
+
             uint result = SetActiveScheme(HighPerformanceGuid);
             if (result != 0)
             {
@@ -130,12 +142,6 @@ public class PowerPlanSwitcher : IOptimization, IJournaledOptimization
             IsApplied = true;
             _logger.Information(
                 "[PowerPlanSwitcher] Switched from {OriginalPlan} to High Performance", _originalPlanGuid);
-
-            var serialized = JsonSerializer.Serialize(new
-            {
-                originalPlanGuid = _originalPlanGuid.ToString(),
-                targetPlanGuid = HighPerformanceGuid.ToString()
-            });
 
             var applied = JsonSerializer.Serialize(new
             {
@@ -239,10 +245,11 @@ public class PowerPlanSwitcher : IOptimization, IJournaledOptimization
             // Restore each sub-setting's AC/DC values on the plan they came from. Records written
             // before the target plan was journaled fall back to the active plan.
             string scheme = SchemeArgument(Guid.Empty);
+            var targetPlan = Guid.Empty;
             if (state.TryGetProperty("targetPlanGuid", out var targetElement) && targetElement.ValueKind != JsonValueKind.Null)
             {
                 if (targetElement.ValueKind != JsonValueKind.String ||
-                    !Guid.TryParse(targetElement.GetString(), out var targetPlan))
+                    !Guid.TryParse(targetElement.GetString(), out targetPlan))
                     return RevertFail("Refused a journal record whose target plan is not a GUID");
                 scheme = SchemeArgument(targetPlan);
             }
@@ -289,21 +296,33 @@ public class PowerPlanSwitcher : IOptimization, IJournaledOptimization
                 Guid.TryParse(guidElement.GetString(), out var originalGuid) &&
                 originalGuid != Guid.Empty)
             {
-                uint result = SetActiveScheme(originalGuid);
-                if (result == 0)
+                // A record is written before the switch, so the switch may never have happened, and
+                // the user may have picked another plan since. Only undo a switch that is in effect.
+                var active = targetPlan == Guid.Empty ? Guid.Empty : ReadActivePlanOrEmpty();
+                if (active != Guid.Empty && active != targetPlan)
                 {
                     _logger.Information(
-                        "[PowerPlanSwitcher] Restored original power plan {Plan}", originalGuid);
+                        "[PowerPlanSwitcher] Leaving power plan {Active} active: the recorded switch to {Target} is not in effect",
+                        active, targetPlan);
                 }
                 else
                 {
-                    _logger.Warning(
-                        "[PowerPlanSwitcher] Original plan {Plan} missing during watchdog revert (error {Code}), falling back to Balanced",
-                        originalGuid, result);
-                    uint fallback = SetActiveScheme(BalancedGuid);
-                    problems.Add(fallback == 0
-                        ? $"original power plan {originalGuid} (Balanced is active instead)"
-                        : $"original power plan {originalGuid} (Balanced could not be activated either)");
+                    uint result = SetActiveScheme(originalGuid);
+                    if (result == 0)
+                    {
+                        _logger.Information(
+                            "[PowerPlanSwitcher] Restored original power plan {Plan}", originalGuid);
+                    }
+                    else
+                    {
+                        _logger.Warning(
+                            "[PowerPlanSwitcher] Original plan {Plan} missing during watchdog revert (error {Code}), falling back to Balanced",
+                            originalGuid, result);
+                        uint fallback = SetActiveScheme(BalancedGuid);
+                        problems.Add(fallback == 0
+                            ? $"original power plan {originalGuid} (Balanced is active instead)"
+                            : $"original power plan {originalGuid} (Balanced could not be activated either)");
+                    }
                 }
             }
             else
@@ -322,6 +341,19 @@ public class PowerPlanSwitcher : IOptimization, IJournaledOptimization
         {
             _logger.Error(ex, "[PowerPlanSwitcher] RevertFromRecord failed");
             return RevertFail(ex.Message);
+        }
+    }
+
+    private Guid ReadActivePlanOrEmpty()
+    {
+        try
+        {
+            return GetActiveScheme();
+        }
+        catch (Exception ex)
+        {
+            _logger.Warning(ex, "[PowerPlanSwitcher] Could not read the active power plan");
+            return Guid.Empty;
         }
     }
 

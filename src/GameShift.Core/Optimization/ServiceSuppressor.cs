@@ -13,7 +13,7 @@ namespace GameShift.Core.Optimization;
 /// Windows Update, Update Orchestrator, Delivery Optimization, BITS and Windows Search.
 /// A safety list prevents critical system services from ever being stopped.
 /// </summary>
-public class ServiceSuppressor : IOptimization, IJournaledOptimization
+public class ServiceSuppressor : IOptimization, IWriteAheadJournaledOptimization
 {
     /// <summary>
     /// A service this module pauses during a game.
@@ -103,21 +103,21 @@ public class ServiceSuppressor : IOptimization, IJournaledOptimization
         return true;
     }
 
-    public OptimizationResult Apply()
+    public OptimizationResult Apply() => Apply(NoOpApplyRecorder.Instance);
+
+    public OptimizationResult Apply(IApplyRecorder recorder)
     {
         if (_context == null)
             return new OptimizationResult(OptimizationId, string.Empty, string.Empty, OptimizationState.Failed, "No context");
 
-        ApplyInternal(_context.Snapshot, _context.Profile);
+        ApplyInternal(_context.Snapshot, _context.Profile, recorder);
 
-        return new OptimizationResult(
-            OptimizationId,
-            JsonSerializer.Serialize(new { services = _stoppedServices }),
-            string.Empty,
-            OptimizationState.Applied);
+        return new OptimizationResult(OptimizationId, RestartRecord(), string.Empty, OptimizationState.Applied);
     }
 
-    private void ApplyInternal(SystemStateSnapshot snapshot, GameProfile profile)
+    private string RestartRecord() => JsonSerializer.Serialize(new { services = _stoppedServices });
+
+    private void ApplyInternal(SystemStateSnapshot snapshot, GameProfile profile, IApplyRecorder recorder)
     {
         _stoppedServices.Clear();
         int stoppedCount = 0;
@@ -171,7 +171,25 @@ public class ServiceSuppressor : IOptimization, IJournaledOptimization
                     // Recorded before Stop(): a stop that times out or fails part-way can still
                     // leave the service or a dependent stopped, and revert must restart them.
                     // Restarting a service that is still running is a no-op.
+                    int listedBefore = _stoppedServices.Count;
                     RecordForRestart(svcInfo.ServiceName, runningDependents);
+
+                    // The journal must hold the restart list before the stop, so a crash during the
+                    // stop is still undone. Without that record the service is left running.
+                    try
+                    {
+                        recorder.BeforeChange(RestartRecord());
+                    }
+                    catch (Exception ex)
+                    {
+                        _stoppedServices.RemoveRange(listedBefore, _stoppedServices.Count - listedBefore);
+                        SettingsManager.Logger.Warning(
+                            ex,
+                            "[ServiceSuppressor] Not stopping {ServiceName}: it could not be recorded for restart",
+                            svcInfo.ServiceName);
+                        errorCount++;
+                        continue;
+                    }
 
                     SettingsManager.Logger.Debug(
                         "[ServiceSuppressor] Stopping service {ServiceName} ({DisplayName})",

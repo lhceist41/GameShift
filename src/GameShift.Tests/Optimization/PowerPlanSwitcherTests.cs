@@ -235,6 +235,7 @@ public class PowerPlanSwitcherTests
         {
             Powercfg = args => args.StartsWith("/setdcvalueindex", StringComparison.Ordinal) ? (false, "") : _power.Run(args),
             SetActiveScheme = plan => _power.SetActive(plan),
+            GetActiveScheme = () => _power.Active,
         };
 
         var result = switcher.RevertFromRecord(EarlierVersionRecord);
