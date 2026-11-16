@@ -4,7 +4,7 @@ using System.Text;
 namespace GameShift.Core.System;
 
 /// <summary>
-/// Result of running an external process via <see cref="ProcessRunner.Run"/>.
+/// Result of running an external process via <see cref="ProcessRunner.Run(string, string, int, IReadOnlyDictionary{string, string})"/>.
 /// </summary>
 /// <param name="ExitCode">Process exit code. Valid ONLY when <see cref="Exited"/> is true; 0 otherwise.</param>
 /// <param name="StdOut">
@@ -34,10 +34,11 @@ public readonly record struct ProcessRunResult(int ExitCode, string StdOut, stri
 /// stdout open without exiting is still killed at the deadline.
 ///
 /// The caller passes an ALREADY-RESOLVED absolute file path (e.g. NativeInterop.SystemExePath(...)):
-/// the runner never resolves paths, so each caller's anti-PATH-hijack choice is preserved. The fixed
-/// startup options match every call site it replaces (UseShellExecute=false, CreateNoWindow=true,
-/// both pipes redirected, default encoding, no stdin/working-dir, inherited environment unless
-/// <c>environment</c> overrides variables). Output is returned raw, so
+/// the runner never resolves paths, so each caller's anti-PATH-hijack choice is preserved. The public
+/// overload applies fixed startup options that match every call site it replaces (UseShellExecute=false,
+/// CreateNoWindow=true, both pipes redirected, default encoding, no stdin/working-dir, inherited
+/// environment unless <c>environment</c> overrides variables); the internal overload runs a
+/// caller-built start info as given and only requires both pipes redirected. Output is returned raw, so
 /// each caller keeps its own trimming/parsing. Exceptions from Process.Start / WaitForExit propagate
 /// to the caller (each call site keeps its existing try/catch); a pipe-read error ends that stream
 /// with what it had delivered so far (best effort) rather than faulting the run.

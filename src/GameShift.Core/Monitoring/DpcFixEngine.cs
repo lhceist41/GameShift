@@ -590,8 +590,14 @@ public class DpcFixEngine
             return (new DpcFixResult { Success = false, Message = $"Invalid network adapter keyword: {property}" }, null);
         }
 
-        // Query current value from the first physical adapter that has this property
-        string previousValue = QueryNetAdapterPropertyValue(property) ?? "1";
+        // Query current value from the first physical adapter that has this property. A value that
+        // cannot be read, or that the revert would refuse to write back, cannot be restored.
+        var previousValue = QueryNetAdapterPropertyValue(property);
+        if (previousValue == null || !int.TryParse(previousValue, out _))
+        {
+            Log.Warning("[DpcFix] Not changing {Property}: its current value could not be read", property);
+            return (new DpcFixResult { Success = false, Message = "The current network adapter setting could not be read, so nothing was changed." }, null);
+        }
 
         // Use PowerShell to set the property on all physical adapters. The value goes as validated,
         // minus surrounding whitespace, so a revert writes back exactly the string it captured.

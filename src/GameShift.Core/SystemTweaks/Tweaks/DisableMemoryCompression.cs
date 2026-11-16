@@ -127,10 +127,9 @@ public class DisableMemoryCompression : ISystemTweak
     {
         var (exitCode, output) = RunPowerShell(QueryScript);
 
-        if (exitCode != 0)
-            return true; // Assume enabled if query fails
-
-        return output.Trim().Equals("True", StringComparison.OrdinalIgnoreCase);
+        // Only an explicit False means disabled. A failed or unreadable query counts as enabled (the
+        // Windows default), so a revert turns compression back on instead of leaving it off.
+        return exitCode != 0 || !output.Trim().Equals("False", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

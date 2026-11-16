@@ -73,12 +73,56 @@ public class DpcNetAdapterFixTests
         var (engine, runner) = Create();
         runner.Respond = call => call.Script == SetScript
             ? new ProcessRunResult(1, string.Empty, "boom", TimedOut: false, Exited: true)
-            : FakePowerShellRunner.Exit(0);
+            : FakePowerShellRunner.Exit(0, "1\r\n");
 
         var (result, _) = engine.ApplyNetAdapterFix(Fix("*EEE", "0"));
 
         Assert.False(result.Success);
         Assert.Contains("boom", result.Message);
+    }
+
+    // Query results the current value cannot be read from. Exit 0 with only stderr reaches the engine
+    // as the error text, which is not a value a revert could write back.
+    public static TheoryData<ProcessRunResult> UnreadableQueryResults => new()
+    {
+        FakePowerShellRunner.Exit(0, ""),
+        FakePowerShellRunner.Exit(0, "  \r\n"),
+        FakePowerShellRunner.Exit(1, "3\r\n"),
+        new ProcessRunResult(0, string.Empty, "Get-NetAdapterAdvancedProperty : No matching keyword", TimedOut: false, Exited: true),
+        new ProcessRunResult(0, "3", string.Empty, TimedOut: true, Exited: false),
+        new ProcessRunResult(0, string.Empty, string.Empty, TimedOut: false, Exited: false),
+    };
+
+    [Theory]
+    [MemberData(nameof(UnreadableQueryResults))]
+    public void ApplyNetAdapterFix_CurrentValueUnreadable_ChangesNothingAndStoresNoRollback(ProcessRunResult query)
+    {
+        var (engine, runner) = Create();
+        runner.Respond = call => call.Script == QueryScript ? query : FakePowerShellRunner.Exit(0);
+
+        var (result, applied) = engine.ApplyNetAdapterFix(Fix("*EEE", "0"));
+
+        Assert.False(result.Success);
+        Assert.False(result.ChangeLeftInPlace);
+        Assert.Contains("could not be read", result.Message);
+        Assert.Null(applied);
+        AssertConstantScript(Assert.Single(runner.Calls), QueryScript, "*EEE");
+    }
+
+    [Fact]
+    public void ApplyThenRevertNetAdapterFix_ReadValue_WritesItBack()
+    {
+        var (engine, runner) = Create();
+        runner.Respond = call => FakePowerShellRunner.Exit(0, call.Script == QueryScript ? "3\r\n" : "");
+
+        var (result, applied) = engine.ApplyNetAdapterFix(Fix("*EEE", "0"));
+        Assert.True(result.Success);
+        var revert = engine.RevertNetAdapterFix(applied!);
+
+        Assert.True(revert.Success);
+        Assert.Equal(3, runner.Calls.Count);
+        AssertConstantScript(runner.Calls[1], SetScript, "*EEE", "0");
+        AssertConstantScript(runner.Calls[2], SetScript, "*EEE", "3");
     }
 
     [Theory]
