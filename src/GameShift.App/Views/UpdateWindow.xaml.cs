@@ -1,10 +1,10 @@
 using System;
 using System.IO;
-using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows;
 using System.Windows.Documents;
-using System.Windows.Interop;
+using GameShift.App.Helpers;
+using GameShift.App.Services;
 using GameShift.Core.Config;
 using GameShift.Core.Updates;
 using Serilog;
@@ -18,9 +18,6 @@ namespace GameShift.App.Views;
 /// </summary>
 public partial class UpdateWindow : Window
 {
-    [DllImport("dwmapi.dll", PreserveSig = true)]
-    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
-
     private const string UpdateDownloadFailedText = "The download failed or could not be verified.";
 
     private readonly UpdateInfo _updateInfo;
@@ -36,7 +33,7 @@ public partial class UpdateWindow : Window
     {
         _updateInfo = updateInfo;
         InitializeComponent();
-        ApplyDarkTitleBar();
+        WindowNative.SetDarkTitleBar(this, ThemeService.UseDarkTitleBar);
 
         // Populate header
         VersionText.Text = $"v{updateInfo.CurrentVersion}  \u2192  v{updateInfo.LatestVersion}";
@@ -281,21 +278,6 @@ public partial class UpdateWindow : Window
         }
 
         return false;
-    }
-
-    private void ApplyDarkTitleBar()
-    {
-        try
-        {
-            var hwnd = new WindowInteropHelper(this).EnsureHandle();
-            if (hwnd == IntPtr.Zero) return;
-            int value = 1;
-            DwmSetWindowAttribute(hwnd, 20, ref value, sizeof(int));
-        }
-        catch
-        {
-            // Silently ignore on older Windows versions
-        }
     }
 
     private void Window_Closing(object? sender, System.ComponentModel.CancelEventArgs e)

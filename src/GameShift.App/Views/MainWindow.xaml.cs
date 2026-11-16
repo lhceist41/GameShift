@@ -31,9 +31,17 @@ public partial class MainWindow : FluentWindow
     /// </summary>
     public bool IsClosingForReal { get; private set; }
 
+    private readonly double _designMinWidth;
+    private readonly double _designMinHeight;
+
     public MainWindow()
     {
         InitializeComponent();
+        _designMinWidth = MinWidth;
+        _designMinHeight = MinHeight;
+        SourceInitialized += (_, _) => FitToWorkArea();
+        // WPF may still resize the window to the new monitor after this event, so fit afterwards.
+        DpiChanged += (_, _) => Dispatcher.InvokeAsync(FitToWorkArea, System.Windows.Threading.DispatcherPriority.Loaded);
         Loaded += OnLoaded;
         PreviewMouseWheel += OnPreviewMouseWheel;
 
@@ -49,6 +57,7 @@ public partial class MainWindow : FluentWindow
     {
         _snackbar = new Snackbar(SnackbarPresenter);
         RestoreWindowPosition();
+        FitToWorkArea();
         ApplyWindowWidth(ActualWidth);
         SizeChanged += (_, args) => ApplyWindowWidth(args.NewSize.Width);
 
@@ -298,6 +307,35 @@ public partial class MainWindow : FluentWindow
         catch
         {
             // Non-critical - ignore save failures
+        }
+    }
+
+    /// <summary>
+    /// Shrinks the minimum size, and the size itself, to the work area of the window's monitor, so
+    /// at high scaling on a small screen the window neither covers the taskbar nor runs off screen.
+    /// The minimum never rises above the XAML values. Without a readable monitor nothing changes.
+    /// </summary>
+    private void FitToWorkArea()
+    {
+        if (!WindowNative.TryGetWorkArea(this, out var work))
+            return;
+
+        MinWidth = Math.Min(_designMinWidth, work.Width);
+        MinHeight = Math.Min(_designMinHeight, work.Height);
+
+        // Maximized or minimized, Width, Height, Left and Top set the restore bounds, which must fit too.
+        var size = WindowState == WindowState.Normal ? new Size(Width, Height) : RestoreBounds.Size;
+
+        // WPF places the window before SourceInitialized, so a shrink must move it back inside as well.
+        if (size.Width > work.Width)
+        {
+            Width = work.Width;
+            Left = work.Left;
+        }
+        if (size.Height > work.Height)
+        {
+            Height = work.Height;
+            Top = work.Top;
         }
     }
 

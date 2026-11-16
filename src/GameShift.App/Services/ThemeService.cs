@@ -36,6 +36,12 @@ internal static class ThemeService
     private static ResourceDictionary? _overrides;
 
     /// <summary>
+    /// True only while the dark theme is applied. Light, high contrast and no theme yet keep the
+    /// system's light default; under high contrast Windows draws the frame in its own colours.
+    /// </summary>
+    public static bool UseDarkTitleBar => _applied == ThemeVariant.Dark;
+
+    /// <summary>
     /// Applies <paramref name="setting"/> now and keeps following Windows. Falls back to the dark theme
     /// if another theme cannot be loaded. Must be called on the UI thread.
     /// </summary>
