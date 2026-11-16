@@ -590,20 +590,30 @@ public class DpcFixEngine
             return (new DpcFixResult { Success = false, Message = $"Invalid network adapter keyword: {property}" }, null);
         }
 
-        // Query current value from the first physical adapter that has this property. A value that
-        // cannot be read, or that the revert would refuse to write back, cannot be restored.
-        var previousValue = QueryNetAdapterPropertyValue(property);
-        if (previousValue == null || !int.TryParse(previousValue, out _))
+        // One recorded value can only restore adapters that shared it, so refuse unless every adapter
+        // that has the setting reports the same value the revert would accept.
+        var currentValues = QueryNetAdapterPropertyValues(property);
+        if (currentValues == null || currentValues.Any(v => !int.TryParse(v, out _)))
         {
             Log.Warning("[DpcFix] Not changing {Property}: its current value could not be read", property);
             return (new DpcFixResult { Success = false, Message = "The current network adapter setting could not be read, so nothing was changed." }, null);
         }
+        if (currentValues.Count == 0)
+        {
+            Log.Warning("[DpcFix] Not changing {Property}: no physical adapter has it", property);
+            return (new DpcFixResult { Success = false, Message = "No network adapter in this PC has this setting, so nothing was changed." }, null);
+        }
+        if (currentValues.Distinct(StringComparer.Ordinal).Count() > 1)
+        {
+            Log.Warning("[DpcFix] Not changing {Property}: the adapters have different values", property);
+            return (new DpcFixResult { Success = false, Message = "The network adapters currently have different values for this setting, so nothing was changed." }, null);
+        }
+        var previousValue = currentValues[0];
 
-        // Use PowerShell to set the property on all physical adapters. The value goes as validated,
-        // minus surrounding whitespace, so a revert writes back exactly the string it captured.
+        // The value goes as validated, minus surrounding whitespace, so a revert writes back exactly
+        // the string it captured.
         var (success, output) = RunNetAdapterScript(SetNetAdapterPropertyScript, property, value.Trim());
 
-        // Store rollback with the actual previous value
         var applied = new AppliedDpcFix
         {
             FixId = fix.Id,
@@ -615,13 +625,22 @@ public class DpcFixEngine
             RequiresReboot = false
         };
 
-        return (new DpcFixResult
+        if (!success)
         {
-            // -ErrorAction SilentlyContinue means a property missing on some adapters is not a failure
-            // (exit code stays 0); only a genuine failure (non-zero exit / process did not run) is reported.
-            Success = success,
-            Message = success ? "Network adapter property updated on all physical adapters." : $"Update failed: {output}"
-        }, applied);
+            // The set may have changed some adapters before it failed.
+            var (putBack, _) = RunNetAdapterScript(SetNetAdapterPropertyScript, property, previousValue);
+            if (putBack)
+                return (new DpcFixResult { Success = false, Message = $"The network adapter setting could not be changed, so the earlier value was put back: {output}" }, null);
+
+            return (new DpcFixResult
+            {
+                Success = false,
+                ChangeLeftInPlace = true,
+                Message = $"The network adapter setting could not be changed or put back. It stays recorded so it can be undone later: {output}"
+            }, applied);
+        }
+
+        return (new DpcFixResult { Success = true, Message = "Network adapter property updated on every adapter that has it." }, applied);
     }
 
     internal DpcFixResult RevertNetAdapterFix(AppliedDpcFix applied)
@@ -642,10 +661,9 @@ public class DpcFixEngine
             return new DpcFixResult { Success = false, Message = "Invalid network adapter keyword." };
         }
 
+        // The script fails when no adapter has the setting or any write fails, so the entry is kept
+        // for a retry instead of being dropped from the ledger.
         var (success, output) = RunNetAdapterScript(SetNetAdapterPropertyScript, applied.Target, revertValue.Trim());
-        // Report the real result. -ErrorAction SilentlyContinue means a property missing on some
-        // adapters is not a failure (exit code stays 0); but a genuine failure must be surfaced so the
-        // rollback entry is kept for a retry instead of being silently dropped from the ledger.
         return new DpcFixResult
         {
             Success = success,
@@ -654,39 +672,55 @@ public class DpcFixEngine
     }
 
     /// <summary>
-    /// Queries the current registry value of a net adapter advanced property.
-    /// Returns the first adapter's value, or null if the query fails.
+    /// Reads the setting's current value on every physical adapter that has it, one entry per adapter.
+    /// Returns null when the query fails or its output is not in the expected shape.
     /// </summary>
-    private string? QueryNetAdapterPropertyValue(string registryKeyword)
+    private List<string>? QueryNetAdapterPropertyValues(string registryKeyword)
     {
-        try
-        {
-            var (ok, output) = RunNetAdapterScript(QueryNetAdapterPropertyScript, registryKeyword);
-            if (ok && !string.IsNullOrWhiteSpace(output))
-            {
-                var val = output.Trim().Split('\n')[0].Trim();
-                if (!string.IsNullOrEmpty(val))
-                    return val;
-            }
-        }
-        catch (Exception ex)
-        {
-            Log.Debug(ex, "DpcFixEngine: failed to query net adapter property {Keyword}", registryKeyword);
-        }
+        var (ok, output) = RunNetAdapterScript(QueryNetAdapterPropertyScript, registryKeyword);
+        if (!ok)
+            return null;
 
-        return null;
+        var values = new List<string>();
+        if (string.IsNullOrWhiteSpace(output))
+            return values;
+        foreach (var rawLine in output.Split('\n'))
+        {
+            var line = rawLine.Trim();
+            if (!line.StartsWith('='))
+                return null;
+            values.Add(line[1..].Trim());
+        }
+        return values;
     }
 
     // -- Process runner ────────────────────────────────────────────
 
     private const string NetAdapterModule = "NetAdapter";
-    private const string SetNetAdapterPropertyScript =
-        "Get-NetAdapter -Physical | Set-NetAdapterAdvancedProperty -RegistryKeyword $env:GS_ARG0 " +
-        "-RegistryValue $env:GS_ARG1 -ErrorAction SilentlyContinue";
-    private const string QueryNetAdapterPropertyScript =
+    // Both scripts address only the physical adapters that report the keyword. Each ends with an
+    // explicit exit code: an error silenced with SilentlyContinue still makes powershell exit 1.
+    // -RegistryKeyword takes wildcards (*EEE also matches AdvancedEEE), so only exact matches stay.
+    private const string NetAdapterTargetsScript =
         "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8\n" +
-        "Get-NetAdapter -Physical | Get-NetAdapterAdvancedProperty -RegistryKeyword $env:GS_ARG0 " +
-        "-ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty RegistryValue";
+        "$ErrorActionPreference = 'Stop'\n" +
+        "try {\n" +
+        "    $targets = @(Get-NetAdapter -Physical | Get-NetAdapterAdvancedProperty -RegistryKeyword $env:GS_ARG0 -ErrorAction SilentlyContinue |\n" +
+        "        Where-Object { $_.RegistryKeyword -eq $env:GS_ARG0 })\n" +
+        "} catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }\n";
+    // One "=value" line per adapter; the marker keeps an empty value from vanishing, and a
+    // multi-part value is joined so it cannot parse as an int.
+    private const string QueryNetAdapterPropertyScript =
+        NetAdapterTargetsScript +
+        "foreach ($t in $targets) { '=' + (@($t.RegistryValue) -join ',') }\n" +
+        "exit 0";
+    // Each target goes by -InputObject: piping it would also bind its current DisplayValue.
+    private const string SetNetAdapterPropertyScript =
+        NetAdapterTargetsScript +
+        "if ($targets.Count -eq 0) { [Console]::Error.WriteLine('No physical network adapter has this setting.'); exit 1 }\n" +
+        "try {\n" +
+        "    foreach ($t in $targets) { Set-NetAdapterAdvancedProperty -InputObject $t -RegistryValue $env:GS_ARG1 -ErrorAction Stop }\n" +
+        "} catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }\n" +
+        "exit 0";
 
     /// <summary>Process-start seam for the net adapter scripts; tests replace it so no PowerShell runs.</summary>
     internal Func<ProcessStartInfo, int, ProcessRunResult> RunPowerShell { get; set; } = ParameterizedPowerShell.Run;

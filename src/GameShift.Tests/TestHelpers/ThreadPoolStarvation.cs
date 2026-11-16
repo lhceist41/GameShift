@@ -16,7 +16,7 @@ public static class ThreadPoolStarvation
     /// <summary>
     /// Caps the pool, occupies every free worker, runs <paramref name="work"/> on the calling thread
     /// and fails if a probe queued behind the blockers ran meanwhile (the run then proves nothing).
-    /// The pool maximum is restored and every queued item has returned before this method returns.
+    /// The pool maximum is restored and this method waits up to 30 s for every queued item to return.
     /// </summary>
     public static T Run<T>(Func<T> work)
     {
