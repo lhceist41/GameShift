@@ -252,6 +252,7 @@ public class JournalTrustTests
     public void Read_ReportsOwnerEntriesAndKinds()
     {
         using var temp = new TempPath();
+        GiveTheCallerAnOwnDacl(temp.Path);
         var path = temp.GetFile("state.json");
         global::System.IO.File.WriteAllText(path, "{}");
 
@@ -379,6 +380,7 @@ public class JournalTrustTests
     public void ApplyHardened_WritesTheProtectedDaclTheEvaluatorAccepts()
     {
         using var temp = new TempPath();
+        GiveTheCallerAnOwnDacl(temp.Path);
         var file = temp.GetFile("state.json");
         global::System.IO.File.WriteAllText(file, "{}");
         var owner = WindowsJournalSecurity.Read(file);
@@ -605,6 +607,7 @@ public class JournalTrustTests
     public void Repair_LeavesAFileNamedLikeTheJournalAsItWas()
     {
         using var temp = new TempPath();
+        GiveTheCallerAnOwnDacl(temp.Path);
         var planted = temp.GetFile("state.json");
         global::System.IO.File.WriteAllText(planted, "{}");
         PlantUserWritableDacl(planted);
@@ -618,7 +621,9 @@ public class JournalTrustTests
             Assert.Equal(before.OwnerSid, after.OwnerSid);
             Assert.Equal(before.DaclProtected, after.DaclProtected);
             Assert.Equal(before.Dacl!.Select(a => (a.Sid, a.Type, a.AccessMask)), after.Dacl!.Select(a => (a.Sid, a.Type, a.AccessMask)));
-            Assert.True(DescribeEntry(temp.Path).DaclProtected);
+            var folder = DescribeEntry(temp.Path);
+            Assert.True(folder.DaclProtected);
+            Assert.Equal(new[] { SystemSid, Admins, Users }, folder.Dacl!.Select(a => a.Sid));
 
             var verdict = JournalTrust.Check(planted);
             Assert.False(verdict.Trusted);
@@ -641,6 +646,19 @@ public class JournalTrustTests
         security.AddAccessRule(new FileSystemAccessRule(identity.User!, FileSystemRights.FullControl, AccessControlType.Allow));
         security.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(Users), FileSystemRights.Modify, AccessControlType.Allow));
         new FileInfo(file).SetAccessControl(security);
+    }
+
+    // An inherited DACL depends on TEMP's drive: one that names only groups gives an unelevated
+    // caller no entry of its own and no WRITE_OWNER, and one not marked auto-inherited is reported
+    // relative to the parent, so its order shifts once the parent is hardened.
+    private static void GiveTheCallerAnOwnDacl(string folder)
+    {
+        using var identity = WindowsIdentity.GetCurrent();
+        var security = new DirectorySecurity();
+        security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+        security.AddAccessRule(new FileSystemAccessRule(identity.User!, FileSystemRights.FullControl,
+            InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
+        new DirectoryInfo(folder).SetAccessControl(security);
     }
 
     // ── Rename under a DACL that shuts the caller out ─────────────────────
@@ -727,6 +745,7 @@ public class JournalTrustTests
     public void HardenJournalDirectory_OnAPlainFolder_SetsTheProtectedDaclOnTheFolderOnly()
     {
         using var temp = new TempPath();
+        GiveTheCallerAnOwnDacl(temp.Path);
         var file = temp.GetFile("state.json");
         global::System.IO.File.WriteAllText(file, "{}");
         var fileBefore = DescribeEntry(file);

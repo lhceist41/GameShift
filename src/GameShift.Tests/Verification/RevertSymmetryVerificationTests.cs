@@ -180,28 +180,47 @@ public class RevertSymmetryVerificationTests
         }
 
         var planBefore = SystemStateSnapshot.Capture().OriginalPowerPlan;
+        var planSwitchExpected = IsPlanSwitchExpected(planBefore);
+        var onCi = string.Equals(Environment.GetEnvironmentVariable("CI"), "true", StringComparison.OrdinalIgnoreCase);
         var result = await RevertVerificationRunner.RunAsync(Logger.None);
 
-        _output.WriteLine($"power plan before the session: {planBefore}");
+        _output.WriteLine($"power plan before the session: {planBefore}, plan switch expected: {planSwitchExpected}, CI: {onCi}");
         _output.WriteLine(result.FormatReport());
 
         Assert.True(result.Error == null, "harness error: " + result.Error);
-        var notMeaningful = WhyTheRunIsNotMeaningful(planBefore, result.AppliedChanges);
+        var notMeaningful = WhyTheRunIsNotMeaningful(planBefore, planSwitchExpected, onCi, result.AppliedChanges);
         Assert.True(notMeaningful == null, notMeaningful);
         Assert.True(result.Failures.Count == 0,
             "persistent residue after revert:" + Environment.NewLine + result.FormatReport());
     }
 
     private static readonly Guid BalancedPlan = new("381b4222-f694-41f0-9685-ff5bb260df2e");
+    private static readonly Guid HighPerformancePlan = new("8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c");
 
-    // A residue-free revert only proves something when the session changed probed state. From
-    // Balanced the session must also switch the plan, so the plan revert is part of the proof.
-    private static string? WhyTheRunIsNotMeaningful(Guid planBefore, IReadOnlyCollection<StateDifference> appliedChanges)
+    // The checks PowerPlanSwitcher.CanApply makes, read-only: the CPU topology and the list of
+    // power schemes, never the active scheme.
+    private static bool IsPlanSwitchExpected(Guid planBefore)
     {
+        var switcher = new PowerPlanSwitcher();
+        return PowerPlanSwitcher.ShouldSwitch(planBefore, switcher.IsDualCcdX3D)
+            && switcher.SchemeExists(HighPerformancePlan);
+    }
+
+    // A residue-free revert only proves something when the session changed probed state. Where
+    // GameShift switches the plan, the plan revert must be part of the proof. CI starts from Balanced
+    // on purpose, so a run there that expected no switch (a failed plan read reports an empty plan)
+    // means the gate lost its plan check, not that the PC is exempt.
+    private static string? WhyTheRunIsNotMeaningful(
+        Guid planBefore, bool planSwitchExpected, bool onCi, IReadOnlyCollection<StateDifference> appliedChanges)
+    {
+        if (onCi && (planBefore != BalancedPlan || !planSwitchExpected))
+            return $"on CI the session must start from Balanced with the plan switch expected (plan before: {planBefore}, "
+                + $"switch expected: {planSwitchExpected})";
+
         if (appliedChanges.Count == 0)
             return "no probed changes during the session; the run was not meaningful";
 
-        if (planBefore == BalancedPlan
+        if (planSwitchExpected
             && !appliedChanges.Any(d => string.Equals(d.Key, "pcfg:active-scheme", StringComparison.OrdinalIgnoreCase)))
             return $"the power plan switch from Balanced did not happen ({appliedChanges.Count} other probed changes); "
                 + "the plan revert was not exercised";
@@ -212,7 +231,7 @@ public class RevertSymmetryVerificationTests
     [Fact]
     public void MeaningfulRun_NoChanges_IsRejected()
     {
-        var problem = WhyTheRunIsNotMeaningful(Guid.Empty, Array.Empty<StateDifference>());
+        var problem = WhyTheRunIsNotMeaningful(Guid.Empty, planSwitchExpected: false, onCi: false, Array.Empty<StateDifference>());
 
         Assert.NotNull(problem);
         Assert.Contains("no probed changes", problem);
@@ -223,7 +242,7 @@ public class RevertSymmetryVerificationTests
     {
         var changes = new[] { new StateDifference("svc:status:UsoSvc", "Running", "Stopped") };
 
-        var problem = WhyTheRunIsNotMeaningful(BalancedPlan, changes);
+        var problem = WhyTheRunIsNotMeaningful(BalancedPlan, planSwitchExpected: true, onCi: false, changes);
 
         Assert.NotNull(problem);
         Assert.Contains("power plan switch from Balanced did not happen", problem);
@@ -237,7 +256,16 @@ public class RevertSymmetryVerificationTests
             new StateDifference("pcfg:active-scheme", "381b4222-f694-41f0-9685-ff5bb260df2e", "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c"),
         };
 
-        Assert.Null(WhyTheRunIsNotMeaningful(BalancedPlan, changes));
+        Assert.Null(WhyTheRunIsNotMeaningful(BalancedPlan, planSwitchExpected: true, onCi: false, changes));
+    }
+
+    // A dual-CCD X3D or a PC without High Performance keeps Balanced, so other changes are enough there.
+    [Fact]
+    public void MeaningfulRun_FromBalancedWhereNoSwitchIsExpected_IsAcceptedWithOtherChanges()
+    {
+        var changes = new[] { new StateDifference("svc:status:UsoSvc", "Running", "Stopped") };
+
+        Assert.Null(WhyTheRunIsNotMeaningful(BalancedPlan, planSwitchExpected: false, onCi: false, changes));
     }
 
     // Any other plan is left alone by design, so one probed change is enough there.
@@ -247,7 +275,49 @@ public class RevertSymmetryVerificationTests
         var highPerformance = new Guid("8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c");
         var changes = new[] { new StateDifference("svc:status:UsoSvc", "Running", "Stopped") };
 
-        Assert.Null(WhyTheRunIsNotMeaningful(highPerformance, changes));
+        Assert.Null(WhyTheRunIsNotMeaningful(highPerformance, planSwitchExpected: false, onCi: false, changes));
+    }
+
+    // The changes include the plan switch, so only the CI rule can reject these runs.
+    [Theory]
+    [InlineData("00000000-0000-0000-0000-000000000000", false)]
+    [InlineData("8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c", false)]
+    [InlineData("8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c", true)]
+    [InlineData("381b4222-f694-41f0-9685-ff5bb260df2e", false)]
+    public void MeaningfulRun_OnCiNotFromBalancedOrWithoutTheSwitchExpected_IsRejected(string planBefore, bool planSwitchExpected)
+    {
+        var changes = new[]
+        {
+            new StateDifference("pcfg:active-scheme", "381b4222-f694-41f0-9685-ff5bb260df2e", "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c"),
+            new StateDifference("svc:status:UsoSvc", "Running", "Stopped"),
+        };
+
+        var problem = WhyTheRunIsNotMeaningful(new Guid(planBefore), planSwitchExpected, onCi: true, changes);
+
+        Assert.NotNull(problem);
+        Assert.Contains("on CI the session must start from Balanced", problem);
+    }
+
+    [Fact]
+    public void MeaningfulRun_OnCiFromBalancedWithThePlanSwitch_IsAccepted()
+    {
+        var changes = new[]
+        {
+            new StateDifference("pcfg:active-scheme", "381b4222-f694-41f0-9685-ff5bb260df2e", "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c"),
+        };
+
+        Assert.Null(WhyTheRunIsNotMeaningful(BalancedPlan, planSwitchExpected: true, onCi: true, changes));
+    }
+
+    [Fact]
+    public void MeaningfulRun_OnCiFromBalancedWithoutThePlanSwitch_IsRejected()
+    {
+        var changes = new[] { new StateDifference("svc:status:UsoSvc", "Running", "Stopped") };
+
+        var problem = WhyTheRunIsNotMeaningful(BalancedPlan, planSwitchExpected: true, onCi: true, changes);
+
+        Assert.NotNull(problem);
+        Assert.Contains("power plan switch from Balanced did not happen", problem);
     }
 
     // ── Single-instance mutex ────────────────────────────────────────────────
