@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 
 namespace GameShift.Core.System;
 
@@ -6,8 +7,12 @@ namespace GameShift.Core.System;
 /// Result of running an external process via <see cref="ProcessRunner.Run"/>.
 /// </summary>
 /// <param name="ExitCode">Process exit code. Valid ONLY when <see cref="Exited"/> is true; 0 otherwise.</param>
-/// <param name="StdOut">Captured standard output, raw (not trimmed). May be partial if the run timed out.</param>
-/// <param name="StdErr">Captured standard error, raw (not trimmed). May be partial if the run timed out.</param>
+/// <param name="StdOut">
+/// Captured standard output, raw (not trimmed). May be partial if the run timed out. After a normal
+/// exit it is either complete or empty: a stream not read to its end within the short grace (for
+/// example a pipe a grandchild still holds) is returned empty, never truncated.
+/// </param>
+/// <param name="StdErr">Captured standard error, raw (not trimmed). Same rules as StdOut.</param>
 /// <param name="TimedOut">True if the process did not exit within the timeout and was killed.</param>
 /// <param name="Exited">
 /// True if the process started and exited on its own within the timeout. False means either the
@@ -21,7 +26,7 @@ public readonly record struct ProcessRunResult(int ExitCode, string StdOut, stri
 /// bcdedit, fsutil, sc, PowerShell, ...). Replaces the ~dozen near-identical private runner methods
 /// that each did "drain stderr on a worker, ReadToEnd stdout on the calling thread, WaitForExit".
 ///
-/// It drains BOTH stdout and stderr on worker threads so a child that floods either pipe cannot
+/// It drains BOTH stdout and stderr on dedicated threads so a child that floods either pipe cannot
 /// deadlock, waits up to <paramref name="timeoutMs"/> for exit, and kills the whole process tree on
 /// timeout so a wedged child can neither hang the caller nor be orphaned. Reading stdout off-thread
 /// (rather than synchronously on the calling thread, as the old idiom did) is what closes the
@@ -34,11 +39,13 @@ public readonly record struct ProcessRunResult(int ExitCode, string StdOut, stri
 /// both pipes redirected, default encoding, no stdin/working-dir, inherited environment unless
 /// <c>environment</c> overrides variables). Output is returned raw, so
 /// each caller keeps its own trimming/parsing. Exceptions from Process.Start / WaitForExit propagate
-/// to the caller (each call site keeps its existing try/catch); a pipe-read error degrades that
-/// stream to empty (best effort) rather than faulting the run.
+/// to the caller (each call site keeps its existing try/catch); a pipe-read error ends that stream
+/// with what it had delivered so far (best effort) rather than faulting the run.
 /// </summary>
 public static class ProcessRunner
 {
+    private const int GraceMs = 2000;
+
     /// <summary>
     /// Runs <paramref name="fileName"/> with <paramref name="arguments"/>, capturing stdout and
     /// stderr, waiting up to <paramref name="timeoutMs"/> for exit and tree-killing on timeout.
@@ -70,24 +77,83 @@ public static class ProcessRunner
         if (process == null)
             return new ProcessRunResult(0, string.Empty, string.Empty, TimedOut: false, Exited: false);
 
-        // Drain both pipes on worker threads. A read error degrades that stream to empty so the
-        // drain tasks never fault (and Task.WaitAll never throws for that reason).
-        string stdout = string.Empty, stderr = string.Empty;
-        var outTask = Task.Run(() => { try { stdout = process.StandardOutput.ReadToEnd(); } catch { /* best effort */ } });
-        var errTask = Task.Run(() => { try { stderr = process.StandardError.ReadToEnd(); } catch { /* best effort */ } });
+        // Dedicated threads, not the thread pool: a starved pool can delay a queued drain past the
+        // grace below, and the run would then report empty output for a child that wrote some.
+        var outDrain = new PipeDrain(process.StandardOutput, "ProcessRunner stdout");
+        var errDrain = new PipeDrain(process.StandardError, "ProcessRunner stderr");
 
         if (!process.WaitForExit(timeoutMs))
         {
             // Wedged child: kill the whole tree so nothing is orphaned, then collect whatever the
-            // drain tasks captured before the pipes closed. Never block past a short grace.
+            // drains captured before the pipes closed. Never block past a short grace.
             try { process.Kill(entireProcessTree: true); } catch { /* best effort */ }
-            Task.WaitAll(new[] { outTask, errTask }, 2000);
-            return new ProcessRunResult(0, stdout, stderr, TimedOut: true, Exited: false);
+            PipeDrain.JoinBoth(outDrain, errDrain, GraceMs);
+            return new ProcessRunResult(0, outDrain.Text, errDrain.Text, TimedOut: true, Exited: false);
         }
 
-        // Exited within the timeout: let the drain tasks finish so the captured output is complete,
-        // then read ExitCode (safe now that the process has exited).
-        Task.WaitAll(new[] { outTask, errTask }, 2000);
-        return new ProcessRunResult(process.ExitCode, stdout, stderr, TimedOut: false, Exited: true);
+        // Exited within the timeout. The wait stays bounded because a grandchild can hold the pipes
+        // open; an unfinished stream then reads as empty, since callers treat empty as "could not
+        // be read" but would take truncated text with Exited set as complete.
+        PipeDrain.JoinBoth(outDrain, errDrain, GraceMs);
+        return new ProcessRunResult(
+            process.ExitCode, outDrain.TextIfFinished, errDrain.TextIfFinished, TimedOut: false, Exited: true);
+    }
+
+    /// <summary>
+    /// Reads one pipe to its end on a background thread, appending in chunks so a reader that is
+    /// abandoned after the grace still yields everything delivered up to that point.
+    /// </summary>
+    internal sealed class PipeDrain
+    {
+        private readonly StringBuilder _text = new();
+        private readonly Thread _thread;
+        // Set by the drain thread after its last append; read by the caller after the joins.
+        private volatile bool _finished;
+
+        public PipeDrain(StreamReader reader, string name)
+        {
+            _thread = new Thread(() => Pump(reader)) { IsBackground = true, Name = name };
+            _thread.Start();
+        }
+
+        /// <summary>Everything read so far, finished or not.</summary>
+        public string Text
+        {
+            get { lock (_text) return _text.ToString(); }
+        }
+
+        /// <summary>Everything read if the stream ended (pipe closed or read error), otherwise empty.</summary>
+        public string TextIfFinished => _finished ? Text : string.Empty;
+
+        /// <summary>Waits for both drains within one shared grace.</summary>
+        public static void JoinBoth(PipeDrain first, PipeDrain second, int graceMs)
+        {
+            var sw = Stopwatch.StartNew();
+            JoinBoth(first, second, graceMs, () => sw.ElapsedMilliseconds);
+        }
+
+        internal static void JoinBoth(PipeDrain first, PipeDrain second, int graceMs, Func<long> elapsedMs)
+        {
+            first._thread.Join(Remaining(graceMs, elapsedMs()));
+            second._thread.Join(Remaining(graceMs, elapsedMs()));
+        }
+
+        // Clamped: a negative timeout other than -1 throws, and -1 waits forever.
+        private static int Remaining(int graceMs, long elapsedMs) => (int)Math.Max(0, graceMs - elapsedMs);
+
+        private void Pump(StreamReader reader)
+        {
+            var buffer = new char[4096];
+            try
+            {
+                int read;
+                while ((read = reader.Read(buffer, 0, buffer.Length)) > 0)
+                {
+                    lock (_text) _text.Append(buffer, 0, read);
+                }
+            }
+            catch { /* best effort: keep what was read */ }
+            _finished = true;
+        }
     }
 }

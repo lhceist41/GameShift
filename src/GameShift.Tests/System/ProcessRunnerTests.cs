@@ -66,6 +66,23 @@ public class ProcessRunnerTests
     }
 
     [Fact]
+    public void Run_GrandchildKeepsThePipesOpen_ReturnsEmptyStreamsAtTheEndOfTheGrace()
+    {
+        // The started ping inherits both pipes and outlives cmd by about 8s, so neither stream ends
+        // within the grace: the run must return then, with empty text rather than a truncated read.
+        var sw = Stopwatch.StartNew();
+        var r = ProcessRunner.Run(Cmd, "/c echo before& echo oops 1>&2& start /b ping -n 9 127.0.0.1 >nul", 5000);
+        sw.Stop();
+
+        Assert.True(r.Exited);
+        Assert.False(r.TimedOut);
+        Assert.Equal(string.Empty, r.StdOut);
+        Assert.Equal(string.Empty, r.StdErr);
+        Assert.True(sw.Elapsed.TotalSeconds < 6.5,
+            $"run took {sw.Elapsed.TotalSeconds:F1}s - it waited for the grandchild instead of the grace");
+    }
+
+    [Fact]
     public void Run_NonexistentExecutable_PropagatesStartException()
     {
         // Process.Start with UseShellExecute=false throws for a missing file; the helper does not
