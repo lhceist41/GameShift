@@ -107,3 +107,39 @@ public interface IJournaledOptimization
     /// </summary>
     OptimizationResult RevertFromRecord(string originalValueJson);
 }
+
+/// <summary>
+/// Handed to a write-ahead module for one apply, so what it is about to change is in the journal
+/// before the change happens and recovery can undo it even if the app dies part-way.
+/// </summary>
+public interface IApplyRecorder
+{
+    /// <summary>
+    /// Records the module's complete record so far, in its <see cref="OptimizationResult.OriginalValue"/>
+    /// shape, including the change it is about to make. Each call replaces the previous one.
+    /// </summary>
+    void BeforeChange(string originalValueJson);
+}
+
+/// <summary>
+/// A journaled optimization that records each change before making it. Its parameterless
+/// <see cref="IJournaledOptimization.Apply"/> runs the same apply with <see cref="NoOpApplyRecorder"/>.
+/// </summary>
+public interface IWriteAheadJournaledOptimization : IJournaledOptimization
+{
+    /// <summary>
+    /// Applies the optimization, calling <see cref="IApplyRecorder.BeforeChange"/> before each change.
+    /// Whatever was recorded must also be covered by the returned <see cref="OptimizationResult.OriginalValue"/>.
+    /// </summary>
+    OptimizationResult Apply(IApplyRecorder recorder);
+}
+
+/// <summary>Records nothing; for an apply outside the engine.</summary>
+public sealed class NoOpApplyRecorder : IApplyRecorder
+{
+    public static readonly NoOpApplyRecorder Instance = new();
+
+    private NoOpApplyRecorder() { }
+
+    public void BeforeChange(string originalValueJson) { }
+}

@@ -46,6 +46,11 @@ public class OptimizationEngine : IDisposable
     private readonly List<IOptimization> _optimizations;
     private readonly JournalManager _journal;
 
+    // Modules whose apply failed after recording a change and whose undo did not succeed, with why.
+    // Applying one again could read GameShift's own leftover as the original, so it waits for the
+    // session to end. Read and written only under the semaphore.
+    private readonly Dictionary<IOptimization, string> _undoFailed = new();
+
     /// <summary>
     /// The session journal, shared with the detection layer so per-game GameActions can be recorded
     /// for crash recovery against the same in-memory session as the optimizations.
@@ -116,14 +121,14 @@ public class OptimizationEngine : IDisposable
 
     /// <summary>
     /// Creates an engine that records its sessions in <paramref name="journal"/>. Used by tests to
-    /// keep the session journal out of %ProgramData%.
+    /// keep the session journal out of %ProgramData%, and to read what the engine logs.
     /// </summary>
-    internal OptimizationEngine(IEnumerable<IOptimization> optimizations, JournalManager journal)
+    internal OptimizationEngine(IEnumerable<IOptimization> optimizations, JournalManager journal, ILogger? logger = null)
     {
         _optimizations = optimizations.ToList();
         _appliedOptimizations = new Stack<IOptimization>();
         _semaphore = new SemaphoreSlim(1, 1); // Allow one thread at a time
-        _logger = SettingsManager.Logger; // Use centralized logger from Phase 1
+        _logger = logger ?? SettingsManager.Logger; // Use centralized logger from Phase 1
         _journal = journal;
     }
 
@@ -200,12 +205,23 @@ public class OptimizationEngine : IDisposable
                     continue;
                 }
 
+                if (_undoFailed.TryGetValue(optimization, out var leftover))
+                {
+                    _logger.Warning("Not applying {OptimizationName} again this session: {Leftover}", optimization.Name, leftover);
+                    var blockedOpt = optimization;
+                    eventsToFire.Add(() => OptimizationFailed?.Invoke(this, new OptimizationAppliedEventArgs(blockedOpt)));
+                    outcomes.Add(Outcome(optimization, ModuleOutcomeKind.Failed,
+                        $"not applied again this session, because after an earlier attempt {leftover}"));
+                    continue;
+                }
+
                 try
                 {
                     _logger.Debug("Applying optimization: {OptimizationName}", optimization.Name);
 
                     bool success;
                     string? failureDetail = null;
+                    string? leftBehind = null;
 
                     if (optimization is IJournaledOptimization journaled)
                     {
@@ -218,12 +234,37 @@ public class OptimizationEngine : IDisposable
                             continue;
                         }
 
-                        var result = journaled.Apply();
-                        success = result.State == OptimizationState.Applied;
-                        failureDetail = result.ErrorMessage;
+                        if (journaled is IWriteAheadJournaledOptimization writeAhead)
+                        {
+                            var recorder = new JournalApplyRecorder(_journal, optimization.Name);
+                            OptimizationResult result;
+                            try
+                            {
+                                result = writeAhead.Apply(recorder);
+                            }
+                            catch (Exception ex) when (recorder.LastRecord != null)
+                            {
+                                _logger.Warning(ex, "Optimization threw after recording a change: {OptimizationName}", optimization.Name);
+                                result = new OptimizationResult(optimization.Name, string.Empty, string.Empty, OptimizationState.Failed, ex.Message);
+                            }
 
-                        if (success)
-                            _journal.RecordApplied(result);
+                            success = result.State == OptimizationState.Applied;
+                            failureDetail = result.ErrorMessage;
+
+                            if (success)
+                                _journal.RecordApplied(result, recorder.Handle);
+                            else if (recorder.LastRecord != null)
+                                leftBehind = UndoFailedApply(optimization, journaled, recorder.LastRecord);
+                        }
+                        else
+                        {
+                            var result = journaled.Apply();
+                            success = result.State == OptimizationState.Applied;
+                            failureDetail = result.ErrorMessage;
+
+                            if (success)
+                                _journal.RecordApplied(result);
+                        }
                     }
                     else
                     {
@@ -248,7 +289,9 @@ public class OptimizationEngine : IDisposable
                             optimization.Name);
                         var failedOpt = optimization;
                         eventsToFire.Add(() => OptimizationFailed?.Invoke(this, new OptimizationAppliedEventArgs(failedOpt)));
-                        outcomes.Add(Outcome(optimization, ModuleOutcomeKind.Failed, Because("did not apply", failureDetail)));
+                        var reason = Because("did not apply", failureDetail);
+                        outcomes.Add(Outcome(optimization, ModuleOutcomeKind.Failed,
+                            leftBehind == null ? reason : $"{reason}; {leftBehind}"));
                     }
                 }
                 catch (Exception ex)
@@ -392,6 +435,9 @@ public class OptimizationEngine : IDisposable
                 _logger.Information("Profile deactivation complete.");
             }
 
+            // The session has ended either way, so a module whose undo failed may be applied again.
+            _undoFailed.Clear();
+
             var session = new SessionOutcome(
                 _activeSession?.StartedUtc,
                 _activeSession?.GameName,
@@ -413,6 +459,71 @@ public class OptimizationEngine : IDisposable
         {
             try { fire(); }
             catch (Exception ex) { _logger.Warning(ex, "Optimization event subscriber threw"); }
+        }
+    }
+
+    /// <summary>
+    /// Undoes an apply that failed after recording what it was changing, through the same record
+    /// recovery would replay after a crash, so both paths leave the same state. Returns what may be
+    /// left behind, or null when the undo succeeded.
+    /// </summary>
+    private string? UndoFailedApply(IOptimization optimization, IJournaledOptimization journaled, string lastRecord)
+    {
+        OptimizationState undoState;
+        string? undoDetail;
+        try
+        {
+            var undo = journaled.RevertFromRecord(lastRecord);
+            undoState = undo.State;
+            undoDetail = undo.ErrorMessage;
+        }
+        catch (Exception ex)
+        {
+            _logger.Error(ex, "Undoing the failed apply of {OptimizationName} threw", optimization.Name);
+            undoState = OptimizationState.Failed;
+            undoDetail = ex.Message;
+        }
+
+        _journal.RecordReverted(optimization.Name, undoState);
+
+        if (optimization.IsApplied)
+            _logger.Error("{OptimizationName} still reports itself applied after its failed apply was undone", optimization.Name);
+
+        if (undoState == OptimizationState.Reverted)
+        {
+            _logger.Information("Undid the failed apply of {OptimizationName}", optimization.Name);
+            return null;
+        }
+
+        var leftBehind = Because("what it had started to change may still be in effect", undoDetail);
+        _logger.Error("Could not undo the failed apply of {OptimizationName}: {Detail}", optimization.Name, undoDetail);
+        _undoFailed[optimization] = leftBehind;
+        return leftBehind;
+    }
+
+    /// <summary>
+    /// Persists each record a write-ahead module hands in as its one in-progress journal entry. The
+    /// last record is kept in memory too, so an undo works even when a save did not.
+    /// </summary>
+    private sealed class JournalApplyRecorder : IApplyRecorder
+    {
+        private readonly JournalManager _journal;
+        private readonly string _name;
+
+        public JournalApplyRecorder(JournalManager journal, string name)
+        {
+            _journal = journal;
+            _name = name;
+        }
+
+        public JournalManager.EntryHandle? Handle { get; private set; }
+
+        public string? LastRecord { get; private set; }
+
+        public void BeforeChange(string originalValueJson)
+        {
+            LastRecord = originalValueJson;
+            Handle = _journal.RecordInProgress(_name, originalValueJson, Handle);
         }
     }
 

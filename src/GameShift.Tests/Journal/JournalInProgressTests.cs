@@ -166,6 +166,31 @@ public class JournalInProgressTests : IDisposable
         Assert.Equal(new[] { ("current", true), ("done", false) }, OnDisk().Optimizations.Select(e => (e.OriginalValue, e.InProgress)));
     }
 
+    // A handle names one module's entry; another module's record must not land on it.
+    [Fact]
+    public void HandleOfAnotherModule_AppendsInsteadOfUpdatingIt()
+    {
+        var journal = Session();
+        var first = journal.RecordInProgress("First", "first-intent");
+
+        journal.RecordInProgress("Second", "second-intent", first);
+
+        Assert.Equal(new[] { ("First", "first-intent", true), ("Second", "second-intent", true) },
+            OnDisk().Optimizations.Select(e => (e.Name, e.OriginalValue, e.InProgress)));
+    }
+
+    [Fact]
+    public void AppliedWithTheHandleOfAnotherModule_AppendsAndLeavesThatEntryInProgress()
+    {
+        var journal = Session();
+        var first = journal.RecordInProgress("First", "first-intent");
+
+        journal.RecordApplied(new OptimizationResult("Second", "second-original", "applied", OptimizationState.Applied), first);
+
+        Assert.Equal(new[] { ("First", "Applied", true), ("Second", "Applied", false) },
+            OnDisk().Optimizations.Select(e => (e.Name, e.State, e.InProgress)));
+    }
+
     // The handle shares neither read nor write, so the save cannot read the file and writes nothing.
     [Fact]
     public void IntentWhoseSaveFails_DoesNotThrow_AndTheNextSaveWritesIt()

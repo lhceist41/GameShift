@@ -501,9 +501,9 @@ public class JournalManager
     }
 
     /// <summary>
-    /// The entry a handle names while it still belongs to the current session, or null. A handle from
-    /// an earlier session or a reloaded list is not followed: the caller appends instead, so the
-    /// record lands in the session that is being written.
+    /// The entry a handle names while it still belongs to the current session and to the module being
+    /// recorded, or null. A handle from an earlier session, a reloaded list or another module is not
+    /// followed: the caller appends instead, so no record lands on the wrong entry.
     /// </summary>
     private JournalEntry? CurrentEntry(EntryHandle? handle, string name)
     {
@@ -511,6 +511,12 @@ public class JournalManager
             return null;
 
         var entry = EntryHandle.Of(handle);
+        if (!string.Equals(entry.Name, name, StringComparison.Ordinal))
+        {
+            _logger.Warning("[JournalManager] The entry for {Entry} was handed in for {Name}; recording it as a new entry", entry.Name, name);
+            return null;
+        }
+
         if (_current.Optimizations.Any(e => ReferenceEquals(e, entry)))
             return entry;
 
