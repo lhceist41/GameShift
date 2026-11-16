@@ -73,6 +73,19 @@ public static class ProcessRunner
                 psi.Environment[name] = value;
         }
 
+        return Run(psi, timeoutMs);
+    }
+
+    /// <summary>
+    /// Runs a caller-built <paramref name="psi"/> under the same drain, timeout and result contract
+    /// as the public overload, for callers whose start info a variable list cannot express.
+    /// </summary>
+    /// <exception cref="ArgumentException">Stdout or stderr is not redirected.</exception>
+    internal static ProcessRunResult Run(ProcessStartInfo psi, int timeoutMs)
+    {
+        if (!psi.RedirectStandardOutput || !psi.RedirectStandardError)
+            throw new ArgumentException("Both standard output and standard error must be redirected.", nameof(psi));
+
         using var process = Process.Start(psi);
         if (process == null)
             return new ProcessRunResult(0, string.Empty, string.Empty, TimedOut: false, Exited: false);

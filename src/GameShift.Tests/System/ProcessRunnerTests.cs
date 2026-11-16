@@ -90,4 +90,21 @@ public class ProcessRunnerTests
         Assert.Throws<Win32Exception>(() =>
             ProcessRunner.Run(@"C:\does-not-exist\gameshift-nope-12345.exe", "", 2000));
     }
+
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(false, false)]
+    public void Run_StartInfoWithoutBothStreamsRedirected_Throws(bool redirectOut, bool redirectErr)
+    {
+        var psi = new ProcessStartInfo(Cmd, "/c echo hello")
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = redirectOut,
+            RedirectStandardError = redirectErr,
+        };
+
+        Assert.Throws<ArgumentException>(() => ProcessRunner.Run(psi, 5000));
+    }
 }

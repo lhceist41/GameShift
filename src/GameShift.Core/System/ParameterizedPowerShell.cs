@@ -89,32 +89,16 @@ public static class ParameterizedPowerShell
         Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
 
     /// <summary>
-    /// Starts <paramref name="psi"/>, drains stdout and stderr on worker threads, waits up to
-    /// <paramref name="timeoutMs"/> and kills the process tree on timeout. Same result contract as
-    /// <see cref="ProcessRunner.Run"/>, which cannot carry an environment. Stdout is decoded as
-    /// UTF-8; a script whose output is read sets <c>[Console]::OutputEncoding</c> to UTF-8.
+    /// Runs <paramref name="psi"/> through <see cref="ProcessRunner"/>, with the same drain, timeout
+    /// and result contract as <see cref="ProcessRunner.Run(string, string, int, IReadOnlyDictionary{string, string})"/>.
+    /// The start info is built here rather than by that overload because it removes inherited
+    /// <c>GS_ARG</c> variables and decodes stdout as UTF-8, which a variable list cannot express. A
+    /// script whose output is read sets <c>[Console]::OutputEncoding</c> to UTF-8.
     /// </summary>
+    /// <exception cref="ArgumentException">Stdout or stderr is not redirected.</exception>
     public static ProcessRunResult Run(ProcessStartInfo psi, int timeoutMs)
     {
-        if (psi.RedirectStandardOutput)
-            psi.StandardOutputEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
-
-        using var process = Process.Start(psi);
-        if (process == null)
-            return new ProcessRunResult(0, string.Empty, string.Empty, TimedOut: false, Exited: false);
-
-        string stdout = string.Empty, stderr = string.Empty;
-        var outTask = Task.Run(() => { try { stdout = process.StandardOutput.ReadToEnd(); } catch { /* best effort */ } });
-        var errTask = Task.Run(() => { try { stderr = process.StandardError.ReadToEnd(); } catch { /* best effort */ } });
-
-        if (!process.WaitForExit(timeoutMs))
-        {
-            try { process.Kill(entireProcessTree: true); } catch { /* best effort */ }
-            Task.WaitAll(new[] { outTask, errTask }, 2000);
-            return new ProcessRunResult(0, stdout, stderr, TimedOut: true, Exited: false);
-        }
-
-        Task.WaitAll(new[] { outTask, errTask }, 2000);
-        return new ProcessRunResult(process.ExitCode, stdout, stderr, TimedOut: false, Exited: true);
+        psi.StandardOutputEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+        return ProcessRunner.Run(psi, timeoutMs);
     }
 }
