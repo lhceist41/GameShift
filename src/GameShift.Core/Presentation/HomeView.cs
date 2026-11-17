@@ -5,7 +5,40 @@ using GameShift.Core.Optimization;
 namespace GameShift.Core.Presentation;
 
 /// <summary>One module on Home's "This session" list with its badge.</summary>
-public sealed record HomeModuleLine(string ModuleName, ModuleStatus Status);
+public sealed record HomeModuleLine(string ModuleName, ModuleStatus Status)
+{
+    /// <summary>The state word in upper case: WPF has no text transform.</summary>
+    public string StateWord => Status.Word.ToUpperInvariant();
+}
+
+/// <summary>
+/// Home's short session list: at most <see cref="MaxRows"/> lines in the snapshot's order (failed
+/// first), a "+ N more" line for the rest and a link to the full list on During games.
+/// </summary>
+/// <param name="MoreText">"+ 9 more", or null when every line is shown.</param>
+public sealed record HomeSessionList(string Header, IReadOnlyList<HomeModuleLine> Shown, string? MoreText, string LinkText)
+{
+    public const int MaxRows = 8;
+
+    /// <param name="idle">Nothing runs and nothing is paused: the list shows what the next session will do.</param>
+    public static HomeSessionList For(IReadOnlyList<HomeModuleLine> lines, bool idle)
+    {
+        var shown = lines.Take(MaxRows).ToList();
+        int more = lines.Count - shown.Count;
+        return new(
+            idle ? "NEXT SESSION" : "THIS SESSION",
+            shown,
+            more > 0 ? string.Create(CultureInfo.InvariantCulture, $"+ {more} more") : null,
+            lines.Count > 0 ? string.Create(CultureInfo.InvariantCulture, $"All {lines.Count} in During games") : "Open During games");
+    }
+
+    // A record compares the list by reference; Home redraws only on a real change.
+    public bool Equals(HomeSessionList? other) =>
+        other is not null && Header == other.Header && MoreText == other.MoreText && LinkText == other.LinkText
+        && Shown.SequenceEqual(other.Shown);
+
+    public override int GetHashCode() => HashCode.Combine(Header, MoreText, LinkText, Shown.Count);
+}
 
 /// <summary>Home's status strip and its "This session" list, read together so they never disagree.</summary>
 public sealed record HomeSnapshot(HomeStatus Status, HomeStrip Strip, IReadOnlyList<HomeModuleLine> Modules)

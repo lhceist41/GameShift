@@ -10,6 +10,19 @@ public enum NoticeSeverity
     Error,
 }
 
+/// <summary>The three panels under Home's live tiles.</summary>
+public enum HomePanel
+{
+    Notices,
+    ThisSession,
+    RecentSessions,
+}
+
+/// <summary>Where Home's bottom panels go: two columns, or one column holding all three in <see cref="Left"/>.</summary>
+/// <param name="Left">Top to bottom; the wide column when there are two.</param>
+/// <param name="Right">Top to bottom; empty in one column.</param>
+public sealed record HomeBottomLayout(bool TwoColumns, IReadOnlyList<HomePanel> Left, IReadOnlyList<HomePanel> Right);
+
 /// <summary>What the Home notice area shows: the notices themselves, the "N notices" bar, or both.</summary>
 /// <param name="SummarySeverity">The most urgent of the notices the bar folds.</param>
 public sealed record NoticeAreaView(bool ShowSummary, bool ShowNotices, string SummaryText, NoticeSeverity SummarySeverity);
@@ -18,7 +31,7 @@ public sealed record HomeNotice(NoticeSeverity Severity, string Message);
 
 /// <summary>
 /// How the main window narrows, by window width in DIP. Pure: the window reports its width and
-/// applies the result. Both thresholds live here and nowhere else.
+/// applies the result. The thresholds live here and nowhere else.
 /// </summary>
 public static class ShellLayout
 {
@@ -27,6 +40,18 @@ public static class ShellLayout
 
     /// <summary>Below this width two or more Home notices fold into one "N notices" bar.</summary>
     public const double FoldNoticesBelowWidth = 860;
+
+    /// <summary>Below this width Home's bottom panels stack in one column.</summary>
+    public const double StackHomeBelowWidth = 1000;
+
+    /// <summary>
+    /// Two columns: This session on the left, notices above recent sessions on the right. Stacked,
+    /// notices come first so they stay near the top. A width of 0 (not laid out yet) keeps two columns.
+    /// </summary>
+    public static HomeBottomLayout HomeBottom(double windowWidth) =>
+        windowWidth > 0 && windowWidth < StackHomeBelowWidth
+            ? new(false, [HomePanel.Notices, HomePanel.ThisSession, HomePanel.RecentSessions], [])
+            : new(true, [HomePanel.ThisSession], [HomePanel.Notices, HomePanel.RecentSessions]);
 
     /// <summary>A width of 0 means the window has not been laid out yet, so it keeps the full pane.</summary>
     public static bool UseIconRail(double windowWidth) =>

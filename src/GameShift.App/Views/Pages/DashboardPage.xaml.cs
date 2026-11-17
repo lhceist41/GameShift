@@ -74,8 +74,8 @@ public partial class DashboardPage : Page
     }
 
     /// <summary>
-    /// The notices fold by the window's width, not the page's, like the navigation pane. The window's
-    /// state tells the live feed about a minimize.
+    /// The notices fold and the bottom panels stack by the window's width, not the page's, like the
+    /// navigation pane. The window's state tells the live feed about a minimize.
     /// </summary>
     private void WatchWindowWidth(DashboardViewModel vm)
     {
@@ -87,7 +87,32 @@ public partial class DashboardPage : Page
         _window.StateChanged += OnWindowStateChanged;
         ApplyFeed(_feed.SetMinimized(_window.WindowState == WindowState.Minimized));
         vm.SetWindowWidth(_window.ActualWidth);
+        ApplyBottomLayout(_window.ActualWidth);
     }
+
+    private bool? _bottomTwoColumns;
+
+    /// <summary>Moves the three bottom cards into the columns and order <see cref="ShellLayout.HomeBottom"/> gives.</summary>
+    private void ApplyBottomLayout(double windowWidth)
+    {
+        var layout = ShellLayout.HomeBottom(windowWidth);
+        if (_bottomTwoColumns == layout.TwoColumns) return;
+        _bottomTwoColumns = layout.TwoColumns;
+
+        BottomLeft.Children.Clear();
+        BottomRight.Children.Clear();
+        foreach (var panel in layout.Left) BottomLeft.Children.Add(Card(panel));
+        foreach (var panel in layout.Right) BottomRight.Children.Add(Card(panel));
+        Grid.SetColumnSpan(BottomLeft, layout.TwoColumns ? 1 : 3);
+        BottomRight.Visibility = layout.TwoColumns ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private Border Card(HomePanel panel) => panel switch
+    {
+        HomePanel.Notices => NoticesCard,
+        HomePanel.ThisSession => ThisSessionCard,
+        _ => RecentSessionsCard,
+    };
 
     private void UnwatchWindow()
     {
@@ -125,6 +150,7 @@ public partial class DashboardPage : Page
     private void OnWindowSizeChanged(object sender, SizeChangedEventArgs e)
     {
         (DataContext as DashboardViewModel)?.SetWindowWidth(e.NewSize.Width);
+        ApplyBottomLayout(e.NewSize.Width);
     }
 
     /// <summary>Counts the lasting changes for the Home notice. Listing only reads; it runs off the UI thread.</summary>
@@ -343,6 +369,11 @@ public partial class DashboardPage : Page
         {
             (DataContext as DashboardViewModel)?.Update.ApplyUpdateAndRestart();
         }
+    }
+
+    private void OnAllInDuringGamesClicked(object sender, RoutedEventArgs e)
+    {
+        (Window.GetWindow(this) as MainWindow)?.NavigateTo(typeof(DuringGamesPage));
     }
 
     /// <summary>

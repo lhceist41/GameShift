@@ -155,4 +155,53 @@ public class HomeViewTests
             CultureInfo.CurrentCulture = before;
         }
     }
+
+    private static List<HomeModuleLine> Lines(int count) =>
+        Enumerable.Range(1, count).Select(i => new HomeModuleLine("M" + i, new ModuleStatus(ModuleStatusKind.Ready, null))).ToList();
+
+    [Theory]
+    [InlineData(0, 0, null, "Open During games")]
+    [InlineData(8, 8, null, "All 8 in During games")]
+    [InlineData(9, 8, "+ 1 more", "All 9 in During games")]
+    [InlineData(17, 8, "+ 9 more", "All 17 in During games")]
+    public void SessionList_ShowsAtMostEight_AndLinksToAll(int count, int shown, string? more, string link)
+    {
+        var lines = Lines(count);
+
+        var list = HomeSessionList.For(lines, idle: false);
+
+        Assert.Equal(lines.Take(shown), list.Shown);
+        Assert.Equal(more, list.MoreText);
+        Assert.Equal(link, list.LinkText);
+    }
+
+    [Theory]
+    [InlineData(true, "NEXT SESSION")]
+    [InlineData(false, "THIS SESSION")]
+    public void SessionList_IdleShowsTheNextSession(bool idle, string header)
+    {
+        Assert.Equal(header, HomeSessionList.For(Lines(3), idle).Header);
+    }
+
+    [Fact]
+    public void SessionList_KeepsTheSnapshotsOrder_SoFailedStaysFirst()
+    {
+        var snapshot = Read(
+            [.. Enumerable.Range(1, 9).Select(i => Input("R" + i)), Input("Failed")],
+            Requested,
+            Activation(Module("Failed", ModuleOutcomeKind.Failed, "did not apply")));
+
+        var list = HomeSessionList.For(snapshot.Modules, idle: false);
+
+        Assert.Equal("Failed", list.Shown[0].ModuleName);
+        Assert.Equal("FAILED", list.Shown[0].StateWord);
+        Assert.Equal("+ 2 more", list.MoreText);
+    }
+
+    [Fact]
+    public void SessionList_SameContent_IsEqual_SoHomeDoesNotRedrawIt()
+    {
+        Assert.Equal(HomeSessionList.For(Lines(9), false), HomeSessionList.For(Lines(9), false));
+        Assert.NotEqual(HomeSessionList.For(Lines(9), false), HomeSessionList.For(Lines(9), true));
+    }
 }

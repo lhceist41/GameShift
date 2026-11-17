@@ -13,7 +13,36 @@ public enum TileTone
 }
 
 /// <summary>One live tile: the large value, the line under it and its tone.</summary>
-public sealed record TileReading(string Value, string Detail, TileTone Tone);
+public sealed record TileReading(string Value, string Detail, TileTone Tone)
+{
+    /// <summary>The value without its unit: "0.03" of "0.03%". A word such as "Measuring" has no unit and stays whole.</summary>
+    public string Number => Split().Number;
+
+    /// <summary>"%" or "ms", shown smaller after <see cref="Number"/>; empty for a word.</summary>
+    public string Unit => Split().Unit;
+
+    public bool HasUnit => Unit.Length > 0;
+
+    /// <summary>
+    /// The tag beside the tile's label for the two coloured tones; empty otherwise. A high tone
+    /// without a number (no ping reply) is an alert, not a high value.
+    /// </summary>
+    public string Tag => Tone switch
+    {
+        TileTone.Raised => "RAISED",
+        TileTone.High => HasUnit ? "HIGH" : "ALERT",
+        _ => "",
+    };
+
+    private (string Number, string Unit) Split()
+    {
+        if (Value.Length > 3 && Value.EndsWith(" ms", StringComparison.Ordinal) && char.IsDigit(Value[^4]))
+            return (Value[..^3], "ms");
+        if (Value.Length > 1 && Value[^1] == '%' && char.IsDigit(Value[^2]))
+            return (Value[..^1], "%");
+        return (Value, "");
+    }
+}
 
 /// <summary>
 /// The texts of Home's live tiles. A source that cannot be read says "not available" instead of
@@ -22,6 +51,14 @@ public sealed record TileReading(string Value, string Detail, TileTone Tone);
 public static class LiveTiles
 {
     public const string NotAvailable = "not available";
+
+    /// <summary>
+    /// Under the tiles. The feed runs only while Home is seen (<see cref="HomeFeedGate"/>), and the CPU
+    /// and ping monitors pause for a game while DPC is sampled only during one.
+    /// </summary>
+    public const string Footnote =
+        "Live values update about every second while Home is open. They stop while GameShift is minimized " +
+        "or in the tray. While a game runs, CPU, GPU, memory and ping pause; DPC load is measured only then.";
 
     /// <summary>
     /// The tiles' monitors sample every second (DPC every half second); a tile with no sample for

@@ -155,4 +155,28 @@ public class ShellLayoutTests
         Assert.Contains("could not read every record, so there may be more", notice.Message);
         Assert.EndsWith("Review them on Lasting changes.", notice.Message);
     }
+
+    [Theory]
+    [InlineData(999)]
+    [InlineData(ShellLayout.FoldNoticesBelowWidth)]
+    public void HomeBottom_BelowItsThreshold_StacksNoticesFirst(double width)
+    {
+        var layout = ShellLayout.HomeBottom(width);
+
+        Assert.False(layout.TwoColumns);
+        Assert.Equal([HomePanel.Notices, HomePanel.ThisSession, HomePanel.RecentSessions], layout.Left);
+        Assert.Empty(layout.Right);
+    }
+
+    [Theory]
+    [InlineData(1000)]
+    [InlineData(0)]
+    public void HomeBottom_FromItsThreshold_PutsThisSessionBesideNoticesAndRecentSessions(double width)
+    {
+        var layout = ShellLayout.HomeBottom(width);
+
+        Assert.True(layout.TwoColumns);
+        Assert.Equal([HomePanel.ThisSession], layout.Left);
+        Assert.Equal([HomePanel.Notices, HomePanel.RecentSessions], layout.Right);
+    }
 }

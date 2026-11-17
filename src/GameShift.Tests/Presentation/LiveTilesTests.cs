@@ -231,4 +231,44 @@ public class LiveTilesTests
     {
         Assert.Equal(columns, LiveTileLayout.Columns(width));
     }
+
+    [Theory]
+    [InlineData("0.03%", "0.03", "%")]
+    [InlineData("23 ms", "23", "ms")]
+    [InlineData("45 / 60%", "45 / 60", "%")]
+    [InlineData("Measuring", "Measuring", "")]
+    [InlineData("not available", "not available", "")]
+    [InlineData("No reply", "No reply", "")]
+    public void Reading_SplitsTheUnitOffANumber_AndLeavesWordsWhole(string value, string number, string unit)
+    {
+        var reading = new TileReading(value, "", TileTone.Neutral);
+
+        Assert.Equal((number, unit, unit.Length > 0), (reading.Number, reading.Unit, reading.HasUnit));
+    }
+
+    [Fact]
+    public void Reading_TagsOnlyTheColouredTones()
+    {
+        Assert.Equal("RAISED", LiveTiles.Ping(true, "1.1.1.1", Reply(60)).Tag);
+        Assert.Equal("HIGH", LiveTiles.Ping(true, "1.1.1.1", Reply(150)).Tag);
+        Assert.Equal("", LiveTiles.Ping(true, "1.1.1.1", Reply(20)).Tag);
+        Assert.Equal("", LiveTiles.Memory(55, 16384).Tag);
+    }
+
+    [Fact]
+    public void Reading_NoPingReply_IsAnAlertNotAHighValue()
+    {
+        var reading = LiveTiles.Ping(true, "1.1.1.1", NoReply(100));
+
+        Assert.Equal(TileTone.High, reading.Tone);
+        Assert.Equal("ALERT", reading.Tag);
+    }
+
+    [Fact]
+    public void Footnote_SaysWhenTheValuesStopAndWhatPausesDuringAGame()
+    {
+        Assert.Contains("minimized or in the tray", LiveTiles.Footnote);
+        Assert.Contains("CPU, GPU, memory and ping pause", LiveTiles.Footnote);
+        Assert.Contains("DPC load is measured only then", LiveTiles.Footnote);
+    }
 }

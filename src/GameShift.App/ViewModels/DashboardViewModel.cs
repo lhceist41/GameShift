@@ -106,6 +106,14 @@ public class DashboardViewModel : INotifyPropertyChanged
     /// <summary>This session's changes, failed first.</summary>
     public ObservableCollection<HomeModuleRow> SessionModules { get; } = new();
 
+    private HomeSessionList _sessionList = HomeSessionList.For([], idle: true);
+
+    /// <summary>"THIS SESSION", or "NEXT SESSION" while idle.</summary>
+    public string SessionHeader => _sessionList.Header;
+    public string SessionLinkText => _sessionList.LinkText;
+    public string SessionMoreText => _sessionList.MoreText ?? "";
+    public bool HasSessionMore => _sessionList.MoreText != null;
+
     // ── Session History properties ────────────────────────────────────────
     public ObservableCollection<RecentSessionLine> RecentSessions { get; } = new();
 
@@ -265,7 +273,7 @@ public class DashboardViewModel : INotifyPropertyChanged
         var pauseButton = HomePauseButton.For(snapshot.Status.Kind == HomeStatusKind.Paused, _pauseHotkey?.Invoke());
         if (pauseButton != PauseButton)
             PauseButton = pauseButton;
-        ShowModules(snapshot.Modules);
+        ShowModules(HomeSessionList.For(snapshot.Modules, idle: snapshot.Status.Kind == HomeStatusKind.Idle));
 
         Dpc.RefreshState(RunningGameHasDpcOff, _orchestrator.SessionRequestedUtc);
     }
@@ -302,15 +310,19 @@ public class DashboardViewModel : INotifyPropertyChanged
         return names.Count == 1 ? names[0] : null;
     }
 
-    private void ShowModules(IReadOnlyList<HomeModuleLine> lines)
+    private void ShowModules(HomeSessionList list)
     {
-        bool same = lines.Count == SessionModules.Count
-            && lines.Select((l, i) => SessionModules[i].Shows(l)).All(x => x);
-        if (same) return;
+        if (list == _sessionList) return;
+
+        _sessionList = list;
+        OnPropertyChanged(nameof(SessionHeader));
+        OnPropertyChanged(nameof(SessionLinkText));
+        OnPropertyChanged(nameof(SessionMoreText));
+        OnPropertyChanged(nameof(HasSessionMore));
 
         var byName = _optimizations.ToDictionary(o => o.Name);
         SessionModules.Clear();
-        foreach (var line in lines)
+        foreach (var line in list.Shown)
         {
             var module = byName[line.ModuleName];
             SessionModules.Add(new HomeModuleRow(line, SessionModuleText.For(module.Name, module.Description).Title));
@@ -539,6 +551,14 @@ public class DashboardViewModel : INotifyPropertyChanged
         private set { _noticeArea = value; OnPropertyChanged(); }
     }
 
+    /// <summary>Any notice shows; without one the side panel leaves out its Notices card.</summary>
+    public bool HasNotices
+    {
+        get => _hasNotices;
+        private set { if (_hasNotices == value) return; _hasNotices = value; OnPropertyChanged(); }
+    }
+    private bool _hasNotices;
+
     public string NoticeToggleText => _noticesExpanded ? "Hide" : "Show";
 
     public bool ShowLastingChangesNotice => _lastingChanges != null;
@@ -589,6 +609,7 @@ public class DashboardViewModel : INotifyPropertyChanged
         if (Update.ShowUpdateBanner) shown.Add(NoticeSeverity.Info);
         if (_lastingChanges != null) shown.Add(_lastingChanges.Severity);
         NoticeArea = ShellLayout.Notices(shown, _windowWidth, _noticesExpanded);
+        HasNotices = shown.Count > 0;
     }
 
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
@@ -657,11 +678,9 @@ public sealed class HomeModuleRow
     public string Title { get; }
     public string ModuleName => _line.ModuleName;
     public ModuleStatusKind StatusKind => _line.Status.Kind;
-    public string StatusWord => _line.Status.Word;
+    public string StateWord => _line.StateWord;
     public string? StatusReason => _line.Status.Reason;
     public bool HasStatusReason => !string.IsNullOrEmpty(StatusReason);
-
-    internal bool Shows(HomeModuleLine line) => _line == line;
 }
 
 internal class RelayCommand : ICommand
