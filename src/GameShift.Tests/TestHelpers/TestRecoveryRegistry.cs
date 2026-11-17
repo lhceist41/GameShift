@@ -1,5 +1,6 @@
 using System;
 using GameShift.Core.Journal;
+using GameShift.Core.Optimization;
 using Microsoft.Win32;
 
 namespace GameShift.Tests.TestHelpers;
@@ -27,6 +28,10 @@ public sealed class TestRecoveryRegistry : IDisposable
 
     internal RegistryKey? Open(RecoveryHive hive, string subKeyPath) =>
         Microsoft.Win32.Registry.CurrentUser.OpenSubKey($@"{_root}\{hive}\{subKeyPath}");
+
+    /// <summary>The apply-side IFEO registry on the same throwaway tree, so applies and replays meet.</summary>
+    internal IfeoRegistry Ifeo(Action<string>? beforeWrite = null, Action<string>? afterWrite = null) =>
+        IfeoRegistry.UnderCurrentUser(_root, beforeWrite, afterWrite);
 
     internal object? Value(RecoveryHive hive, string subKeyPath, string name)
     {

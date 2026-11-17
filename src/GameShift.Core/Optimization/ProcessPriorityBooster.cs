@@ -17,9 +17,10 @@ namespace GameShift.Core.Optimization;
 ///
 /// Implements IJournaledOptimization so the watchdog can clean up IFEO registry
 /// changes after a main-app crash. Only IFEO changes are journaled - the live
-/// PriorityClass path is ephemeral (dies with the game process).
+/// PriorityClass path is ephemeral (dies with the game process). The IFEO change is
+/// recorded before it is made.
 /// </summary>
-public class ProcessPriorityBooster : IOptimization, IJournaledOptimization
+public class ProcessPriorityBooster : IOptimization, IWriteAheadJournaledOptimization
 {
     private readonly ILogger _logger = SettingsManager.Logger;
 
@@ -30,11 +31,14 @@ public class ProcessPriorityBooster : IOptimization, IJournaledOptimization
     private string _ifeoSubKeyPath = string.Empty;
     private bool _ifeoPerfOptionsPreviouslyExisted;
     private Dictionary<string, int>? _ifeoOriginalValues;
+    private string? _recordError;
 
     // Context stored by CanApply() for use by Apply().
     private SystemContext? _context;
 
     internal IProcessPriorityAccess Processes { get; init; } = SystemProcessPriorityAccess.Instance;
+
+    internal IfeoRegistry Ifeo { get; init; } = IfeoRegistry.Windows;
 
     private const string IfeoBasePath = @"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options";
 
@@ -93,7 +97,9 @@ public class ProcessPriorityBooster : IOptimization, IJournaledOptimization
     /// Records original state in snapshot before changing.
     /// Returns OptimizationResult carrying the serialized IFEO state for journal-based revert.
     /// </summary>
-    public OptimizationResult Apply()
+    public OptimizationResult Apply() => Apply(NoOpApplyRecorder.Instance);
+
+    public OptimizationResult Apply(IApplyRecorder recorder)
     {
         var snapshot = _context?.Snapshot;
         var profile = _context?.Profile;
@@ -112,18 +118,22 @@ public class ProcessPriorityBooster : IOptimization, IJournaledOptimization
         _ifeoOriginalValues = null;
         _boostedProcessId = 0;
         _boostedProcessName = null;
+        _recordError = null;
 
         try
         {
             bool pathSuccess;
             if (profile.RequiresIfeoFallback)
             {
-                pathSuccess = ApplyViaIfeo(snapshot, profile);
+                pathSuccess = ApplyViaIfeo(snapshot, profile, recorder);
             }
             else
             {
                 pathSuccess = ApplyViaRuntimeApi(snapshot, profile);
             }
+
+            if (_recordError != null)
+                return Fail($"Could not record the change before making it: {_recordError}");
 
             // With no game to target (e.g. Quick Optimize) the per-process boost is not applicable,
             // so a no-op is success, not failure.
@@ -156,8 +166,29 @@ public class ProcessPriorityBooster : IOptimization, IJournaledOptimization
     /// </summary>
     private OptimizationResult BuildAppliedResult()
     {
+        bool hasIfeoKey = _usedIfeo && !string.IsNullOrEmpty(_ifeoSubKeyPath);
+        var originalState = IfeoRecord(hasIfeoKey);
+        var appliedState = JsonSerializer.Serialize(new
+        {
+            usedIfeo = _usedIfeo,
+            ifeoKeyCount = hasIfeoKey ? 1 : 0
+        });
+
+        return new OptimizationResult(
+            Name: OptimizationId,
+            OriginalValue: originalState,
+            AppliedValue: appliedState,
+            State: OptimizationState.Applied);
+    }
+
+    /// <summary>
+    /// The journal record: the IFEO key this apply writes, if any, and the originals it replaces.
+    /// The write-ahead record and the final result both come from here, so they cannot differ.
+    /// </summary>
+    private string IfeoRecord(bool includeIfeoKey)
+    {
         var ifeoKeys = new List<object>();
-        if (_usedIfeo && !string.IsNullOrEmpty(_ifeoSubKeyPath))
+        if (includeIfeoKey)
         {
             string? originalValuesJson = _ifeoPerfOptionsPreviouslyExisted && _ifeoOriginalValues != null
                 ? JsonSerializer.Serialize(_ifeoOriginalValues)
@@ -170,18 +201,7 @@ public class ProcessPriorityBooster : IOptimization, IJournaledOptimization
             });
         }
 
-        var originalState = JsonSerializer.Serialize(new { ifeoKeys });
-        var appliedState = JsonSerializer.Serialize(new
-        {
-            usedIfeo = _usedIfeo,
-            ifeoKeyCount = ifeoKeys.Count
-        });
-
-        return new OptimizationResult(
-            Name: OptimizationId,
-            OriginalValue: originalState,
-            AppliedValue: appliedState,
-            State: OptimizationState.Applied);
+        return JsonSerializer.Serialize(new { ifeoKeys });
     }
 
     /// <summary>
@@ -255,7 +275,7 @@ public class ProcessPriorityBooster : IOptimization, IJournaledOptimization
     /// runtime SetPriorityClass() on protected game processes.
     /// Windows applies IFEO at process creation time, before anti-cheat locks the handle.
     /// </summary>
-    private bool ApplyViaIfeo(SystemStateSnapshot snapshot, GameProfile profile)
+    private bool ApplyViaIfeo(SystemStateSnapshot snapshot, GameProfile profile, IApplyRecorder recorder)
     {
         var exeName = profile.ExecutableName;
         if (string.IsNullOrEmpty(exeName))
@@ -271,7 +291,7 @@ public class ProcessPriorityBooster : IOptimization, IJournaledOptimization
         try
         {
             // Check if PerfOptions subkey already exists
-            using (var existingKey = Registry.LocalMachine.OpenSubKey(_ifeoSubKeyPath))
+            using (var existingKey = Ifeo.Open(_ifeoSubKeyPath))
             {
                 if (existingKey != null)
                 {
@@ -292,9 +312,25 @@ public class ProcessPriorityBooster : IOptimization, IJournaledOptimization
                 }
             }
 
+            try
+            {
+                recorder.BeforeChange(IfeoRecord(includeIfeoKey: true));
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex,
+                    "[ProcessPriorityBooster] Could not record the IFEO change for {ExeName}; leaving it unchanged",
+                    exeName);
+                _recordError = ex.Message;
+                return false;
+            }
+
+            // From here on the result must carry the key, even if a write below throws.
+            _usedIfeo = true;
+
             // Create or open the PerfOptions subkey
             var ifeoExeKeyPath = $@"{IfeoBasePath}\{exeName}";
-            using var ifeoExeKey = Registry.LocalMachine.CreateSubKey(ifeoExeKeyPath);
+            using var ifeoExeKey = Ifeo.CreateSubKey(ifeoExeKeyPath);
             if (ifeoExeKey == null)
             {
                 _logger.Error(
@@ -303,7 +339,7 @@ public class ProcessPriorityBooster : IOptimization, IJournaledOptimization
                 return false;
             }
 
-            using var perfOptionsKey = ifeoExeKey.CreateSubKey("PerfOptions");
+            using var perfOptionsKey = Ifeo.CreateSubKey($@"{ifeoExeKeyPath}\PerfOptions");
             if (perfOptionsKey == null)
             {
                 _logger.Error(
@@ -315,7 +351,7 @@ public class ProcessPriorityBooster : IOptimization, IJournaledOptimization
             // Set CpuPriorityClass = 3 (High priority)
             try
             {
-                perfOptionsKey.SetValue("CpuPriorityClass", 3, RegistryValueKind.DWord);
+                Ifeo.SetDword(perfOptionsKey, "CpuPriorityClass", 3);
             }
             catch when (!_ifeoPerfOptionsPreviouslyExisted)
             {
@@ -338,7 +374,6 @@ public class ProcessPriorityBooster : IOptimization, IJournaledOptimization
                 profile.AntiCheat,
                 _ifeoPerfOptionsPreviouslyExisted);
 
-            _usedIfeo = true;
             return true;
         }
         catch (Exception ex)
@@ -355,7 +390,7 @@ public class ProcessPriorityBooster : IOptimization, IJournaledOptimization
     {
         try
         {
-            ifeoExeKey.DeleteSubKey("PerfOptions", throwOnMissingSubKey: false);
+            Ifeo.DeleteSubKey(ifeoExeKey, "PerfOptions");
         }
         catch (Exception ex)
         {
@@ -471,11 +506,10 @@ public class ProcessPriorityBooster : IOptimization, IJournaledOptimization
             if (_ifeoPerfOptionsPreviouslyExisted && _ifeoOriginalValues?.ContainsKey("CpuPriorityClass") == true)
             {
                 // Restore original CpuPriorityClass value
-                using var perfKey = Registry.LocalMachine.OpenSubKey(_ifeoSubKeyPath, writable: true);
+                using var perfKey = Ifeo.Open(_ifeoSubKeyPath, writable: true);
                 if (perfKey != null)
                 {
-                    perfKey.SetValue("CpuPriorityClass", _ifeoOriginalValues["CpuPriorityClass"],
-                        RegistryValueKind.DWord);
+                    Ifeo.SetDword(perfKey, "CpuPriorityClass", _ifeoOriginalValues["CpuPriorityClass"]);
                     _logger.Information(
                         "[ProcessPriorityBooster] Restored IFEO CpuPriorityClass={Value} for {ExeName}",
                         _ifeoOriginalValues["CpuPriorityClass"],
@@ -488,11 +522,11 @@ public class ProcessPriorityBooster : IOptimization, IJournaledOptimization
                 // Must close perfKey BEFORE attempting to delete the subkey - Windows registry
                 // won't delete a subkey while a handle to it is still open in the same process.
                 bool shouldDeleteSubKey = false;
-                using (var perfKey = Registry.LocalMachine.OpenSubKey(_ifeoSubKeyPath, writable: true))
+                using (var perfKey = Ifeo.Open(_ifeoSubKeyPath, writable: true))
                 {
                     if (perfKey != null)
                     {
-                        perfKey.DeleteValue("CpuPriorityClass", throwOnMissingValue: false);
+                        Ifeo.DeleteValue(perfKey, "CpuPriorityClass");
 
                         // If PerfOptions is now empty and we created it, mark for deletion
                         shouldDeleteSubKey = !_ifeoPerfOptionsPreviouslyExisted && perfKey.ValueCount == 0;
@@ -501,8 +535,9 @@ public class ProcessPriorityBooster : IOptimization, IJournaledOptimization
 
                 if (shouldDeleteSubKey)
                 {
-                    using var parentKey = Registry.LocalMachine.OpenSubKey(ifeoExeKeyPath, writable: true);
-                    parentKey?.DeleteSubKey("PerfOptions", throwOnMissingSubKey: false);
+                    using var parentKey = Ifeo.Open(ifeoExeKeyPath, writable: true);
+                    if (parentKey != null)
+                        Ifeo.DeleteSubKey(parentKey, "PerfOptions");
 
                     _logger.Information(
                         "[ProcessPriorityBooster] Deleted empty IFEO PerfOptions subkey for {ExeName}",
@@ -542,7 +577,7 @@ public class ProcessPriorityBooster : IOptimization, IJournaledOptimization
         {
             if (_usedIfeo && !string.IsNullOrEmpty(_ifeoSubKeyPath))
             {
-                using var key = Registry.LocalMachine.OpenSubKey(_ifeoSubKeyPath);
+                using var key = Ifeo.Open(_ifeoSubKeyPath);
                 if (key?.GetValue("CpuPriorityClass") is not int cpc || cpc != 3)
                     return false;
             }
