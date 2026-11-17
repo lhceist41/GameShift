@@ -125,11 +125,17 @@
                                                         Visibility="{Binding RequiresReboot, Converter={StaticResource BoolToVisibility}}"/>
                                     </StackPanel>
                                     <Grid Grid.Column="1" VerticalAlignment="Center">
-                                        <Button Content="{Binding ButtonText}" Tag="{Binding Tweak}"
+                                        <Button Tag="{Binding Tweak}"
                                                 IsEnabled="{Binding ButtonEnabled}"
-                                                Style="{StaticResource GS.Button.Restart}"
+                                                Style="{StaticResource GS.Button.Outline}"
+                                                AutomationProperties.Name="{Binding ButtonText}"
                                                 Visibility="{Binding RequiresReboot, Converter={StaticResource BoolToVisibility}}"
-                                                Click="OnTweakButtonClicked"/>
+                                                Click="OnTweakButtonClicked">
+                                            <StackPanel Orientation="Horizontal">
+                                                <ui:SymbolIcon Symbol="Power20" FontSize="14" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                                <TextBlock Text="{Binding ButtonText}" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                            </StackPanel>
+                                        </Button>
                                         <Button Content="{Binding ButtonText}" Tag="{Binding Tweak}"
                                                 IsEnabled="{Binding ButtonEnabled}"
                                                 Style="{StaticResource GS.Button.Primary}"

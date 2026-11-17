@@ -60,7 +60,7 @@ public class VbsAdvisoryViewModel : INotifyPropertyChanged
                 _vbsBannerMessage = $"Memory Integrity is off, and {acNames} is installed. " +
                     "FACEIT Anti-Cheat and Riot Vanguard's On-Demand mode require Memory Integrity, " +
                     "so their games may refuse to start (for example with a VAN:RESTRICTION error). " +
-                    "Click Re-enable & Reboot to turn it back on.";
+                    "Click Re-enable & Reboot… to turn it back on.";
             }
             else
             {

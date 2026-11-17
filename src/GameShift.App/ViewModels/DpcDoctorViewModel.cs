@@ -120,8 +120,8 @@ public class QuickFixViewModel : INotifyPropertyChanged
             OnPropertyChanged(nameof(StateReason));
             OnPropertyChanged(nameof(HasStateReason));
             OnPropertyChanged(nameof(CanChoose));
-            OnPropertyChanged(nameof(ActionText));
-            OnPropertyChanged(nameof(AccessibleName));
+            OnPropertyChanged(nameof(ActionButtonText));
+            OnPropertyChanged(nameof(ActionAccessibleName));
         }
     }
 
@@ -131,14 +131,15 @@ public class QuickFixViewModel : INotifyPropertyChanged
     public bool HasStateReason => _status.Reason != null;
     public bool CanChoose => _status.Action != FixAction.None;
 
-    public string ActionText => _status.Action switch
+    // No ellipsis: choosing a quick fix applies or reverts it at once, with no dialog in between.
+    public string ActionButtonText => _status.Action switch
     {
-        FixAction.Apply => "Select to apply",
-        FixAction.Undo => "Select to undo",
+        FixAction.Apply => "Apply",
+        FixAction.Undo => "Revert",
         _ => ""
     };
 
-    public string AccessibleName => $"{Name}: {_status.Word}";
+    public string ActionAccessibleName => $"{ActionButtonText} {Name}";
 
     public string ImpactFriendly => Fix?.Impact switch
     {
@@ -224,8 +225,9 @@ public class DpcDoctorViewModel : INotifyPropertyChanged
     public string HealthStatus { get => _healthStatus; set { _healthStatus = value; OnPropertyChanged(); } }
     public string HealthExplanation { get => _healthExplanation; set { _healthExplanation = value; OnPropertyChanged(); } }
     public HealthTone HealthTone { get => _healthTone; set { _healthTone = value; OnPropertyChanged(); } }
-    public double SystemPeakUs { get => _systemPeakUs; set { _systemPeakUs = value; OnPropertyChanged(); OnPropertyChanged(nameof(SystemPeakFormatted)); } }
+    public double SystemPeakUs { get => _systemPeakUs; set { _systemPeakUs = value; OnPropertyChanged(); OnPropertyChanged(nameof(SystemPeakFormatted)); OnPropertyChanged(nameof(HasScanResult)); } }
     public string SystemPeakFormatted => LatencyText.Micro(_systemPeakUs);
+    public bool HasScanResult => _systemPeakUs > 0;
     public int CaptureSeconds { get => _captureSeconds; set { _captureSeconds = value; OnPropertyChanged(); OnPropertyChanged(nameof(CaptureTimeText)); } }
     public string CaptureTimeText => $"{_captureSeconds}s";
     public bool ShowDiagnosedIssues { get => _showDiagnosedIssues; set { _showDiagnosedIssues = value; OnPropertyChanged(); } }

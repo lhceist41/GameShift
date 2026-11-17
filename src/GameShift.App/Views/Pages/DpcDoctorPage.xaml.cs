@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using GameShift.App.Services;
 using GameShift.App.ViewModels;
 using GameShift.Core.Monitoring;
@@ -61,6 +62,15 @@ public partial class DpcDoctorPage : Page
     {
         if (sender is FrameworkElement el && el.DataContext is QuickFixViewModel qf)
             (DataContext as DpcDoctorViewModel)?.ToggleQuickFix(qf);
+    }
+
+    private void OnQuickFixGridSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        // Also on height changes: the cards arrive after the first layout, and each one adds height.
+        if (sender is not UniformGrid grid) return;
+        int columns = QuickFixLayout.Columns(e.NewSize.Width, grid.Children.Count);
+        if (grid.Columns != columns)
+            grid.Columns = columns;
     }
 
     private void OnDpcInfoToggleClicked(object sender, RoutedEventArgs e) =>
