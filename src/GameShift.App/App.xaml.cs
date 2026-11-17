@@ -217,9 +217,10 @@ public partial class App : Application
 
                     // Wire tray menu actions - show MainWindow and navigate to the requested page
                     _trayManager.DashboardRequested += () => ShowAndNavigate(typeof(DashboardPage));
-                    _trayManager.GameLibraryRequested += () => ShowAndNavigate(typeof(GameLibraryPage));
-                    _trayManager.ProfileEditorRequested += () => ShowAndNavigate(typeof(ProfilesPage));
+                    _trayManager.DuringGamesRequested += () => ShowAndNavigate(typeof(DuringGamesPage));
+                    _trayManager.LatencyDoctorRequested += () => ShowAndNavigate(typeof(DpcDoctorPage));
                     _trayManager.SettingsRequested += () => ShowAndNavigate(typeof(SettingsPage));
+                    _trayManager.ActivityRequested += () => ShowAndNavigate(typeof(ActivityLogPage));
                 }
                 WriteDiag("TrayIconManager created OK");
             }

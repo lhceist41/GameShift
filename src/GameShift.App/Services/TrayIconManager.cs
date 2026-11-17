@@ -15,6 +15,8 @@ using GameShift.Core.Presentation;
 using Hardcodet.Wpf.TaskbarNotification;
 using Microsoft.Win32;
 using Serilog;
+using SymbolIcon = Wpf.Ui.Controls.SymbolIcon;
+using SymbolRegular = Wpf.Ui.Controls.SymbolRegular;
 
 namespace GameShift.App.Services;
 
@@ -51,14 +53,17 @@ public class TrayIconManager : IDisposable
     /// <summary>Raised when the user requests the dashboard window (double-click or menu).</summary>
     public event Action? DashboardRequested;
 
-    /// <summary>Raised when the user requests the game library window.</summary>
-    public event Action? GameLibraryRequested;
+    /// <summary>Raised when the user requests the During games page.</summary>
+    public event Action? DuringGamesRequested;
 
-    /// <summary>Raised when the user requests the profile editor window.</summary>
-    public event Action? ProfileEditorRequested;
+    /// <summary>Raised when the user requests the Latency Doctor page.</summary>
+    public event Action? LatencyDoctorRequested;
 
     /// <summary>Raised when the user requests the settings window.</summary>
     public event Action? SettingsRequested;
+
+    /// <summary>Raised when the user requests the Activity page from the session summary toast.</summary>
+    public event Action? ActivityRequested;
 
     public TrayIconManager(
         DetectionOrchestrator orchestrator,
@@ -222,7 +227,8 @@ public class TrayIconManager : IDisposable
 
     /// <summary>
     /// Builds the right-click context menu.
-    /// Items: Status (disabled header), Dashboard, Game Library, Pause/Resume, Settings, Exit.
+    /// Items: Status (disabled header), Open GameShift, During games, Latency Doctor, Settings,
+    /// Pause/Resume optimizing, Exit GameShift.
     /// </summary>
     private ContextMenu BuildContextMenu()
     {
@@ -235,43 +241,42 @@ public class TrayIconManager : IDisposable
 
         menu.Items.Add(new Separator());
 
-        // Open Dashboard
-        var dashboardItem = new MenuItem { Header = "Open Dashboard" };
-        dashboardItem.Click += (s, e) => DashboardRequested?.Invoke();
-        menu.Items.Add(dashboardItem);
-
-        // Game Library
-        var libraryItem = new MenuItem { Header = "Game Library" };
-        libraryItem.Click += (s, e) => GameLibraryRequested?.Invoke();
-        menu.Items.Add(libraryItem);
-
-        // Profile Editor
-        var profileItem = new MenuItem { Header = "Profile Editor" };
-        profileItem.Click += (s, e) => ProfileEditorRequested?.Invoke();
-        menu.Items.Add(profileItem);
+        menu.Items.Add(NavigationItem("Open GameShift", SymbolRegular.Home16, () => DashboardRequested?.Invoke()));
+        menu.Items.Add(NavigationItem("During games", SymbolRegular.Rocket16, () => DuringGamesRequested?.Invoke()));
+        menu.Items.Add(NavigationItem("Latency Doctor", SymbolRegular.HeartPulse20, () => LatencyDoctorRequested?.Invoke()));
+        menu.Items.Add(NavigationItem("Settings", SymbolRegular.Settings16, () => SettingsRequested?.Invoke()));
 
         menu.Items.Add(new Separator());
 
         // Pause/Resume toggle
-        var pauseItem = new MenuItem { Header = "Pause Monitoring" };
+        var pauseItem = new MenuItem();
         pauseItem.Tag = "pause";
         pauseItem.Click += OnPauseClicked;
         menu.Items.Add(pauseItem);
-
-        // Settings
-        var settingsItem = new MenuItem { Header = "Settings" };
-        settingsItem.Click += (s, e) => SettingsRequested?.Invoke();
-        menu.Items.Add(settingsItem);
+        SetPauseMenuItem(pauseItem, _orchestrator.IsPaused);
 
         menu.Items.Add(new Separator());
 
-        // Exit
-        var exitItem = new MenuItem { Header = "Exit" };
+        var exitItem = new MenuItem { Header = "Exit GameShift", Icon = MenuIcon(SymbolRegular.SignOut20) };
         exitItem.Click += OnExitClicked;
         menu.Items.Add(exitItem);
 
+        // The hotkey is registered after the tray icon exists and can fail, so the gesture is read
+        // each time the menu opens.
+        menu.Opened += (s, e) => pauseItem.InputGestureText = App.PauseHotkey ?? string.Empty;
+
         return menu;
     }
+
+    private static MenuItem NavigationItem(string header, SymbolRegular symbol, Action open)
+    {
+        var item = new MenuItem { Header = header, Icon = MenuIcon(symbol) };
+        item.Click += (s, e) => open();
+        return item;
+    }
+
+    // No Foreground set: the icon inherits the menu item's text colour in every theme.
+    private static SymbolIcon MenuIcon(SymbolRegular symbol) => new() { Symbol = symbol, FontSize = 16 };
 
     /// <summary>
     /// Updates the tray icon, tooltip, and status menu item from <see cref="TrayState"/>.
@@ -498,6 +503,7 @@ public class TrayIconManager : IDisposable
 
             var toast = new ToastNotificationWindow();
             toast.SetSessionData(session.GameName, session.Duration, summary, session.AvgDpc, session.PeakDpc);
+            toast.OpenActivityRequested += () => ActivityRequested?.Invoke();
             toast.Show();
 
             _logger.Information(
@@ -581,7 +587,7 @@ public class TrayIconManager : IDisposable
 
         try
         {
-            UpdatePauseMenuItem(_orchestrator.IsPaused ? "Resume Monitoring" : "Pause Monitoring");
+            UpdatePauseMenuItem(_orchestrator.IsPaused);
             UpdateTrayState();
         }
         catch (Exception ex)
@@ -597,7 +603,7 @@ public class TrayIconManager : IDisposable
         _ = TogglePauseAsync();
     }
 
-    private void UpdatePauseMenuItem(string text)
+    private void UpdatePauseMenuItem(bool paused)
     {
         if (_taskbarIcon.ContextMenu == null) return;
 
@@ -605,10 +611,16 @@ public class TrayIconManager : IDisposable
         {
             if (item is MenuItem menuItem && menuItem.Tag as string == "pause")
             {
-                menuItem.Header = text;
+                SetPauseMenuItem(menuItem, paused);
                 break;
             }
         }
+    }
+
+    private static void SetPauseMenuItem(MenuItem item, bool paused)
+    {
+        item.Header = paused ? "Resume optimizing" : "Pause optimizing";
+        item.Icon = MenuIcon(paused ? SymbolRegular.Play16 : SymbolRegular.Pause16);
     }
 
     /// <summary>

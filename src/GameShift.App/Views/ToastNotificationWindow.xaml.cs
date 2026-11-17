@@ -10,13 +10,17 @@ namespace GameShift.App.Views;
 /// <summary>
 /// Post-session summary toast window.
 /// Positioned above the taskbar near the tray area.
-/// Auto-closes after 5 seconds unless it lists changes still active. User can click X to close.
+/// Auto-closes after 5 seconds unless it lists changes still active. Close or Dismiss closes it;
+/// Open activity asks for the Activity page, then closes it.
 /// ShowActivated=False prevents stealing focus.
 /// </summary>
 public partial class ToastNotificationWindow : Window
 {
     private readonly DispatcherTimer _autoCloseTimer;
     private bool _keepOpen;
+
+    /// <summary>Raised when the user asks for the Activity page; the toast closes afterwards.</summary>
+    public event Action? OpenActivityRequested;
 
     public ToastNotificationWindow()
     {
@@ -55,7 +59,7 @@ public partial class ToastNotificationWindow : Window
         double avgDpcMicroseconds,
         double peakDpcMicroseconds)
     {
-        GameNameText.Text = gameName;
+        TitleText.Text = $"{gameName} session ended";
         _keepOpen = summary?.KeepOpen == true;
 
         // Format duration as "Xh Ym" or "Xm Ys"
@@ -69,11 +73,13 @@ public partial class ToastNotificationWindow : Window
         if (summary == null)
         {
             OutcomePanel.Visibility = Visibility.Collapsed;
+            ChangesText.Text = "N/A";
         }
         else
         {
-            CountsText.Text = summary.CountsLine;
-            CountsText.Visibility = summary.CountsLine == null ? Visibility.Collapsed : Visibility.Visible;
+            // The counts line is already "{n} applied" or "{n} applied, {m} failed"; it is null
+            // when the session ran no modules.
+            ChangesText.Text = summary.CountsLine ?? "None";
             SummaryText.Text = summary.Text;
             SummaryText.SetResourceReference(TextBlock.ForegroundProperty,
                 summary.Tone == SessionSummaryTone.Warning ? "GS.State.Warning" : "GS.Fg.Primary");
@@ -88,6 +94,13 @@ public partial class ToastNotificationWindow : Window
     private void OnCloseClicked(object sender, RoutedEventArgs e)
     {
         _autoCloseTimer.Stop();
+        Close();
+    }
+
+    private void OnOpenActivityClicked(object sender, RoutedEventArgs e)
+    {
+        _autoCloseTimer.Stop();
+        OpenActivityRequested?.Invoke();
         Close();
     }
 }
