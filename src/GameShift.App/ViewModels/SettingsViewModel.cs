@@ -72,6 +72,12 @@ public class SettingsViewModel : INotifyPropertyChanged
 
     public IReadOnlyList<ThemeOption> ThemeOptions => SettingsChoices.Themes;
 
+    /// <summary>"GameShift v3.10.1": the same version, in the same form, as the navigation pane footer.</summary>
+    public string AppVersionText { get; } = FormatAppVersion(System.Reflection.Assembly.GetExecutingAssembly().GetName().Version);
+
+    private static string FormatAppVersion(Version? version) =>
+        version != null ? $"GameShift v{version.Major}.{version.Minor}.{version.Build}" : "GameShift";
+
     /// <summary>
     /// The chosen theme. Applied at once so the choice can be seen; saved with Save, and undone
     /// by <see cref="DiscardThemePreview"/> when the page is left unsaved.

@@ -25,6 +25,9 @@ public sealed class DuringGamesViewModel
 
     public ObservableCollection<SessionModuleRow> Modules { get; } = new();
 
+    /// <summary>The summary chips above the list, such as "3 applied"; empty without modules.</summary>
+    public ObservableCollection<ModuleSummaryChip> SummaryChips { get; } = new();
+
     public DuringGamesViewModel(
         IReadOnlyList<IOptimization> modules, OptimizationEngine engine,
         DetectionOrchestrator? orchestrator, ProfileManager? profiles)
@@ -73,6 +76,15 @@ public sealed class DuringGamesViewModel
         {
             row.ShowSwitch(profile?.IsOptimizationEnabled(row.ModuleName) ?? true);
             row.ShowStatus(snapshot.ByModule[row.ModuleName]);
+        }
+
+        // Refresh runs every 2 seconds in a session; replacing unchanged chips would only redraw them.
+        var chips = ModuleSummary.Chips(Modules.Select(row => row.StatusKind));
+        if (!chips.SequenceEqual(SummaryChips))
+        {
+            SummaryChips.Clear();
+            foreach (var chip in chips)
+                SummaryChips.Add(chip);
         }
 
         if (snapshot.SessionRunning)

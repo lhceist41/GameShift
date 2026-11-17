@@ -1,5 +1,7 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=System.Runtime">
 
     <!-- Named styles of the GameShift design. Colours come only from theme tokens, through
          DynamicResource, so a theme swap restyles every element that uses them. -->
@@ -95,34 +97,6 @@
         </Setter>
     </Style>
 
-    <!-- An action that restarts the PC: neutral text with a warning outline, because it carries risk -->
-    <Style x:Key="GS.Button.Restart" TargetType="Button" BasedOn="{StaticResource GS.Button.Primary}">
-        <Setter Property="Background" Value="Transparent" />
-        <Setter Property="Foreground" Value="{DynamicResource GS.Fg.Primary}" />
-        <Setter Property="BorderBrush" Value="{DynamicResource GS.State.Warning}" />
-        <Setter Property="Template">
-            <Setter.Value>
-                <ControlTemplate TargetType="Button">
-                    <Border x:Name="Chrome" Background="{TemplateBinding Background}"
-                            BorderBrush="{TemplateBinding BorderBrush}"
-                            BorderThickness="{TemplateBinding BorderThickness}"
-                            CornerRadius="3" Padding="{TemplateBinding Padding}">
-                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
-                    </Border>
-                    <ControlTemplate.Triggers>
-                        <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource GS.Tint.Warning}" />
-                        </Trigger>
-                        <Trigger Property="IsEnabled" Value="False">
-                            <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource GS.Line.Strong}" />
-                            <Setter Property="Foreground" Value="{DynamicResource GS.Fg.Tertiary}" />
-                        </Trigger>
-                    </ControlTemplate.Triggers>
-                </ControlTemplate>
-            </Setter.Value>
-        </Setter>
-    </Style>
-
     <!-- Secondary action next to a primary one: neutral outline, no fill -->
     <Style x:Key="GS.Button.Outline" TargetType="Button" BasedOn="{StaticResource GS.Button.Primary}">
         <Setter Property="Background" Value="Transparent" />
@@ -154,6 +128,28 @@
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
+    </Style>
+
+    <!-- A switch with its state word after it. The switch already reports its state and keeps the
+         AutomationProperties.Name it is given, so the word is decorative. -->
+    <Style x:Key="GS.Switch.OnOff" TargetType="ui:ToggleSwitch" BasedOn="{StaticResource {x:Type ui:ToggleSwitch}}">
+        <Style.Resources>
+            <!-- A TextBlock inside a control template stays out of the automation control view; the
+                 TextBlock a string gets by default would be read as a separate "On" or "Off". -->
+            <DataTemplate DataType="{x:Type sys:String}">
+                <ContentControl Content="{Binding}" Focusable="False" IsTabStop="False">
+                    <ContentControl.Template>
+                        <ControlTemplate TargetType="ContentControl">
+                            <TextBlock Text="{TemplateBinding Content}" />
+                        </ControlTemplate>
+                    </ContentControl.Template>
+                </ContentControl>
+            </DataTemplate>
+        </Style.Resources>
+        <Setter Property="OnContent" Value="On" />
+        <Setter Property="OffContent" Value="Off" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="Foreground" Value="{DynamicResource GS.Fg.Secondary}" />
     </Style>
 
     <!-- Containers -->

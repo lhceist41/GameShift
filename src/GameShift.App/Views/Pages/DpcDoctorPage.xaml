@@ -106,6 +106,23 @@
                 </DataTrigger>
             </Style.Triggers>
         </Style>
+        <!-- The quick fix tooltip, on the card for the mouse and on its button for keyboard focus -->
+        <DataTemplate x:Key="QuickFixTip" DataType="{x:Type vm:QuickFixViewModel}">
+            <StackPanel MaxWidth="350">
+                <TextBlock Text="{Binding Name}" FontWeight="Bold" FontSize="13"
+                           Foreground="{DynamicResource GS.Fg.Primary}" Margin="0,0,0,6"/>
+                <TextBlock Text="{Binding SimpleTooltip}" TextWrapping="Wrap" FontSize="12"
+                           Foreground="{DynamicResource GS.Fg.Primary}" Margin="0,0,0,6"/>
+                <TextBlock Text="{Binding TechnicalTooltip}" TextWrapping="Wrap" FontSize="11"
+                           Foreground="{DynamicResource GS.Fg.Secondary}" Margin="0,0,0,6"/>
+                <TextBlock Text="Restart required after applying" FontSize="11"
+                           Foreground="{DynamicResource GS.State.Warning}"
+                           Visibility="{Binding RequiresReboot, Converter={StaticResource BoolToVisibility}}"/>
+                <TextBlock FontSize="11" Foreground="{DynamicResource GS.Fg.Secondary}">
+                    <Run Text="Current state: "/><Run Text="{Binding StateText, Mode=OneWay}"/>
+                </TextBlock>
+            </StackPanel>
+        </DataTemplate>
     </Page.Resources>
 
     <Grid>
@@ -537,20 +554,7 @@ This is how long this driver locked up your CPU, in microseconds (&#x00B5;s).
                             <DataTemplate DataType="{x:Type vm:QuickFixViewModel}">
                                 <Border Style="{StaticResource QuickFixCard}">
                                     <Border.ToolTip>
-                                        <StackPanel MaxWidth="350">
-                                            <TextBlock Text="{Binding Name}" FontWeight="Bold" FontSize="13"
-                                                       Foreground="{DynamicResource GS.Fg.Primary}" Margin="0,0,0,6"/>
-                                            <TextBlock Text="{Binding SimpleTooltip}" TextWrapping="Wrap" FontSize="12"
-                                                       Foreground="{DynamicResource GS.Fg.Primary}" Margin="0,0,0,6"/>
-                                            <TextBlock Text="{Binding TechnicalTooltip}" TextWrapping="Wrap" FontSize="11"
-                                                       Foreground="{DynamicResource GS.Fg.Secondary}" Margin="0,0,0,6"/>
-                                            <TextBlock Text="Restart required after applying" FontSize="11"
-                                                       Foreground="{DynamicResource GS.State.Warning}"
-                                                       Visibility="{Binding RequiresReboot, Converter={StaticResource BoolToVisibility}}"/>
-                                            <TextBlock FontSize="11" Foreground="{DynamicResource GS.Fg.Secondary}">
-                                                <Run Text="Current state: "/><Run Text="{Binding StateText, Mode=OneWay}"/>
-                                            </TextBlock>
-                                        </StackPanel>
+                                        <ContentControl Content="{Binding}" ContentTemplate="{StaticResource QuickFixTip}" Focusable="False"/>
                                     </Border.ToolTip>
                                     <DockPanel>
                                         <!-- Docked to the bottom so the buttons of one row line up -->
@@ -560,6 +564,9 @@ This is how long this driver locked up your CPU, in microseconds (&#x00B5;s).
                                                 AutomationProperties.Name="{Binding ActionAccessibleName}"
                                                 AutomationProperties.HelpText="{Binding StateReason}"
                                                 Click="OnToggleQuickFixClicked">
+                                            <Button.ToolTip>
+                                                <ContentControl Content="{Binding}" ContentTemplate="{StaticResource QuickFixTip}" Focusable="False"/>
+                                            </Button.ToolTip>
                                             <StackPanel Orientation="Horizontal">
                                                 <ui:SymbolIcon Symbol="Power20" FontSize="14" Margin="0,0,6,0" VerticalAlignment="Center"
                                                                Visibility="{Binding RequiresReboot, Converter={StaticResource BoolToVisibility}}"/>

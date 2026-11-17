@@ -69,6 +69,32 @@
                 </DataTrigger>
             </Style.Triggers>
         </Style>
+        <!-- The row's leading icon: the badge's icon and tone, larger -->
+        <Style x:Key="ModuleRowIcon" TargetType="ui:SymbolIcon" BasedOn="{StaticResource ModuleBadgeIcon}">
+            <Setter Property="FontSize" Value="18"/>
+            <Setter Property="Margin" Value="0,0,10,0"/>
+            <Setter Property="VerticalAlignment" Value="Top"/>
+        </Style>
+        <Style x:Key="ModuleReason" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="Margin" Value="0,4,0,0"/>
+            <Setter Property="Foreground" Value="{DynamicResource GS.Fg.Secondary}"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding StatusKind}" Value="Failed">
+                    <Setter Property="Foreground" Value="{DynamicResource GS.State.Error}"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="SummaryChips" TargetType="ItemsControl">
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="Margin" Value="0,0,0,8"/>
+            <Style.Triggers>
+                <Trigger Property="HasItems" Value="False">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
     </Page.Resources>
 
     <ScrollViewer VerticalScrollBarVisibility="Auto"
@@ -80,51 +106,67 @@
                        FontSize="13" Foreground="{DynamicResource GS.Fg.Secondary}"
                        TextWrapping="Wrap" Margin="0,0,0,16"/>
 
+            <!-- Chips reuse the badge styles, which key on StatusKind -->
+            <ItemsControl ItemsSource="{Binding SummaryChips}" Style="{StaticResource SummaryChips}">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <WrapPanel/>
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border Style="{StaticResource ModuleBadge}" Margin="0,0,8,8">
+                            <StackPanel Orientation="Horizontal">
+                                <ui:SymbolIcon Style="{StaticResource ModuleBadgeIcon}"/>
+                                <TextBlock Text="{Binding Text}" Style="{StaticResource ModuleBadgeWord}"/>
+                            </StackPanel>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
             <Border Style="{StaticResource GS.Panel}" Padding="0">
                 <ItemsControl ItemsSource="{Binding Modules}" Focusable="False">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
                             <Border Style="{StaticResource GS.Row}">
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-
-                                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,0">
-                                        <TextBlock Text="{Binding Title}" FontSize="14" FontWeight="SemiBold"
-                                                   Foreground="{DynamicResource GS.Fg.Primary}" TextWrapping="Wrap"/>
-                                        <TextBlock Text="{Binding Effect}" FontSize="12"
-                                                   Foreground="{DynamicResource GS.Fg.Secondary}"
-                                                   TextWrapping="Wrap" Margin="0,2,0,0"/>
-                                        <TextBlock Text="{Binding ModuleName}" FontSize="11"
-                                                   Foreground="{DynamicResource GS.Fg.Tertiary}"
-                                                   TextWrapping="Wrap" Margin="0,2,0,0"/>
-                                        <TextBlock Text="{Binding FollowsOtherSwitchesText}" FontSize="12"
-                                                   Foreground="{DynamicResource GS.Fg.Secondary}"
-                                                   TextWrapping="Wrap" Margin="0,4,0,0"
-                                                   Visibility="{Binding HasNoSwitch, Converter={StaticResource BoolToVisibility}}"/>
-                                        <TextBlock Text="{Binding StatusReason}" FontSize="12"
-                                                   Foreground="{DynamicResource GS.Fg.Primary}"
-                                                   TextWrapping="Wrap" Margin="0,4,0,0"
-                                                   Visibility="{Binding HasStatusReason, Converter={StaticResource BoolToVisibility}}"/>
-                                    </StackPanel>
-
-                                    <Border Grid.Column="1" Style="{StaticResource ModuleBadge}" Margin="0,0,12,0">
-                                        <StackPanel Orientation="Horizontal">
-                                            <ui:SymbolIcon Style="{StaticResource ModuleBadgeIcon}"/>
-                                            <TextBlock Text="{Binding StatusWord}" Style="{StaticResource ModuleBadgeWord}"/>
+                                <helpers:ReflowRowPanel>
+                                    <DockPanel Margin="0,0,12,0">
+                                        <ui:SymbolIcon DockPanel.Dock="Left" Style="{StaticResource ModuleRowIcon}"/>
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding Title}" FontSize="14"
+                                                       Foreground="{DynamicResource GS.Fg.Primary}" TextWrapping="Wrap"/>
+                                            <TextBlock Text="{Binding Effect}" FontSize="12"
+                                                       Foreground="{DynamicResource GS.Fg.Secondary}"
+                                                       TextWrapping="Wrap" Margin="0,2,0,0"/>
+                                            <TextBlock Text="{Binding ModuleName}" FontSize="11"
+                                                       Foreground="{DynamicResource GS.Fg.Tertiary}"
+                                                       TextWrapping="Wrap" Margin="0,2,0,0"/>
+                                            <TextBlock Text="{Binding FollowsOtherSwitchesText}" FontSize="12"
+                                                       Foreground="{DynamicResource GS.Fg.Secondary}"
+                                                       TextWrapping="Wrap" Margin="0,4,0,0"
+                                                       Visibility="{Binding HasNoSwitch, Converter={StaticResource BoolToVisibility}}"/>
+                                            <TextBlock Text="{Binding StatusReason}" Style="{StaticResource ModuleReason}"
+                                                       Visibility="{Binding HasStatusReason, Converter={StaticResource BoolToVisibility}}"/>
                                         </StackPanel>
-                                    </Border>
+                                    </DockPanel>
 
-                                    <Grid Grid.Column="2" MinWidth="76" VerticalAlignment="Center">
-                                        <ui:ToggleSwitch IsChecked="{Binding IsEnabled, Mode=TwoWay}"
-                                                         AutomationProperties.Name="{Binding Title}"
-                                                         HorizontalAlignment="Right"
-                                                         Visibility="{Binding HasSwitch, Converter={StaticResource BoolToVisibility}}"/>
-                                    </Grid>
-                                </Grid>
+                                    <StackPanel Orientation="Horizontal">
+                                        <Border Style="{StaticResource ModuleBadge}" Margin="0,0,12,0">
+                                            <StackPanel Orientation="Horizontal">
+                                                <ui:SymbolIcon Style="{StaticResource ModuleBadgeIcon}"/>
+                                                <TextBlock Text="{Binding StatusWord}" Style="{StaticResource ModuleBadgeWord}"/>
+                                            </StackPanel>
+                                        </Border>
+
+                                        <Grid MinWidth="76" VerticalAlignment="Center">
+                                            <ui:ToggleSwitch IsChecked="{Binding IsEnabled, Mode=TwoWay}"
+                                                             Style="{StaticResource GS.Switch.OnOff}"
+                                                             AutomationProperties.Name="{Binding Title}"
+                                                             Visibility="{Binding HasSwitch, Converter={StaticResource BoolToVisibility}}"/>
+                                        </Grid>
+                                    </StackPanel>
+                                </helpers:ReflowRowPanel>
                             </Border>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>

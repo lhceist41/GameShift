@@ -14,6 +14,9 @@ namespace GameShift.App.Views.Pages;
 /// </summary>
 public partial class SettingsPage : Page
 {
+    // A fixed literal, not the Hyperlink's NavigateUri, so nothing else can be opened from here.
+    private const string ProjectPageUrl = "https://github.com/lhceist41/GameShift";
+
     public SettingsPage()
     {
         InitializeComponent();
@@ -58,6 +61,23 @@ public partial class SettingsPage : Page
                 MessageBox.Show("Failed to re-enable VBS/HVCI. Check logs for details.",
                     "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
+        }
+    }
+
+    private void OnProjectPageRequested(object sender, System.Windows.Navigation.RequestNavigateEventArgs e)
+    {
+        e.Handled = true;
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = ProjectPageUrl,
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to open the project page");
         }
     }
 
