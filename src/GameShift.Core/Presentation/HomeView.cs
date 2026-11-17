@@ -8,13 +8,14 @@ namespace GameShift.Core.Presentation;
 public sealed record HomeModuleLine(string ModuleName, ModuleStatus Status);
 
 /// <summary>Home's status strip and its "This session" list, read together so they never disagree.</summary>
-public sealed record HomeSnapshot(HomeStatus Status, IReadOnlyList<HomeModuleLine> Modules)
+public sealed record HomeSnapshot(HomeStatus Status, HomeStrip Strip, IReadOnlyList<HomeModuleLine> Modules)
 {
     /// <param name="sessionRequestedUtc">
     /// Read before <paramref name="lastOutcome"/>: a session that ends between the two reads then
     /// still counts as running, so the next refresh corrects the strip instead of none coming.
     /// </param>
     /// <param name="gameName">The game being optimized, when known; else the outcome's game name is used.</param>
+    /// <param name="nowUtc">For the strip's elapsed time.</param>
     public static HomeSnapshot Read(
         IReadOnlyList<SessionModuleInput> modules,
         Func<DateTime?> sessionRequestedUtc,
@@ -22,6 +23,7 @@ public sealed record HomeSnapshot(HomeStatus Status, IReadOnlyList<HomeModuleLin
         bool isPaused,
         string? gameName,
         int gameActionsInEffect,
+        DateTime nowUtc,
         TimeZoneInfo timeZone)
     {
         var requested = sessionRequestedUtc();
@@ -34,7 +36,8 @@ public sealed record HomeSnapshot(HomeStatus Status, IReadOnlyList<HomeModuleLin
                 m.ModuleName, ModuleStatus.For(m.ModuleName, m.IsAvailable, m.EnabledInProfile, isPaused, current)))
             .OrderBy(line => Rank(line.Status.Kind))
             .ToList();
-        return new(status, lines);
+        var strip = HomeStrip.For(requested, isPaused, gameName, outcome, gameActionsInEffect, lines, nowUtc, timeZone);
+        return new(status, strip, lines);
     }
 
     /// <summary>Failed first, then applied, then what may still apply, then off and not available.</summary>

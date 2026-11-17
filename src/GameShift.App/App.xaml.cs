@@ -57,6 +57,12 @@ public partial class App : Application
     /// </summary>
     internal static bool TrayAvailable { get; private set; }
 
+    /// <summary>The pause toggle the tray menu and the hotkey use, for Home's Pause button; null without a tray icon.</summary>
+    internal static Func<System.Threading.Tasks.Task<bool>>? TogglePause { get; private set; }
+
+    /// <summary>The pause hotkey as registered; null when none could be registered.</summary>
+    internal static string? PauseHotkey { get; private set; }
+
     // ── Static service registry for page ViewModel construction ────────────────
     // Pages are instantiated by WPF UI NavigationView via parameterless constructors.
     // They access App.Services.* in their Loaded event to create ViewModels.
@@ -207,6 +213,7 @@ public partial class App : Application
                 if (Services.Detector != null)
                 {
                     _trayManager = new TrayIconManager(Services.Orchestrator!, Services.Engine!, Services.Detector, settings, Services.DpcMon);
+                    TogglePause = _trayManager.TogglePauseAsync;
 
                     // Wire tray menu actions - show MainWindow and navigate to the requested page
                     _trayManager.DashboardRequested += () => ShowAndNavigate(typeof(DashboardPage));
@@ -302,7 +309,8 @@ public partial class App : Application
                 _hotkeyService.HotkeyPressed += OnGlobalHotkeyPressed;
                 // A hidden window has no handle until one is made; it still receives WM_HOTKEY.
                 new System.Windows.Interop.WindowInteropHelper(_mainWindow!).EnsureHandle();
-                _hotkeyService.Register(_mainWindow!, settings.GlobalHotkeyBinding);
+                if (_hotkeyService.Register(_mainWindow!, settings.GlobalHotkeyBinding))
+                    PauseHotkey = settings.GlobalHotkeyBinding;
                 WriteDiag("Global hotkey registered OK");
             }
             catch (Exception ex)

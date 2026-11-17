@@ -181,4 +181,157 @@ public class HomeStatusTests
         Assert.Equal(new HomeStatus(HomeStatusKind.Paused, HomeStatusTone.Neutral, "Paused, 1 change active",
             "Since 21:14 · 1 applied"), status);
     }
+
+    private static HomeModuleLine Line(string name, ModuleStatusKind kind) => new(name, new ModuleStatus(kind, null));
+
+    private static readonly HomeModuleLine[] IdleLines =
+    [
+        Line("A", ModuleStatusKind.Ready),
+        Line("B", ModuleStatusKind.Ready),
+        Line("C", ModuleStatusKind.Off),
+        Line("D", ModuleStatusKind.NotAvailable),
+    ];
+
+    private static HomeStrip Strip(
+        bool optimizing, bool paused, SessionOutcome? lastOutcome, IReadOnlyList<HomeModuleLine>? lines = null,
+        TimeSpan? elapsed = null, string? game = "Test Game", int gameActions = 0) =>
+        HomeStrip.For(optimizing ? Requested : null, paused, game, lastOutcome, gameActions, lines ?? [],
+            Start + (elapsed ?? TimeSpan.FromMinutes(42)), UtcPlusOne);
+
+    [Fact]
+    public void Strip_Idle_WaitsForAGameAndCountsWhatIsReady()
+    {
+        Assert.Equal(new HomeStrip(HomeStatusKind.Idle, HomeStatusTone.Neutral, "IDLE", "Waiting for a game",
+                "Starts automatically when a library game runs",
+                [
+                    new HomeCounter(2, "ready", ModuleStatusKind.Ready),
+                    new HomeCounter(1, "off", ModuleStatusKind.Off),
+                    new HomeCounter(1, "not available", ModuleStatusKind.NotAvailable),
+                ]),
+            Strip(false, false, null, IdleLines));
+    }
+
+    [Theory]
+    [InlineData(0, 42, 17, "Since 21:14 · 00:42:17 elapsed")]
+    [InlineData(1, 42, 17, "Since 21:14 · 01:42:17 elapsed")]
+    [InlineData(26, 3, 4, "Since 21:14 · 1 d 02:03:04 elapsed")]
+    public void Strip_Optimizing_SaysSinceWhenAndHowLong(int hours, int minutes, int seconds, string subLine)
+    {
+        var strip = Strip(true, false, Activation(Module("A", ModuleOutcomeKind.Applied)),
+            elapsed: new TimeSpan(hours, minutes, seconds));
+
+        Assert.Equal(subLine, strip.SubLine);
+    }
+
+    [Fact]
+    public void Strip_ElapsedBeforeTheStart_ShowsZeroNotANegativeTime()
+    {
+        var strip = Strip(true, false, Activation(Module("A", ModuleOutcomeKind.Applied)), elapsed: TimeSpan.FromSeconds(-5));
+
+        Assert.Equal("Since 21:14 · 00:00:00 elapsed", strip.SubLine);
+    }
+
+    [Fact]
+    public void Strip_Optimizing_NamesTheGameAndCountsAppliedFailedAndOffOrNotAvailable()
+    {
+        var outcome = Activation(
+            Module("A", ModuleOutcomeKind.Applied),
+            Module("B", ModuleOutcomeKind.Failed, "did not apply"),
+            Module("C", ModuleOutcomeKind.SkippedDisabled));
+        HomeModuleLine[] lines =
+        [
+            Line("B", ModuleStatusKind.Failed),
+            Line("A", ModuleStatusKind.Applied),
+            Line("C", ModuleStatusKind.Off),
+            Line("D", ModuleStatusKind.NotAvailable),
+        ];
+
+        var strip = Strip(true, false, outcome, lines, game: "Valorant", gameActions: 1);
+
+        Assert.Equal(new HomeStrip(HomeStatusKind.Optimizing, HomeStatusTone.Warning, "OPTIMIZING", "Valorant",
+                "Since 21:14 · 00:42:00 elapsed",
+                [
+                    new HomeCounter(2, "applied", ModuleStatusKind.Applied),
+                    new HomeCounter(1, "failed", ModuleStatusKind.Failed),
+                    new HomeCounter(2, "off or not available", ModuleStatusKind.Off),
+                ]),
+            strip);
+        Assert.Equal([true, true, false], strip.Counters.Select(c => c.Highlight));
+    }
+
+    [Fact]
+    public void Strip_NoFailure_DoesNotHighlightTheFailedCounter()
+    {
+        var strip = Strip(true, false, Activation(Module("A", ModuleOutcomeKind.Applied)));
+
+        Assert.Equal(HomeStatusTone.Active, strip.Tone);
+        Assert.False(strip.Counters.Single(c => c.StatusKind == ModuleStatusKind.Failed).Highlight);
+    }
+
+    [Fact]
+    public void Strip_WithoutThisSessionsResults_ShowsNoCounters()
+    {
+        var strip = Strip(true, false, null, IdleLines);
+
+        Assert.Equal(HomeStatus.WaitingForResults, strip.SubLine);
+        Assert.Empty(strip.Counters);
+        Assert.Equal(HomeStatusTone.Neutral, strip.Tone);
+    }
+
+    [Fact]
+    public void Strip_WithNoGameNameAnywhere_SaysUnknownGame()
+    {
+        var outcome = new SessionOutcome(Start, null, [Module("A", ModuleOutcomeKind.Applied)], [], EndedUtc: null, RevertedByRecovery: false);
+
+        Assert.Equal("Unknown game", Strip(true, false, outcome, game: null).Title);
+    }
+
+    [Fact]
+    public void Strip_QuickOptimize_IsTitledQuickOptimize()
+    {
+        var strip = Strip(false, false, Activation(Module("A", ModuleOutcomeKind.Applied)));
+
+        Assert.Equal((HomeStatusKind.Optimizing, "OPTIMIZING", "Quick Optimize"), (strip.Kind, strip.Chip, strip.Title));
+    }
+
+    [Fact]
+    public void Strip_Paused_SaysSoAndNamesChangesStillActive()
+    {
+        HomeModuleLine[] lines = [Line("A", ModuleStatusKind.Applied), Line("B", ModuleStatusKind.Paused), Line("C", ModuleStatusKind.Off)];
+
+        var strip = Strip(false, true, Activation(Module("A", ModuleOutcomeKind.Applied)), lines);
+
+        Assert.Equal(new HomeStrip(HomeStatusKind.Paused, HomeStatusTone.Neutral, "PAUSED", "Paused",
+                "1 change still active · no game is optimized until you resume",
+                [
+                    new HomeCounter(1, "paused", ModuleStatusKind.Paused),
+                    new HomeCounter(1, "off", ModuleStatusKind.Off),
+                    new HomeCounter(0, "not available", ModuleStatusKind.NotAvailable),
+                ]),
+            strip);
+    }
+
+    [Fact]
+    public void Strip_PausedWithNothingActive_SaysNoGameIsOptimized()
+    {
+        Assert.Equal("No game is optimized until you resume", Strip(false, true, null).SubLine);
+    }
+
+    [Fact]
+    public void Strip_SameContent_IsEqual_SoHomeDoesNotRedrawIt()
+    {
+        var outcome = Activation(Module("A", ModuleOutcomeKind.Applied));
+
+        Assert.Equal(Strip(true, false, outcome, IdleLines), Strip(true, false, outcome, IdleLines.ToList()));
+        Assert.NotEqual(Strip(true, false, outcome), Strip(true, false, outcome, elapsed: TimeSpan.FromMinutes(43)));
+    }
+
+    [Theory]
+    [InlineData(false, "Ctrl+Shift+G", "Pause", "Pause game detection. A running game session ends. Hotkey: Ctrl+Shift+G")]
+    [InlineData(true, "Ctrl+Shift+G", "Resume", "Resume game detection. A game that is still running is optimized again. Hotkey: Ctrl+Shift+G")]
+    [InlineData(false, null, "Pause", "Pause game detection. A running game session ends.")]
+    public void PauseButton_FollowsThePauseStateAndNamesOnlyARegisteredHotkey(bool paused, string? hotkey, string label, string toolTip)
+    {
+        Assert.Equal(new HomePauseButton(label, toolTip), HomePauseButton.For(paused, hotkey));
+    }
 }

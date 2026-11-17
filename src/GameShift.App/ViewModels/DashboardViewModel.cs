@@ -35,6 +35,13 @@ public class DashboardViewModel : INotifyPropertyChanged
     private const int MaxActivityEntries = 50;
 
     private HomeStatus _homeStatus = new(HomeStatusKind.Idle, HomeStatusTone.Neutral, "Waiting for a game", null);
+    private HomeStrip _strip = HomeStrip.For(null, false, null, null, 0, [], DateTime.UtcNow, TimeZoneInfo.Local);
+
+    // Home's Pause button calls the tray's own toggle; null when there is no tray icon.
+    private readonly Func<Task<bool>>? _togglePause;
+    private readonly Func<string?>? _pauseHotkey;
+    private HomePauseButton _pauseButton = HomePauseButton.For(false, null);
+    private bool _pauseBusy;
 
     // Session history state
     private readonly SessionHistoryStore? _sessionStore;
@@ -70,10 +77,31 @@ public class DashboardViewModel : INotifyPropertyChanged
     public HomeStatus HomeStatus
     {
         get => _homeStatus;
-        private set { _homeStatus = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasCountsLine)); }
+        private set { _homeStatus = value; OnPropertyChanged(); }
     }
 
-    public bool HasCountsLine => !string.IsNullOrEmpty(_homeStatus.CountsLine);
+    /// <summary>The strip's chip, title, sub line and counters, from <see cref="HomeStrip"/>.</summary>
+    public HomeStrip Strip
+    {
+        get => _strip;
+        private set { _strip = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasCounters)); }
+    }
+
+    public bool HasCounters => _strip.Counters.Count > 0;
+
+    public HomePauseButton PauseButton
+    {
+        get => _pauseButton;
+        private set { _pauseButton = value; OnPropertyChanged(); }
+    }
+
+    public bool ShowPauseButton => _togglePause != null;
+
+    public bool CanTogglePause
+    {
+        get => !_pauseBusy;
+        private set { _pauseBusy = !value; OnPropertyChanged(); }
+    }
 
     /// <summary>This session's changes, failed first.</summary>
     public ObservableCollection<HomeModuleRow> SessionModules { get; } = new();
@@ -92,6 +120,8 @@ public class DashboardViewModel : INotifyPropertyChanged
     /// <param name="optimizations">The optimization modules to display status for</param>
     /// <param name="vbsHvciToggle">Optional VBS/HVCI toggle for banner display</param>
     /// <param name="dpcMonitor">Optional DPC latency monitor for real-time indicator</param>
+    /// <param name="togglePause">The tray's pause toggle (<see cref="GameShift.App.Services.TrayIconManager.TogglePauseAsync"/>); null hides Pause.</param>
+    /// <param name="pauseHotkey">The registered pause hotkey for the tooltip, read at each refresh: it is registered after Home first shows.</param>
     public DashboardViewModel(
         DetectionOrchestrator orchestrator,
         OptimizationEngine engine,
@@ -102,7 +132,9 @@ public class DashboardViewModel : INotifyPropertyChanged
         SystemPerformanceMonitor? perfMonitor = null,
         PingMonitor? pingMonitor = null,
         SessionHistoryStore? sessionStore = null,
-        SessionTracker? sessionTracker = null)
+        SessionTracker? sessionTracker = null,
+        Func<Task<bool>>? togglePause = null,
+        Func<string?>? pauseHotkey = null)
     {
         _orchestrator = orchestrator;
         _engine = engine;
@@ -110,6 +142,8 @@ public class DashboardViewModel : INotifyPropertyChanged
         _optimizations = optimizations;
         _sessionStore = sessionStore;
         _sessionTracker = sessionTracker;
+        _togglePause = togglePause;
+        _pauseHotkey = pauseHotkey;
 
         // Create sub-ViewModels
         Update = new UpdateManagementViewModel();
@@ -151,7 +185,8 @@ public class DashboardViewModel : INotifyPropertyChanged
         // Load recent sessions
         LoadRecentSessions();
 
-        _homeTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
+        // Once a second, for the strip's elapsed time.
+        _homeTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _homeTimer.Tick += OnHomeTimerTick;
 
         RefreshStatus();
@@ -221,10 +256,15 @@ public class DashboardViewModel : INotifyPropertyChanged
 
         var snapshot = HomeSnapshot.Read(
             inputs, () => _orchestrator.SessionRequestedUtc, () => _engine.LastOutcome,
-            _orchestrator.IsPaused, SingleActiveGameName(), _orchestrator.GameActionsInEffect, TimeZoneInfo.Local);
+            _orchestrator.IsPaused, SingleActiveGameName(), _orchestrator.GameActionsInEffect, DateTime.UtcNow, TimeZoneInfo.Local);
 
         if (snapshot.Status != HomeStatus)
             HomeStatus = snapshot.Status;
+        if (snapshot.Strip != Strip)
+            Strip = snapshot.Strip;
+        var pauseButton = HomePauseButton.For(snapshot.Status.Kind == HomeStatusKind.Paused, _pauseHotkey?.Invoke());
+        if (pauseButton != PauseButton)
+            PauseButton = pauseButton;
         ShowModules(snapshot.Modules);
 
         Dpc.RefreshState(RunningGameHasDpcOff, _orchestrator.SessionRequestedUtc);
@@ -275,6 +315,27 @@ public class DashboardViewModel : INotifyPropertyChanged
             var module = byName[line.ModuleName];
             SessionModules.Add(new HomeModuleRow(line, SessionModuleText.For(module.Name, module.Description).Title));
         }
+    }
+
+    /// <summary>
+    /// Home's Pause button: the same toggle as the tray menu and the hotkey, then a refresh so the
+    /// label follows at once. The toggle never throws.
+    /// </summary>
+    public async Task TogglePauseAsync()
+    {
+        if (_togglePause == null || _pauseBusy) return;
+
+        CanTogglePause = false;
+        try
+        {
+            await _togglePause();
+        }
+        finally
+        {
+            CanTogglePause = true;
+        }
+        RefreshHome();
+        Hero.RefreshHeroState();
     }
 
     private void OnHomeTimerTick(object? sender, EventArgs e)
@@ -417,7 +478,7 @@ public class DashboardViewModel : INotifyPropertyChanged
     }
 
     /// <summary>
-    /// Stops what only serves a Home the user sees: the 2 s refresh timer and the tiles' sample
+    /// Stops what only serves a Home the user sees: the 1 s refresh timer and the tiles' sample
     /// subscriptions. Engine and detector events stay subscribed: they feed Activity and are rare.
     /// </summary>
     public void PauseFeed()

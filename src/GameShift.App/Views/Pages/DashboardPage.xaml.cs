@@ -16,8 +16,8 @@ using GameShift.Core.SystemTweaks;
 namespace GameShift.App.Views.Pages;
 
 /// <summary>
-/// Home: notices, the session status strip with "Optimize now", the live tiles, this session's
-/// changes and recent sessions. The live feed runs only while Home is seen (<see cref="HomeFeedGate"/>).
+/// Home: the session status strip with "Optimize now" and Pause, notices, the live tiles, this
+/// session's changes and recent sessions. The live feed runs only while Home is seen (<see cref="HomeFeedGate"/>).
 /// ViewModel is created in the Loaded event using App static service properties.
 /// </summary>
 public partial class DashboardPage : Page
@@ -63,7 +63,9 @@ public partial class DashboardPage : Page
             App.Services.PerfMon,
             App.Services.PingMon,
             App.Services.SessionStore,
-            App.Services.SessionTrk);
+            App.Services.SessionTrk,
+            App.TogglePause,
+            () => App.PauseHotkey);
 
         DataContext = vm;
         WatchWindowWidth(vm);
@@ -351,6 +353,12 @@ public partial class DashboardPage : Page
     {
         var mainWindow = Window.GetWindow(this) as MainWindow;
         mainWindow?.NavigateTo(typeof(DpcDoctorPage));
+    }
+
+    private async void OnPauseClicked(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is DashboardViewModel vm)
+            await vm.TogglePauseAsync();
     }
 
     private void OnOptimizationPreviewClicked(object sender, MouseButtonEventArgs e)

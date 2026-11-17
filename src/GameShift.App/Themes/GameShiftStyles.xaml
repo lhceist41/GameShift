@@ -123,6 +123,39 @@
         </Setter>
     </Style>
 
+    <!-- Secondary action next to a primary one: neutral outline, no fill -->
+    <Style x:Key="GS.Button.Outline" TargetType="Button" BasedOn="{StaticResource GS.Button.Primary}">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Foreground" Value="{DynamicResource GS.Fg.Primary}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource GS.Line.Control}" />
+        <Setter Property="FontWeight" Value="Normal" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Chrome" Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="3" Padding="{TemplateBinding Padding}">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource GS.Fill.CardSecondary}" />
+                        </Trigger>
+                        <!-- A tint, not GS.Line.Strong: high contrast maps that to the text colour -->
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource GS.Tint.Idle}" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource GS.Line.Strong}" />
+                            <Setter Property="Foreground" Value="{DynamicResource GS.Fg.Tertiary}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <!-- Containers -->
     <Style x:Key="GS.Panel" TargetType="Border">
         <Setter Property="Background" Value="{DynamicResource GS.Fill.Card}" />

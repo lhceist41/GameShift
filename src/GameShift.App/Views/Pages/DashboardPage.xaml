@@ -39,41 +39,75 @@
             </DataTemplate.Triggers>
         </DataTemplate>
 
-        <!-- Status strip: the icon and headline colour follow HomeStatus kind and tone; the word always says it -->
-        <Style x:Key="HomeStatusIcon" TargetType="ui:SymbolIcon">
-            <Setter Property="FontSize" Value="20"/>
-            <Setter Property="Margin" Value="0,2,10,0"/>
-            <Setter Property="VerticalAlignment" Value="Top"/>
-            <Setter Property="Symbol" Value="Circle16"/>
-            <Setter Property="Foreground" Value="{DynamicResource GS.State.Idle}"/>
+        <!-- Status strip (HomeStrip). Border, chip tint and chip colour follow the state: idle and an
+             optimizing session without changes active stay neutral; the chip's word always says it. -->
+        <Style x:Key="HomeStripPanel" TargetType="Border" BasedOn="{StaticResource GS.Panel}">
+            <Setter Property="Padding" Value="16,14"/>
             <Style.Triggers>
-                <DataTrigger Binding="{Binding HomeStatus.Kind}" Value="Optimizing">
-                    <Setter Property="Symbol" Value="Flash16"/>
+                <DataTrigger Binding="{Binding Strip.Tone}" Value="Active">
+                    <Setter Property="BorderBrush" Value="{DynamicResource GS.State.Active}"/>
                 </DataTrigger>
-                <DataTrigger Binding="{Binding HomeStatus.Kind}" Value="Paused">
-                    <Setter Property="Symbol" Value="Pause16"/>
-                    <Setter Property="Foreground" Value="{DynamicResource GS.State.Paused}"/>
+                <DataTrigger Binding="{Binding Strip.Tone}" Value="Warning">
+                    <Setter Property="BorderBrush" Value="{DynamicResource GS.State.Warning}"/>
                 </DataTrigger>
-                <DataTrigger Binding="{Binding HomeStatus.Tone}" Value="Active">
-                    <Setter Property="Foreground" Value="{DynamicResource GS.State.Active}"/>
-                </DataTrigger>
-                <DataTrigger Binding="{Binding HomeStatus.Tone}" Value="Warning">
-                    <Setter Property="Symbol" Value="Warning16"/>
-                    <Setter Property="Foreground" Value="{DynamicResource GS.State.Warning}"/>
+                <DataTrigger Binding="{Binding Strip.Kind}" Value="Paused">
+                    <Setter Property="BorderBrush" Value="{DynamicResource GS.State.Paused}"/>
                 </DataTrigger>
             </Style.Triggers>
         </Style>
-        <Style x:Key="HomeHeadline" TargetType="TextBlock">
-            <Setter Property="FontSize" Value="20"/>
-            <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="TextWrapping" Value="Wrap"/>
-            <Setter Property="Foreground" Value="{DynamicResource GS.Fg.Primary}"/>
+        <Style x:Key="HomeChip" TargetType="Border" BasedOn="{StaticResource GS.Badge.State}">
+            <Setter Property="Padding" Value="8,2"/>
             <Style.Triggers>
-                <DataTrigger Binding="{Binding HomeStatus.Tone}" Value="Active">
+                <DataTrigger Binding="{Binding Strip.Tone}" Value="Active">
+                    <Setter Property="Background" Value="{DynamicResource GS.Tint.Active}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Strip.Tone}" Value="Warning">
+                    <Setter Property="Background" Value="{DynamicResource GS.Tint.Warning}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Strip.Kind}" Value="Paused">
+                    <Setter Property="Background" Value="{DynamicResource GS.Tint.Paused}"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="HomeChipIcon" TargetType="ui:SymbolIcon">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Margin" Value="0,0,6,0"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Symbol" Value="Circle16"/>
+            <Setter Property="Foreground" Value="{DynamicResource GS.State.Idle}"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Strip.Kind}" Value="Optimizing">
+                    <Setter Property="Symbol" Value="Flash16"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Strip.Tone}" Value="Active">
                     <Setter Property="Foreground" Value="{DynamicResource GS.State.Active}"/>
                 </DataTrigger>
-                <DataTrigger Binding="{Binding HomeStatus.Tone}" Value="Warning">
+                <DataTrigger Binding="{Binding Strip.Tone}" Value="Warning">
+                    <Setter Property="Symbol" Value="Warning16"/>
                     <Setter Property="Foreground" Value="{DynamicResource GS.State.Warning}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Strip.Kind}" Value="Paused">
+                    <Setter Property="Symbol" Value="Pause16"/>
+                    <Setter Property="Foreground" Value="{DynamicResource GS.State.Paused}"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="HomeChipWord" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="Bahnschrift, Segoe UI"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="Foreground" Value="{DynamicResource GS.State.Idle}"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Strip.Tone}" Value="Active">
+                    <Setter Property="Foreground" Value="{DynamicResource GS.State.Active}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Strip.Tone}" Value="Warning">
+                    <Setter Property="Foreground" Value="{DynamicResource GS.State.Warning}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Strip.Kind}" Value="Paused">
+                    <Setter Property="Foreground" Value="{DynamicResource GS.State.Paused}"/>
                 </DataTrigger>
             </Style.Triggers>
         </Style>
@@ -141,13 +175,162 @@
             </Style.Triggers>
         </Style>
 
+        <!-- Strip counters, after ModuleBadgeIcon, which they extend: applied and failed take their
+             state colour only above 0 (HomeCounter.Highlight) -->
+        <Style x:Key="HomeCounterIcon" TargetType="ui:SymbolIcon" BasedOn="{StaticResource ModuleBadgeIcon}">
+            <Setter Property="FontSize" Value="16"/>
+            <Setter Property="Margin" Value="0,0,6,0"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Highlight}" Value="False">
+                    <Setter Property="Foreground" Value="{DynamicResource GS.State.Idle}"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="HomeCounterValue" TargetType="TextBlock" BasedOn="{StaticResource GS.Counter}">
+            <Setter Property="FontSize" Value="24"/>
+            <Setter Property="Foreground" Value="{DynamicResource GS.State.Idle}"/>
+            <Style.Triggers>
+                <MultiDataTrigger>
+                    <MultiDataTrigger.Conditions>
+                        <Condition Binding="{Binding Highlight}" Value="True"/>
+                        <Condition Binding="{Binding StatusKind}" Value="Applied"/>
+                    </MultiDataTrigger.Conditions>
+                    <Setter Property="Foreground" Value="{DynamicResource GS.State.Active}"/>
+                </MultiDataTrigger>
+                <MultiDataTrigger>
+                    <MultiDataTrigger.Conditions>
+                        <Condition Binding="{Binding Highlight}" Value="True"/>
+                        <Condition Binding="{Binding StatusKind}" Value="Failed"/>
+                    </MultiDataTrigger.Conditions>
+                    <Setter Property="Foreground" Value="{DynamicResource GS.State.Error}"/>
+                </MultiDataTrigger>
+            </Style.Triggers>
+        </Style>
+
     </Page.Resources>
     <ScrollViewer VerticalScrollBarVisibility="Auto"
                   helpers:ScrollHelper.FixScrolling="True">
         <StackPanel Margin="24">
 
+            <!-- Status strip: what GameShift is doing now, from the same read as This session (HomeSnapshot).
+                 First on Home, above the notices, so the state and the primary action stay in view. -->
+            <Border Style="{StaticResource HomeStripPanel}" Margin="0,0,0,16"
+                    AutomationProperties.Name="{Binding HomeStatus.Headline}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,16,0">
+                        <Border Style="{StaticResource HomeChip}">
+                            <StackPanel Orientation="Horizontal">
+                                <ui:SymbolIcon Style="{StaticResource HomeChipIcon}"/>
+                                <TextBlock Text="{Binding Strip.Chip}" Style="{StaticResource HomeChipWord}"/>
+                            </StackPanel>
+                        </Border>
+                        <TextBlock Text="{Binding Strip.Title}" FontFamily="Bahnschrift, Segoe UI" FontSize="26"
+                                   FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,6,0,0"
+                                   Foreground="{DynamicResource GS.Fg.Primary}"/>
+                        <!-- Tabular figures keep the elapsed time from jittering as it counts -->
+                        <TextBlock Text="{Binding Strip.SubLine}" FontSize="12" TextWrapping="Wrap" Margin="0,2,0,0"
+                                   Typography.NumeralAlignment="Tabular"
+                                   Foreground="{DynamicResource GS.Fg.Secondary}"/>
+                    </StackPanel>
+
+                    <WrapPanel Grid.Row="0" Grid.Column="1" VerticalAlignment="Top">
+                        <!-- Busy: disabled, and the text says what it is doing -->
+                        <Button Command="{Binding Hero.OptimizeNowCommand}"
+                                IsEnabled="{Binding Hero.CanPressButton}"
+                                MinWidth="140" Margin="0,0,0,8"
+                                Style="{StaticResource GS.Button.Primary}">
+                            <TextBlock Text="{Binding Hero.HeroButtonText}" TextWrapping="Wrap"/>
+                        </Button>
+                        <!-- The tray's own pause toggle, so Home, the tray menu and the hotkey share one path -->
+                        <Button Margin="8,0,0,8" Click="OnPauseClicked"
+                                IsEnabled="{Binding CanTogglePause}"
+                                ToolTip="{Binding PauseButton.ToolTip}"
+                                AutomationProperties.HelpText="{Binding PauseButton.ToolTip}"
+                                Visibility="{Binding ShowPauseButton, Converter={StaticResource BoolToVisibility}}"
+                                Style="{StaticResource GS.Button.Outline}">
+                            <StackPanel Orientation="Horizontal">
+                                <ui:SymbolIcon FontSize="14" Margin="0,0,6,0" VerticalAlignment="Center">
+                                    <ui:SymbolIcon.Style>
+                                        <Style TargetType="ui:SymbolIcon">
+                                            <Setter Property="Symbol" Value="Pause16"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Strip.Kind}" Value="Paused">
+                                                    <Setter Property="Symbol" Value="Play16"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </ui:SymbolIcon.Style>
+                                </ui:SymbolIcon>
+                                <TextBlock Text="{Binding PauseButton.Label}" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+                    </WrapPanel>
+
+                    <ItemsControl Grid.Row="1" Grid.ColumnSpan="2" ItemsSource="{Binding Strip.Counters}"
+                                  Margin="0,12,0,0" Focusable="False" IsTabStop="False"
+                                  Visibility="{Binding HasCounters, Converter={StaticResource BoolToVisibility}}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type presentation:HomeCounter}">
+                                <StackPanel Margin="0,0,24,4">
+                                    <StackPanel Orientation="Horizontal">
+                                        <ui:SymbolIcon Style="{StaticResource HomeCounterIcon}"/>
+                                        <TextBlock Text="{Binding Count}" Style="{StaticResource HomeCounterValue}"/>
+                                    </StackPanel>
+                                    <TextBlock Text="{Binding Label}" FontSize="12" TextWrapping="Wrap"
+                                               Foreground="{DynamicResource GS.Fg.Secondary}"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <StackPanel Grid.Row="2" Grid.ColumnSpan="2">
+                        <!-- What Quick Optimize applies: a link that opens the list -->
+                        <TextBlock x:Name="OptimizationPreviewLink"
+                                   Text="{Binding Hero.HeroPreviewText}"
+                                   FontSize="12" Cursor="Hand" TextWrapping="Wrap"
+                                   Foreground="{DynamicResource GS.Fg.Link}"
+                                   Margin="0,8,0,0"
+                                   MouseLeftButtonUp="OnOptimizationPreviewClicked"
+                                   Visibility="{Binding Hero.ShowHeroPreview, Converter={StaticResource BoolToVisibility}}">
+                            <TextBlock.TextDecorations>
+                                <TextDecorationCollection>
+                                    <TextDecoration Location="Underline"/>
+                                </TextDecorationCollection>
+                            </TextBlock.TextDecorations>
+                        </TextBlock>
+                        <ItemsControl x:Name="PreviewList"
+                                      ItemsSource="{Binding Hero.HeroPreviewItems}"
+                                      Margin="0,6,0,0" Focusable="False"
+                                      Visibility="Collapsed">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding}" FontSize="12" TextWrapping="Wrap"
+                                               Foreground="{DynamicResource GS.Fg.Secondary}"
+                                               Margin="0,2,0,0"/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
             <!-- Notices. Each shows whenever its condition holds; on a narrow window two or more fold
-                 into one bar, so the status and the primary action below stay in view. -->
+                 into one bar, so they do not push the rest of Home out of view. -->
             <controls:NoticeBar Title="{Binding NoticeArea.SummaryText}" Severity="{Binding NoticeArea.SummarySeverity}"
                                 Visibility="{Binding NoticeArea.ShowSummary, Converter={StaticResource BoolToVisibility}}">
                 <Button Content="{Binding NoticeToggleText}" HorizontalAlignment="Left" Click="OnToggleNoticesClicked"/>
@@ -455,63 +638,6 @@
             </controls:NoticeBar>
 
             </StackPanel> <!-- End notices -->
-
-            <!-- Status strip: what GameShift did in the session running now (HomeSnapshot) -->
-            <Border Style="{StaticResource GS.Panel}" Margin="0,0,0,16">
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-
-                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,16,0">
-                        <DockPanel>
-                            <ui:SymbolIcon DockPanel.Dock="Left" Style="{StaticResource HomeStatusIcon}"/>
-                            <TextBlock Text="{Binding HomeStatus.Headline}" Style="{StaticResource HomeHeadline}"/>
-                        </DockPanel>
-                        <TextBlock Text="{Binding HomeStatus.CountsLine}"
-                                   Style="{StaticResource GS.Text.Numeric}" FontSize="13"
-                                   Foreground="{DynamicResource GS.Fg.Secondary}"
-                                   TextWrapping="Wrap" Margin="0,4,0,0"
-                                   Visibility="{Binding HasCountsLine, Converter={StaticResource BoolToVisibility}}"/>
-                        <!-- What Quick Optimize applies: a link that opens the list -->
-                        <TextBlock x:Name="OptimizationPreviewLink"
-                                   Text="{Binding Hero.HeroPreviewText}"
-                                   FontSize="12" Cursor="Hand" TextWrapping="Wrap"
-                                   Foreground="{DynamicResource GS.Fg.Link}"
-                                   Margin="0,8,0,0"
-                                   MouseLeftButtonUp="OnOptimizationPreviewClicked"
-                                   Visibility="{Binding Hero.ShowHeroPreview, Converter={StaticResource BoolToVisibility}}">
-                            <TextBlock.TextDecorations>
-                                <TextDecorationCollection>
-                                    <TextDecoration Location="Underline"/>
-                                </TextDecorationCollection>
-                            </TextBlock.TextDecorations>
-                        </TextBlock>
-                        <ItemsControl x:Name="PreviewList"
-                                      ItemsSource="{Binding Hero.HeroPreviewItems}"
-                                      Margin="0,6,0,0" Focusable="False"
-                                      Visibility="Collapsed">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <TextBlock Text="{Binding}" FontSize="12" TextWrapping="Wrap"
-                                               Foreground="{DynamicResource GS.Fg.Secondary}"
-                                               Margin="0,2,0,0"/>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </StackPanel>
-
-                    <!-- Busy: disabled, and the text says what it is doing -->
-                    <Button Grid.Column="1"
-                            Command="{Binding Hero.OptimizeNowCommand}"
-                            IsEnabled="{Binding Hero.CanPressButton}"
-                            VerticalAlignment="Center" MinWidth="140"
-                            Style="{StaticResource GS.Button.Primary}">
-                        <TextBlock Text="{Binding Hero.HeroButtonText}" TextWrapping="Wrap"/>
-                    </Button>
-                </Grid>
-            </Border>
 
             <!-- Live tiles: only what GameShift measures; a source it cannot read says so (LiveTiles).
                  The feed stops while Home is not seen (HomeFeedGate). -->

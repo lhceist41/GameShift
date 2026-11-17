@@ -21,7 +21,7 @@ public class HomeViewTests
 
     private static HomeSnapshot Read(
         IReadOnlyList<SessionModuleInput> modules, DateTime? requested, SessionOutcome? outcome, bool paused = false) =>
-        HomeSnapshot.Read(modules, () => requested, () => outcome, paused, "Test Game", 0, UtcPlusOne);
+        HomeSnapshot.Read(modules, () => requested, () => outcome, paused, "Test Game", 0, Start.AddMinutes(42), UtcPlusOne);
 
     [Fact]
     public void Read_ReadsTheSessionMarkerBeforeTheOutcome()
@@ -32,7 +32,7 @@ public class HomeViewTests
             [Input("A")],
             () => { reads.Add("marker"); return Requested; },
             () => { reads.Add("outcome"); return Activation(Module("A", ModuleOutcomeKind.Applied)); },
-            false, "Test Game", 0, UtcPlusOne);
+            false, "Test Game", 0, Start, UtcPlusOne);
 
         Assert.Equal(["marker", "outcome"], reads);
     }
