@@ -4,6 +4,22 @@ All notable changes to GameShift are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- **GameShift starts in the tray when it starts with Windows** - at sign-in it now shows only its tray icon. A new Settings option right under Start with Windows, "Start in the tray", turns this off. It is on by default; if you turned off "Start minimized to tray" in a version before 3.10.0, it stays off. Starting GameShift yourself always opens the window, and doing so while GameShift is still starting up at sign-in now opens the window instead of doing nothing. The window still opens at sign-in when GameShift has a startup notice to show, such as a crash recovery notice, when the first-run wizard is due, or when the tray icon cannot be created.
+
+### Fixed
+
+- **Crash recovery also undoes changes GameShift was still making** - GameShift now records each Windows service it pauses, each power plan switch and each lasting CPU priority or core pinning setting for an anti-cheat game before it makes the change, not after. If GameShift crashes or is closed at that moment, its next start restarts those services, puts the power plan back and sets the priority or core pinning back as it was, so the setting no longer stays in place for every later launch of the game. Recovery also leaves your power plan alone if its switch never happened or you picked another plan since (for sessions from GameShift 3.9.0 on). When a power plan switch or a priority or core pinning change fails part way, GameShift now undoes what it had started right away; if that undo fails too, the change's result says that what it had started may still be in effect, and GameShift does not try that change again until the session ends. GameShift also no longer carries one game's core pinning over to another game played later in the same run.
+- **The crash recovery notice says only what was undone** - when GameShift was closed unexpectedly while it was still making its changes and it undid them all, the notice at the next start now says so and that every change it had recorded was undone. When the session record held no changes, the notice says it found none to undo instead of claiming it undid them. GameShift also writes the session record to the disk before it replaces the previous one, so a power cut leaves either the old record or the whole new one, not an empty file.
+- **Latency Doctor's network adapter fixes change only the setting they name** - a fix could also change other adapter settings with a similar name. A fix applied by an earlier version is now undone for the named setting only. A fix now leaves your adapters unchanged when it cannot read the current value, when no adapter has the setting, or when your adapters have different values for it, because one recorded value could not set them all back. If changing the setting fails part way, GameShift puts the earlier value back; if that fails too, the fix stays recorded so it can be undone later.
+- **The session summary appears when a game session ends** - it now shows as soon as the session ends, whether the game exits, you end the session on Home or you pause monitoring, and it shows how long that session ran. Pausing and resuming while the game keeps running no longer produces one summary for both sessions, and exiting GameShift shows none.
+- **Latency Doctor keeps updating after you come back to it** - once you had left the page and returned, a new capture no longer updated the driver list, the capture time or the health banner.
+- **Home's High DPC Load notice says when the spike happened** - it now shows the time of the spike and goes away when Home shows a later game session's live DPC load, so an old spike no longer appears next to a live reading.
+- **The main window fits small screens** - on a small screen at high display scaling, the window no longer covers the taskbar or runs off screen; it shrinks to fit the screen's work area, also after moving to a monitor with different display scaling.
+- **Dialog title bars follow the theme** - the first-run wizard and the update window had a dark title bar in every theme; it is now dark only in the dark theme.
+- **Setup and uninstaller wording** - Setup's welcome page now says to click Install, matching its button, and the uninstaller's messages are titled "GameShift Uninstall" instead of "Uninstall".
+
 ## [3.10.0] - 2026-11-09
 
 ### Security
