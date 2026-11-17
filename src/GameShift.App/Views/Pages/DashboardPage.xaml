@@ -5,7 +5,7 @@
       xmlns:helpers="clr-namespace:GameShift.App.Helpers"
       xmlns:controls="clr-namespace:GameShift.App.Views.Controls"
       xmlns:presentation="clr-namespace:GameShift.Core.Presentation;assembly=GameShift.Core"
-      FontFamily="Segoe UI" FontSize="14">
+      FontFamily="Segoe UI" FontSize="13">
     <Page.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
 
@@ -38,39 +38,6 @@
                 </DataTrigger>
             </DataTemplate.Triggers>
         </DataTemplate>
-
-        <!-- Alert Banner Slide Animation (200ms, CubicEase) -->
-        <Style x:Key="AnimatedBannerStyle" TargetType="Border">
-            <Setter Property="RenderTransformOrigin" Value="0.5,0.5"/>
-            <Setter Property="RenderTransform">
-                <Setter.Value>
-                    <TranslateTransform Y="-30"/>
-                </Setter.Value>
-            </Setter>
-            <Setter Property="Opacity" Value="0"/>
-            <Style.Triggers>
-                <Trigger Property="Visibility" Value="Visible">
-                    <Trigger.EnterActions>
-                        <BeginStoryboard>
-                            <Storyboard>
-                                <DoubleAnimation Storyboard.TargetProperty="Opacity"
-                                    From="0" To="1" Duration="0:0:0.2">
-                                    <DoubleAnimation.EasingFunction>
-                                        <CubicEase EasingMode="EaseOut"/>
-                                    </DoubleAnimation.EasingFunction>
-                                </DoubleAnimation>
-                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)"
-                                    From="-30" To="0" Duration="0:0:0.2">
-                                    <DoubleAnimation.EasingFunction>
-                                        <CubicEase EasingMode="EaseOut"/>
-                                    </DoubleAnimation.EasingFunction>
-                                </DoubleAnimation>
-                            </Storyboard>
-                        </BeginStoryboard>
-                    </Trigger.EnterActions>
-                </Trigger>
-            </Style.Triggers>
-        </Style>
 
         <!-- Status strip: the icon and headline colour follow HomeStatus kind and tone; the word always says it -->
         <Style x:Key="HomeStatusIcon" TargetType="ui:SymbolIcon">
@@ -145,7 +112,7 @@
                     <Setter Property="Foreground" Value="{DynamicResource GS.State.Off}"/>
                 </DataTrigger>
                 <DataTrigger Binding="{Binding StatusKind}" Value="NotAvailable">
-                    <Setter Property="Symbol" Value="DismissCircle16"/>
+                    <Setter Property="Symbol" Value="Prohibited16"/>
                     <Setter Property="Foreground" Value="{DynamicResource GS.State.Off}"/>
                 </DataTrigger>
                 <DataTrigger Binding="{Binding StatusKind}" Value="Paused">
@@ -256,11 +223,10 @@
             </controls:NoticeBar>
 
             <!-- DPC Troubleshooter Results Panel (inline, below spike banner) -->
-            <Border CornerRadius="8" Padding="15" Margin="0,0,0,12"
+            <Border CornerRadius="4" Padding="15" Margin="0,0,0,12"
                     Background="{DynamicResource GS.Surface.Card}"
                     BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1"
-                    Visibility="{Binding Dpc.ShowTroubleshooter, Converter={StaticResource BoolToVisibility}}"
-                    Style="{StaticResource AnimatedBannerStyle}">
+                    Visibility="{Binding Dpc.ShowTroubleshooter, Converter={StaticResource BoolToVisibility}}">
                 <StackPanel>
                     <!-- Header row: title + summary + Re-scan button -->
                     <DockPanel Margin="0,0,0,8">
@@ -281,7 +247,7 @@
 
                     <!-- Analyzing state: indeterminate progress bar -->
                     <ProgressBar IsIndeterminate="True" Height="4" Margin="0,0,0,8"
-                                 Foreground="{DynamicResource GS.Accent.Primary}"
+                                 Foreground="{DynamicResource GS.Interactive.Fill}"
                                  Background="{DynamicResource GS.Surface.Base}">
                         <ProgressBar.Style>
                             <Style TargetType="ProgressBar">
@@ -300,7 +266,7 @@
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <Border Background="{DynamicResource GS.Surface.Base}"
-                                        CornerRadius="6" Padding="12,10" Margin="0,0,0,6"
+                                        CornerRadius="4" Padding="12,10" Margin="0,0,0,6"
                                         BorderBrush="{DynamicResource GS.Surface.Border}" BorderThickness="1">
                                     <StackPanel>
                                         <!-- Driver header: filename + component name + severity badge -->
@@ -359,7 +325,7 @@
                                                 <DataTemplate>
                                                     <StackPanel Orientation="Horizontal" Margin="0,1,0,1">
                                                         <TextBlock Text="&#x2022;" FontSize="12" Margin="0,0,6,0"
-                                                                   Foreground="{DynamicResource GS.Accent.Primary}"
+                                                                   Foreground="{DynamicResource GS.Fg.Secondary}"
                                                                    VerticalAlignment="Top"/>
                                                         <TextBlock Text="{Binding}" FontSize="12"
                                                                    Foreground="{DynamicResource GS.Text.Primary}"
@@ -445,7 +411,7 @@
                         <ProgressBar Width="120" Height="16" Minimum="0" Maximum="100"
                                      Value="{Binding Update.DownloadProgress, Mode=OneWay}"
                                      VerticalAlignment="Center"
-                                     Foreground="{DynamicResource GS.Accent.Primary}"
+                                     Foreground="{DynamicResource GS.Interactive.Fill}"
                                      Background="{DynamicResource GS.Surface.Base}"/>
                         <Button Content="Cancel" Margin="8,0,0,0" VerticalAlignment="Center"
                                 Click="OnUpdateCancelClicked"/>

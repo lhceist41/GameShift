@@ -5,7 +5,7 @@
     xmlns:pages="clr-namespace:GameShift.App.Views.Pages"
     Title="GameShift"
     Icon="pack://application:,,,/Resources/gameshift.ico"
-    Width="900" Height="620" MinWidth="780" MinHeight="520"
+    Width="1040" Height="680" MinWidth="780" MinHeight="520"
     WindowStartupLocation="CenterScreen"
     WindowBackdropType="None"
     ExtendsContentIntoTitleBar="True"
@@ -40,8 +40,10 @@
                     </ui:NavigationViewItem.Icon>
                 </ui:NavigationViewItem>
 
-                <!-- In the icon rail the group headers would be cut off, so each group gets a separator instead -->
-                <ui:NavigationViewItemHeader x:Name="NavHeaderGames" Text="Games"/>
+                <!-- In the icon rail the group headers would be cut off, so each group gets a separator instead.
+                     The stock header template binds FontSize and Foreground; FontWeight inherits into it. -->
+                <ui:NavigationViewItemHeader x:Name="NavHeaderGames" Text="GAMES"
+                    FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource GS.Fg.Secondary}"/>
                 <ui:NavigationViewItemSeparator x:Name="NavSeparatorGames" Visibility="Collapsed"/>
                 <ui:NavigationViewItem x:Name="NavLibrary" Content="Library" TargetPageType="{x:Type pages:GameLibraryPage}">
                     <ui:NavigationViewItem.Icon>
@@ -54,7 +56,8 @@
                     </ui:NavigationViewItem.Icon>
                 </ui:NavigationViewItem>
 
-                <ui:NavigationViewItemHeader x:Name="NavHeaderOptimize" Text="Optimize"/>
+                <ui:NavigationViewItemHeader x:Name="NavHeaderOptimize" Text="OPTIMIZE"
+                    FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource GS.Fg.Secondary}"/>
                 <ui:NavigationViewItemSeparator x:Name="NavSeparatorOptimize" Visibility="Collapsed"/>
                 <ui:NavigationViewItem x:Name="NavDuringGames" Content="During games" TargetPageType="{x:Type pages:DuringGamesPage}">
                     <ui:NavigationViewItem.Icon>
@@ -72,7 +75,8 @@
                     </ui:NavigationViewItem.Icon>
                 </ui:NavigationViewItem>
 
-                <ui:NavigationViewItemHeader x:Name="NavHeaderInfo" Text="Info"/>
+                <ui:NavigationViewItemHeader x:Name="NavHeaderInfo" Text="INFO"
+                    FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource GS.Fg.Secondary}"/>
                 <ui:NavigationViewItemSeparator x:Name="NavSeparatorInfo" Visibility="Collapsed"/>
                 <ui:NavigationViewItem x:Name="NavSystem" Content="System" TargetPageType="{x:Type pages:SystemPage}">
                     <ui:NavigationViewItem.Icon>
@@ -94,9 +98,9 @@
             </ui:NavigationView.FooterMenuItems>
             <ui:NavigationView.PaneFooter>
                 <TextBlock x:Name="VersionLabel"
-                           FontSize="11" Foreground="{DynamicResource GS.Fg.Tertiary}"
-                           HorizontalAlignment="Center"
-                           Margin="0,4,0,8"/>
+                           FontSize="12" Foreground="{DynamicResource GS.Fg.Tertiary}"
+                           HorizontalAlignment="Left"
+                           Margin="16,4,12,8"/>
             </ui:NavigationView.PaneFooter>
             <ui:NavigationView.ContentOverlay>
                 <ui:SnackbarPresenter x:Name="SnackbarPresenter"/>

@@ -3,7 +3,7 @@
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
       xmlns:helpers="clr-namespace:GameShift.App.Helpers"
-      FontFamily="Segoe UI" FontSize="14">
+      FontFamily="Segoe UI" FontSize="13">
     <Page.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
 
@@ -56,7 +56,7 @@
         </Grid.ColumnDefinitions>
 
         <StackPanel Grid.Row="0" Grid.ColumnSpan="2" Margin="0,0,0,16">
-            <TextBlock Text="Profiles" Style="{DynamicResource GS.Text.Hero}" TextWrapping="Wrap" Margin="0,0,0,8"/>
+            <TextBlock Text="Profiles" Style="{DynamicResource GS.Text.PageTitle}" TextWrapping="Wrap" Margin="0,0,0,8"/>
             <TextBlock Text="Choose what GameShift changes for each game. A game without its own profile uses the default profile. Saved changes apply the next time the game starts."
                        FontSize="13" Foreground="{DynamicResource GS.Fg.Secondary}" TextWrapping="Wrap"/>
         </StackPanel>

@@ -8,7 +8,7 @@
          colours do not follow the GameShift theme tokens. The buttons are this control's content. -->
     <ContentControl.Template>
         <ControlTemplate TargetType="controls:NoticeBar">
-            <Border x:Name="Chrome" CornerRadius="8" BorderThickness="1" Padding="16,12" MinHeight="48"
+            <Border x:Name="Chrome" CornerRadius="4" BorderThickness="1" Padding="16,12" MinHeight="48"
                     Background="{DynamicResource GS.Fill.Card}" BorderBrush="{DynamicResource GS.Line.Strong}">
                 <Grid>
                     <Grid.ColumnDefinitions>

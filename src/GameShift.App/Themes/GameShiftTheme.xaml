@@ -30,19 +30,15 @@
     <StaticResource x:Key="GS.Badge.Warning.Bg" ResourceKey="GS.Tint.Warning" />
     <StaticResource x:Key="GS.Badge.Error.Bg" ResourceKey="GS.Tint.Error" />
 
-    <!-- Accent. Pages still use it for buttons and status text alike until they are restyled;
-         the brand colour keeps both readable where the neutral fill would not be. -->
-    <StaticResource x:Key="GS.Accent.Primary" ResourceKey="GS.State.Active" />
-    <StaticResource x:Key="GS.Accent.Hover" ResourceKey="GS.Interactive.FillHover" />
-
     <!-- ============================================================
          Typography Styles
-         Apply with: Style="{DynamicResource GS.Text.Hero}"
+         Apply with: Style="{DynamicResource GS.Text.PageTitle}"
          ============================================================ -->
-    <Style x:Key="GS.Text.Hero" TargetType="TextBlock">
-        <Setter Property="FontFamily"  Value="Segoe UI" />
-        <Setter Property="FontSize"    Value="32" />
-        <Setter Property="FontWeight"  Value="Bold" />
+    <!-- WPF falls back to Segoe UI per glyph where Bahnschrift is missing -->
+    <Style x:Key="GS.Text.PageTitle" TargetType="TextBlock">
+        <Setter Property="FontFamily"  Value="Bahnschrift, Segoe UI" />
+        <Setter Property="FontSize"    Value="22" />
+        <Setter Property="FontWeight"  Value="SemiBold" />
         <Setter Property="Foreground"  Value="{DynamicResource GS.Fg.Primary}" />
     </Style>
 
@@ -74,7 +70,7 @@
                     <Border Background="{TemplateBinding Background}"
                             BorderBrush="{TemplateBinding BorderBrush}"
                             BorderThickness="{TemplateBinding BorderThickness}"
-                            CornerRadius="10" Padding="24,0">
+                            CornerRadius="3" Padding="24,0">
                         <ContentPresenter HorizontalAlignment="Center"
                                           VerticalAlignment="Center"/>
                     </Border>

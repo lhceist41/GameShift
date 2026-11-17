@@ -3,7 +3,7 @@
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
       xmlns:helpers="clr-namespace:GameShift.App.Helpers"
-      FontFamily="Segoe UI" FontSize="14">
+      FontFamily="Segoe UI" FontSize="13">
     <Page.Resources>
         <Style x:Key="ActivityIcon" TargetType="ui:SymbolIcon">
             <Setter Property="FontSize" Value="16"/>
@@ -39,7 +39,7 @@
         </Grid.RowDefinitions>
 
         <StackPanel Grid.Row="0" Margin="0,0,0,16">
-            <TextBlock Text="Activity" Style="{DynamicResource GS.Text.Hero}" TextWrapping="Wrap" Margin="0,0,0,8"/>
+            <TextBlock Text="Activity" Style="{DynamicResource GS.Text.PageTitle}" TextWrapping="Wrap" Margin="0,0,0,8"/>
             <TextBlock Text="The latest events since GameShift started, and today's full log file."
                        FontSize="13" Foreground="{DynamicResource GS.Fg.Secondary}" TextWrapping="Wrap"/>
         </StackPanel>

@@ -3,7 +3,7 @@
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
       xmlns:helpers="clr-namespace:GameShift.App.Helpers"
-      FontFamily="Segoe UI" FontSize="14">
+      FontFamily="Segoe UI" FontSize="13">
     <Page.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
 
@@ -41,7 +41,7 @@
                     <Setter Property="Foreground" Value="{DynamicResource GS.State.Off}"/>
                 </DataTrigger>
                 <DataTrigger Binding="{Binding StatusKind}" Value="NotAvailable">
-                    <Setter Property="Symbol" Value="DismissCircle16"/>
+                    <Setter Property="Symbol" Value="Prohibited16"/>
                     <Setter Property="Foreground" Value="{DynamicResource GS.State.Off}"/>
                 </DataTrigger>
                 <DataTrigger Binding="{Binding StatusKind}" Value="Paused">
@@ -74,7 +74,7 @@
     <ScrollViewer VerticalScrollBarVisibility="Auto"
                   helpers:ScrollHelper.FixScrolling="True">
         <StackPanel Margin="24">
-            <TextBlock Text="During games" Style="{DynamicResource GS.Text.Hero}"
+            <TextBlock Text="During games" Style="{DynamicResource GS.Text.PageTitle}"
                        TextWrapping="Wrap" Margin="0,0,0,8"/>
             <TextBlock Text="What GameShift changes while a game runs, and how each change went in the session running now. GameShift undoes these changes when the game exits. The switches set the default profile, which games without their own profile use."
                        FontSize="13" Foreground="{DynamicResource GS.Fg.Secondary}"

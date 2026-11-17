@@ -43,7 +43,7 @@
         <Setter Property="Background" Value="{DynamicResource GS.Tint.Idle}" />
         <Setter Property="BorderBrush" Value="{DynamicResource GS.Line.Badge}" />
         <Setter Property="BorderThickness" Value="1" />
-        <Setter Property="CornerRadius" Value="4" />
+        <Setter Property="CornerRadius" Value="2" />
         <Setter Property="Padding" Value="6,2" />
         <Setter Property="HorizontalAlignment" Value="Left" />
         <Setter Property="VerticalAlignment" Value="Center" />
@@ -53,7 +53,7 @@
         <Setter Property="Background" Value="{DynamicResource GS.Fill.CardSecondary}" />
         <Setter Property="BorderBrush" Value="{DynamicResource GS.Line.Strong}" />
         <Setter Property="BorderThickness" Value="1" />
-        <Setter Property="CornerRadius" Value="12" />
+        <Setter Property="CornerRadius" Value="2" />
         <Setter Property="Padding" Value="10,4" />
         <Setter Property="HorizontalAlignment" Value="Left" />
     </Style>
@@ -74,7 +74,7 @@
                     <Border x:Name="Chrome" Background="{TemplateBinding Background}"
                             BorderBrush="{TemplateBinding BorderBrush}"
                             BorderThickness="{TemplateBinding BorderThickness}"
-                            CornerRadius="6" Padding="{TemplateBinding Padding}">
+                            CornerRadius="3" Padding="{TemplateBinding Padding}">
                         <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                     </Border>
                     <ControlTemplate.Triggers>
@@ -106,7 +106,7 @@
                     <Border x:Name="Chrome" Background="{TemplateBinding Background}"
                             BorderBrush="{TemplateBinding BorderBrush}"
                             BorderThickness="{TemplateBinding BorderThickness}"
-                            CornerRadius="6" Padding="{TemplateBinding Padding}">
+                            CornerRadius="3" Padding="{TemplateBinding Padding}">
                         <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                     </Border>
                     <ControlTemplate.Triggers>
@@ -128,7 +128,7 @@
         <Setter Property="Background" Value="{DynamicResource GS.Fill.Card}" />
         <Setter Property="BorderBrush" Value="{DynamicResource GS.Line.Hairline}" />
         <Setter Property="BorderThickness" Value="1" />
-        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="CornerRadius" Value="4" />
         <Setter Property="Padding" Value="16" />
     </Style>
 
@@ -143,14 +143,6 @@
         <Setter Property="Padding" Value="12,8" />
         <Setter Property="BorderBrush" Value="{DynamicResource GS.Line.Hairline}" />
         <Setter Property="BorderThickness" Value="0,0,0,1" />
-    </Style>
-
-    <Style x:Key="GS.Nav.Header" TargetType="TextBlock">
-        <Setter Property="FontSize" Value="11" />
-        <Setter Property="FontWeight" Value="SemiBold" />
-        <Setter Property="Foreground" Value="{DynamicResource GS.Fg.Tertiary}" />
-        <Setter Property="Margin" Value="12,16,12,4" />
-        <Setter Property="TextWrapping" Value="Wrap" />
     </Style>
 
 </ResourceDictionary>

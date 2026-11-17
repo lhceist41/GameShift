@@ -3,7 +3,7 @@
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
       xmlns:helpers="clr-namespace:GameShift.App.Helpers"
-      FontFamily="Segoe UI" FontSize="14">
+      FontFamily="Segoe UI" FontSize="13">
     <Page.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
 
@@ -38,7 +38,7 @@
                 <TextBlock Text="{Binding StatusMessage, Mode=OneWay}" DockPanel.Dock="Right"
                            FontSize="12" TextWrapping="Wrap" VerticalAlignment="Center" Margin="12,0,0,0"
                            Foreground="{DynamicResource GS.Fg.Secondary}"/>
-                <TextBlock Text="Lasting changes" Style="{DynamicResource GS.Text.Hero}" TextWrapping="Wrap"/>
+                <TextBlock Text="Lasting changes" Style="{DynamicResource GS.Text.PageTitle}" TextWrapping="Wrap"/>
             </DockPanel>
             <TextBlock Text="Changes to Windows that stay after a game exits and after GameShift closes. Restore All undoes every lasting change GameShift recorded, including tweaks that earlier versions offered, and asks separately about changes it cannot tell it made."
                        FontSize="13" Foreground="{DynamicResource GS.Fg.Secondary}"

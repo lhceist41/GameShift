@@ -3,7 +3,7 @@
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
       xmlns:helpers="clr-namespace:GameShift.App.Helpers"
-      FontFamily="Segoe UI" FontSize="14">
+      FontFamily="Segoe UI" FontSize="13">
     <Page.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
 
@@ -69,7 +69,7 @@
                     Style="{StaticResource GS.Button.Primary}"
                     IsEnabled="{Binding IsDirty, Mode=OneWay}"
                     Click="OnSaveClicked"/>
-            <TextBlock Text="Settings" Style="{DynamicResource GS.Text.Hero}" TextWrapping="Wrap"/>
+            <TextBlock Text="Settings" Style="{DynamicResource GS.Text.PageTitle}" TextWrapping="Wrap"/>
         </DockPanel>
         <TextBlock DockPanel.Dock="Top" Text="{Binding StatusMessage, Mode=OneWay}"
                    FontSize="13" Foreground="{DynamicResource GS.Fg.Primary}"
